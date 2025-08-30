@@ -123,174 +123,90 @@ class CryptoPriceAnalyzer:
     
     def _calculate_single_barrier_profits(self, symbol_data, barrier_pct):
         """
-        Calculate profits for a single triple barrier level
+        Calculate theoretical profits for a single barrier level
+        Only captures successful movements at their peak
         
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
-            barrier_pct (float): Up barrier percentage (e.g., 0.01 for 1%)
+            barrier_pct (float): Barrier percentage (e.g., 0.01 for 1%)
             
         Returns:
             dict: Profit calculations for this barrier
         """
-        # Calculate down barrier as half of up barrier
-        up_barrier = barrier_pct
-        down_barrier = barrier_pct / 2
+        # Group by day to calculate daily movements
+        daily_data = symbol_data.groupby(symbol_data.index.date).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        })
         
-        # Initialize tracking variables
-        trades = []
-        current_position = None
-        entry_price = None
-        entry_time = None
+        # Calculate potential profits for each day
+        successful_trades = []
+        long_trades = 0
+        short_trades = 0
         
-        # Iterate through each 15-minute period
-        for i in range(len(symbol_data)):
-            current_data = symbol_data.iloc[i]
-            current_time = symbol_data.index[i]
-            current_price = current_data['close']
-            current_high = current_data['high']
-            current_low = current_data['low']
+        for date, day_data in daily_data.iterrows():
+            open_price = day_data['open']
+            high_price = day_data['high']
+            low_price = day_data['low']
+            close_price = day_data['close']
             
-            # If no position, look for entry signal
-            if current_position is None:
-                # Entry signal: price crosses above the previous close
-                if i > 0:
-                    prev_close = symbol_data.iloc[i-1]['close']
-                    if current_price > prev_close:
-                        current_position = 'long'
-                        entry_price = current_price
-                        entry_time = current_time
-                    elif current_price < prev_close:
-                        current_position = 'short'
-                        entry_price = current_price
-                        entry_time = current_time
+            # Calculate potential profit if we captured 100% of the movement
+            # Long position: buy at open, sell at high
+            long_profit = (high_price - open_price) / open_price
             
-            # If we have a position, check for exit conditions
-            elif current_position == 'long':
-                # Check if price hits up barrier (take profit) or down barrier (stop loss)
-                if current_high >= entry_price * (1 + up_barrier):
-                    # Take profit at up barrier
-                    exit_price = entry_price * (1 + up_barrier)
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': current_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'take_profit',
-                        'position': 'long',
-                        'barrier_hit': 'up'
-                    })
-                    current_position = None
-                    entry_price = None
-                    entry_time = None
-                    
-                elif current_low <= entry_price * (1 - down_barrier):
-                    # Stop loss at down barrier
-                    exit_price = entry_price * (1 - down_barrier)
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': current_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'stop_loss',
-                        'position': 'long',
-                        'barrier_hit': 'down'
-                    })
-                    current_position = None
-                    entry_price = None
-                    entry_time = None
+            # Short position: sell at open, buy at low
+            short_profit = (open_price - low_price) / open_price
             
-            elif current_position == 'short':
-                # Check if price hits down barrier (take profit) or up barrier (stop loss)
-                if current_low <= entry_price * (1 - up_barrier):
-                    # Take profit at down barrier
-                    exit_price = entry_price * (1 - up_barrier)
-                    profit = (entry_price - exit_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': current_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'take_profit',
-                        'position': 'short',
-                        'barrier_hit': 'down'
-                    })
-                    current_position = None
-                    entry_price = None
-                    entry_time = None
-                    
-                elif current_high >= entry_price * (1 + down_barrier):
-                    # Stop loss at up barrier
-                    exit_price = entry_price * (1 + down_barrier)
-                    profit = (entry_price - exit_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': current_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'stop_loss',
-                        'position': 'short',
-                        'barrier_hit': 'up'
-                    })
-                    current_position = None
-                    entry_price = None
-                    entry_time = None
+            # Only count trades that exceed the barrier
+            if long_profit >= barrier_pct:
+                successful_trades.append({
+                    'date': date,
+                    'profit': long_profit,
+                    'position': 'long',
+                    'entry_price': open_price,
+                    'exit_price': high_price
+                })
+                long_trades += 1
+            
+            if short_profit >= barrier_pct:
+                successful_trades.append({
+                    'date': date,
+                    'profit': short_profit,
+                    'position': 'short',
+                    'entry_price': open_price,
+                    'exit_price': low_price
+                })
+                short_trades += 1
         
-        if not trades:
+        if not successful_trades:
             return {
-                'avg_daily_profit': 0,
                 'total_trades': 0,
-                'profit_frequency': 0,
+                'avg_profit': 0,
+                'long_trades': 0,
+                'short_trades': 0,
                 'max_profit': 0,
                 'min_profit': 0,
                 'profit_std': 0,
                 'total_potential_profit': 0,
-                'win_rate': 0,
-                'avg_trade_duration': 0,
-                'up_barrier_hits': 0,
-                'down_barrier_hits': 0,
-                'take_profit_rate': 0,
-                'stop_loss_rate': 0
+                'profit_frequency': 0
             }
         
-        # Convert trades to DataFrame for analysis
-        trades_df = pd.DataFrame(trades)
-        
-        # Calculate metrics
-        total_trades = len(trades_df)
-        winning_trades = trades_df[trades_df['profit'] > 0]
-        losing_trades = trades_df[trades_df['profit'] <= 0]
-        
-        # Calculate trade durations (in 15-minute periods)
-        trades_df['duration'] = (trades_df['exit_time'] - trades_df['entry_time']).dt.total_seconds() / (15 * 60)
-        
-        # Calculate barrier hit statistics
-        up_barrier_hits = len(trades_df[trades_df['barrier_hit'] == 'up'])
-        down_barrier_hits = len(trades_df[trades_df['barrier_hit'] == 'down'])
-        take_profit_trades = len(trades_df[trades_df['exit_reason'] == 'take_profit'])
-        stop_loss_trades = len(trades_df[trades_df['exit_reason'] == 'stop_loss'])
+        # Convert to DataFrame for analysis
+        trades_df = pd.DataFrame(successful_trades)
         
         return {
-            'avg_daily_profit': trades_df['profit'].mean(),
-            'total_trades': total_trades,
-            'profit_frequency': total_trades / len(symbol_data),  # Trades per period
+            'total_trades': len(successful_trades),
+            'avg_profit': trades_df['profit'].mean(),
+            'long_trades': long_trades,
+            'short_trades': short_trades,
             'max_profit': trades_df['profit'].max(),
             'min_profit': trades_df['profit'].min(),
             'profit_std': trades_df['profit'].std(),
             'total_potential_profit': trades_df['profit'].sum(),
-            'win_rate': len(winning_trades) / total_trades if total_trades > 0 else 0,
-            'avg_trade_duration': trades_df['duration'].mean(),
-            'up_barrier_hits': up_barrier_hits,
-            'down_barrier_hits': down_barrier_hits,
-            'take_profit_rate': take_profit_trades / total_trades if total_trades > 0 else 0,
-            'stop_loss_rate': stop_loss_trades / total_trades if total_trades > 0 else 0,
-            'up_barrier': up_barrier,
-            'down_barrier': down_barrier
+            'profit_frequency': len(successful_trades) / len(daily_data)  # Successful trades per day
         }
     
     def calculate_intraday_patterns(self, symbol_data):
@@ -468,17 +384,14 @@ class CryptoPriceAnalyzer:
                 barrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
                 barrier_summary.append({
                     'Symbol': symbol,
-                    'Up_Barrier': f"{barrier_level:.1%}",
-                    'Down_Barrier': f"{barrier_level/2:.1%}",
+                    'Barrier_Level': f"{barrier_level:.1%}",
                     'Total_Trades': barrier_data['total_trades'],
-                    'Avg_Profit': barrier_data['avg_daily_profit'],
-                    'Win_Rate': barrier_data['win_rate'],
+                    'Avg_Profit': barrier_data['avg_profit'],
+                    'Long_Trades': barrier_data['long_trades'],
+                    'Short_Trades': barrier_data['short_trades'],
                     'Profit_Frequency': barrier_data['profit_frequency'],
                     'Max_Profit': barrier_data['max_profit'],
-                    'Total_Potential_Profit': barrier_data['total_potential_profit'],
-                    'Avg_Trade_Duration': barrier_data['avg_trade_duration'],
-                    'Take_Profit_Rate': barrier_data['take_profit_rate'],
-                    'Stop_Loss_Rate': barrier_data['stop_loss_rate']
+                    'Total_Potential_Profit': barrier_data['total_potential_profit']
                 })
         
         basic_df = pd.DataFrame(basic_summary)
@@ -498,11 +411,11 @@ class CryptoPriceAnalyzer:
         print("\nTOP PERFORMERS BY BARRIER LEVEL:")
         print("-" * 60)
         
-        barrier_levels = barrier_df['Up_Barrier'].unique()
+        barrier_levels = barrier_df['Barrier_Level'].unique()
         for barrier in sorted(barrier_levels):
-            barrier_data = barrier_df[barrier_df['Up_Barrier'] == barrier]
-            top_performers = barrier_data.nlargest(5, 'Avg_Profit')[['Symbol', 'Up_Barrier', 'Down_Barrier', 'Avg_Profit', 'Win_Rate', 'Total_Trades']]
-            print(f"\nTop 5 for {barrier} up / {float(barrier.strip('%'))/2:.1%} down barrier:")
+            barrier_data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+            top_performers = barrier_data.nlargest(5, 'Avg_Profit')[['Symbol', 'Barrier_Level', 'Avg_Profit', 'Total_Trades', 'Long_Trades', 'Short_Trades']]
+            print(f"\nTop 5 for {barrier} barrier:")
             print(top_performers.round(4).to_string(index=False))
         
         # Best overall performers
@@ -515,17 +428,21 @@ class CryptoPriceAnalyzer:
         for symbol, profit in avg_profits.head(10).items():
             print(f"  {symbol}: {profit:.4f}")
         
-        # Highest win rate assets
-        avg_win_rate = barrier_df.groupby('Symbol')['Win_Rate'].mean().sort_values(ascending=False)
-        print(f"\nHighest win rate across all barriers:")
-        for symbol, win_rate in avg_win_rate.head(10).items():
-            print(f"  {symbol}: {win_rate:.4f}")
-        
         # Most active assets
         total_trades = barrier_df.groupby('Symbol')['Total_Trades'].sum().sort_values(ascending=False)
         print(f"\nMost active assets (total trades across all barriers):")
         for symbol, trades in total_trades.head(10).items():
             print(f"  {symbol}: {trades:.0f} trades")
+        
+        # Long vs Short analysis
+        total_longs = barrier_df.groupby('Symbol')['Long_Trades'].sum().sort_values(ascending=False)
+        total_shorts = barrier_df.groupby('Symbol')['Short_Trades'].sum().sort_values(ascending=False)
+        print(f"\nAssets with most long trades:")
+        for symbol, trades in total_longs.head(5).items():
+            print(f"  {symbol}: {trades:.0f} long trades")
+        print(f"\nAssets with most short trades:")
+        for symbol, trades in total_shorts.head(5).items():
+            print(f"  {symbol}: {trades:.0f} short trades")
         
         return {
             'basic_summary': basic_df,
@@ -557,10 +474,10 @@ class CryptoPriceAnalyzer:
                 barrier_data.append({
                     'Symbol': symbol,
                     'Barrier_Level': barrier_level,
-                    'Avg_Profit': barrier_result['avg_daily_profit'],
-                    'Win_Rate': barrier_result['win_rate'],
+                    'Avg_Profit': barrier_result['avg_profit'],
                     'Total_Trades': barrier_result['total_trades'],
-                    'Take_Profit_Rate': barrier_result['take_profit_rate']
+                    'Long_Trades': barrier_result['long_trades'],
+                    'Short_Trades': barrier_result['short_trades']
                 })
         
         barrier_df = pd.DataFrame(barrier_data)
@@ -578,15 +495,15 @@ class CryptoPriceAnalyzer:
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
         
-        # Plot 2: Win rate by barrier level
+        # Plot 2: Total trades by barrier level
         for barrier in sorted(barrier_df['Barrier_Level'].unique()):
             data = barrier_df[barrier_df['Barrier_Level'] == barrier]
-            axes[0, 1].scatter(data['Symbol'], data['Win_Rate'], 
+            axes[0, 1].scatter(data['Symbol'], data['Total_Trades'], 
                              label=f'{barrier:.1%}', alpha=0.7, s=50)
         
         axes[0, 1].set_xlabel('Assets')
-        axes[0, 1].set_ylabel('Win Rate')
-        axes[0, 1].set_title('Win Rate by Barrier Level')
+        axes[0, 1].set_ylabel('Total Trades')
+        axes[0, 1].set_title('Total Trades by Barrier Level')
         axes[0, 1].tick_params(axis='x', rotation=45)
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
@@ -594,8 +511,9 @@ class CryptoPriceAnalyzer:
         # Plot 3: Average performance across all barriers
         avg_performance = barrier_df.groupby('Symbol').agg({
             'Avg_Profit': 'mean',
-            'Win_Rate': 'mean',
-            'Total_Trades': 'sum'
+            'Total_Trades': 'sum',
+            'Long_Trades': 'sum',
+            'Short_Trades': 'sum'
         }).sort_values('Avg_Profit', ascending=False)
         
         axes[1, 0].bar(range(len(avg_performance)), avg_performance['Avg_Profit'])
@@ -606,20 +524,22 @@ class CryptoPriceAnalyzer:
         axes[1, 0].set_xticklabels(avg_performance.index, rotation=45)
         axes[1, 0].grid(True, alpha=0.3)
         
-        # Plot 4: Volatility vs Average Profit
-        volatilities = [self.results[s]['basic_metrics']['volatility'] for s in avg_performance.index]
-        avg_profits = avg_performance['Avg_Profit'].values
+        # Plot 4: Long vs Short trades
+        long_trades = avg_performance['Long_Trades'].values
+        short_trades = avg_performance['Short_Trades'].values
+        x_pos = np.arange(len(avg_performance))
         
-        axes[1, 1].scatter(volatilities, avg_profits, alpha=0.7, s=100)
-        axes[1, 1].set_xlabel('Volatility')
-        axes[1, 1].set_ylabel('Average Daily Profit')
-        axes[1, 1].set_title('Volatility vs Average Profit')
+        axes[1, 1].bar(x_pos - 0.2, long_trades, 0.4, label='Long Trades', alpha=0.8)
+        axes[1, 1].bar(x_pos + 0.2, short_trades, 0.4, label='Short Trades', alpha=0.8)
+        axes[1, 1].set_xlabel('Assets')
+        axes[1, 1].set_ylabel('Number of Trades')
+        axes[1, 1].set_title('Long vs Short Trades')
+        axes[1, 1].set_xticks(x_pos)
+        axes[1, 1].set_xticklabels(avg_performance.index, rotation=45)
+        axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)
         
-        # Add asset labels
-        for i, symbol in enumerate(avg_performance.index):
-            axes[1, 1].annotate(symbol, (volatilities[i], avg_profits[i]), 
-                              xytext=(5, 5), textcoords='offset points', fontsize=8)
+
         
         plt.tight_layout()
         plt.savefig(f"{output_dir}/triple_barrier_analysis.png", dpi=300, bbox_inches='tight')

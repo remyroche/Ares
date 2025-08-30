@@ -134,7 +134,7 @@ class UnifiedRegimeClassifier:
         self.sr_predictor = None
         self.basic_label_encoder = None
         
-        # S/R Configuration for enhanced regime analysis
+        # S/R Configuration for enhanced regime analysis with optimized parameters
         self.sr_config = {
             "sr_breakout_predictor": {
                 "enable_sr_breakout_tactics": True,
@@ -149,6 +149,7 @@ class UnifiedRegimeClassifier:
                 "atr_multiplier": 1.5,
                 "breakout_confirmation_periods": 3,
                 "false_breakout_filter": True,
+                "use_optimized_params": True,  # Enable optimized parameters
                 
                 # Enhanced strength calculation configuration
                 "strength_calculation": {

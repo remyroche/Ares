@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization/sr_optuna_optimization.py
+# src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
 
 """
 S/R Parameter Optimization with Optuna
@@ -31,7 +31,7 @@ import pandas as pd
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import TPESampler
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
+from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
 from src.tactician.sr_weight_optimizer import SRWeightOptimizer
 from src.utils.logger import setup_logging
 
@@ -126,7 +126,9 @@ class SROptunaOptimizer:
             self.logger.info("🚀 Initializing S/R Optuna Optimizer...")
 
             # Initialize SR predictor
-            self.sr_predictor = await setup_sr_breakout_predictor(self.config)
+            # Use optimized configuration
+        optimized_config = ensure_optimized_sr_config(self.config)
+        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
             if not self.sr_predictor:
                 self.logger.error("❌ Failed to initialize SR predictor")
                 return False

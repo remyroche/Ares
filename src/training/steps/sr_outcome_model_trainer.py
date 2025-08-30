@@ -78,7 +78,11 @@ class SROutcomeModelTrainer:
         os.makedirs(self.artifacts_dir, exist_ok=True)
 
         # Initialize components
-        self.sr_predictor = SRBreakoutPredictor(config)
+        # Initialize SRBreakoutPredictor with optimized parameters
+        sr_config = config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        self.sr_predictor = SRBreakoutPredictor(sr_config)
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
         self.models = {}  # Store individual models

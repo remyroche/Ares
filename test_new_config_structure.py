@@ -324,7 +324,7 @@ def test_step12_integration():
             return True
         
         # Import step12 class
-        from training.steps.step12_final_parameters_optimization_new import FinalParametersOptimizationStepNew
+        from training.steps.step17_final_parameters_optimization_new import FinalParametersOptimizationStepNew
         
         # Create step12 instance
         config = {"test": True}

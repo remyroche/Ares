@@ -34,8 +34,11 @@ class UnifiedRegimeIntelligenceRuntime:
         self.config = config
         self.logger = logger
 
-        # Initialize SRBreakoutPredictor for S/R monitoring
-        self.sr_predictor = SRBreakoutPredictor(config)
+        # Initialize SRBreakoutPredictor for S/R monitoring with optimized parameters
+        sr_config = config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        self.sr_predictor = SRBreakoutPredictor(sr_config)
         self.sr_outcome_model = None
 
         # S/R monitoring configuration

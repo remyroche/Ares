@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
+from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ensure_optimized_sr_config
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
@@ -86,7 +86,9 @@ class SRWeightOptimizer:
             self.logger.info("Initializing SR Weight Optimizer...")
 
             # Initialize SR predictor
-            self.sr_predictor = await setup_sr_breakout_predictor(self.config)
+            # Use optimized configuration
+        optimized_config = ensure_optimized_sr_config(self.config)
+        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
 
             if not self.sr_predictor:
                 self.logger.error("Failed to initialize SR predictor")

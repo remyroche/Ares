@@ -3260,7 +3260,7 @@ async def setup_sr_breakout_predictor(
     config: dict[str, Any] | None = None,
 ) -> SRBreakoutPredictor | None:
     """
-    Setup and return a configured SRBreakoutPredictor instance.
+    Setup and return a configured SRBreakoutPredictor instance with optimized parameters.
 
     Args:
         config: Configuration dictionary
@@ -3269,10 +3269,31 @@ async def setup_sr_breakout_predictor(
         SRBreakoutPredictor: Configured SR breakout predictor instance
     """
     try:
-        predictor = SRBreakoutPredictor(config or {})
+        # Ensure optimized parameters are enabled
+        sr_config = config.copy() if config else {}
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        
+        predictor = SRBreakoutPredictor(sr_config)
         if await predictor.initialize():
             return predictor
         return None
     except Exception as e:
         system_logger.exception(f"Failed to setup SR Breakout Predictor: {e}")
         return None
+
+
+def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ensure that the configuration has optimized S/R parameters enabled.
+    
+    Args:
+        config: Original configuration dictionary
+        
+    Returns:
+        dict: Configuration with optimized S/R parameters enabled
+    """
+    sr_config = config.copy()
+    sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+    sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+    return sr_config

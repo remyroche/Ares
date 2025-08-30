@@ -41,8 +41,11 @@ class TacticianSpecialistTrainingStep:
         self.logger = system_logger
         self.models: dict[str, Any] = {}
 
-        # Initialize SRBreakoutPredictor for S/R level integration
-        self.sr_predictor = SRBreakoutPredictor(config)
+        # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
+        sr_config = config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        self.sr_predictor = SRBreakoutPredictor(sr_config)
 
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None

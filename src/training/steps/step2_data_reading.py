@@ -396,10 +396,16 @@ async def run_step(
 if __name__ == "__main__":
     # Test the step
     async def test():
+        # Test with parameters - these should be passed as arguments in real usage
+        # Note: In real usage, these would be command line arguments or function parameters
+        test_symbol = "TEST_SYMBOL"  # Placeholder for testing
+        test_exchange = "TEST_EXCHANGE"  # Placeholder for testing
+        test_timeframe = "1m"  # Placeholder for testing
+        
         result = await run_step_enhanced(
-            symbol="ETHUSDT",
-            exchange="BINANCE",
-            timeframe="1m",
+            symbol=test_symbol,
+            exchange=test_exchange,
+            timeframe=test_timeframe,
             data_dir=None  # Will use structured directory
         )
         print(f"Result: {result}")

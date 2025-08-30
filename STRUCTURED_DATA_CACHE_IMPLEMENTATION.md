@@ -99,6 +99,12 @@ data_cache/
   - `processed/` - For processed data from step2
   - `backup_pre_unified/` - For backups before unification
 
+### 2. Parameterization
+- **Dynamic Parameters**: All functions now use exchange and symbol parameters from function arguments
+- **No Hardcoded Values**: Removed all hardcoded "BINANCE" and "ETHUSDT" default values
+- **Required Parameters**: Symbol and exchange are now required parameters with proper validation
+- **Flexible Defaults**: `data_dir` defaults to `None` and is constructed dynamically
+
 ### 2. File Naming Convention
 - **Klines**: `klines_{EXCHANGE}_{SYMBOL}_{TIMEFRAME}_consolidated.parquet`
 - **Aggtrades**: `aggtrades_{EXCHANGE}_{SYMBOL}_consolidated.parquet`
@@ -109,6 +115,7 @@ data_cache/
 - All functions now accept `data_dir=None` as default
 - When `data_dir` is `None`, the structured directory is automatically constructed
 - When `data_dir` is provided, it's used as-is (allowing custom paths)
+- Symbol and exchange parameters are required (no more hardcoded defaults)
 
 ### 4. Configuration Updates
 - `DownloadConfig` classes now include `data_dir` parameter
@@ -196,17 +203,22 @@ for symbol, exchange, timeframe in assets:
 
 ## Testing
 
-A comprehensive test script (`test_structured_data_cache_simple.py`) has been created to verify:
+Comprehensive test scripts have been created to verify:
 
 1. **Directory Structure Creation**: Ensures proper directory hierarchy
 2. **File Path Construction**: Validates correct file naming
 3. **Directory Listing**: Confirms proper organization
 4. **Path Resolution**: Tests absolute and relative path handling
 5. **Multiple Combinations**: Verifies support for different exchange/asset pairs
+6. **Parameterization**: Ensures all functions use dynamic parameters instead of hardcoded values
 
 ### Running Tests
 ```bash
-python3 test_structured_data_cache_simple.py
+# Test directory structure
+python3 test_structured_data_cache_simple.py --symbol BTCUSDT --exchange COINBASE --timeframe 5m
+
+# Test with different parameters
+python3 test_structured_data_cache_simple.py --symbol ADAUSDT --exchange BINANCE --timeframe 15m
 ```
 
 ## Migration Notes

@@ -649,7 +649,7 @@ class UnifiedDataConverter:
 		symbol: str,
 		exchange: str,
 		timeframe: str = "1m",
-		data_dir: str = "data_cache",
+		data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
 		force_rerun: bool = False,
 	) -> bool:
 		try:

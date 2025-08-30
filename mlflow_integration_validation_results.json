@@ -1,0 +1,890 @@
+{
+  "step1_data_collection.py": {
+    "file_exists": true,
+    "step_number": "1",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step2_data_reading.py": {
+    "file_exists": true,
+    "step_number": "2",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": true,
+      "methods_decorated": 2,
+      "all_methods_decorated": true
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": true,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step2_5_sr_optimization.py": {
+    "file_exists": true,
+    "step_number": "2_5",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": true,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step3_hmm_regime_discovery.py": {
+    "file_exists": true,
+    "step_number": "3",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": false,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step4_triple_barrier_method.py": {
+    "file_exists": true,
+    "step_number": "4",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": true,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step5_labeling.py": {
+    "file_exists": true,
+    "step_number": "5",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": true,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step6_feature_engineering.py": {
+    "file_exists": true,
+    "step_number": "6",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": false,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step7_enhanced_matrix_operations.py": {
+    "file_exists": true,
+    "step_number": "7",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": true
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step8_regime_data_splitting.py": {
+    "file_exists": true,
+    "step_number": "8",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": true,
+      "methods_decorated": 2,
+      "all_methods_decorated": true
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step9_hmm_based_training.py": {
+    "file_exists": true,
+    "step_number": "9",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": false,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step9_5_hmm_lm_generalist_training.py": {
+    "file_exists": true,
+    "step_number": "9_5",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": true,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": true,
+      "create_detailed_step_report_call": true,
+      "log_step_report_call": true,
+      "log_step_metrics_call": true
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step9_5_multi_timeframe_hmm_ensemble.py": {
+    "file_exists": true,
+    "step_number": "9_5",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step10_unified_regime_intelligence.py": {
+    "file_exists": true,
+    "step_number": "10",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step11_analyst_creation.py": {
+    "file_exists": true,
+    "step_number": "11",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step12_analyst_enhancement.py": {
+    "file_exists": true,
+    "step_number": "12",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step13_analyst_ensemble_creation.py": {
+    "file_exists": true,
+    "step_number": "13",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step14_tactician_labeling.py": {
+    "file_exists": true,
+    "step_number": "14",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step15_tactician_specialist_training.py": {
+    "file_exists": true,
+    "step_number": "15",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step16_confidence_calibration.py": {
+    "file_exists": true,
+    "step_number": "16",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step17_final_parameters_optimization.py": {
+    "file_exists": true,
+    "step_number": "17",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step18_walk_forward_validation.py": {
+    "file_exists": true,
+    "step_number": "18",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step19_monte_carlo_validation.py": {
+    "file_exists": true,
+    "step_number": "19",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step20_ab_testing.py": {
+    "file_exists": true,
+    "step_number": "20",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": true,
+      "log_step_report": true,
+      "create_detailed_step_report": true,
+      "log_step_metrics": true,
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": true,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  },
+  "step21_saving.py": {
+    "file_exists": true,
+    "step_number": "21",
+    "imports": {
+      "enhanced_mlflow_integration": true,
+      "with_enhanced_mlflow_logging": false,
+      "log_step_report": true,
+      "create_detailed_step_report": false,
+      "log_step_metrics": false,
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true
+    },
+    "decorator": {
+      "decorator_present": false,
+      "execute_methods_found": false,
+      "methods_decorated": 0,
+      "all_methods_decorated": false
+    },
+    "artifact_logging": {
+      "method_present": false,
+      "create_detailed_step_report_call": false,
+      "log_step_report_call": false,
+      "log_step_metrics_call": false
+    },
+    "metadata": {
+      "asset": false,
+      "exchange": false,
+      "lookback_period": false,
+      "project_version": false,
+      "date": false
+    },
+    "standardized_naming": {
+      "log_step_dataframe_with_standardized_name": false,
+      "log_step_artifact_with_standardized_name": true,
+      "standardized_naming_pattern": false
+    }
+  }
+}

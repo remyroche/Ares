@@ -92,6 +92,7 @@ class DownloadConfig:
     exchange: str
     interval: str
     lookback_years: int
+    data_dir: str = None  # Will be constructed as data_cache/exchange/asset/ if None
     max_concurrent_downloads: int = 5
     max_concurrent_requests: int = 10
     chunk_size: int = 1000
@@ -111,7 +112,11 @@ class OptimizedDataDownloader:
         self.session = None
         self.semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         self.download_semaphore = asyncio.Semaphore(config.max_concurrent_downloads)
-        self.cache_dir = "data_cache"
+        # Create structured cache directory: data_cache/exchange/asset/
+        if config.data_dir is None:
+            self.cache_dir = os.path.join("data_cache", config.exchange.lower(), config.symbol.lower())
+        else:
+            self.cache_dir = config.data_dir
         # Ensure cache directory exists early
         os.makedirs(self.cache_dir, exist_ok=True)
         # Initialize exchange client placeholder so attributes exist before initialize()

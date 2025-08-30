@@ -631,6 +631,7 @@ class UnifiedDataConverter:
 	def __init__(self, config: dict[str, Any]) -> None:
 		self.config = config
 		self.logger = system_logger.getChild("UnifiedDataConverter")
+		# Initialize with default data_cache, will be updated in execute method
 		self.data_cache_dir = "data_cache"
 		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
 		self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
@@ -648,11 +649,12 @@ class UnifiedDataConverter:
 		symbol: str,
 		exchange: str,
 		timeframe: str = "1m",
-		data_dir: str = "data_cache",
+		data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
 		force_rerun: bool = False,
 	) -> bool:
 		try:
-			self.data_cache_dir = data_dir
+			# Create structured cache directory: data_cache/exchange/asset/
+			self.data_cache_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
 			self.unified_dir = os.path.join(self.data_cache_dir, "unified")
 			self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
 			os.makedirs(self.unified_dir, exist_ok=True)
@@ -1378,7 +1380,7 @@ async def run_step(
 	symbol: str,
 	exchange: str,
 	timeframe: str = "1m",
-	data_dir: str = "data_cache",
+	data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
 	force_rerun: bool = False,
 ) -> bool:
 	# Initialize timing and logging
@@ -1390,6 +1392,9 @@ async def run_step(
 	print(f"🎯 Symbol: {symbol}")
 	print(f"🏢 Exchange: {exchange}")
 	print(f"📊 Timeframe: {timeframe}")
+	# Construct structured data directory
+	if data_dir is None:
+		data_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
 	print(f"📁 Data directory: {data_dir}")
 	print(f"🔄 Force rerun: {force_rerun}")
 	print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

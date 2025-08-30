@@ -1,0 +1,232 @@
+2025-08-30 10:34:12,304 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-30 10:34:12,777 INFO AresTradingSystem.System.MainBacktestingTest 🚀 Starting S/R Backtesting Validation Tests - -
+2025-08-30 10:34:12,777 INFO AresTradingSystem.System.MainBacktestingTest This demonstrates how S/R levels are validated through proper backtesting - -
+2025-08-30 10:34:12,777 INFO AresTradingSystem.System.MainBacktestingTest and how success metrics are calculated to assess S/R level effectiveness. - -
+2025-08-30 10:34:12,777 INFO AresTradingSystem.System.TestSRBacktesting 🚀 Starting S/R Backtesting Validation Test - -
+2025-08-30 10:34:12,778 INFO AresTradingSystem.System.TestSRBacktesting 📊 Generating realistic market data with known S/R levels... - -
+2025-08-30 10:34:12,788 INFO AresTradingSystem.System.TestSRBacktesting Generated 1000 data points - -
+2025-08-30 10:34:12,788 INFO AresTradingSystem.System.TestSRBacktesting Price range: 66.02 - 106.79 - -
+2025-08-30 10:34:12,788 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:34:12,788 INFO AresTradingSystem.System.TestSRBacktesting TEST 1: Direct S/R Backtesting Validation - -
+2025-08-30 10:34:12,788 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:34:12,789 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-30 10:34:12,789 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-30 10:34:12,789 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-30 10:34:12,789 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-30 10:34:12,789 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-30 10:34:12,792 WARNING AresTradingSystem.System.DataQuality.SR context calculation input validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,818 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ DBSCAN clustering: 2 clusters, 3 noise points filtered - -
+2025-08-30 10:34:12,820 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,822 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,843 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:12,845 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,846 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:12,848 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,869 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:12,869 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:12,870 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:12,872 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,874 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,897 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:12,899 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,899 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:12,901 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:12,922 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:12,922 ERROR AresTradingSystem.System.SRBreakoutPredictor Error getting S/R context: invalid index to scalar variable. - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.DirectBacktesting Detected 0 support levels and 0 resistance levels - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator 🔍 Starting S/R level validation with 0 levels - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator 📊 S/R Validation Score Components: - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   Bounce Score: 0.000 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   False Breakout Score: 1.000 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   Volume Score: 0.000 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   Confidence Score: 0.000 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   Level Accuracy Score: 0.000 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator   Overall S/R Validation Score: 0.250 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.SRBacktestingValidator ✅ S/R validation completed. Validation score: 0.250 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.DirectBacktesting 📊 Backtesting Results: - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.DirectBacktesting   Total Levels Tested: 0 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.DirectBacktesting   Successful Levels: 0 - -
+2025-08-30 10:34:12,922 INFO AresTradingSystem.System.DirectBacktesting   Level Detection Accuracy: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting 
+🎯 S/R Performance Metrics: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Overall Bounce Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Overall Breakout Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   False Breakout Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting 
+📈 Support vs Resistance Performance: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Support Bounce Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Resistance Bounce Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Support Breakout Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Resistance Breakout Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting 
+📊 Volume Analysis: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Average Volume Spike Ratio: 0.00x - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Volume Confirmation Rate: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Institutional Volume Ratio: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Volume Cluster Score: 0.00 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting 
+🎯 S/R Validation Score: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Overall S/R Validation Score: 0.250 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Level Detection Accuracy: 0.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting   Average Confidence Score: 0.000 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.DirectBacktesting 
+🎯 Individual Level Analysis: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment 
+🔍 S/R Level Validity Assessment: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment ================================================== - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ❌ Bounce rate too low: 0.00% < 60.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ❌ Confidence score too low: 0.000 < 0.500 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ✅ False breakout rate is acceptable - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ❌ Volume confirmation too low: 0.00% < 50.00% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ❌ Validation score too low: 0.250 < 0.700 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   ❌ Level detection accuracy too low: 0.00% < 50% - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment 
+⚠️  VERDICT: S/R levels need IMPROVEMENT - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment    S/R Validation Score: 0.250 - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment 
+💡 Recommendations: - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   - Increase bounce rate by improving S/R detection algorithms - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   - Improve volume analysis to confirm S/R level significance - -
+2025-08-30 10:34:12,923 INFO AresTradingSystem.System.SRValidityAssessment   - Enhance level detection accuracy through parameter optimization - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRValidityAssessment   - Focus on improving overall S/R validation metrics - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.TestSRBacktesting TEST 2: S/R Detection with Backtesting Optimization - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRDetectionOptimizer 🚀 Initializing S/R Detection Optimizer... - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRDetectionOptimizer ✅ S/R Detection Optimizer initialized successfully - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.OptimizationBacktesting 🎯 Running S/R optimization with backtesting validation... - -
+2025-08-30 10:34:12,924 INFO AresTradingSystem.System.SRDetectionOptimizer 🎯 Starting comprehensive S/R detection optimization... - -
+2025-08-30 10:34:12,926 ERROR AresTradingSystem.System.SRDetectionOptimizer Optuna optimization failed: asyncio.run() cannot be called from a running event loop - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.TestSRBacktesting TEST 3: Success Metrics Analysis - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SuccessMetrics 📊 Analyzing S/R Level Success Metrics... - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-30 10:34:12,926 INFO AresTradingSystem.System.SuccessMetrics 
+🔧 Testing Default parameters... - -
+2025-08-30 10:34:12,929 WARNING AresTradingSystem.System.DataQuality.SR context calculation input validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,959 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ DBSCAN clustering: 2 clusters, 3 noise points filtered - -
+2025-08-30 10:34:12,961 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,963 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,984 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:12,987 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:12,987 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:12,989 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,010 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,010 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,010 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,012 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,014 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,035 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:13,037 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,037 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:13,039 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,060 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,060 ERROR AresTradingSystem.System.SRBreakoutPredictor Error getting S/R context: invalid index to scalar variable. - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator 🔍 Starting S/R level validation with 0 levels - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator 📊 S/R Validation Score Components: - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator   Bounce Score: 0.000 - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator   False Breakout Score: 1.000 - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator   Volume Score: 0.000 - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator   Confidence Score: 0.000 - -
+2025-08-30 10:34:13,060 INFO AresTradingSystem.System.SRBacktestingValidator   Level Accuracy Score: 0.000 - -
+2025-08-30 10:34:13,061 INFO AresTradingSystem.System.SRBacktestingValidator   Overall S/R Validation Score: 0.250 - -
+2025-08-30 10:34:13,061 INFO AresTradingSystem.System.SRBacktestingValidator ✅ S/R validation completed. Validation score: 0.250 - -
+2025-08-30 10:34:13,061 INFO AresTradingSystem.System.SuccessMetrics 
+🔧 Testing Conservative parameters... - -
+2025-08-30 10:34:13,063 WARNING AresTradingSystem.System.DataQuality.SR context calculation input validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,091 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ DBSCAN clustering: 2 clusters, 3 noise points filtered - -
+2025-08-30 10:34:13,093 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,095 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,116 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:13,118 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,118 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:13,120 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,141 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,141 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,141 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,144 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,146 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,166 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:13,169 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,169 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:13,171 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,192 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,192 ERROR AresTradingSystem.System.SRBreakoutPredictor Error getting S/R context: invalid index to scalar variable. - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator 🔍 Starting S/R level validation with 0 levels - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator 📊 S/R Validation Score Components: - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   Bounce Score: 0.000 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   False Breakout Score: 1.000 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   Volume Score: 0.000 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   Confidence Score: 0.000 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   Level Accuracy Score: 0.000 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator   Overall S/R Validation Score: 0.250 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SRBacktestingValidator ✅ S/R validation completed. Validation score: 0.250 - -
+2025-08-30 10:34:13,192 INFO AresTradingSystem.System.SuccessMetrics 
+🔧 Testing Aggressive parameters... - -
+2025-08-30 10:34:13,194 WARNING AresTradingSystem.System.DataQuality.SR context calculation input validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,219 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ DBSCAN clustering: 2 clusters, 3 noise points filtered - -
+2025-08-30 10:34:13,221 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,223 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,244 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:13,246 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,247 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:13,249 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,270 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,270 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,270 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,272 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,274 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,295 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 17 S/R levels - -
+2025-08-30 10:34:13,297 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,297 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 17 S/R levels - -
+2025-08-30 10:34:13,299 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 17 S/R levels - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 17 S/R levels - -
+2025-08-30 10:34:13,320 ERROR AresTradingSystem.System.SRBreakoutPredictor Error calculating comprehensive strength: 'int' object has no attribute 'get' - -
+2025-08-30 10:34:13,320 ERROR AresTradingSystem.System.SRBreakoutPredictor Error getting S/R context: invalid index to scalar variable. - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator 🔍 Starting S/R level validation with 0 levels - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator 📊 S/R Validation Score Components: - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   Bounce Score: 0.000 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   False Breakout Score: 1.000 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   Volume Score: 0.000 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   Confidence Score: 0.000 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   Level Accuracy Score: 0.000 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator   Overall S/R Validation Score: 0.250 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SRBacktestingValidator ✅ S/R validation completed. Validation score: 0.250 - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SuccessMetrics 
+📊 Parameter Set Comparison: - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SuccessMetrics ========================================================================================== - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SuccessMetrics Parameter Set   Levels   Success  Accuracy   Bounce   Volume   Confidence Score    - -
+2025-08-30 10:34:13,320 INFO AresTradingSystem.System.SuccessMetrics ========================================================================================== - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics Default         0        0        0.00%      0.00%    0.00%    0.000      0.250    - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics Conservative    0        0        0.00%      0.00%    0.00%    0.000      0.250    - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics Aggressive      0        0        0.00%      0.00%    0.00%    0.000      0.250    - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics 
+🏆 Best Performing Parameter Set: Default - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics    S/R Validation Score: 0.250 - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics    Level Detection Accuracy: 0.00% - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics    Bounce Rate: 0.00% - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.SuccessMetrics    Volume Confirmation: 0.00% - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.TestSRBacktesting 🎉 All backtesting validation tests completed! - -
+2025-08-30 10:34:13,321 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -

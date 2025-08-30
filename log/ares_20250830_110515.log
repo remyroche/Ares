@@ -1,0 +1,48 @@
+2025-08-30 11:05:15,273 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-30 11:05:15,716 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-30 11:05:15,716 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-30 11:05:15,716 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-30 11:05:15,716 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-30 11:05:15,716 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-30 11:05:15,719 WARNING AresTradingSystem.System.DataQuality.SR context calculation input validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,734 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ DBSCAN clustering: 2 clusters, 1 noise points filtered - -
+2025-08-30 11:05:15,736 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,738 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,762 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 19 S/R levels - -
+2025-08-30 11:05:15,764 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,764 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 19 S/R levels - -
+2025-08-30 11:05:15,766 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,789 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 19 S/R levels - -
+2025-08-30 11:05:15,790 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 19 S/R levels - -
+2025-08-30 11:05:15,790 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated comprehensive strength for 19 S/R levels - -
+2025-08-30 11:05:15,792 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,794 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,817 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 19 S/R levels - -
+2025-08-30 11:05:15,819 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,820 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 19 S/R levels - -
+2025-08-30 11:05:15,822 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,845 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 19 S/R levels - -
+2025-08-30 11:05:15,845 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 19 S/R levels - -
+2025-08-30 11:05:15,845 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated comprehensive strength for 19 S/R levels - -
+2025-08-30 11:05:15,848 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,848 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated Fibonacci levels with sensitivity 0.7: 10 levels - -
+2025-08-30 11:05:15,850 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,850 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Detected Elliott Wave pattern with confidence 0.700 (threshold: 0.6) - -
+2025-08-30 11:05:15,850 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Detected Elliott Wave pattern: impulse - -
+2025-08-30 11:05:15,852 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,883 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Order flow analysis complete: POC at 102.61, 10 HVN levels - -
+2025-08-30 11:05:15,883 ERROR AresTradingSystem.System.SRBreakoutPredictor Error getting S/R context: cannot access local variable 'context' where it is not associated with a value - -
+2025-08-30 11:05:15,885 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-30 11:05:15,885 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-30 11:05:15,885 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-30 11:05:15,885 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-30 11:05:15,885 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-30 11:05:15,887 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,889 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,893 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated touch counts for 3 S/R levels - -
+2025-08-30 11:05:15,895 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,895 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated age scores for 3 S/R levels - -
+2025-08-30 11:05:15,897 WARNING AresTradingSystem.System.DataQuality.data_validation ⚠️ Input data quality issues: ["input_arg_1: Highly correlated feature pairs: [('open', 'high'), ('open', 'low'), ('open', 'close'), ('high', 'low'), ('high', 'close'), ('low', 'close')]"] - -
+2025-08-30 11:05:15,901 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated bounce rates for 3 S/R levels - -
+2025-08-30 11:05:15,901 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated isolation scores for 3 S/R levels - -
+2025-08-30 11:05:15,901 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ Calculated comprehensive strength for 3 S/R levels - -

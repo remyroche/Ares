@@ -124,17 +124,15 @@ class DynamicBarrierCalculator:
         self, 
         timeframe: str = "1m"
     ) -> Dict[str, Tuple[float, float]]:
-        """Calculate all 4 dynamic barrier combinations for Tactician.
+        """Calculate 2 dynamic barrier combinations for Tactician.
         
         Args:
             timeframe: The timeframe for calculation ("1m" or "5m")
             
         Returns:
-            Dictionary with 4 barrier combinations:
-            - upper_50_lower_50: (50% upper, 50% lower)
-            - upper_50_lower_25: (50% upper, 25% lower) 
-            - upper_25_lower_50: (25% upper, 50% lower)
-            - upper_25_lower_25: (25% upper, 25% lower)
+            Dictionary with 2 barrier combinations:
+            - barrier_50_50: (50% upper, 50% lower)
+            - barrier_25_25: (25% upper, 25% lower)
         """
         try:
             # Validate timeframe
@@ -146,27 +144,19 @@ class DynamicBarrierCalculator:
             analyst_upper = self.analyst_config["profit_take_multiplier"]  # Upper barrier (profit take)
             analyst_lower = self.analyst_config["stop_loss_multiplier"]    # Lower barrier (stop loss)
             
-            # Calculate all 4 barrier combinations
+            # Calculate 2 barrier combinations
             barriers = {
-                "upper_50_lower_50": (
+                "barrier_50_50": (
                     analyst_upper * self.upper_barrier_50_fraction,  # 50% upper
                     analyst_lower * self.lower_barrier_50_fraction   # 50% lower
                 ),
-                "upper_50_lower_25": (
-                    analyst_upper * self.upper_barrier_50_fraction,  # 50% upper
-                    analyst_lower * self.lower_barrier_25_fraction   # 25% lower
-                ),
-                "upper_25_lower_50": (
-                    analyst_upper * self.upper_barrier_25_fraction,  # 25% upper
-                    analyst_lower * self.lower_barrier_50_fraction   # 50% lower
-                ),
-                "upper_25_lower_25": (
+                "barrier_25_25": (
                     analyst_upper * self.upper_barrier_25_fraction,  # 25% upper
                     analyst_lower * self.lower_barrier_25_fraction   # 25% lower
                 )
             }
             
-            self.logger.info(f"🎯 4 Dynamic Barrier Combinations Calculated for {timeframe}:")
+            self.logger.info(f"🎯 2 Dynamic Barrier Combinations Calculated for {timeframe}:")
             self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
             for name, (upper, lower) in barriers.items():
                 self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
@@ -178,10 +168,8 @@ class DynamicBarrierCalculator:
             self.logger.error(f"❌ Error calculating dynamic barriers: {e}")
             # Return fallback values
             return {
-                "upper_50_lower_50": (0.001, 0.0005),
-                "upper_50_lower_25": (0.001, 0.00025),
-                "upper_25_lower_50": (0.0005, 0.0005),
-                "upper_25_lower_25": (0.0005, 0.00025)
+                "barrier_50_50": (0.001, 0.0005),
+                "barrier_25_25": (0.0005, 0.00025)
             }
 
     # Removed volatility and market condition adjustment methods
@@ -193,19 +181,19 @@ class DynamicBarrierCalculator:
         return 0.5, 0.5
 
     def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
-        """Calculate all 4 barrier combinations for both 1m and 5m timeframes."""
+        """Calculate 2 barrier combinations for both 1m and 5m timeframes."""
         try:
             barriers = {}
             
-            # Calculate 1m barriers (all 4 combinations)
+            # Calculate 1m barriers (2 combinations)
             if "1m" in self.timeframes:
                 barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
             
-            # Calculate 5m barriers (all 4 combinations)
+            # Calculate 5m barriers (2 combinations)
             if "5m" in self.timeframes:
                 barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
             
-            self.logger.info(f"📊 Multi-timeframe barriers calculated (4 combinations each):")
+            self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
             for tf, combinations in barriers.items():
                 self.logger.info(f"   {tf}:")
                 for name, (upper, lower) in combinations.items():
@@ -233,7 +221,7 @@ class DynamicBarrierCalculator:
     def validate_barrier_calculation(self, timeframe: str) -> Dict[str, Any]:
         """Validate barrier calculation for a timeframe."""
         try:
-            # Calculate all 4 barrier combinations
+            # Calculate 2 barrier combinations
             barriers = self.calculate_dynamic_barriers(timeframe)
             
             # Get Analyst values
@@ -248,14 +236,11 @@ class DynamicBarrierCalculator:
                 actual_lower_fraction = lower / analyst_lower
                 
                 # Get expected fractions based on barrier name
-                if "upper_50" in barrier_name:
+                if "50" in barrier_name:
                     expected_upper_fraction = self.upper_barrier_50_fraction
-                else:
-                    expected_upper_fraction = self.upper_barrier_25_fraction
-                    
-                if "lower_50" in barrier_name:
                     expected_lower_fraction = self.lower_barrier_50_fraction
                 else:
+                    expected_upper_fraction = self.upper_barrier_25_fraction
                     expected_lower_fraction = self.lower_barrier_25_fraction
                 
                 # Validate against expected fractions

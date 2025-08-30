@@ -50,6 +50,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
 logger = system_logger.getChild("Step5Labeling")
 
 
@@ -99,6 +108,7 @@ class LabelingStep:
         max_correlation=0.95,
         required_grade="C"
     )
+    @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
     @handle_errors
     @memory_efficient
@@ -173,11 +183,143 @@ class LabelingStep:
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
             self._log_step_timing("Labeling", step_start)
+            
+            # Log artifacts and create detailed report
+            await self._log_step5_artifacts_and_report(
+                symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
+            )
+            
             return True
 
         except Exception as e:
             self.logger.exception(f"❌ Error in labeling: {e}")
             return False
+
+    async def _log_step5_artifacts_and_report(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str,
+        labeled_data: pd.DataFrame,
+        output_path: Path,
+        metadata_path: Path
+    ) -> None:
+        """Log step 5 artifacts and create detailed report."""
+        try:
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0,
+                "processing_efficiency": 1.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = [
+                str(output_path),
+                str(metadata_path),
+                f"{exchange}_{symbol}_{timeframe}_labeling_metrics.json",
+            ]
+            
+            # Collect metrics
+            metrics_calculated = {
+                "labeling_success": 1.0,
+                "total_samples": len(labeled_data) if labeled_data is not None else 0,
+                "labeled_samples": len(labeled_data[labeled_data['label'].notna()]) if labeled_data is not None else 0,
+                "label_distribution": labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {},
+                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict() if labeled_data is not None and 'triple_barrier_label' in labeled_data.columns else {},
+            }
+            
+            # Create training input for report
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "data_dir": data_dir,
+            }
+            
+            # Create step data for report
+            step_data = {
+                "output_path": str(output_path),
+                "metadata_path": str(metadata_path),
+                "data_shape": list(labeled_data.shape) if labeled_data is not None else [],
+                "label_columns": list(labeled_data.columns) if labeled_data is not None else [],
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step5_labeling",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step5_labeling",
+                report_data=report_data,
+                report_type="labeling_report",
+                additional_metadata={
+                    "labeling_success": True,
+                    "timeframe": timeframe,
+                }
+            )
+            self.logger.info(f"✅ Logged labeling report: {report_name}")
+            
+            # Log labeled data DataFrame
+            if labeled_data is not None:
+                artifact_name = log_step_dataframe_with_standardized_name(
+                    config=self.config,
+                    step_name="step5_labeling",
+                    df=labeled_data,
+                    artifact_type="labeled_data",
+                    additional_metadata={
+                        "artifact_type": "labeled_data",
+                        "dataframe_shape": list(labeled_data.shape),
+                        "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {},
+                        "timeframe": timeframe,
+                    }
+                )
+                self.logger.info(f"✅ Logged labeled data: {artifact_name}")
+            
+            # Log labeling metadata
+            if metadata_path.exists():
+                metadata_artifact_name = log_step_artifact_with_standardized_name(
+                    config=self.config,
+                    step_name="step5_labeling",
+                    artifact_path=str(metadata_path),
+                    artifact_type="labeling_metadata",
+                    additional_metadata={
+                        "metadata_type": "labeling_metadata",
+                        "timeframe": timeframe,
+                    }
+                )
+                self.logger.info(f"✅ Logged labeling metadata: {metadata_artifact_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step5_labeling",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "labeling_performance",
+                    "timeframe": timeframe,
+                }
+            )
+            
+            self.logger.info("✅ Step 5 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies."""

@@ -21,10 +21,11 @@ A comprehensive tool for downloading and analyzing cryptocurrency data to calcul
   - Movement size percentiles and patterns
 
 - **Triple Barrier Profit Analysis:**
-  - **Multiple barrier levels:** 0.5%, 1%, 2%, 3%, 5%
-  - **Daily profit calculations:** Average profit if 100% of movement captured
-  - **Profit frequency:** How often each barrier level is exceeded
-  - **Total potential profit:** Cumulative profit across all days
+  - **Multiple barrier levels:** 0.3% to 1.5% in 0.1% increments (13 levels)
+  - **Up/Down barriers:** Down barrier is half of up barrier (e.g., 1% up / 0.5% down)
+  - **No time limit:** Trades continue until barrier is hit
+  - **Entry signals:** Enter on price direction change
+  - **Exit conditions:** Take profit at up barrier, stop loss at down barrier
 
 - **Intraday Pattern Analysis:**
   - Hourly price movement patterns
@@ -110,12 +111,15 @@ This will:
 - **Price Change Standard Deviation:** Variability of price changes
 
 ### Triple Barrier Profit Metrics
-- **Average Daily Profit:** Mean profit per day when barrier is exceeded
-- **Profit Frequency:** Percentage of days where barrier is exceeded
-- **Total Days With Profit:** Number of days exceeding the barrier
-- **Max Daily Profit:** Maximum single-day profit
-- **Total Potential Profit:** Cumulative profit across all days
-- **Average All Movements:** Mean of all daily movements (including non-profitable)
+- **Total Trades:** Number of completed trades
+- **Average Profit:** Mean profit per trade
+- **Win Rate:** Percentage of profitable trades
+- **Profit Frequency:** Trades per period
+- **Max Profit:** Maximum single trade profit
+- **Total Potential Profit:** Cumulative profit across all trades
+- **Average Trade Duration:** Mean time per trade (in 15-minute periods)
+- **Take Profit Rate:** Percentage of trades that hit take profit
+- **Stop Loss Rate:** Percentage of trades that hit stop loss
 
 ### Movement Statistics
 - **Movement Percentiles:** 10th, 25th, 50th, 75th, 90th, 95th, 99th percentiles
@@ -133,25 +137,24 @@ This will:
 ## Triple Barrier Analysis Details
 
 ### Barrier Levels Tested
-- **0.5% Barrier:** Captures small daily movements
-- **1.0% Barrier:** Captures moderate daily movements  
-- **2.0% Barrier:** Captures significant daily movements
-- **3.0% Barrier:** Captures large daily movements
-- **5.0% Barrier:** Captures extreme daily movements
+- **0.3% to 1.5%:** 13 barrier levels in 0.1% increments
+- **Up Barriers:** 0.3%, 0.4%, 0.5%, 0.6%, 0.7%, 0.8%, 0.9%, 1.0%, 1.1%, 1.2%, 1.3%, 1.4%, 1.5%
+- **Down Barriers:** Half of up barriers (0.15%, 0.2%, 0.25%, etc.)
 
-### Profit Calculation Method
-- **Daily Analysis:** Each day's open, high, low, close prices are analyzed
-- **Long Position:** Buy at open, sell at high (if profitable)
-- **Short Position:** Sell at open, buy at low (if profitable)
-- **Best Direction:** Choose the more profitable direction (long or short)
-- **Barrier Filter:** Only count profits that exceed the barrier level
-- **100% Capture:** Assumes perfect execution (no slippage, no fees)
+### Trading Logic
+- **Entry Signal:** Enter position when price direction changes (crosses previous close)
+- **Long Position:** Buy when price goes up, take profit at up barrier, stop loss at down barrier
+- **Short Position:** Sell when price goes down, take profit at down barrier, stop loss at up barrier
+- **No Time Limit:** Trades continue until either barrier is hit
+- **Perfect Execution:** Assumes no slippage, no fees, immediate execution
 
 ### Key Insights Provided
-- **Profit Potential:** Average daily profit if all movement is captured
-- **Frequency Analysis:** How often each barrier level is exceeded
+- **Profit Potential:** Average profit per trade for each barrier level
+- **Win Rate Analysis:** Success rate for each barrier configuration
+- **Trade Frequency:** How often trades occur for each barrier level
 - **Asset Comparison:** Which assets offer the best profit opportunities
 - **Risk Assessment:** Relationship between volatility and profit potential
+- **Barrier Performance:** Which barrier levels work best for each asset
 
 ## Supported Assets
 
@@ -191,7 +194,7 @@ Edit the barrier levels in `data_analyzer.py`:
 ```python
 triple_barrier_profits = self.calculate_triple_barrier_profits(
     symbol_data, 
-    barrier_levels=[0.005, 0.01, 0.02, 0.03, 0.05]  # 0.5%, 1%, 2%, 3%, 5%
+    barrier_levels=[0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015]  # 0.3% to 1.5%
 )
 ```
 

@@ -117,7 +117,7 @@ class BinanceDataDownloader:
             'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
         ])
         
-        # Convert types
+        # Convert types with optimal Parquet storage in mind
         numeric_columns = ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume',
                           'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
         
@@ -131,11 +131,18 @@ class BinanceDataDownloader:
         # Set index
         df.set_index('open_time', inplace=True)
         
-        # Remove unnecessary columns
+        # Remove unnecessary columns and ensure proper data types for Parquet
         df = df[['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume', 'number_of_trades']]
+        
+        # Ensure integer type for number_of_trades (better for Parquet)
+        df['number_of_trades'] = df['number_of_trades'].astype('int64')
         
         # Add symbol column
         df['symbol'] = symbol
+        
+        # Ensure all numeric columns are float64 for optimal Parquet storage
+        for col in ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume']:
+            df[col] = df[col].astype('float64')
         
         logger.info(f"Successfully downloaded {len(df)} klines for {symbol}")
         return df
@@ -177,6 +184,54 @@ class BinanceDataDownloader:
         logger.info(f"Total data downloaded: {len(combined_df)} klines across {len(all_data)} assets")
         return combined_df
 
+def verify_parquet_file(parquet_file, original_df):
+    """
+    Verify that the Parquet file was created correctly and contains the expected data
+    
+    Args:
+        parquet_file (Path): Path to the Parquet file
+        original_df (pd.DataFrame): Original DataFrame for comparison
+    """
+    try:
+        # Read the Parquet file back
+        loaded_df = pd.read_parquet(parquet_file)
+        
+        # Basic verification
+        if len(loaded_df) != len(original_df):
+            logger.error(f"Data length mismatch: Original {len(original_df)}, Loaded {len(loaded_df)}")
+            return False
+        
+        if loaded_df.columns.tolist() != original_df.columns.tolist():
+            logger.error(f"Column mismatch: Original {original_df.columns.tolist()}, Loaded {loaded_df.columns.tolist()}")
+            return False
+        
+        # Check data integrity for a few random rows
+        sample_size = min(100, len(original_df))
+        sample_indices = original_df.sample(n=sample_size).index
+        
+        for idx in sample_indices:
+            if idx in loaded_df.index:
+                original_row = original_df.loc[idx]
+                loaded_row = loaded_df.loc[idx]
+                
+                if not original_row.equals(loaded_row):
+                    logger.warning(f"Data mismatch at index {idx}")
+                    return False
+        
+        # File size check
+        file_size_mb = parquet_file.stat().st_size / (1024 * 1024)
+        logger.info(f"Parquet file verification successful:")
+        logger.info(f"  - File size: {file_size_mb:.2f} MB")
+        logger.info(f"  - Records: {len(loaded_df):,}")
+        logger.info(f"  - Columns: {len(loaded_df.columns)}")
+        logger.info(f"  - Compression ratio: {len(original_df) * len(original_df.columns) * 8 / (file_size_mb * 1024 * 1024):.1f}x")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error verifying Parquet file: {e}")
+        return False
+
 def main():
     """Main function to download cryptocurrency data"""
     
@@ -207,11 +262,30 @@ def main():
     output_dir = Path("data")
     output_dir.mkdir(exist_ok=True)
     
-    # Save to Parquet file
+    # Save to Parquet file with optimal settings
     output_file = output_dir / f"crypto_15m_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
-    df.to_parquet(output_file, compression='snappy')
     
-    logger.info(f"Data saved to {output_file}")
+    try:
+        # Save with optimal Parquet settings
+        df.to_parquet(
+            output_file, 
+            compression='snappy',
+            engine='pyarrow',
+            index=True  # Include the datetime index
+        )
+        
+        logger.info(f"Data saved to {output_file}")
+        
+        # Verify the Parquet file was created correctly
+        verify_parquet_file(output_file, df)
+        
+    except Exception as e:
+        logger.error(f"Error saving Parquet file: {e}")
+        # Fallback to CSV if Parquet fails
+        csv_file = output_file.with_suffix('.csv')
+        df.to_csv(csv_file)
+        logger.info(f"Data saved to CSV as fallback: {csv_file}")
+        return
     
     # Print summary statistics
     print("\n" + "="*50)

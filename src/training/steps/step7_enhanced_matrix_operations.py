@@ -176,10 +176,7 @@ class Step7EnhancedMatrixOperations:
             "sr_optimized_dbscan_eps", "sr_optimized_dbscan_min_samples",
             "sr_optimized_fibonacci_sensitivity", "sr_optimized_elliott_confidence",
             "sr_optimized_order_flow_threshold", "sr_optimized_tf_",
-            "sr_optimization_score", "sr_optimization_sharpe_ratio", "sr_optimization_win_rate",
-            "sr_optimization_max_drawdown", "sr_optimization_profit_factor",
-            "sr_optimization_signal_clarity", "sr_optimization_cv_score",
-            "sr_optimization_oos_score", "sr_optimization_statistical_significance",
+            "sr_optimization_score",
             
             # Additional SR features
             "sr_distance", "sr_proximity", "sr_zone_width", "sr_nearest_support",
@@ -475,11 +472,7 @@ class Step7EnhancedMatrixOperations:
                 "optimization_feature_count": len(optimization_df.columns)
             }
             
-            # 2. SR Optimization Performance Analysis
-            self.logger.info("📈 Analyzing SR optimization performance metrics...")
-            results["sr_optimization_performance_analysis"] = self._analyze_sr_optimization_performance(optimization_df)
-            
-            # 3. SR Optimization Parameter Analysis
+            # 2. SR Optimization Parameter Analysis
             self.logger.info("🔧 Analyzing SR optimization parameters...")
             results["sr_optimization_parameter_analysis"] = self._analyze_sr_optimization_parameters(optimization_df)
             
@@ -636,44 +629,7 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             return {"error": str(e)}
 
-    def _analyze_sr_optimization_performance(self, optimization_df: pd.DataFrame) -> dict[str, Any]:
-        """Analyze SR optimization performance metrics."""
-        try:
-            # Identify performance metrics
-            performance_features = [col for col in optimization_df.columns if "sr_optimization_" in col and any(metric in col for metric in [
-                "score", "sharpe", "win_rate", "drawdown", "profit_factor", "clarity", "cv_score", "oos_score", "significance"
-            ])]
-            
-            if not performance_features:
-                return {"error": "No performance metrics found"}
-            
-            performance_data = optimization_df[performance_features]
-            
-            # Calculate performance statistics
-            performance_stats = {}
-            for col in performance_data.columns:
-                values = performance_data[col].dropna()
-                if len(values) > 0:
-                    performance_stats[col] = {
-                        "mean": float(values.mean()),
-                        "std": float(values.std()),
-                        "min": float(values.min()),
-                        "max": float(values.max()),
-                        "median": float(values.median())
-                    }
-            
-            # Calculate performance correlations
-            performance_correlations = performance_data.corr()
-            
-            return {
-                "performance_features": performance_features,
-                "performance_statistics": performance_stats,
-                "performance_correlations": performance_correlations.to_dict(),
-                "overall_performance_score": np.mean([stats["mean"] for stats in performance_stats.values()])
-            }
-            
-        except Exception as e:
-            return {"error": str(e)}
+
 
     def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR optimization parameters."""
@@ -1201,10 +1157,6 @@ class Step7EnhancedMatrixOperations:
                     opt_analysis = matrix_results["sr_optimization_analysis"]
                     if "optimization_feature_count" in opt_analysis:
                         report.append(f"   SR Optimization Features: {opt_analysis['optimization_feature_count']}")
-                    if "sr_optimization_performance_analysis" in opt_analysis:
-                        perf_analysis = opt_analysis["sr_optimization_performance_analysis"]
-                        if "overall_performance_score" in perf_analysis:
-                            report.append(f"   SR Optimization Score: {perf_analysis['overall_performance_score']:.3f}")
                 
                 report.append("")
             
@@ -1244,14 +1196,7 @@ class Step7EnhancedMatrixOperations:
                 recommendations.append("• Validate SR feature stability across different market conditions")
                 recommendations.append("• Consider SR feature importance for model training prioritization")
             
-            if "sr_optimization_analysis" in matrix_results:
-                opt_analysis = matrix_results["sr_optimization_analysis"]
-                if "sr_optimization_performance_analysis" in opt_analysis:
-                    perf_score = opt_analysis["sr_optimization_performance_analysis"].get("overall_performance_score", 0)
-                    if perf_score < 0.5:
-                        recommendations.append("• SR optimization performance is low - consider re-optimization")
-                    else:
-                        recommendations.append("• SR optimization performance is good - proceed with current parameters")
+
             
             if not recommendations:
                 recommendations.append("• No immediate actions required - feature matrix is in good condition")

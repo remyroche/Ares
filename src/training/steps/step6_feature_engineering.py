@@ -855,28 +855,12 @@ async def _add_sr_optimization_features(
             features["sr_optimized_elliott_confidence"] = 0.6
             features["sr_optimized_order_flow_threshold"] = 1.5
         
-        # Add optimization performance metrics if available
+        # Add optimization score if available (keeping only the main optimization score)
         if hasattr(optimizer, 'best_result') and optimizer.best_result:
             features["sr_optimization_score"] = optimizer.best_result.optimization_score
-            features["sr_optimization_sharpe_ratio"] = optimizer.best_result.sharpe_ratio
-            features["sr_optimization_win_rate"] = optimizer.best_result.win_rate
-            features["sr_optimization_max_drawdown"] = optimizer.best_result.max_drawdown
-            features["sr_optimization_profit_factor"] = optimizer.best_result.profit_factor
-            features["sr_optimization_signal_clarity"] = optimizer.best_result.signal_clarity
-            features["sr_optimization_cv_score"] = optimizer.best_result.cross_validation_score
-            features["sr_optimization_oos_score"] = optimizer.best_result.out_of_sample_score
-            features["sr_optimization_statistical_significance"] = optimizer.best_result.statistical_significance
         else:
-            # Add default performance metrics
+            # Add default optimization score
             features["sr_optimization_score"] = 0.5
-            features["sr_optimization_sharpe_ratio"] = 0.0
-            features["sr_optimization_win_rate"] = 0.5
-            features["sr_optimization_max_drawdown"] = 0.0
-            features["sr_optimization_profit_factor"] = 1.0
-            features["sr_optimization_signal_clarity"] = 0.1
-            features["sr_optimization_cv_score"] = 0.5
-            features["sr_optimization_oos_score"] = 0.5
-            features["sr_optimization_statistical_significance"] = 0.0
         
         system_logger.info("✅ Added SR optimization features")
         return features

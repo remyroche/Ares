@@ -1,6 +1,6 @@
 # MLflow Integration Validation Report
 
-Generated: 2025-08-30T20:30:14.570594
+Generated: 2025-08-30T20:37:12.805009
 
 ## Summary
 
@@ -12,15 +12,15 @@ Generated: 2025-08-30T20:30:14.570594
 
 ## Detailed Results
 
-### step1_data_collection.py - ⚠️ Partial (78.8%)
+### step1_data_collection.py - ⚠️ Partial (85.0%)
 
-- **Imports**: 85.7%
+- **Imports**: 100.0%
   - ✅ enhanced_mlflow_integration
   - ✅ with_enhanced_mlflow_logging
   - ✅ log_step_report
   - ✅ create_detailed_step_report
   - ✅ log_step_metrics
-  - ❌ log_step_dataframe_with_standardized_name
+  - ✅ log_step_dataframe_with_standardized_name
   - ✅ log_step_artifact_with_standardized_name
 - **Decorator**: 25.0%
   - ✅ decorator_present
@@ -38,8 +38,8 @@ Generated: 2025-08-30T20:30:14.570594
   - ✅ lookback_period
   - ✅ project_version
   - ✅ date
-- **Standardized Naming**: 66.7%
-  - ❌ log_step_dataframe_with_standardized_name
+- **Standardized Naming**: 100.0%
+  - ✅ log_step_dataframe_with_standardized_name
   - ✅ log_step_artifact_with_standardized_name
   - ✅ standardized_naming_pattern
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Cryptocurrency Data Analyzer for Scalping/Swinging Analysis
-Analyzes OHLCV data to compare potential profits from different trading strategies
+Cryptocurrency Price Movement Analyzer
+Analyzes OHLCV data to calculate potential profits from different triple barrier methods
 """
 
 import pandas as pd
@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class CryptoDataAnalyzer:
+class CryptoPriceAnalyzer:
     def __init__(self, data_file):
         """
         Initialize analyzer with data file
@@ -49,7 +49,7 @@ class CryptoDataAnalyzer:
     
     def calculate_basic_metrics(self, symbol_data):
         """
-        Calculate basic metrics for a single asset
+        Calculate basic price movement metrics for a single asset
         
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
@@ -73,20 +73,123 @@ class CryptoDataAnalyzer:
         daily_lows = symbol_data.groupby(symbol_data.index.date)['low'].min()
         avg_daily_range = ((daily_highs - daily_lows) / daily_lows).mean()
         
+        # Intraday movement metrics
+        intraday_highs = symbol_data.groupby(symbol_data.index.date)['high'].max()
+        intraday_lows = symbol_data.groupby(symbol_data.index.date)['low'].min()
+        avg_intraday_movement = ((intraday_highs - intraday_lows) / intraday_lows).mean()
+        
+        # Price movement frequency
+        price_changes = symbol_data['close'].pct_change().abs()
+        avg_price_change = price_changes.mean()
+        price_change_std = price_changes.std()
+        
         return {
             'total_return': price_change,
             'volatility': volatility,
             'avg_volume': avg_volume,
             'volume_volatility': volume_volatility,
             'avg_daily_range': avg_daily_range,
+            'avg_intraday_movement': avg_intraday_movement,
+            'avg_price_change': avg_price_change,
+            'price_change_std': price_change_std,
             'total_volume': symbol_data['volume'].sum(),
             'avg_price': symbol_data['close'].mean(),
             'price_range': (symbol_data['high'].max() - symbol_data['low'].min()) / symbol_data['low'].min()
         }
     
+    def calculate_triple_barrier_profits(self, symbol_data, barrier_levels=[0.005, 0.01, 0.02, 0.03, 0.05]):
+        """
+        Calculate potential profits from triple barrier methods
+        
+        Args:
+            symbol_data (pd.DataFrame): Data for a single symbol
+            barrier_levels (list): List of barrier percentages to test
+            
+        Returns:
+            dict: Dictionary of triple barrier profit calculations
+        """
+        results = {}
+        
+        for barrier in barrier_levels:
+            # Calculate potential profits for each barrier level
+            barrier_results = self._calculate_single_barrier_profits(symbol_data, barrier)
+            results[f'barrier_{int(barrier*1000)}bp'] = barrier_results
+        
+        return results
+    
+    def _calculate_single_barrier_profits(self, symbol_data, barrier_pct):
+        """
+        Calculate profits for a single barrier level
+        
+        Args:
+            symbol_data (pd.DataFrame): Data for a single symbol
+            barrier_pct (float): Barrier percentage (e.g., 0.01 for 1%)
+            
+        Returns:
+            dict: Profit calculations for this barrier
+        """
+        # Group by day to calculate daily movements
+        daily_data = symbol_data.groupby(symbol_data.index.date).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        })
+        
+        # Calculate potential profits for each day
+        daily_profits = []
+        daily_movements = []
+        
+        for date, day_data in daily_data.iterrows():
+            open_price = day_data['open']
+            high_price = day_data['high']
+            low_price = day_data['low']
+            close_price = day_data['close']
+            
+            # Calculate potential profit if we captured 100% of the movement
+            # Long position: buy at open, sell at high
+            long_profit = (high_price - open_price) / open_price
+            
+            # Short position: sell at open, buy at low
+            short_profit = (open_price - low_price) / open_price
+            
+            # Take the better of long or short
+            best_profit = max(long_profit, short_profit)
+            
+            # Only count if it exceeds the barrier
+            if best_profit >= barrier_pct:
+                daily_profits.append(best_profit)
+                daily_movements.append(best_profit)
+            else:
+                daily_movements.append(best_profit)
+        
+        if not daily_profits:
+            return {
+                'avg_daily_profit': 0,
+                'total_days_with_profit': 0,
+                'profit_frequency': 0,
+                'max_daily_profit': 0,
+                'min_daily_profit': 0,
+                'profit_std': 0,
+                'total_potential_profit': 0,
+                'avg_all_movements': np.mean(daily_movements) if daily_movements else 0
+            }
+        
+        return {
+            'avg_daily_profit': np.mean(daily_profits),
+            'total_days_with_profit': len(daily_profits),
+            'profit_frequency': len(daily_profits) / len(daily_data),
+            'max_daily_profit': np.max(daily_profits),
+            'min_daily_profit': np.min(daily_profits),
+            'profit_std': np.std(daily_profits),
+            'total_potential_profit': np.sum(daily_profits),
+            'avg_all_movements': np.mean(daily_movements)
+        }
+    
     def calculate_intraday_patterns(self, symbol_data):
         """
-        Calculate intraday trading patterns
+        Calculate intraday price movement patterns
         
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
@@ -102,6 +205,7 @@ class CryptoDataAnalyzer:
         # Hourly patterns
         hourly_volume = symbol_data.groupby('hour')['volume'].mean()
         hourly_volatility = symbol_data.groupby('hour')['close'].pct_change().std()
+        hourly_price_changes = symbol_data.groupby('hour')['close'].pct_change().abs().mean()
         
         # Peak hours (highest volume)
         peak_hours = hourly_volume.nlargest(3).index.tolist()
@@ -109,246 +213,88 @@ class CryptoDataAnalyzer:
         # Day of week patterns
         daily_volume = symbol_data.groupby('day_of_week')['volume'].mean()
         daily_volatility = symbol_data.groupby('day_of_week')['close'].pct_change().std()
+        daily_price_changes = symbol_data.groupby('day_of_week')['close'].pct_change().abs().mean()
+        
+        # Best trading hours (highest price movements)
+        best_hours = hourly_price_changes.nlargest(3).index.tolist()
         
         return {
             'peak_hours': peak_hours,
+            'best_trading_hours': best_hours,
             'hourly_volume': hourly_volume.to_dict(),
             'hourly_volatility': hourly_volatility.to_dict(),
+            'hourly_price_changes': hourly_price_changes.to_dict(),
             'daily_volume': daily_volume.to_dict(),
-            'daily_volatility': daily_volatility.to_dict()
+            'daily_volatility': daily_volatility.to_dict(),
+            'daily_price_changes': daily_price_changes.to_dict()
         }
     
-    def simulate_scalping_strategy(self, symbol_data, take_profit_pct=0.005, stop_loss_pct=0.003):
+    def calculate_movement_statistics(self, symbol_data):
         """
-        Simulate a simple scalping strategy
+        Calculate detailed price movement statistics
         
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
-            take_profit_pct (float): Take profit percentage
-            stop_loss_pct (float): Stop loss percentage
             
         Returns:
-            dict: Scalping strategy results
+            dict: Movement statistics
         """
-        trades = []
-        position = None
-        entry_price = 0
+        # Calculate returns
+        returns = symbol_data['close'].pct_change().dropna()
         
-        for i in range(1, len(symbol_data)):
-            current_price = symbol_data['close'].iloc[i]
-            current_high = symbol_data['high'].iloc[i]
-            current_low = symbol_data['low'].iloc[i]
-            
-            if position is None:
-                # Look for entry signal (simple: price increase > 0.5%)
-                if symbol_data['close'].iloc[i] > symbol_data['close'].iloc[i-1] * 1.005:
-                    position = 'long'
-                    entry_price = current_price
-                    entry_time = symbol_data.index[i]
-            
-            elif position == 'long':
-                # Check for exit conditions
-                profit_target = entry_price * (1 + take_profit_pct)
-                stop_loss = entry_price * (1 - stop_loss_pct)
-                
-                if current_high >= profit_target:
-                    # Take profit
-                    exit_price = profit_target
-                    exit_time = symbol_data.index[i]
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': exit_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'take_profit'
-                    })
-                    position = None
-                    
-                elif current_low <= stop_loss:
-                    # Stop loss
-                    exit_price = stop_loss
-                    exit_time = symbol_data.index[i]
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': exit_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'stop_loss'
-                    })
-                    position = None
+        # Movement size distribution
+        movement_sizes = returns.abs()
         
-        if not trades:
-            return {
-                'total_trades': 0,
-                'win_rate': 0,
-                'avg_profit': 0,
-                'total_return': 0,
-                'max_drawdown': 0,
-                'sharpe_ratio': 0
-            }
+        # Calculate percentiles
+        percentiles = [10, 25, 50, 75, 90, 95, 99]
+        movement_percentiles = {}
+        for p in percentiles:
+            movement_percentiles[f'p{p}'] = movement_sizes.quantile(p/100)
         
-        trades_df = pd.DataFrame(trades)
-        winning_trades = trades_df[trades_df['profit'] > 0]
+        # Calculate movement frequency by size
+        small_movements = (movement_sizes <= 0.001).sum() / len(movement_sizes)  # <= 0.1%
+        medium_movements = ((movement_sizes > 0.001) & (movement_sizes <= 0.01)).sum() / len(movement_sizes)  # 0.1-1%
+        large_movements = (movement_sizes > 0.01).sum() / len(movement_sizes)  # > 1%
         
-        # Calculate metrics
-        total_trades = len(trades_df)
-        win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
-        avg_profit = trades_df['profit'].mean()
-        total_return = trades_df['profit'].sum()
-        
-        # Calculate drawdown
-        cumulative_returns = (1 + trades_df['profit']).cumprod()
-        running_max = cumulative_returns.expanding().max()
-        drawdown = (cumulative_returns - running_max) / running_max
-        max_drawdown = drawdown.min()
-        
-        # Calculate Sharpe ratio (simplified)
-        returns_std = trades_df['profit'].std()
-        sharpe_ratio = avg_profit / returns_std if returns_std > 0 else 0
+        # Calculate consecutive movement patterns
+        positive_runs = self._calculate_consecutive_runs(returns > 0)
+        negative_runs = self._calculate_consecutive_runs(returns < 0)
         
         return {
-            'total_trades': total_trades,
-            'win_rate': win_rate,
-            'avg_profit': avg_profit,
-            'total_return': total_return,
-            'max_drawdown': max_drawdown,
-            'sharpe_ratio': sharpe_ratio,
-            'trades': trades_df
+            'avg_movement': movement_sizes.mean(),
+            'median_movement': movement_sizes.median(),
+            'movement_percentiles': movement_percentiles,
+            'small_movements_pct': small_movements,
+            'medium_movements_pct': medium_movements,
+            'large_movements_pct': large_movements,
+            'avg_positive_run': positive_runs['avg_length'],
+            'avg_negative_run': negative_runs['avg_length'],
+            'max_positive_run': positive_runs['max_length'],
+            'max_negative_run': negative_runs['max_length']
         }
     
-    def simulate_swing_strategy(self, symbol_data, take_profit_pct=0.05, stop_loss_pct=0.03, hold_periods=96):
-        """
-        Simulate a simple swing trading strategy
+    def _calculate_consecutive_runs(self, condition_series):
+        """Calculate consecutive runs of True values"""
+        runs = []
+        current_run = 0
         
-        Args:
-            symbol_data (pd.DataFrame): Data for a single symbol
-            take_profit_pct (float): Take profit percentage
-            stop_loss_pct (float): Stop loss percentage
-            hold_periods (int): Maximum hold periods (96 = 1 day)
-            
-        Returns:
-            dict: Swing strategy results
-        """
-        trades = []
-        position = None
-        entry_price = 0
-        entry_time = None
-        hold_count = 0
+        for value in condition_series:
+            if value:
+                current_run += 1
+            else:
+                if current_run > 0:
+                    runs.append(current_run)
+                    current_run = 0
         
-        for i in range(1, len(symbol_data)):
-            current_price = symbol_data['close'].iloc[i]
-            current_high = symbol_data['high'].iloc[i]
-            current_low = symbol_data['low'].iloc[i]
-            
-            if position is None:
-                # Look for entry signal (simple: price increase > 2% over 4 periods)
-                if i >= 4:
-                    price_change_4p = (symbol_data['close'].iloc[i] - symbol_data['close'].iloc[i-4]) / symbol_data['close'].iloc[i-4]
-                    if price_change_4p > 0.02:
-                        position = 'long'
-                        entry_price = current_price
-                        entry_time = symbol_data.index[i]
-                        hold_count = 0
-            
-            elif position == 'long':
-                hold_count += 1
-                
-                # Check for exit conditions
-                profit_target = entry_price * (1 + take_profit_pct)
-                stop_loss = entry_price * (1 - stop_loss_pct)
-                
-                if current_high >= profit_target:
-                    # Take profit
-                    exit_price = profit_target
-                    exit_time = symbol_data.index[i]
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': exit_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'take_profit',
-                        'hold_periods': hold_count
-                    })
-                    position = None
-                    
-                elif current_low <= stop_loss:
-                    # Stop loss
-                    exit_price = stop_loss
-                    exit_time = symbol_data.index[i]
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': exit_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'stop_loss',
-                        'hold_periods': hold_count
-                    })
-                    position = None
-                    
-                elif hold_count >= hold_periods:
-                    # Time-based exit
-                    exit_price = current_price
-                    exit_time = symbol_data.index[i]
-                    profit = (exit_price - entry_price) / entry_price
-                    trades.append({
-                        'entry_time': entry_time,
-                        'exit_time': exit_time,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'profit': profit,
-                        'exit_reason': 'time_exit',
-                        'hold_periods': hold_count
-                    })
-                    position = None
+        if current_run > 0:
+            runs.append(current_run)
         
-        if not trades:
-            return {
-                'total_trades': 0,
-                'win_rate': 0,
-                'avg_profit': 0,
-                'total_return': 0,
-                'max_drawdown': 0,
-                'sharpe_ratio': 0,
-                'avg_hold_periods': 0
-            }
-        
-        trades_df = pd.DataFrame(trades)
-        winning_trades = trades_df[trades_df['profit'] > 0]
-        
-        # Calculate metrics
-        total_trades = len(trades_df)
-        win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
-        avg_profit = trades_df['profit'].mean()
-        total_return = trades_df['profit'].sum()
-        avg_hold_periods = trades_df['hold_periods'].mean()
-        
-        # Calculate drawdown
-        cumulative_returns = (1 + trades_df['profit']).cumprod()
-        running_max = cumulative_returns.expanding().max()
-        drawdown = (cumulative_returns - running_max) / running_max
-        max_drawdown = drawdown.min()
-        
-        # Calculate Sharpe ratio
-        returns_std = trades_df['profit'].std()
-        sharpe_ratio = avg_profit / returns_std if returns_std > 0 else 0
+        if not runs:
+            return {'avg_length': 0, 'max_length': 0}
         
         return {
-            'total_trades': total_trades,
-            'win_rate': win_rate,
-            'avg_profit': avg_profit,
-            'total_return': total_return,
-            'max_drawdown': max_drawdown,
-            'sharpe_ratio': sharpe_ratio,
-            'avg_hold_periods': avg_hold_periods,
-            'trades': trades_df
+            'avg_length': np.mean(runs),
+            'max_length': np.max(runs)
         }
     
     def analyze_all_assets(self):
@@ -367,19 +313,21 @@ class CryptoDataAnalyzer:
             # Basic metrics
             basic_metrics = self.calculate_basic_metrics(symbol_data)
             
+            # Triple barrier profits
+            triple_barrier_profits = self.calculate_triple_barrier_profits(symbol_data)
+            
             # Intraday patterns
             intraday_patterns = self.calculate_intraday_patterns(symbol_data)
             
-            # Strategy simulations
-            scalping_results = self.simulate_scalping_strategy(symbol_data)
-            swing_results = self.simulate_swing_strategy(symbol_data)
+            # Movement statistics
+            movement_stats = self.calculate_movement_statistics(symbol_data)
             
             # Store results
             self.results[symbol] = {
                 'basic_metrics': basic_metrics,
+                'triple_barrier_profits': triple_barrier_profits,
                 'intraday_patterns': intraday_patterns,
-                'scalping': scalping_results,
-                'swing': swing_results
+                'movement_statistics': movement_stats
             }
     
     def generate_summary_report(self):
@@ -389,97 +337,82 @@ class CryptoDataAnalyzer:
             return
         
         print("\n" + "="*80)
-        print("CRYPTOCURRENCY TRADING ANALYSIS REPORT")
+        print("CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS REPORT")
         print("="*80)
         
         # Create summary DataFrames
         basic_summary = []
-        scalping_summary = []
-        swing_summary = []
+        barrier_summary = []
         
         for symbol, result in self.results.items():
             basic = result['basic_metrics']
-            scalping = result['scalping']
-            swing = result['swing']
             
             basic_summary.append({
                 'Symbol': symbol,
                 'Total_Return': basic['total_return'],
                 'Volatility': basic['volatility'],
-                'Avg_Volume': basic['avg_volume'],
-                'Daily_Range': basic['avg_daily_range'],
-                'Price_Range': basic['price_range']
+                'Avg_Daily_Range': basic['avg_daily_range'],
+                'Avg_Intraday_Movement': basic['avg_intraday_movement'],
+                'Avg_Price_Change': basic['avg_price_change'],
+                'Avg_Volume': basic['avg_volume']
             })
             
-            scalping_summary.append({
-                'Symbol': symbol,
-                'Total_Trades': scalping['total_trades'],
-                'Win_Rate': scalping['win_rate'],
-                'Avg_Profit': scalping['avg_profit'],
-                'Total_Return': scalping['total_return'],
-                'Max_Drawdown': scalping['max_drawdown'],
-                'Sharpe_Ratio': scalping['sharpe_ratio']
-            })
-            
-            swing_summary.append({
-                'Symbol': symbol,
-                'Total_Trades': swing['total_trades'],
-                'Win_Rate': swing['win_rate'],
-                'Avg_Profit': swing['avg_profit'],
-                'Total_Return': swing['total_return'],
-                'Max_Drawdown': swing['max_drawdown'],
-                'Sharpe_Ratio': swing['sharpe_ratio'],
-                'Avg_Hold_Periods': swing['avg_hold_periods']
-            })
+            # Triple barrier results
+            for barrier_name, barrier_data in result['triple_barrier_profits'].items():
+                barrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
+                barrier_summary.append({
+                    'Symbol': symbol,
+                    'Barrier_Level': f"{barrier_level:.1%}",
+                    'Avg_Daily_Profit': barrier_data['avg_daily_profit'],
+                    'Profit_Frequency': barrier_data['profit_frequency'],
+                    'Total_Days_With_Profit': barrier_data['total_days_with_profit'],
+                    'Max_Daily_Profit': barrier_data['max_daily_profit'],
+                    'Total_Potential_Profit': barrier_data['total_potential_profit']
+                })
         
         basic_df = pd.DataFrame(basic_summary)
-        scalping_df = pd.DataFrame(scalping_summary)
-        swing_df = pd.DataFrame(swing_summary)
+        barrier_df = pd.DataFrame(barrier_summary)
         
         # Print basic metrics
-        print("\nBASIC METRICS SUMMARY:")
-        print("-" * 50)
+        print("\nBASIC PRICE MOVEMENT METRICS:")
+        print("-" * 60)
         print(basic_df.round(4).to_string(index=False))
         
-        # Print scalping results
-        print("\nSCALPING STRATEGY RESULTS:")
-        print("-" * 50)
-        print(scalping_df.round(4).to_string(index=False))
+        # Print triple barrier results
+        print("\nTRIPLE BARRIER PROFIT ANALYSIS:")
+        print("-" * 60)
+        print(barrier_df.round(4).to_string(index=False))
         
-        # Print swing results
-        print("\nSWING TRADING STRATEGY RESULTS:")
-        print("-" * 50)
-        print(swing_df.round(4).to_string(index=False))
+        # Top performers by barrier level
+        print("\nTOP PERFORMERS BY BARRIER LEVEL:")
+        print("-" * 60)
         
-        # Top performers
-        print("\nTOP PERFORMERS BY STRATEGY:")
-        print("-" * 50)
+        barrier_levels = barrier_df['Barrier_Level'].unique()
+        for barrier in sorted(barrier_levels):
+            barrier_data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+            top_performers = barrier_data.nlargest(5, 'Avg_Daily_Profit')[['Symbol', 'Avg_Daily_Profit', 'Profit_Frequency']]
+            print(f"\nTop 5 for {barrier} barrier:")
+            print(top_performers.round(4).to_string(index=False))
         
-        # Top scalping performers
-        top_scalping = scalping_df.nlargest(5, 'Total_Return')[['Symbol', 'Total_Return', 'Win_Rate', 'Sharpe_Ratio']]
-        print("Top 5 Scalping Performers:")
-        print(top_scalping.round(4).to_string(index=False))
+        # Best overall performers
+        print("\nBEST OVERALL PERFORMERS:")
+        print("-" * 60)
         
-        # Top swing performers
-        top_swing = swing_df.nlargest(5, 'Total_Return')[['Symbol', 'Total_Return', 'Win_Rate', 'Sharpe_Ratio']]
-        print("\nTop 5 Swing Trading Performers:")
-        print(top_swing.round(4).to_string(index=False))
+        # Average across all barriers
+        avg_profits = barrier_df.groupby('Symbol')['Avg_Daily_Profit'].mean().sort_values(ascending=False)
+        print("Average daily profit across all barriers:")
+        for symbol, profit in avg_profits.head(10).items():
+            print(f"  {symbol}: {profit:.4f}")
         
-        # Risk analysis
-        print("\nRISK ANALYSIS:")
-        print("-" * 50)
-        low_volatility = basic_df.nsmallest(5, 'Volatility')[['Symbol', 'Volatility', 'Total_Return']]
-        print("Lowest Volatility Assets:")
-        print(low_volatility.round(4).to_string(index=False))
-        
-        high_volume = basic_df.nlargest(5, 'Avg_Volume')[['Symbol', 'Avg_Volume', 'Total_Return']]
-        print("\nHighest Volume Assets:")
-        print(high_volume.round(4).to_string(index=False))
+        # Highest frequency assets
+        avg_frequency = barrier_df.groupby('Symbol')['Profit_Frequency'].mean().sort_values(ascending=False)
+        print(f"\nHighest profit frequency across all barriers:")
+        for symbol, freq in avg_frequency.head(10).items():
+            print(f"  {symbol}: {freq:.4f}")
         
         return {
             'basic_summary': basic_df,
-            'scalping_summary': scalping_df,
-            'swing_summary': swing_df
+            'barrier_summary': barrier_df
         }
     
     def create_visualizations(self, output_dir="plots"):
@@ -495,137 +428,144 @@ class CryptoDataAnalyzer:
         plt.style.use('seaborn-v0_8')
         sns.set_palette("husl")
         
-        # 1. Strategy Performance Comparison
+        # 1. Triple Barrier Performance Comparison
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('Strategy Performance Comparison', fontsize=16)
+        fig.suptitle('Triple Barrier Profit Analysis', fontsize=16)
         
-        scalping_returns = [self.results[s]['scalping']['total_return'] for s in self.results.keys()]
-        swing_returns = [self.results[s]['swing']['total_return'] for s in self.results.keys()]
-        symbols = list(self.results.keys())
+        # Prepare data for plotting
+        barrier_data = []
+        for symbol, result in self.results.items():
+            for barrier_name, barrier_result in result['triple_barrier_profits'].items():
+                barrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
+                barrier_data.append({
+                    'Symbol': symbol,
+                    'Barrier_Level': barrier_level,
+                    'Avg_Daily_Profit': barrier_result['avg_daily_profit'],
+                    'Profit_Frequency': barrier_result['profit_frequency']
+                })
         
-        # Scalping vs Swing Returns
-        x = np.arange(len(symbols))
-        width = 0.35
-        axes[0, 0].bar(x - width/2, scalping_returns, width, label='Scalping', alpha=0.8)
-        axes[0, 0].bar(x + width/2, swing_returns, width, label='Swing', alpha=0.8)
+        barrier_df = pd.DataFrame(barrier_data)
+        
+        # Plot 1: Average daily profit by barrier level
+        for barrier in sorted(barrier_df['Barrier_Level'].unique()):
+            data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+            axes[0, 0].scatter(data['Symbol'], data['Avg_Daily_Profit'], 
+                             label=f'{barrier:.1%}', alpha=0.7, s=50)
+        
         axes[0, 0].set_xlabel('Assets')
-        axes[0, 0].set_ylabel('Total Return')
-        axes[0, 0].set_title('Total Returns by Strategy')
-        axes[0, 0].set_xticks(x)
-        axes[0, 0].set_xticklabels(symbols, rotation=45)
+        axes[0, 0].set_ylabel('Average Daily Profit')
+        axes[0, 0].set_title('Average Daily Profit by Barrier Level')
+        axes[0, 0].tick_params(axis='x', rotation=45)
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
         
-        # Win Rates
-        scalping_wins = [self.results[s]['scalping']['win_rate'] for s in self.results.keys()]
-        swing_wins = [self.results[s]['swing']['win_rate'] for s in self.results.keys()]
+        # Plot 2: Profit frequency by barrier level
+        for barrier in sorted(barrier_df['Barrier_Level'].unique()):
+            data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+            axes[0, 1].scatter(data['Symbol'], data['Profit_Frequency'], 
+                             label=f'{barrier:.1%}', alpha=0.7, s=50)
         
-        axes[0, 1].bar(x - width/2, scalping_wins, width, label='Scalping', alpha=0.8)
-        axes[0, 1].bar(x + width/2, swing_wins, width, label='Swing', alpha=0.8)
         axes[0, 1].set_xlabel('Assets')
-        axes[0, 1].set_ylabel('Win Rate')
-        axes[0, 1].set_title('Win Rates by Strategy')
-        axes[0, 1].set_xticks(x)
-        axes[0, 1].set_xticklabels(symbols, rotation=45)
+        axes[0, 1].set_ylabel('Profit Frequency')
+        axes[0, 1].set_title('Profit Frequency by Barrier Level')
+        axes[0, 1].tick_params(axis='x', rotation=45)
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
         
-        # Sharpe Ratios
-        scalping_sharpe = [self.results[s]['scalping']['sharpe_ratio'] for s in self.results.keys()]
-        swing_sharpe = [self.results[s]['swing']['sharpe_ratio'] for s in self.results.keys()]
+        # Plot 3: Average performance across all barriers
+        avg_performance = barrier_df.groupby('Symbol').agg({
+            'Avg_Daily_Profit': 'mean',
+            'Profit_Frequency': 'mean'
+        }).sort_values('Avg_Daily_Profit', ascending=False)
         
-        axes[1, 0].bar(x - width/2, scalping_sharpe, width, label='Scalping', alpha=0.8)
-        axes[1, 0].bar(x + width/2, swing_sharpe, width, label='Swing', alpha=0.8)
+        axes[1, 0].bar(range(len(avg_performance)), avg_performance['Avg_Daily_Profit'])
         axes[1, 0].set_xlabel('Assets')
-        axes[1, 0].set_ylabel('Sharpe Ratio')
-        axes[1, 0].set_title('Risk-Adjusted Returns (Sharpe Ratio)')
-        axes[1, 0].set_xticks(x)
-        axes[1, 0].set_xticklabels(symbols, rotation=45)
-        axes[1, 0].legend()
+        axes[1, 0].set_ylabel('Average Daily Profit (All Barriers)')
+        axes[1, 0].set_title('Average Performance Across All Barriers')
+        axes[1, 0].set_xticks(range(len(avg_performance)))
+        axes[1, 0].set_xticklabels(avg_performance.index, rotation=45)
         axes[1, 0].grid(True, alpha=0.3)
         
-        # Volatility vs Returns
-        volatilities = [self.results[s]['basic_metrics']['volatility'] for s in self.results.keys()]
-        axes[1, 1].scatter(volatilities, scalping_returns, alpha=0.7, label='Scalping', s=100)
-        axes[1, 1].scatter(volatilities, swing_returns, alpha=0.7, label='Swing', s=100)
+        # Plot 4: Volatility vs Average Profit
+        volatilities = [self.results[s]['basic_metrics']['volatility'] for s in avg_performance.index]
+        avg_profits = avg_performance['Avg_Daily_Profit'].values
+        
+        axes[1, 1].scatter(volatilities, avg_profits, alpha=0.7, s=100)
         axes[1, 1].set_xlabel('Volatility')
-        axes[1, 1].set_ylabel('Total Return')
-        axes[1, 1].set_title('Risk vs Return')
-        axes[1, 1].legend()
+        axes[1, 1].set_ylabel('Average Daily Profit')
+        axes[1, 1].set_title('Volatility vs Average Profit')
         axes[1, 1].grid(True, alpha=0.3)
         
-        # Add asset labels to scatter plot
-        for i, symbol in enumerate(symbols):
-            axes[1, 1].annotate(symbol, (volatilities[i], scalping_returns[i]), 
+        # Add asset labels
+        for i, symbol in enumerate(avg_performance.index):
+            axes[1, 1].annotate(symbol, (volatilities[i], avg_profits[i]), 
                               xytext=(5, 5), textcoords='offset points', fontsize=8)
         
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/strategy_comparison.png", dpi=300, bbox_inches='tight')
+        plt.savefig(f"{output_dir}/triple_barrier_analysis.png", dpi=300, bbox_inches='tight')
         plt.close()
         
         # 2. Intraday Patterns
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle('Intraday Trading Patterns', fontsize=16)
+        fig.suptitle('Intraday Price Movement Patterns', fontsize=16)
         
-        # Sample a few assets for intraday patterns
+        # Sample a few assets
         sample_symbols = list(self.results.keys())[:5]
         
-        for i, symbol in enumerate(sample_symbols):
-            hourly_vol = self.results[symbol]['intraday_patterns']['hourly_volume']
-            hours = list(hourly_vol.keys())
-            volumes = list(hourly_vol.values())
-            
-            axes[0, 0].plot(hours, volumes, label=symbol, marker='o', alpha=0.7)
+        # Hourly price changes
+        for symbol in sample_symbols:
+            hourly_changes = self.results[symbol]['intraday_patterns']['hourly_price_changes']
+            hours = list(hourly_changes.keys())
+            changes = list(hourly_changes.values())
+            axes[0, 0].plot(hours, changes, label=symbol, marker='o', alpha=0.7)
         
         axes[0, 0].set_xlabel('Hour of Day')
-        axes[0, 0].set_ylabel('Average Volume')
-        axes[0, 0].set_title('Hourly Volume Patterns')
+        axes[0, 0].set_ylabel('Average Price Change')
+        axes[0, 0].set_title('Hourly Price Movement Patterns')
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
         
-        # Daily patterns
-        for i, symbol in enumerate(sample_symbols):
-            daily_vol = self.results[symbol]['intraday_patterns']['daily_volume']
-            days = list(daily_vol.keys())
-            volumes = list(daily_vol.values())
-            
-            axes[0, 1].plot(days, volumes, label=symbol, marker='s', alpha=0.7)
+        # Daily price changes
+        for symbol in sample_symbols:
+            daily_changes = self.results[symbol]['intraday_patterns']['daily_price_changes']
+            days = list(daily_changes.keys())
+            changes = list(daily_changes.values())
+            axes[0, 1].plot(days, changes, label=symbol, marker='s', alpha=0.7)
         
         axes[0, 1].set_xlabel('Day of Week')
-        axes[0, 1].set_ylabel('Average Volume')
-        axes[0, 1].set_title('Daily Volume Patterns')
+        axes[0, 1].set_ylabel('Average Price Change')
+        axes[0, 1].set_title('Daily Price Movement Patterns')
         axes[0, 1].set_xticks(range(7))
         axes[0, 1].set_xticklabels(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
         
-        # Volatility patterns
-        for i, symbol in enumerate(sample_symbols):
-            hourly_vol = self.results[symbol]['intraday_patterns']['hourly_volatility']
-            hours = list(hourly_vol.keys())
-            vols = list(hourly_vol.values())
-            
-            axes[1, 0].plot(hours, vols, label=symbol, marker='^', alpha=0.7)
+        # Movement size distribution
+        for symbol in sample_symbols:
+            movement_stats = self.results[symbol]['movement_statistics']
+            percentiles = list(movement_stats['movement_percentiles'].keys())
+            values = list(movement_stats['movement_percentiles'].values())
+            axes[1, 0].plot(percentiles, values, label=symbol, marker='^', alpha=0.7)
         
-        axes[1, 0].set_xlabel('Hour of Day')
-        axes[1, 0].set_ylabel('Volatility')
-        axes[1, 0].set_title('Hourly Volatility Patterns')
+        axes[1, 0].set_xlabel('Percentile')
+        axes[1, 0].set_ylabel('Movement Size')
+        axes[1, 0].set_title('Price Movement Distribution')
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
         
-        # Volume vs Volatility correlation
-        avg_volumes = [self.results[s]['basic_metrics']['avg_volume'] for s in sample_symbols]
+        # Average daily range vs volatility
+        daily_ranges = [self.results[s]['basic_metrics']['avg_daily_range'] for s in sample_symbols]
         volatilities = [self.results[s]['basic_metrics']['volatility'] for s in sample_symbols]
         
-        axes[1, 1].scatter(avg_volumes, volatilities, alpha=0.7, s=100)
-        axes[1, 1].set_xlabel('Average Volume')
-        axes[1, 1].set_ylabel('Volatility')
-        axes[1, 1].set_title('Volume vs Volatility')
+        axes[1, 1].scatter(volatilities, daily_ranges, alpha=0.7, s=100)
+        axes[1, 1].set_xlabel('Volatility')
+        axes[1, 1].set_ylabel('Average Daily Range')
+        axes[1, 1].set_title('Volatility vs Daily Range')
         axes[1, 1].grid(True, alpha=0.3)
         
         # Add labels
         for i, symbol in enumerate(sample_symbols):
-            axes[1, 1].annotate(symbol, (avg_volumes[i], volatilities[i]), 
+            axes[1, 1].annotate(symbol, (volatilities[i], daily_ranges[i]), 
                               xytext=(5, 5), textcoords='offset points', fontsize=8)
         
         plt.tight_layout()
@@ -653,7 +593,7 @@ def main():
     logger.info(f"Using data file: {latest_file}")
     
     # Create analyzer and run analysis
-    analyzer = CryptoDataAnalyzer(latest_file)
+    analyzer = CryptoPriceAnalyzer(latest_file)
     
     if not analyzer.load_data():
         return
@@ -666,9 +606,8 @@ def main():
     output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
     
-    summary['basic_summary'].to_csv(output_dir / "basic_metrics.csv", index=False)
-    summary['scalping_summary'].to_csv(output_dir / "scalping_results.csv", index=False)
-    summary['swing_summary'].to_csv(output_dir / "swing_results.csv", index=False)
+    summary['basic_summary'].to_csv(output_dir / "price_movement_metrics.csv", index=False)
+    summary['barrier_summary'].to_csv(output_dir / "triple_barrier_profits.csv", index=False)
     
     logger.info(f"Results saved to {output_dir}/")
 

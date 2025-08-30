@@ -1,6 +1,6 @@
-# Cryptocurrency Trading Analysis Tool
+# Cryptocurrency Price Movement Analysis Tool
 
-A comprehensive tool for downloading and analyzing cryptocurrency data to compare scalping vs swing trading strategies across multiple assets.
+A comprehensive tool for downloading and analyzing cryptocurrency data to calculate potential profits from different triple barrier methods and price movement patterns.
 
 ## Features
 
@@ -14,34 +14,41 @@ A comprehensive tool for downloading and analyzing cryptocurrency data to compar
 - Comprehensive logging and progress tracking
 
 ### Data Analyzer (`data_analyzer.py`)
-- **Basic Metrics Analysis:**
+- **Price Movement Analysis:**
   - Total returns and volatility
-  - Volume analysis and patterns
-  - Price range analysis
-  - Daily high/low patterns
+  - Average daily and intraday price movements
+  - Price change frequency and distribution
+  - Movement size percentiles and patterns
+
+- **Triple Barrier Profit Analysis:**
+  - **Multiple barrier levels:** 0.5%, 1%, 2%, 3%, 5%
+  - **Daily profit calculations:** Average profit if 100% of movement captured
+  - **Profit frequency:** How often each barrier level is exceeded
+  - **Total potential profit:** Cumulative profit across all days
 
 - **Intraday Pattern Analysis:**
-  - Hourly volume patterns
-  - Daily volume patterns
-  - Peak trading hours identification
-  - Volatility patterns by time of day
+  - Hourly price movement patterns
+  - Daily price movement patterns
+  - Best trading hours identification
+  - Movement size distribution by time
 
-- **Strategy Simulation:**
-  - **Scalping Strategy:** Quick trades with 0.5% take profit and 0.3% stop loss
-  - **Swing Trading Strategy:** Longer-term trades with 5% take profit and 3% stop loss
-  - Performance metrics: win rate, total return, Sharpe ratio, max drawdown
+- **Movement Statistics:**
+  - Price movement size distribution
+  - Consecutive positive/negative runs
+  - Small/medium/large movement frequencies
+  - Movement percentiles (10th, 25th, 50th, 75th, 90th, 95th, 99th)
 
 - **Comprehensive Reporting:**
-  - Detailed performance comparison
-  - Risk analysis
-  - Top performers identification
+  - Detailed barrier level comparisons
+  - Top performers by barrier level
+  - Average performance across all barriers
   - CSV export of results
 
 - **Visualizations:**
-  - Strategy performance comparison charts
-  - Intraday pattern analysis
-  - Risk vs return scatter plots
-  - Volume and volatility patterns
+  - Triple barrier profit analysis charts
+  - Intraday price movement patterns
+  - Movement distribution analysis
+  - Volatility vs profit scatter plots
 
 ## Installation
 
@@ -81,13 +88,12 @@ This will:
 - `data/crypto_15m_data_*.parquet` - Raw OHLCV data in Parquet format (optimized for storage and performance)
 
 ### Analysis Results
-- `results/basic_metrics.csv` - Basic asset metrics
-- `results/scalping_results.csv` - Scalping strategy results
-- `results/swing_results.csv` - Swing trading results
+- `results/price_movement_metrics.csv` - Basic price movement metrics
+- `results/triple_barrier_profits.csv` - Triple barrier profit analysis
 
 ### Visualizations
-- `plots/strategy_comparison.png` - Strategy performance comparison
-- `plots/intraday_patterns.png` - Intraday trading patterns
+- `plots/triple_barrier_analysis.png` - Triple barrier profit analysis
+- `plots/intraday_patterns.png` - Intraday price movement patterns
 
 ### Logs
 - `data_download.log` - Download process logs
@@ -95,40 +101,57 @@ This will:
 
 ## Analysis Metrics
 
-### Basic Metrics
+### Price Movement Metrics
 - **Total Return:** Overall price change over the period
 - **Volatility:** Annualized standard deviation of returns
-- **Average Volume:** Mean trading volume
-- **Volume Volatility:** Coefficient of variation of volume
-- **Daily Range:** Average daily high-low range
-- **Price Range:** Total price range over the period
+- **Average Daily Range:** Average daily high-low range
+- **Average Intraday Movement:** Average daily price movement
+- **Average Price Change:** Mean absolute price change per period
+- **Price Change Standard Deviation:** Variability of price changes
 
-### Strategy Metrics
-- **Total Trades:** Number of completed trades
-- **Win Rate:** Percentage of profitable trades
-- **Average Profit:** Mean profit per trade
-- **Total Return:** Cumulative strategy return
-- **Max Drawdown:** Maximum peak-to-trough decline
-- **Sharpe Ratio:** Risk-adjusted return measure
+### Triple Barrier Profit Metrics
+- **Average Daily Profit:** Mean profit per day when barrier is exceeded
+- **Profit Frequency:** Percentage of days where barrier is exceeded
+- **Total Days With Profit:** Number of days exceeding the barrier
+- **Max Daily Profit:** Maximum single-day profit
+- **Total Potential Profit:** Cumulative profit across all days
+- **Average All Movements:** Mean of all daily movements (including non-profitable)
+
+### Movement Statistics
+- **Movement Percentiles:** 10th, 25th, 50th, 75th, 90th, 95th, 99th percentiles
+- **Small Movements:** Percentage of movements ≤ 0.1%
+- **Medium Movements:** Percentage of movements 0.1-1%
+- **Large Movements:** Percentage of movements > 1%
+- **Consecutive Runs:** Average length of positive/negative price runs
 
 ### Intraday Patterns
+- **Best Trading Hours:** Hours with highest price movements
 - **Peak Hours:** Hours with highest trading volume
-- **Hourly Patterns:** Volume and volatility by hour
-- **Daily Patterns:** Volume and volatility by day of week
+- **Hourly Patterns:** Price movements and volatility by hour
+- **Daily Patterns:** Price movements and volatility by day of week
 
-## Strategy Details
+## Triple Barrier Analysis Details
 
-### Scalping Strategy
-- **Entry Signal:** Price increase > 0.5% in one period
-- **Take Profit:** 0.5% profit target
-- **Stop Loss:** 0.3% stop loss
-- **Hold Time:** Until profit target or stop loss hit
+### Barrier Levels Tested
+- **0.5% Barrier:** Captures small daily movements
+- **1.0% Barrier:** Captures moderate daily movements  
+- **2.0% Barrier:** Captures significant daily movements
+- **3.0% Barrier:** Captures large daily movements
+- **5.0% Barrier:** Captures extreme daily movements
 
-### Swing Trading Strategy
-- **Entry Signal:** Price increase > 2% over 4 periods (1 hour)
-- **Take Profit:** 5% profit target
-- **Stop Loss:** 3% stop loss
-- **Hold Time:** Maximum 96 periods (24 hours) or until exit condition
+### Profit Calculation Method
+- **Daily Analysis:** Each day's open, high, low, close prices are analyzed
+- **Long Position:** Buy at open, sell at high (if profitable)
+- **Short Position:** Sell at open, buy at low (if profitable)
+- **Best Direction:** Choose the more profitable direction (long or short)
+- **Barrier Filter:** Only count profits that exceed the barrier level
+- **100% Capture:** Assumes perfect execution (no slippage, no fees)
+
+### Key Insights Provided
+- **Profit Potential:** Average daily profit if all movement is captured
+- **Frequency Analysis:** How often each barrier level is exceeded
+- **Asset Comparison:** Which assets offer the best profit opportunities
+- **Risk Assessment:** Relationship between volatility and profit potential
 
 ## Supported Assets
 
@@ -162,26 +185,25 @@ assets = [
 ]
 ```
 
-### Modifying Strategy Parameters
-Edit the strategy parameters in `data_analyzer.py`:
+### Modifying Barrier Levels
+Edit the barrier levels in `data_analyzer.py`:
 
-**Scalping Strategy:**
 ```python
-scalping_results = self.simulate_scalping_strategy(
+triple_barrier_profits = self.calculate_triple_barrier_profits(
     symbol_data, 
-    take_profit_pct=0.005,  # 0.5% take profit
-    stop_loss_pct=0.003     # 0.3% stop loss
+    barrier_levels=[0.005, 0.01, 0.02, 0.03, 0.05]  # 0.5%, 1%, 2%, 3%, 5%
 )
 ```
 
-**Swing Strategy:**
+### Customizing Analysis
+You can modify the analysis parameters:
+
 ```python
-swing_results = self.simulate_swing_strategy(
-    symbol_data,
-    take_profit_pct=0.05,   # 5% take profit
-    stop_loss_pct=0.03,     # 3% stop loss
-    hold_periods=96         # 24 hours maximum
-)
+# Change barrier levels
+barrier_levels=[0.003, 0.007, 0.015, 0.025, 0.04]  # 0.3%, 0.7%, 1.5%, 2.5%, 4%
+
+# Add more detailed movement analysis
+movement_stats = self.calculate_movement_statistics(symbol_data)
 ```
 
 ## Data Storage

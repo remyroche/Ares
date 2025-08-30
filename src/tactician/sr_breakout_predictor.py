@@ -1241,23 +1241,30 @@ class SRBreakoutPredictor:
         """Detect support levels using fractal analysis."""
         try:
             # Implement fractal-based support level detection
-            # This is a simplified implementation
             support_levels = []
 
+            # Use VWAP if available, otherwise fall back to price
+            if 'vwap' in market_data.columns:
+                price_series = market_data['vwap']
+                self.logger.info("Using VWAP for fractal support level detection")
+            else:
+                price_series = market_data['low']
+                self.logger.info("Using low price for fractal support level detection")
+
             # Find local minima in price data
-            low_prices = market_data['low'].rolling(window=5, center=True).min()
+            low_prices = price_series.rolling(window=5, center=True).min()
 
             # Identify significant support levels
             for i in range(2, len(market_data) - 2):
-                if (market_data['low'].iloc[i] == low_prices.iloc[i] and
-                    market_data['low'].iloc[i] < market_data['low'].iloc[i-1] and
-                    market_data['low'].iloc[i] < market_data['low'].iloc[i+1]):
+                if (price_series.iloc[i] == low_prices.iloc[i] and
+                    price_series.iloc[i] < price_series.iloc[i-1] and
+                    price_series.iloc[i] < price_series.iloc[i+1]):
 
                     support_level = {
-                        "price": market_data['low'].iloc[i],
+                        "price": price_series.iloc[i],
                         "strength": self._calculate_level_strength(market_data, i, "support"),
                         "timestamp": market_data.index[i],
-                        "method": "fractal",
+                        "method": "fractal_vwap" if 'vwap' in market_data.columns else "fractal",
                         "confidence": 0.7,
                     }
                     support_levels.append(support_level)
@@ -1274,20 +1281,28 @@ class SRBreakoutPredictor:
             # Implement fractal-based resistance level detection
             resistance_levels = []
 
+            # Use VWAP if available, otherwise fall back to price
+            if 'vwap' in market_data.columns:
+                price_series = market_data['vwap']
+                self.logger.info("Using VWAP for fractal resistance level detection")
+            else:
+                price_series = market_data['high']
+                self.logger.info("Using high price for fractal resistance level detection")
+
             # Find local maxima in price data
-            high_prices = market_data['high'].rolling(window=5, center=True).max()
+            high_prices = price_series.rolling(window=5, center=True).max()
 
             # Identify significant resistance levels
             for i in range(2, len(market_data) - 2):
-                if (market_data['high'].iloc[i] == high_prices.iloc[i] and
-                    market_data['high'].iloc[i] > market_data['high'].iloc[i-1] and
-                    market_data['high'].iloc[i] > market_data['high'].iloc[i+1]):
+                if (price_series.iloc[i] == high_prices.iloc[i] and
+                    price_series.iloc[i] > price_series.iloc[i-1] and
+                    price_series.iloc[i] > price_series.iloc[i+1]):
 
                     resistance_level = {
-                        "price": market_data['high'].iloc[i],
+                        "price": price_series.iloc[i],
                         "strength": self._calculate_level_strength(market_data, i, "resistance"),
                         "timestamp": market_data.index[i],
-                        "method": "fractal",
+                        "method": "fractal_vwap" if 'vwap' in market_data.columns else "fractal",
                         "confidence": 0.7,
                     }
                     resistance_levels.append(resistance_level)
@@ -1847,8 +1862,9 @@ class SRBreakoutPredictor:
     async def get_comprehensive_sr_analysis(self, market_data: pd.DataFrame, multi_timeframe_data: dict[str, pd.DataFrame] = None) -> dict[str, Any]:
         """Get comprehensive S/R analysis including all advanced methods."""
         try:
-            # Basic S/R context
-            basic_context = await self.get_sr_context(market_data, market_data['close'].iloc[-1])
+            # Basic S/R context - use VWAP if available, otherwise fall back to close price
+            current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
+            basic_context = await self.get_sr_context(market_data, current_price)
             
             # Multi-timeframe confluence (if data provided)
             mtf_confluence = {}
@@ -2364,17 +2380,20 @@ class SRBreakoutPredictor:
             features = {}
 
             # Calculate proximity to nearest support and resistance
+            # Use VWAP if available, otherwise fall back to close price
+            current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
+            
             if support_levels:
-                nearest_support = min(support_levels, key=lambda x: abs(x["price"] - market_data['close'].iloc[-1]))
-                features["support_proximity"] = abs(nearest_support["price"] - market_data['close'].iloc[-1]) / market_data['close'].iloc[-1]
+                nearest_support = min(support_levels, key=lambda x: abs(x["price"] - current_price))
+                features["support_proximity"] = abs(nearest_support["price"] - current_price) / current_price
                 features["support_strength"] = nearest_support.get("strength", 0.5)
             else:
                 features["support_proximity"] = 1.0
                 features["support_strength"] = 0.0
 
             if resistance_levels:
-                nearest_resistance = min(resistance_levels, key=lambda x: abs(x["price"] - market_data['close'].iloc[-1]))
-                features["resistance_proximity"] = abs(nearest_resistance["price"] - market_data['close'].iloc[-1]) / market_data['close'].iloc[-1]
+                nearest_resistance = min(resistance_levels, key=lambda x: abs(x["price"] - current_price))
+                features["resistance_proximity"] = abs(nearest_resistance["price"] - current_price) / current_price
                 features["resistance_strength"] = nearest_resistance.get("strength", 0.5)
             else:
                 features["resistance_proximity"] = 1.0

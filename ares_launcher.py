@@ -33,6 +33,13 @@ Usage:
     # Start from step2 with existing data (no new downloads)
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
 
+    # Step-based training with validation (new steps 1-21)
+    python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step3_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step9_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
+
     # Multi-timeframe ensemble training (trains models on 1m, 5m, 15m, 1h, 4h, 1d and creates ensembles)
     python ares_launcher.py multi-timeframe --symbol ETHUSDT --exchange BINANCE
 
@@ -1649,6 +1656,7 @@ class AresLauncher:
             "step2_data_reading",              # Read and validate data quality
             "step2_5_sr_optimization",         # S/R detection optimization
             "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
+            "step3_5_final_regime_clustering", # Final regime clustering
             "step4_triple_barrier_method",     # Apply triple barrier method
             "step4_regime_data_splitting",     # Regime data splitting (legacy step)
             "step5_labeling",                  # Create labels
@@ -2162,28 +2170,41 @@ Examples:
     
     # New step-based commands with validation
     python ares_launcher.py step1 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step3_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step4 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step8 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step9_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step5 --symbol ETHUSDT --exchange BINANCE --training-mode light --force
     python ares_launcher.py step10 --symbol ETHUSDT --exchange BINANCE --training-mode blank --gui
+    python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
     
     # Legacy step-based commands (still supported)
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_5_sr_optimization
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_feature_engineering
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step3_5_final_regime_clustering
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step6_analyst_enhancement
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step7_analyst_ensemble_creation
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step8_tactician_labeling
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_tactician_specialist_training
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_tactician_ensemble_creation
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_confidence_calibration
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step9_5_hmm_lm_generalist_training
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step10_unified_regime_intelligence
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step11_analyst_creation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step12_analyst_enhancement
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_analyst_ensemble_creation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_tactician_labeling
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_tactician_specialist_training
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_confidence_calibration
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step17_final_parameters_optimization
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step13_walk_forward_validation
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step14_monte_carlo_validation
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step15_ab_testing
-    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step16_saving
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step18_walk_forward_validation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step19_monte_carlo_validation
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step20_ab_testing
+    python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step21_saving
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering --force
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step5_hmm_based_training --force --gui
   python ares_launcher.py live --symbol ETHUSDT --exchange BINANCE
@@ -2217,8 +2238,9 @@ Examples:
             "resume",
             "modes",  # Show available training modes
             # New step-based commands
-            "step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7", "step8",
-            "step8_5", "step9", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+            "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
+            "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+            "step18", "step19", "step20", "step21",
         ],
         help="The command to execute",
     )
@@ -2359,8 +2381,9 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "load",
         "precompute",
         # Step-based commands
-        "step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7", "step8",
-        "step8_5", "step9", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+        "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
+        "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+        "step18", "step19", "step20", "step21",
     ]
 
     if args.command in commands_requiring_symbol:
@@ -2451,11 +2474,31 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
+        "step2_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step2_5_sr_optimization",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
         "step3": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
                 start_step="step3_hmm_regime_discovery",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step3_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step3_5_final_regime_clustering",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2525,7 +2568,27 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step9_analyst_enhancement",
+                start_step="step9_hmm_based_training",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step9_5": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step9_5_hmm_lm_generalist_training",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step10": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step10_unified_regime_intelligence",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2605,7 +2668,47 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step17_saving",
+                start_step="step17_final_parameters_optimization",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step18": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step18_walk_forward_validation",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step19": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step19_monte_carlo_validation",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step20": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step20_ab_testing",
+                training_mode=args.training_mode,
+                force_rerun=force_flag,
+                with_gui=args.gui,
+            ),
+        ),
+        "step21": lambda: asyncio.run(
+            launcher.run_step_based_training_with_validation(
+                args.symbol,
+                args.exchange,
+                start_step="step21_saving",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

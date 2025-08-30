@@ -5,6 +5,8 @@ from src.utils.logger import system_logger
 from typing import Any
 import numpy as np
 import pandas as pd
+import os
+import json
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
@@ -230,6 +232,28 @@ class SRBreakoutPredictor:
         self.isolation_distance_threshold: float = self.strength_config.get("isolation_distance_threshold", 0.05)  # 5% distance
         self.age_decay_factor: float = self.strength_config.get("age_decay_factor", 0.95)  # 5% decay per period
 
+        # Optimization integration
+        self.optimized_params: Optional[dict[str, Any]] = None
+        self.use_optimized_params: bool = self.sr_config.get("use_optimized_params", True)
+        
+        # Advanced S/R method configuration
+        self.advanced_config: dict[str, Any] = self.sr_config.get("advanced_sr_methods", {})
+        self.enable_fibonacci_analysis: bool = self.advanced_config.get("enable_fibonacci_analysis", True)
+        self.enable_elliott_wave_analysis: bool = self.advanced_config.get("enable_elliott_wave_analysis", True)
+        self.enable_order_flow_analysis: bool = self.advanced_config.get("enable_order_flow_analysis", True)
+        
+        # Advanced method parameters
+        self.fibonacci_sensitivity: float = self.advanced_config.get("fibonacci_sensitivity", 0.7)
+        self.elliott_confidence_threshold: float = self.advanced_config.get("elliott_confidence_threshold", 0.6)
+        self.order_flow_hvn_threshold: float = self.advanced_config.get("order_flow_hvn_threshold", 1.5)
+        
+        # Multi-timeframe configuration
+        self.timeframe_config: dict[str, Any] = self.sr_config.get("multi_timeframe", {})
+        self.enable_multi_timeframe: bool = self.timeframe_config.get("enable_multi_timeframe", True)
+        self.timeframe_weights: dict[str, float] = self.timeframe_config.get("timeframe_weights", {
+            "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.25, "4h": 0.25, "1d": 0.2
+        })
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
@@ -310,12 +334,132 @@ class SRBreakoutPredictor:
             # if hasattr(self, "regime_classifier"):
             #     await self.regime_classifier.initialize()
 
+            # Load optimized parameters if enabled
+            if self.use_optimized_params:
+                await self._load_optimized_parameters()
+
             self.logger.info("✅ SR breakout predictor components initialized")
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to initialize components: {e}")
             return False
+
+    async def _load_optimized_parameters(self) -> None:
+        """Load optimized parameters from optimization results."""
+        try:
+            # Try to load from optimization results file
+            optimization_file = self.sr_config.get("optimization_results_file", "optimization_results.json")
+            
+            if os.path.exists(optimization_file):
+                with open(optimization_file, 'r') as f:
+                    data = json.load(f)
+                
+                if data.get("best_result"):
+                    best_result = data["best_result"]
+                    
+                    # Apply optimized parameters
+                    self.optimized_params = {
+                        "method_weights": best_result.get("method_weights", {}),
+                        "strength_weights": best_result.get("strength_weights", {}),
+                        "dbscan_params": best_result.get("dbscan_params", {}),
+                        "timeframe_weights": best_result.get("timeframe_weights", {}),
+                        "advanced_params": best_result.get("advanced_params", {}),
+                    }
+                    
+                    # Update current parameters with optimized values
+                    await self._apply_optimized_parameters()
+                    
+                    self.logger.info("✅ Loaded and applied optimized parameters")
+                else:
+                    self.logger.warning("No best result found in optimization file")
+            else:
+                self.logger.info("No optimization results file found, using default parameters")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load optimized parameters: {e}")
+
+    async def _apply_optimized_parameters(self) -> None:
+        """Apply optimized parameters to the S/R predictor."""
+        try:
+            if not self.optimized_params:
+                return
+            
+            # Apply method weights
+            method_weights = self.optimized_params.get("method_weights", {})
+            if method_weights:
+                self.model_weights.update(method_weights)
+                self.logger.info(f"Applied optimized method weights: {method_weights}")
+            
+            # Apply strength weights
+            strength_weights = self.optimized_params.get("strength_weights", {})
+            if strength_weights:
+                self.strength_score_weights.update(strength_weights)
+                self.logger.info(f"Applied optimized strength weights: {strength_weights}")
+            
+            # Apply DBSCAN parameters
+            dbscan_params = self.optimized_params.get("dbscan_params", {})
+            if dbscan_params:
+                if "eps" in dbscan_params:
+                    self.dbscan_eps = dbscan_params["eps"]
+                if "min_samples" in dbscan_params:
+                    self.dbscan_min_samples = dbscan_params["min_samples"]
+                self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
+            
+            # Apply advanced parameters
+            advanced_params = self.optimized_params.get("advanced_params", {})
+            if advanced_params:
+                # Apply Fibonacci parameters
+                if "fibonacci_sensitivity" in advanced_params:
+                    self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
+                    self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
+                
+                # Apply Elliott Wave parameters
+                if "elliott_confidence_threshold" in advanced_params:
+                    self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
+                    self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
+                
+                # Apply Order Flow parameters
+                if "order_flow_hvn_threshold" in advanced_params:
+                    self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
+                    self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
+                
+                self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
+            
+            # Apply timeframe weights
+            timeframe_weights = self.optimized_params.get("timeframe_weights", {})
+            if timeframe_weights:
+                self.timeframe_weights = timeframe_weights
+                self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to apply optimized parameters: {e}")
+
+    async def set_optimized_parameters(self, optimized_params: dict[str, Any]) -> None:
+        """Set optimized parameters directly."""
+        try:
+            self.optimized_params = optimized_params
+            await self._apply_optimized_parameters()
+            self.logger.info("✅ Set optimized parameters directly")
+        except Exception as e:
+            self.logger.error(f"Failed to set optimized parameters: {e}")
+
+    def get_current_parameters(self) -> dict[str, Any]:
+        """Get current parameters for comparison."""
+        return {
+            "method_weights": self.model_weights,
+            "strength_weights": self.strength_score_weights,
+            "dbscan_params": {
+                "eps": self.dbscan_eps,
+                "min_samples": self.dbscan_min_samples,
+            },
+            "advanced_params": {
+                "fibonacci_sensitivity": self.fibonacci_sensitivity,
+                "elliott_confidence_threshold": self.elliott_confidence_threshold,
+                "order_flow_hvn_threshold": self.order_flow_hvn_threshold,
+            },
+            "timeframe_weights": self.timeframe_weights,
+        }
 
     def _initialize_reporting_system(self) -> None:
         """Initialize the reporting system."""
@@ -1327,27 +1471,35 @@ class SRBreakoutPredictor:
 
     @validate_data_quality(validation_level="WARNING")
     async def calculate_fibonacci_levels(self, market_data: pd.DataFrame) -> dict[str, float]:
-        """Calculate Fibonacci retracement and extension levels."""
+        """Calculate Fibonacci retracement and extension levels using optimized sensitivity."""
         try:
             # Find swing high and low
             high = market_data['high'].max()
             low = market_data['low'].min()
             swing_range = high - low
             
-            fib_levels = {
-                'fib_0': low,
-                'fib_236': low + 0.236 * swing_range,  # 23.6% retracement
-                'fib_382': low + 0.382 * swing_range,  # 38.2% retracement
-                'fib_500': low + 0.500 * swing_range,  # 50.0% retracement
-                'fib_618': low + 0.618 * swing_range,  # 61.8% retracement
-                'fib_786': low + 0.786 * swing_range,  # 78.6% retracement
-                'fib_100': high,
-                'fib_1272': high + 0.272 * swing_range,  # 127.2% extension
-                'fib_1618': high + 0.618 * swing_range,  # 161.8% extension
-                'fib_2618': high + 1.618 * swing_range,  # 261.8% extension
-            }
+            # Apply optimized sensitivity to filter levels
+            sensitivity_threshold = swing_range * (1 - self.fibonacci_sensitivity)
             
-            self.logger.info(f"✅ Calculated Fibonacci levels: {len(fib_levels)} levels")
+            # Calculate Fibonacci levels with sensitivity filtering
+            fib_levels = {}
+            
+            # Standard retracement levels
+            retracement_levels = [0, 0.236, 0.382, 0.500, 0.618, 0.786, 1.0]
+            for level in retracement_levels:
+                fib_price = low + level * swing_range
+                # Only include levels that meet sensitivity threshold
+                if abs(fib_price - low) >= sensitivity_threshold or abs(fib_price - high) >= sensitivity_threshold:
+                    fib_levels[f'fib_{int(level * 1000)}'] = fib_price
+            
+            # Extension levels (only if sensitivity allows)
+            if self.fibonacci_sensitivity > 0.6:  # Only include extensions for higher sensitivity
+                extension_levels = [1.272, 1.618, 2.618]
+                for level in extension_levels:
+                    fib_price = high + (level - 1) * swing_range
+                    fib_levels[f'fib_{int(level * 1000)}'] = fib_price
+            
+            self.logger.info(f"✅ Calculated Fibonacci levels with sensitivity {self.fibonacci_sensitivity}: {len(fib_levels)} levels")
             return fib_levels
             
         except Exception as e:
@@ -1375,6 +1527,9 @@ class SRBreakoutPredictor:
                 wave4_retracement = wave_points[4]['low']
                 wave5_target = wave4_retracement + 0.618 * (wave1_high - wave1_low)
                 
+                # Calculate confidence based on pattern quality and optimized threshold
+                pattern_confidence = self._calculate_elliott_pattern_confidence(wave_points)
+                
                 elliott_levels = {
                     'wave1': {'high': wave1_high, 'low': wave1_low},
                     'wave2_retracement': wave2_retracement,
@@ -1382,8 +1537,14 @@ class SRBreakoutPredictor:
                     'wave4_retracement': wave4_retracement,
                     'wave5_target': wave5_target,
                     'pattern_type': 'impulse',
-                    'confidence': 0.7
+                    'confidence': pattern_confidence
                 }
+                
+                # Only return high-confidence patterns based on optimized threshold
+                if pattern_confidence >= self.elliott_confidence_threshold:
+                    self.logger.info(f"✅ Detected Elliott Wave pattern with confidence {pattern_confidence:.3f} (threshold: {self.elliott_confidence_threshold})")
+                else:
+                    self.logger.info(f"⚠️ Elliott Wave pattern confidence {pattern_confidence:.3f} below threshold {self.elliott_confidence_threshold}")
             else:
                 elliott_levels = {
                     'pattern_type': 'incomplete',
@@ -1421,6 +1582,45 @@ class SRBreakoutPredictor:
                 })
         
         return wave_points[:10]  # Limit to first 10 points
+
+    def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]]) -> float:
+        """Calculate confidence score for Elliott Wave pattern."""
+        try:
+            if len(wave_points) < 5:
+                return 0.3
+            
+            # Calculate confidence based on wave relationships
+            confidence_factors = []
+            
+            # Wave 2 should retrace 50-78.6% of wave 1
+            wave1_range = wave_points[1]['high'] - wave_points[0]['low']
+            wave2_retracement = (wave_points[1]['high'] - wave_points[2]['low']) / wave1_range
+            if 0.5 <= wave2_retracement <= 0.786:
+                confidence_factors.append(1.0)
+            else:
+                confidence_factors.append(0.5)
+            
+            # Wave 3 should be the longest (1.618x wave 1)
+            wave3_range = wave_points[3]['high'] - wave_points[2]['low']
+            wave3_ratio = wave3_range / wave1_range
+            if wave3_ratio >= 1.618:
+                confidence_factors.append(1.0)
+            else:
+                confidence_factors.append(0.7)
+            
+            # Wave 4 should retrace 23.6-38.2% of wave 3
+            wave4_retracement = (wave_points[3]['high'] - wave_points[4]['low']) / wave3_range
+            if 0.236 <= wave4_retracement <= 0.382:
+                confidence_factors.append(1.0)
+            else:
+                confidence_factors.append(0.6)
+            
+            # Calculate average confidence
+            return np.mean(confidence_factors) if confidence_factors else 0.3
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating Elliott pattern confidence: {e}")
+            return 0.3
 
     @validate_data_quality(validation_level="WARNING")
     async def analyze_order_flow_levels(self, market_data: pd.DataFrame) -> dict[str, Any]:
@@ -1504,12 +1704,12 @@ class SRBreakoutPredictor:
             value_area_high = max(value_area_levels)
             value_area_low = min(value_area_levels)
             
-            # Find HVN (High Volume Nodes)
+            # Find HVN (High Volume Nodes) using optimized threshold
             avg_volume = total_volume / len(volume_profile)
             hvn_levels = [
                 {'price': level, 'volume': volume, 'strength': volume / avg_volume}
                 for level, volume in volume_profile.items()
-                if volume > avg_volume * 1.5  # 50% above average
+                if volume > avg_volume * self.order_flow_hvn_threshold  # Use optimized threshold
             ]
             
             # Sort HVN by strength
@@ -1570,11 +1770,12 @@ class SRBreakoutPredictor:
 
     @validate_data_quality(validation_level="WARNING")
     async def detect_multi_timeframe_confluence(self, market_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
-        """Detect S/R levels that appear across multiple timeframes."""
+        """Detect S/R levels that appear across multiple timeframes using optimized weights."""
         try:
             confluence_levels = {}
             
-            timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+            # Use optimized timeframe weights
+            timeframes = list(self.timeframe_weights.keys())
             
             for tf in timeframes:
                 if tf in market_data:
@@ -1595,7 +1796,10 @@ class SRBreakoutPredictor:
                             }
                         
                         confluence_levels[level_key]['timeframes'].append(tf)
-                        confluence_levels[level_key]['strength'] += level.get('strength', 0.5)
+                        # Apply timeframe weight to strength calculation
+                        tf_weight = self.timeframe_weights.get(tf, 0.1)
+                        weighted_strength = level.get('strength', 0.5) * tf_weight
+                        confluence_levels[level_key]['strength'] += weighted_strength
                         if level.get('method') not in confluence_levels[level_key]['methods']:
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
                     
@@ -1611,7 +1815,10 @@ class SRBreakoutPredictor:
                             }
                         
                         confluence_levels[level_key]['timeframes'].append(tf)
-                        confluence_levels[level_key]['strength'] += level.get('strength', 0.5)
+                        # Apply timeframe weight to strength calculation
+                        tf_weight = self.timeframe_weights.get(tf, 0.1)
+                        weighted_strength = level.get('strength', 0.5) * tf_weight
+                        confluence_levels[level_key]['strength'] += weighted_strength
                         if level.get('method') not in confluence_levels[level_key]['methods']:
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
             
@@ -3054,6 +3261,24 @@ class SRBreakoutPredictor:
             if "isolation_score_weight" in weights:
                 self.strength_score_weights["isolation_score"] = weights["isolation_score_weight"]
 
+            # Update advanced parameters
+            if "fibonacci_sensitivity" in weights:
+                self.fibonacci_sensitivity = weights["fibonacci_sensitivity"]
+            if "elliott_confidence_threshold" in weights:
+                self.elliott_confidence_threshold = weights["elliott_confidence_threshold"]
+            if "order_flow_hvn_threshold" in weights:
+                self.order_flow_hvn_threshold = weights["order_flow_hvn_threshold"]
+
+            # Update timeframe weights
+            timeframe_weights = {}
+            for tf in ["1m", "5m", "15m", "1h", "4h", "1d"]:
+                weight_key = f"tf_{tf}_weight"
+                if weight_key in weights:
+                    timeframe_weights[tf] = weights[weight_key]
+            
+            if timeframe_weights:
+                self.timeframe_weights.update(timeframe_weights)
+
             self.logger.info(f"✅ S/R weights updated: {weights}")
             return True
 
@@ -3151,7 +3376,7 @@ async def setup_sr_breakout_predictor(
     config: dict[str, Any] | None = None,
 ) -> SRBreakoutPredictor | None:
     """
-    Setup and return a configured SRBreakoutPredictor instance.
+    Setup and return a configured SRBreakoutPredictor instance with optimized parameters.
 
     Args:
         config: Configuration dictionary
@@ -3160,10 +3385,31 @@ async def setup_sr_breakout_predictor(
         SRBreakoutPredictor: Configured SR breakout predictor instance
     """
     try:
-        predictor = SRBreakoutPredictor(config or {})
+        # Ensure optimized parameters are enabled
+        sr_config = config.copy() if config else {}
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        
+        predictor = SRBreakoutPredictor(sr_config)
         if await predictor.initialize():
             return predictor
         return None
     except Exception as e:
         system_logger.exception(f"Failed to setup SR Breakout Predictor: {e}")
         return None
+
+
+def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ensure that the configuration has optimized S/R parameters enabled.
+    
+    Args:
+        config: Original configuration dictionary
+        
+    Returns:
+        dict: Configuration with optimized S/R parameters enabled
+    """
+    sr_config = config.copy()
+    sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+    sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+    return sr_config

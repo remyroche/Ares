@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization.py
+# src/training/steps/step17_final_parameters_optimization.py
 
 import asyncio
 import contextlib
@@ -1407,7 +1407,7 @@ class FinalParametersOptimizationStep:
         """Select the best solution from Pareto front."""
         try:
             # Use configurable weights for composite score
-            from src.training.steps.step12_final_parameters_optimization.hyperparameter_optimization_config import (
+            from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
                 get_hyperparameter_config,
             )
 
@@ -1687,7 +1687,7 @@ from src.utils.training_pipeline_decorators import (
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step12_final_parameters_optimization")
+@idempotent_step(step_key="step17_final_parameters_optimization")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")

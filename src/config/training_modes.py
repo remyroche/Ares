@@ -354,7 +354,7 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
     # Step-specific parameter overrides
     step_overrides = {
         # Step 12: Final Parameters Optimization - has multiple optimization sections
-        "step12_final_parameters_optimization": {
+        "step17_final_parameters_optimization": {
             "confidence_threshold_trials": max(3, int(40 * percentage)),
             "volatility_trials": max(3, int(50 * percentage)),
             "position_sizing_trials": max(3, int(60 * percentage)),

@@ -654,8 +654,11 @@ async def _add_sr_features(
         
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
         
-        # Initialize S/R predictor with proper config
-        sr_predictor = SRBreakoutPredictor(config)
+        # Initialize S/R predictor with optimized parameters
+        sr_config = config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        sr_predictor = SRBreakoutPredictor(sr_config)
         await sr_predictor.initialize()
         
         # Get comprehensive S/R context
@@ -725,7 +728,11 @@ async def _add_sr_aware_feature_selection(
     try:
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
         
-        sr_predictor = SRBreakoutPredictor(config)
+        # Initialize SRBreakoutPredictor with optimized parameters
+        sr_config = config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        sr_predictor = SRBreakoutPredictor(sr_config)
         await sr_predictor.initialize()
         
         # Get SR context for feature selection

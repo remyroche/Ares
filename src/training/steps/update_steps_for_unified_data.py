@@ -22,7 +22,7 @@ TRAINING_STEPS: List[str] = [
     "step9_tactician_specialist_training",
     "step10_tactician_ensemble_creation",
     "step11_confidence_calibration",
-    "step12_final_parameters_optimization",
+            "step17_final_parameters_optimization",
     "step13_walk_forward_validation",
     "step14_monte_carlo_validation",
     "step15_ab_testing",
@@ -150,7 +150,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
             "timeframe": "1m",
             "notes": "Uses predictions from step10",
         },
-        "step12_final_parameters_optimization": {
+        "step17_final_parameters_optimization": {
             "lookback_days": 180,
             "timeframe": "1m",
             "notes": "Optimizes parameters using all previous results",

@@ -80,7 +80,11 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("✅ Enhanced data quality manager initialized successfully")
             
             # Initialize SR Breakout Predictor for enhanced regime analysis
-            self.sr_predictor = SRBreakoutPredictor(self.config)
+            # Initialize SRBreakoutPredictor with optimized parameters
+        sr_config = self.config.copy()
+        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+        self.sr_predictor = SRBreakoutPredictor(sr_config)
             self.logger.info("✅ SR Breakout Predictor initialized successfully")
             
         except ImportError as e:

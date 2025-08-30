@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization/
+# src/training/steps/step17_final_parameters_optimization/
 # hyperparameter_optimization_config.py
 
 """Hyperparameter Optimization Configuration.

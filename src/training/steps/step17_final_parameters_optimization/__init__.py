@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization/__init__.py
+# src/training/steps/step17_final_parameters_optimization/__init__.py
 
 """Step 12: Final Parameters Optimization Package.
 

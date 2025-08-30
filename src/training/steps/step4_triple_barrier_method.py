@@ -191,6 +191,7 @@ class TripleBarrierMethodStep:
             
             # Log artifacts and create detailed report
             await self._log_step4_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 symbol, exchange, timeframe, data_dir, result_data, output_path
             )
             
@@ -242,6 +243,10 @@ class TripleBarrierMethodStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "data_dir": data_dir,
+            ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
             }
             
             # Create step data for report
@@ -271,6 +276,10 @@ class TripleBarrierMethodStep:
                 additional_metadata={
                     "triple_barrier_success": True,
                     "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged triple barrier method report: {report_name}")
@@ -285,7 +294,11 @@ class TripleBarrierMethodStep:
                     additional_metadata={
                         "artifact_type": "triple_barrier_labels",
                         "dataframe_shape": list(result_data.shape),
-                        "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {},
+                        "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                },
                         "timeframe": timeframe,
                     }
                 )
@@ -299,6 +312,10 @@ class TripleBarrierMethodStep:
                 additional_metadata={
                     "metrics_type": "triple_barrier_performance",
                     "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             

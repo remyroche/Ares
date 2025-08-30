@@ -179,6 +179,7 @@ class DataCollectionStep:
 
         # Log detailed report and artifacts
         await self._log_step1_artifacts_and_report(training_input, pipeline_state)
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
 
         return pipeline_state
 
@@ -239,9 +240,32 @@ class DataCollectionStep:
                     "data_collection_success": pipeline_state.get("data_collection_completed", False),
                     "quality_check_passed": pipeline_state.get("quality_check_passed", False),
                     "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged data collection report: {report_name}")
+            
+            # Log data quality summary
+            quality_report_name = log_step_report(
+                config=self.config,
+                step_name="step1_data_collection",
+                report_data={
+                    "quality_check_passed": pipeline_state.get("quality_check_passed", False),
+                    "data_collection_completed": pipeline_state.get("data_collection_completed", False),
+                    "artifacts_generated": artifacts_generated,
+                },
+                report_type="data_quality_summary",
+                additional_metadata={
+                    "quality_check_passed": pipeline_state.get("quality_check_passed", False),
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged data quality summary: {quality_report_name}")
             
             # Log metrics
             log_step_metrics(
@@ -251,29 +275,11 @@ class DataCollectionStep:
                 additional_metadata={
                     "metrics_type": "data_collection_performance",
                     "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
-            
-            # Log data quality summary if available
-            if pipeline_state.get("quality_check_passed", False):
-                quality_summary = {
-                    "data_quality_score": execution_metadata["data_quality_score"],
-                    "processing_efficiency": execution_metadata["processing_efficiency"],
-                    "artifacts_generated": artifacts_generated,
-                    "quality_check_status": "passed",
-                }
-                
-                quality_report_name = log_step_report(
-                    config=self.config,
-                    step_name="step1_data_collection",
-                    report_data=quality_summary,
-                    report_type="data_quality_summary",
-                    additional_metadata={
-                        "quality_check_passed": True,
-                        "timeframe": timeframe,
-                    }
-                )
-                self.logger.info(f"✅ Logged data quality summary: {quality_report_name}")
             
             self.logger.info("✅ Step 1 artifacts and reports logged successfully")
             
@@ -727,7 +733,11 @@ async def run_step(
             "timeframe": timeframe,
             "data_dir": data_dir,
             "force_rerun": force_rerun,
-        }
+        ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
 
         # Execute data collection
         pipeline_state: dict[str, Any] = {}

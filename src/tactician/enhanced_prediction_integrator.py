@@ -1,878 +1,599 @@
 # src/tactician/enhanced_prediction_integrator.py
 
 import asyncio
-import json
-import os
-import pickle
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Tuple, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, warning, failed, missing
 from src.utils.centralized_decorators import (
-    validate_data_quality,
+    guard_dataframe_nulls,
+    handle_errors,
     with_tracing_span,
-    comprehensive_validation,
-    intelligent_caching,
-    performance_monitor,
-    ValidationLevel,
-    PerformanceLevel,
 )
+from src.utils.logger import get_logger
+from src.utils.warning_symbols import error, warning
+from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
 
 class TacticianEnhancedPredictionIntegrator:
     """
-    Enhanced Prediction Integrator for Tactician that enhances existing position and leverage sizers
-    with predictions from the enhanced training manager steps 6-14.
+    Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
+    similar to the Analyst but with smaller price deviations and higher confidence.
     
-    This component enhances existing tactician components:
-    - Enhances PositionSizer with ML-based confidence predictions
-    - Enhances LeverageSizer with calibrated risk predictions
-    - Provides additional context for existing tactician decision-making
-    - Integrates HMM-based model predictions (step 6-8)
-    - Integrates confidence calibration results (step 11)
-    - Integrates optimization results (steps 12-14)
+    Key Features:
+    - Price deviation % without hitting the opposite barrier (smaller than Analyst)
+    - Price direction prediction
+    - Confidence that we will reach a certain price
+    - Shorter timeframes (1m, 5m vs Analyst's longer timeframes)
+    - Higher precision using dynamic barriers
+    - Integration with Analyst predictions
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize the tactician enhanced prediction integrator.
-
-        Args:
-            config: Configuration dictionary
-        """
-        self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("TacticianEnhancedPredictionIntegrator")
-
-        # Model state
-        self.is_initialized: bool = False
-        self.models_loaded: bool = False
-        self.calibration_loaded: bool = False
-
-        # Loaded models and predictions
-        self.hmm_models: dict[str, Any] = {}
-        self.calibration_results: dict[str, Any] = {}
-        self.optimization_results: dict[str, Any] = {}
+        """Initialize the Tactician enhanced prediction integrator."""
+        self.config = config
+        self.logger = get_logger(__name__)
         
-        # References to existing tactician components (will be set during integration)
-        self.position_sizer = None
-        self.leverage_sizer = None
-
-        # Configuration
-        self.integrator_config: dict[str, Any] = self.config.get("tactician_enhanced_prediction_integrator", {})
-        self.data_dir: str = self.integrator_config.get("data_dir", "data/training")
-        self.models_dir: str = self.integrator_config.get("models_dir", "models")
+        # Initialize dynamic barrier calculator
+        self.barrier_calculator = DynamicBarrierCalculator(config)
         
-        # Prediction thresholds
-        self.confidence_threshold: float = self.integrator_config.get("confidence_threshold", 0.7)
-        self.price_prediction_threshold: float = self.integrator_config.get("price_prediction_threshold", 0.6)
-        self.entry_threshold: float = self.integrator_config.get("entry_threshold", 0.65)
-        self.exit_threshold: float = self.integrator_config.get("exit_threshold", 0.55)
+        # Load Tactician configuration
+        self._load_tactician_config()
+        
+        # Initialize prediction models (placeholder for actual ML models)
+        self.tactician_models = self._initialize_tactician_models()
+        
+        self.logger.info("🚀 Tactician Enhanced Prediction Integrator initialized")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tactician enhanced prediction integrator initialization",
-    )
-    @comprehensive_validation(validation_level=ValidationLevel.STRICT)
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
-    async def initialize(self) -> bool:
-        """
-        Initialize the tactician enhanced prediction integrator.
+    def _load_tactician_config(self) -> None:
+        """Load Tactician-specific configuration."""
+        tactician_config = self.config.get("tactician_triple_barrier", {})
+        
+        # Timeframe configuration
+        self.timeframes = tactician_config.get("timeframes", ["1m", "5m"])
+        self.primary_timeframe = tactician_config.get("primary_timeframe", "1m")
+        self.secondary_timeframe = tactician_config.get("secondary_timeframe", "5m")
+        
+        # Precision configuration
+        self.enable_high_precision_mode = tactician_config.get("enable_high_precision_mode", True)
+        self.precision_threshold = tactician_config.get("precision_threshold", 0.85)
+        
+        # Multi-outcome prediction configuration (similar to Analyst)
+        self.prediction_types = [
+            "price_deviation_prediction",    # Price deviation % for 2 barrier combinations
+            "price_direction_prediction",    # Price direction (long/short)
+            "price_target_confidence"        # Confidence to reach upper barrier before lower barrier
+        ]
+        
+        # Confidence boost factors for Tactician (higher confidence than Analyst)
+        self.confidence_boost_factors = {
+            "price_deviation_prediction": 1.3,  # 30% higher confidence
+            "price_direction_prediction": 1.25, # 25% higher confidence
+            "price_target_confidence": 1.4      # 40% higher confidence
+        }
 
-        Returns:
-            bool: True if initialization successful, False otherwise
-        """
-        try:
-            self.logger.info("🚀 Initializing Tactician Enhanced Prediction Integrator...")
-
-            # Load HMM-based models (step 6-8)
-            await self._load_hmm_models()
-
-            # Load confidence calibration results (step 11)
-            await self._load_calibration_results()
-
-                    # Load optimization results (step 12-14)
-        await self._load_optimization_results()
-
-        # Apply optimized parameters if available
-        await self._apply_optimized_parameters()
-
-        self.is_initialized = True
-        self.logger.info("✅ Tactician Enhanced Prediction Integrator initialized successfully")
-        return True
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Tactician Enhanced Prediction Integrator initialization failed: {e}"))
-            return False
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading HMM models",
-    )
-    @with_tracing_span("load_hmm_models")
-    @intelligent_caching(cache_key="hmm_models")
-    async def _load_hmm_models(self) -> None:
-        """Load HMM-based models from step 6-8."""
-        try:
-            hmm_models_path = Path(self.data_dir) / "hmm_models"
-            if not hmm_models_path.exists():
-                self.logger.warning(warning(f"⚠️ HMM models directory not found: {hmm_models_path}"))
-                return
-
-            for model_file in hmm_models_path.glob("*.pkl"):
-                try:
-                    with open(model_file, "rb") as f:
-                        model_data = pickle.load(f)
-                    
-                    model_name = model_file.stem
-                    self.hmm_models[model_name] = model_data
-                    self.logger.info(f"✅ Loaded HMM model: {model_name}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load HMM model {model_file}: {e}"))
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading HMM models: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading tactician specialist models",
-    )
-    async def _load_tactician_specialist_models(self) -> None:
-        """Load tactician specialist models from step 9."""
-        try:
-            tactician_models_path = Path(self.data_dir) / "tactician_specialist_models"
-            if not tactician_models_path.exists():
-                self.logger.warning(warning(f"⚠️ Tactician specialist models directory not found: {tactician_models_path}"))
-                return
-
-            for regime_dir in tactician_models_path.iterdir():
-                if regime_dir.is_dir():
-                    regime_name = regime_dir.name
-                    regime_models = {}
-                    
-                    for model_file in regime_dir.glob("*.pkl"):
-                        try:
-                            with open(model_file, "rb") as f:
-                                model_data = pickle.load(f)
-                            
-                            model_name = model_file.stem
-                            regime_models[model_name] = model_data
-                            self.logger.info(f"✅ Loaded tactician specialist model: {regime_name}/{model_name}")
-                        
-                        except Exception as e:
-                            self.logger.warning(warning(f"⚠️ Failed to load tactician specialist model {model_file}: {e}"))
-                    
-                    self.tactician_specialist_models[regime_name] = regime_models
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading tactician specialist models: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading tactician labeling models",
-    )
-    async def _load_tactician_labeling_models(self) -> None:
-        """Load tactician labeling models from step 10."""
-        try:
-            tactician_labeling_path = Path(self.data_dir) / "tactician_labeling"
-            if not tactician_labeling_path.exists():
-                self.logger.warning(warning(f"⚠️ Tactician labeling directory not found: {tactician_labeling_path}"))
-                return
-
-            for labeling_file in tactician_labeling_path.glob("*.pkl"):
-                try:
-                    with open(labeling_file, "rb") as f:
-                        labeling_data = pickle.load(f)
-                    
-                    labeling_name = labeling_file.stem
-                    self.tactician_labeling_models[labeling_name] = labeling_data
-                    self.logger.info(f"✅ Loaded tactician labeling model: {labeling_name}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load tactician labeling model {labeling_file}: {e}"))
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading tactician labeling models: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading calibration results",
-    )
-    async def _load_calibration_results(self) -> None:
-        """Load confidence calibration results from step 11."""
-        try:
-            calibration_path = Path(self.data_dir) / "calibration_results"
-            if not calibration_path.exists():
-                self.logger.warning(warning(f"⚠️ Calibration results directory not found: {calibration_path}"))
-                return
-
-            for calibration_file in calibration_path.glob("*.pkl"):
-                try:
-                    with open(calibration_file, "rb") as f:
-                        calibration_data = pickle.load(f)
-                    
-                    calibration_name = calibration_file.stem
-                    self.calibration_results[calibration_name] = calibration_data
-                    self.logger.info(f"✅ Loaded calibration results: {calibration_name}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load calibration results {calibration_file}: {e}"))
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading calibration results: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="loading optimization results",
-    )
-    async def _load_optimization_results(self) -> None:
-        """Load optimization results from step 12-14."""
-        try:
-            optimization_path = Path(self.data_dir) / "optimization_results"
-            if not optimization_path.exists():
-                self.logger.warning(warning(f"⚠️ Optimization results directory not found: {optimization_path}"))
-                return
-
-            for optimization_file in optimization_path.glob("*.json"):
-                try:
-                    with open(optimization_file, "r") as f:
-                        optimization_data = json.load(f)
-                    
-                    optimization_name = optimization_file.stem
-                    self.optimization_results[optimization_name] = optimization_data
-                    self.logger.info(f"✅ Loaded optimization results: {optimization_name}")
-                
-                except Exception as e:
-                    self.logger.warning(warning(f"⚠️ Failed to load optimization results {optimization_file}: {e}"))
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error loading optimization results: {e}"))
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="applying optimized parameters",
-    )
-    @with_tracing_span("apply_optimized_parameters")
-    async def _apply_optimized_parameters(self) -> bool:
-        """Apply optimized parameters from step 12 optimization."""
-        try:
-            if not self.optimization_results:
-                self.logger.info("ℹ️ No optimization results available, using default parameters")
-                return True
-
-            # Get confidence thresholds from optimization
-            confidence_thresholds = self.optimization_results.get("confidence_thresholds", {})
-            optimized_params = confidence_thresholds.get("optimized_parameters", {})
-
-            # Apply enhanced prediction integrator parameters
-            if "enhanced_prediction_confidence_threshold" in optimized_params:
-                self.confidence_threshold = optimized_params["enhanced_prediction_confidence_threshold"]
-                self.logger.info(f"✅ Applied optimized confidence threshold: {self.confidence_threshold}")
-
-            if "enhanced_prediction_price_threshold" in optimized_params:
-                self.price_prediction_threshold = optimized_params["enhanced_prediction_price_threshold"]
-                self.logger.info(f"✅ Applied optimized price threshold: {self.price_prediction_threshold}")
-
-            # Store optimized parameters for use in enhancement methods
-            self.optimized_params = optimized_params
-
-            return True
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error applying optimized parameters: {e}"))
-            return False
+    def _initialize_tactician_models(self) -> dict[str, Any]:
+        """Initialize Tactician prediction models."""
+        # Placeholder for actual ML models
+        # In production, these would be trained models for each prediction type
+        models = {}
+        
+        for prediction_type in self.prediction_types:
+            models[prediction_type] = {
+                "model": None,  # Placeholder for actual model
+                "confidence": 0.90,  # Higher base confidence than Analyst
+                "timeframe": self.primary_timeframe,
+                "confidence_boost": self.confidence_boost_factors[prediction_type]
+            }
+        
+        return models
 
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
         context="generating tactician enhanced predictions",
     )
-    @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("generate_tactician_enhanced_predictions")
-    @performance_monitor(performance_level=PerformanceLevel.HIGH)
-    async def generate_tactician_enhanced_predictions(
-        self, 
+    @with_tracing_span("Tactician.generateEnhancedPredictions")
+    async def generate_tactician_predictions(
+        self,
         market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any],
+        analyst_predictions: dict[str, Any],
         symbol: str,
         exchange: str,
-        timeframe: str
+        timeframe: str = None
     ) -> dict[str, Any]:
         """
-        Generate enhanced predictions to augment existing tactician components.
-
+        Generate Tactician enhanced predictions based on Analyst predictions.
+        
         Args:
-            market_data: Market data for prediction
-            regime_info: Current regime information
-            analyst_signals: Analyst signals and predictions
+            market_data: Market data for the timeframe
+            analyst_predictions: Analyst's multi-outcome predictions
             symbol: Trading symbol
             exchange: Exchange name
-            timeframe: Timeframe
-
+            timeframe: Target timeframe (1m or 5m)
+            
         Returns:
-            dict: Enhanced predictions to augment existing tactician components
+            dict: Tactician's enhanced multi-outcome predictions
         """
         try:
-            if not self.is_initialized:
-                self.logger.error(error("❌ Tactician Enhanced Prediction Integrator not initialized"))
-                return {}
+            # Determine timeframe
+            if timeframe is None:
+                timeframe = self._determine_optimal_timeframe(market_data)
+            
+            # Get dynamic barriers for this timeframe (smaller than Analyst)
+            upper_barrier, lower_barrier = self.barrier_calculator.calculate_dynamic_barriers(timeframe)
+            
+            # Generate enhanced predictions for each type
+            tactician_predictions = {}
+            
+            for prediction_type in self.prediction_types:
+                enhanced_prediction = await self._generate_enhanced_prediction(
+                    prediction_type=prediction_type,
+                    market_data=market_data,
+                    analyst_predictions=analyst_predictions,
+                    upper_barrier=upper_barrier,
+                    lower_barrier=lower_barrier,
+                    timeframe=timeframe,
+                    symbol=symbol,
+                    exchange=exchange
+                )
+                
+                if enhanced_prediction:
+                    tactician_predictions[prediction_type] = enhanced_prediction
+            
+            # Add metadata
+            tactician_predictions["metadata"] = {
+                "timeframe": timeframe,
+                "symbol": symbol,
+                "exchange": exchange,
+                "upper_barrier": upper_barrier,
+                "lower_barrier": lower_barrier,
+                "precision_threshold": self.precision_threshold,
+                "high_precision_mode": self.enable_high_precision_mode,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            self.logger.info(f"🎯 Generated {len(tactician_predictions)} Tactician enhanced predictions for {timeframe}")
+            
+            return tactician_predictions
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating Tactician predictions: {e}"))
+            return {}
 
-            enhanced_predictions = {
-                "ml_confidence_predictions": {},
-                "calibrated_confidence_scores": {},
-                "optimization_weights": {},
-                "hmm_predictions": {},
+    async def _generate_enhanced_prediction(
+        self,
+        prediction_type: str,
+        market_data: pd.DataFrame,
+        analyst_predictions: dict[str, Any],
+        upper_barrier: float,
+        lower_barrier: float,
+        timeframe: str,
+        symbol: str,
+        exchange: str
+    ) -> dict[str, Any]:
+        """Generate enhanced prediction for a specific type."""
+        try:
+            # Get base prediction from Analyst
+            base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
+            
+            if base_prediction is None:
+                return None
+            
+            # Apply Tactician-specific enhancement
+            enhanced_prediction = self._apply_tactician_enhancement(
+                prediction_type=prediction_type,
+                base_prediction=base_prediction,
+                market_data=market_data,
+                upper_barrier=upper_barrier,
+                lower_barrier=lower_barrier,
+                timeframe=timeframe
+            )
+            
+            # Apply high precision filtering
+            if self.enable_high_precision_mode:
+                if enhanced_prediction.get("confidence", 0.0) < self.precision_threshold:
+                    return None
+            
+            return enhanced_prediction
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error generating {prediction_type} prediction: {e}"))
+            return None
+
+    def _extract_analyst_prediction(
+        self, 
+        analyst_predictions: dict[str, Any], 
+        prediction_type: str
+    ) -> Optional[dict[str, Any]]:
+        """Extract base prediction from Analyst predictions."""
+        try:
+            # Map Tactician prediction types to Analyst prediction types
+            analyst_type_mapping = {
+                "price_deviation_prediction": "price_prediction",
+                "price_direction_prediction": "direction_prediction", 
+                "price_target_confidence": "confidence_prediction"
+            }
+            
+            analyst_type = analyst_type_mapping.get(prediction_type, prediction_type)
+            
+            # Look for prediction in various possible locations
+            for key, value in analyst_predictions.items():
+                if analyst_type in key.lower():
+                    return value
+                elif isinstance(value, dict) and analyst_type in value:
+                    return value[analyst_type]
+            
+            # Fallback: create synthetic prediction based on market data
+            return self._create_synthetic_prediction(prediction_type, analyst_predictions)
+            
+        except Exception as e:
+            self.logger.warning(warning(f"⚠️ Could not extract {prediction_type} from Analyst predictions: {e}"))
+            return None
+
+    def _create_synthetic_prediction(
+        self, 
+        prediction_type: str, 
+        analyst_predictions: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create synthetic prediction when Analyst prediction is not available."""
+        try:
+            # Extract any available confidence or prediction values
+            base_confidence = 0.5
+            base_prediction = 0.0
+            
+            for key, value in analyst_predictions.items():
+                if isinstance(value, dict):
+                    if "confidence" in value:
+                        base_confidence = value["confidence"]
+                    if "prediction" in value:
+                        base_prediction = value["prediction"]
+            
+            # Create synthetic prediction based on type
+            if prediction_type == "price_deviation_prediction":
+                # Price deviation for both 50% and 25% of Analyst barriers
+                # This will be calculated by the ML model based on market conditions
+                synthetic_value = base_prediction * 0.5  # Base 50% of Analyst deviation
+            elif prediction_type == "price_direction_prediction":
+                # Same direction as Analyst
+                synthetic_value = base_prediction  # Keep same direction
+            elif prediction_type == "price_target_confidence":
+                # Confidence calculated by ML model (not just boosted)
+                synthetic_value = base_confidence  # Base confidence, ML model will enhance
+            else:
+                synthetic_value = base_prediction
+            
+            return {
+                "prediction": synthetic_value,
+                "confidence": base_confidence,
+                "model_type": "synthetic",
+                "prediction_type": prediction_type,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error creating synthetic prediction: {e}"))
+            return {
+                "prediction": 0.0,
+                "confidence": 0.5,
+                "model_type": "synthetic",
+                "prediction_type": prediction_type,
                 "timestamp": datetime.now().isoformat()
             }
 
-            # Generate HMM-based predictions for additional context
-            hmm_predictions = await self._generate_hmm_predictions(
-                market_data, regime_info, symbol, exchange, timeframe
-            )
-            enhanced_predictions["hmm_predictions"] = hmm_predictions
-
-            # Generate ML confidence predictions to enhance existing components
-            ml_confidence = await self._generate_ml_confidence_predictions(
-                hmm_predictions, analyst_signals, symbol, exchange
-            )
-            enhanced_predictions["ml_confidence_predictions"] = ml_confidence
-
-            # Apply confidence calibration
-            calibrated_confidence = await self._apply_confidence_calibration(
-                ml_confidence, symbol, exchange
-            )
-            enhanced_predictions["calibrated_confidence_scores"] = calibrated_confidence
-
-            # Apply optimization weights
-            optimization_weights = await self._apply_optimization_weights(
-                calibrated_confidence, symbol, exchange
-            )
-            enhanced_predictions["optimization_weights"] = optimization_weights
-
-            return enhanced_predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating tactician enhanced predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating HMM predictions",
-    )
-    @with_tracing_span("generate_hmm_predictions")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_hmm_predictions(
+    def _apply_tactician_enhancement(
         self,
+        prediction_type: str,
+        base_prediction: dict[str, Any],
         market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        symbol: str,
-        exchange: str,
+        upper_barrier: float,
+        lower_barrier: float,
         timeframe: str
     ) -> dict[str, Any]:
-        """Generate predictions using HMM-based models."""
+        """Apply Tactician-specific enhancement to base prediction."""
         try:
-            predictions = {}
+            # Get confidence boost factor for this prediction type
+            confidence_boost = self.confidence_boost_factors.get(prediction_type, 1.0)
             
-            for model_name, model_data in self.hmm_models.items():
-                if "model" in model_data and hasattr(model_data["model"], "predict"):
-                    try:
-                        # Prepare features for prediction
-                        features = self._prepare_features_for_prediction(market_data, regime_info)
-                        
-                        # Generate prediction
-                        raw_prediction = model_data["model"].predict(features)
-                        
-                        # Apply model-specific post-processing
-                        processed_prediction = self._process_hmm_prediction(
-                            raw_prediction, model_data, model_name
-                        )
-                        
-                        predictions[f"hmm_{model_name}"] = processed_prediction
-                        
-                    except Exception as e:
-                        self.logger.warning(warning(f"⚠️ Failed to generate HMM prediction for {model_name}: {e}"))
-
-            return predictions
-
+            # Extract base values
+            base_value = base_prediction.get("prediction", 0.0)
+            base_confidence = base_prediction.get("confidence", 0.5)
+            
+            # Apply Tactician-specific enhancement based on prediction type
+            enhanced_value = self._enhance_prediction_value(
+                prediction_type=prediction_type,
+                base_value=base_value,
+                market_data=market_data,
+                upper_barrier=upper_barrier,
+                lower_barrier=lower_barrier,
+                timeframe=timeframe
+            )
+            
+            # Calculate enhanced confidence (higher than Analyst)
+            enhanced_confidence = self._calculate_enhanced_confidence(
+                base_confidence=base_confidence,
+                confidence_boost=confidence_boost,
+                market_data=market_data,
+                timeframe=timeframe
+            )
+            
+            # Calculate precision score
+            precision_score = self._calculate_precision_score(
+                enhanced_confidence=enhanced_confidence,
+                market_data=market_data,
+                timeframe=timeframe
+            )
+            
+            return {
+                "prediction": enhanced_value,
+                "confidence": enhanced_confidence,
+                "precision_score": precision_score,
+                "model_type": "tactician_enhanced",
+                "prediction_type": prediction_type,
+                "timeframe": timeframe,
+                "upper_barrier": upper_barrier,
+                "lower_barrier": lower_barrier,
+                "confidence_boost": confidence_boost,
+                "base_prediction": base_prediction,
+                "timestamp": datetime.now().isoformat()
+            }
+            
         except Exception as e:
-            self.logger.error(error(f"❌ Error generating HMM predictions: {e}"))
-            return {}
+            self.logger.error(error(f"❌ Error applying Tactician enhancement: {e}"))
+            return base_prediction
+
+    def _enhance_prediction_value(
+        self,
+        prediction_type: str,
+        base_value: float,
+        market_data: pd.DataFrame,
+        barrier_combinations: Dict[str, Tuple[float, float]],
+        timeframe: str
+    ) -> Dict[str, float]:
+        """Enhance prediction value for 2 barrier combinations."""
+        try:
+            if prediction_type == "price_deviation_prediction":
+                # Calculate price deviations for 2 barrier combinations
+                current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
+                
+                deviations = {}
+                for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+                    # Calculate deviations for this barrier combination
+                    upper_deviation = (upper_barrier - current_price) / current_price
+                    lower_deviation = (current_price - lower_barrier) / current_price
+                    
+                    # Store both deviations for this combination
+                    deviations[barrier_name] = {
+                        "upper_deviation": upper_deviation,
+                        "lower_deviation": lower_deviation
+                    }
+                
+                return deviations
+                
+            elif prediction_type == "price_direction_prediction":
+                # Same direction as Analyst for 2 barrier combinations
+                directions = {}
+                for barrier_name in barrier_combinations.keys():
+                    directions[barrier_name] = base_value  # Keep same direction
+                
+                return directions
+                
+            elif prediction_type == "price_target_confidence":
+                # Confidence to reach upper barrier before lower barrier for each combination
+                # ML model calculates this based on market conditions, volatility, and barrier distances
+                confidences = {}
+                for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+                    # ML model will calculate confidence based on:
+                    # - Market volatility
+                    # - Barrier distances
+                    # - Recent price action
+                    # - Support/resistance levels
+                    # For now, use base confidence - ML model will enhance this
+                    confidences[barrier_name] = base_value
+                
+                return confidences
+                
+            else:
+                # Return base value for all combinations
+                return {name: base_value for name in barrier_combinations.keys()}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enhancing prediction value: {e}")
+            # Return fallback values for all combinations
+            return {name: base_value for name in barrier_combinations.keys()}
+
+    def _calculate_enhanced_confidence(
+        self,
+        base_confidence: float,
+        confidence_boost: float,
+        market_data: pd.DataFrame,
+        timeframe: str
+    ) -> float:
+        """Calculate enhanced confidence (higher than Analyst)."""
+        try:
+            # Base enhancement from confidence boost
+            enhanced_confidence = min(1.0, base_confidence * confidence_boost)
+            
+            # Additional enhancement based on market data quality
+            if not market_data.empty:
+                # Check for recent volatility (lower volatility = higher confidence)
+                recent_volatility = market_data['close'].pct_change().tail(10).std()
+                volatility_factor = max(0.6, 1.0 - recent_volatility * 8)  # Less penalty for volatility
+                
+                # Check for data quality (more recent data = higher confidence)
+                data_freshness = 1.0  # Assume fresh data
+                
+                # Apply factors
+                enhanced_confidence *= volatility_factor * data_freshness
+            
+            return min(1.0, enhanced_confidence)
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating enhanced confidence: {e}"))
+            return base_confidence
+
+    def _calculate_precision_score(
+        self,
+        enhanced_confidence: float,
+        market_data: pd.DataFrame,
+        timeframe: str
+    ) -> float:
+        """Calculate precision score for the enhanced prediction."""
+        try:
+            # Base precision from confidence
+            precision_score = enhanced_confidence
+            
+            # Adjust based on timeframe (shorter timeframes get higher precision)
+            timeframe_factor = 1.3 if timeframe == "1m" else 1.1  # Higher boost for 1m
+            precision_score *= timeframe_factor
+            
+            # Adjust based on market data quality
+            if not market_data.empty:
+                # More data points = higher precision
+                data_quality_factor = min(1.3, len(market_data) / 100)
+                precision_score *= data_quality_factor
+            
+            return min(1.0, precision_score)
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error calculating precision score: {e}"))
+            return enhanced_confidence
+
+    def _determine_optimal_timeframe(self, market_data: pd.DataFrame) -> str:
+        """Determine optimal timeframe based on market data."""
+        try:
+            if market_data.empty:
+                return self.primary_timeframe
+            
+            # Check data frequency
+            if len(market_data) > 1:
+                time_diff = market_data.index[1] - market_data.index[0]
+                if time_diff <= timedelta(minutes=1):
+                    return "1m"
+                elif time_diff <= timedelta(minutes=5):
+                    return "5m"
+            
+            return self.primary_timeframe
+            
+        except Exception as e:
+            self.logger.error(error(f"❌ Error determining optimal timeframe: {e}"))
+            return self.primary_timeframe
 
     @handle_errors(
         exceptions=(Exception,),
         default_return={},
-        context="generating ML confidence predictions",
+        context="validating tactician predictions",
     )
-    @with_tracing_span("generate_ml_confidence_predictions")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_ml_confidence_predictions(
+    async def validate_tactician_predictions(
         self,
-        hmm_predictions: dict[str, Any],
-        analyst_signals: dict[str, Any],
-        symbol: str,
-        exchange: str
+        tactician_predictions: dict[str, Any],
+        analyst_predictions: dict[str, Any]
     ) -> dict[str, Any]:
-        """Generate ML confidence predictions to enhance existing tactician components."""
+        """Validate Tactician predictions against Analyst predictions."""
         try:
-            ml_confidence = {}
+            validation_results = {
+                "is_valid": True,
+                "validation_score": 0.0,
+                "issues": [],
+                "enhancements": []
+            }
             
-            # Calculate aggregate confidence from HMM predictions
-            total_confidence = 0.0
+            total_score = 0.0
             valid_predictions = 0
             
-            for prediction_name, prediction_data in hmm_predictions.items():
-                confidence = prediction_data.get("confidence", 0.0)
-                if confidence > 0:
-                    total_confidence += confidence
-                    valid_predictions += 1
-            
-            avg_confidence = total_confidence / max(valid_predictions, 1)
-            
-            # Combine with analyst signals
-            analyst_confidence = analyst_signals.get("confidence", 0.5)
-            
-            # Calculate weighted ML confidence using optimized parameters if available
-            # This balances different ML model types (Analyst vs Tactician ML models)
-            analyst_ml_weight = getattr(self, 'optimized_params', {}).get("analyst_ml_weight", 0.6)
-            tactician_ml_weight = getattr(self, 'optimized_params', {}).get("tactician_ml_weight", 0.4)
-            
-            # Analyst ML models focus on market analysis and regime detection
-            # Tactician ML models focus on execution and position sizing
-            weighted_ml_confidence = (avg_confidence * tactician_ml_weight) + (analyst_confidence * analyst_ml_weight)
-            
-            ml_confidence["aggregate_ml_confidence"] = {
-                "hmm_avg_confidence": avg_confidence,
-                "analyst_confidence": analyst_confidence,
-                "weighted_ml_confidence": weighted_ml_confidence,
-                "analyst_ml_weight": analyst_ml_weight,
-                "tactician_ml_weight": tactician_ml_weight,
-                "prediction_count": valid_predictions
-            }
-            
-            return ml_confidence
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating ML confidence predictions: {e}"))
-            return {}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="applying confidence calibration",
-    )
-    @with_tracing_span("apply_confidence_calibration")
-    @validate_data_quality(validation_level="WARNING")
-    async def _apply_confidence_calibration(
-        self,
-        predictions: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Apply confidence calibration to predictions."""
-        try:
-            calibrated_predictions = {}
-            
-            for prediction_name, prediction_data in predictions.items():
-                # Find relevant calibration data
-                calibration_key = f"{exchange}_{symbol}_calibration_results"
-                calibration_data = self.calibration_results.get(calibration_key, {})
-                
-                if calibration_data:
-                    # Apply calibration if available
-                    calibrated_prediction = self._calibrate_prediction(
-                        prediction_data, calibration_data, prediction_name
-                    )
-                    calibrated_predictions[prediction_name] = calibrated_prediction
+            for prediction_type in self.prediction_types:
+                if prediction_type in tactician_predictions:
+                    tactician_pred = tactician_predictions[prediction_type]
+                    analyst_pred = self._extract_analyst_prediction(analyst_predictions, prediction_type)
+                    
+                    if analyst_pred:
+                        # Validate confidence enhancement
+                        confidence_boost = self.confidence_boost_factors.get(prediction_type, 1.0)
+                        tactician_confidence = tactician_pred.get("confidence", 0.0)
+                        analyst_confidence = analyst_pred.get("confidence", 0.0)
+                        
+                        # Check if Tactician confidence is higher than Analyst
+                        if tactician_confidence >= analyst_confidence * confidence_boost * 0.8:
+                            validation_results["enhancements"].append(f"{prediction_type}: Enhanced confidence")
+                            total_score += 1.0
+                        else:
+                            validation_results["issues"].append(f"{prediction_type}: Insufficient confidence enhancement")
+                        
+                        # Check prediction value enhancement
+                        tactician_value = tactician_pred.get("prediction", 0.0)
+                        analyst_value = analyst_pred.get("prediction", 0.0)
+                        
+                        if prediction_type == "price_deviation_prediction":
+                            # Tactician should have smaller deviation
+                            if abs(tactician_value) <= abs(analyst_value):
+                                total_score += 0.5
+                            else:
+                                validation_results["issues"].append(f"{prediction_type}: Deviation not smaller than Analyst")
+                        else:
+                            # Other predictions should be enhanced appropriately
+                            total_score += 0.5
+                        
+                        valid_predictions += 1
+                    else:
+                        validation_results["issues"].append(f"{prediction_type}: No Analyst prediction available")
                 else:
-                    # Use original prediction if no calibration available
-                    calibrated_predictions[prediction_name] = prediction_data
-
-            return calibrated_predictions
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error applying confidence calibration: {e}"))
-            return predictions
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="applying optimization weights",
-    )
-    @with_tracing_span("apply_optimization_weights")
-    @validate_data_quality(validation_level="WARNING")
-    async def _apply_optimization_weights(
-        self,
-        calibrated_predictions: dict[str, Any],
-        symbol: str,
-        exchange: str
-    ) -> dict[str, Any]:
-        """Apply optimization weights to calibrated predictions."""
-        try:
-            optimization_weights = {}
+                    validation_results["issues"].append(f"{prediction_type}: Missing Tactician prediction")
             
-            # Find relevant optimization results
-            optimization_key = f"{exchange}_{symbol}_optimization_results"
-            optimization_data = self.optimization_results.get(optimization_key, {})
+            # Calculate overall validation score
+            if valid_predictions > 0:
+                validation_results["validation_score"] = total_score / valid_predictions
+                validation_results["is_valid"] = validation_results["validation_score"] >= 0.7
             
-            if optimization_data:
-                # Apply optimization weights if available
-                for prediction_name in calibrated_predictions.keys():
-                    weight = optimization_data.get("model_weights", {}).get(prediction_name, 1.0)
-                    optimization_weights[prediction_name] = weight
-            else:
-                # Use equal weights if no optimization data available
-                for prediction_name in calibrated_predictions.keys():
-                    optimization_weights[prediction_name] = 1.0
-
-            return optimization_weights
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error applying optimization weights: {e}"))
-            return {name: 1.0 for name in calibrated_predictions.keys()}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="integrating with existing tactician components",
-    )
-    @with_tracing_span("integrate_with_tactician_components")
-    async def integrate_with_tactician_components(
-        self,
-        position_sizer,
-        leverage_sizer
-    ) -> bool:
-        """Integrate with existing tactician components to enhance their functionality."""
-        try:
-            self.position_sizer = position_sizer
-            self.leverage_sizer = leverage_sizer
-            
-            self.logger.info("✅ Integrated with existing tactician components")
-            return True
+            return validation_results
             
         except Exception as e:
-            self.logger.error(error(f"❌ Error integrating with tactician components: {e}"))
-            return False
+            self.logger.error(error(f"❌ Error validating Tactician predictions: {e}"))
+            return {"is_valid": False, "validation_score": 0.0, "issues": [str(e)], "enhancements": []}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="enhancing position sizer with ML predictions",
-    )
-    @with_tracing_span("enhance_position_sizer")
-    @validate_data_quality(validation_level="WARNING")
-    async def enhance_position_sizer(
-        self,
-        base_position_size: float,
-        analyst_confidence: float,
-        enhanced_predictions: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Enhance position sizer with ML-based confidence predictions."""
+    def get_prediction_summary(self, tactician_predictions: dict[str, Any]) -> dict[str, Any]:
+        """Get summary of Tactician predictions."""
         try:
-            if not self.position_sizer:
-                return {"enhanced_position_size": base_position_size}
-            
-            # Get ML confidence from enhanced predictions
-            ml_confidence = enhanced_predictions.get("ml_confidence_predictions", {})
-            aggregate_ml_confidence = ml_confidence.get("aggregate_ml_confidence", {})
-            weighted_ml_confidence = aggregate_ml_confidence.get("weighted_ml_confidence", 0.5)
-            
-            # Enhance position size calculation with ML confidence using optimized parameters
-            confidence_multiplier = getattr(self, 'optimized_params', {}).get("position_sizing_confidence_multiplier", 1.5)
-            ml_confidence_multiplier = min(weighted_ml_confidence * confidence_multiplier, 2.0)  # Max 2x multiplier
-            enhanced_position_size = base_position_size * ml_confidence_multiplier
-            
-            return {
-                "enhanced_position_size": enhanced_position_size,
-                "ml_confidence_multiplier": ml_confidence_multiplier,
-                "weighted_ml_confidence": weighted_ml_confidence,
-                "original_position_size": base_position_size
+            summary = {
+                "total_predictions": 0,
+                "high_precision_predictions": 0,
+                "average_confidence": 0.0,
+                "average_precision_score": 0.0,
+                "prediction_types": {},
+                "timeframe": tactician_predictions.get("metadata", {}).get("timeframe", "unknown")
             }
             
-        except Exception as e:
-            self.logger.error(error(f"❌ Error enhancing position sizer: {e}"))
-            return {"enhanced_position_size": base_position_size}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="enhancing leverage sizer with ML predictions",
-    )
-    @with_tracing_span("enhance_leverage_sizer")
-    @validate_data_quality(validation_level="WARNING")
-    async def enhance_leverage_sizer(
-        self,
-        base_leverage: float,
-        risk_score: float,
-        enhanced_predictions: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Enhance leverage sizer with ML-based risk predictions."""
-        try:
-            if not self.leverage_sizer:
-                return {"enhanced_leverage": base_leverage}
+            total_confidence = 0.0
+            total_precision = 0.0
+            valid_predictions = 0
             
-            # Get calibrated confidence from enhanced predictions
-            calibrated_confidence = enhanced_predictions.get("calibrated_confidence_scores", {})
+            for prediction_type in self.prediction_types:
+                if prediction_type in tactician_predictions:
+                    pred = tactician_predictions[prediction_type]
+                    summary["total_predictions"] += 1
+                    
+                    confidence = pred.get("confidence", 0.0)
+                    precision_score = pred.get("precision_score", 0.0)
+                    
+                    total_confidence += confidence
+                    total_precision += precision_score
+                    valid_predictions += 1
+                    
+                    if precision_score >= self.precision_threshold:
+                        summary["high_precision_predictions"] += 1
+                    
+                    summary["prediction_types"][prediction_type] = {
+                        "prediction": pred.get("prediction", 0.0),
+                        "confidence": confidence,
+                        "precision_score": precision_score
+                    }
             
-            # Calculate ML-based risk adjustment using optimized parameters
-            risk_multiplier = getattr(self, 'optimized_params', {}).get("leverage_sizing_risk_multiplier", 1.0)
-            ml_risk_multiplier = 1.0
-            if calibrated_confidence:
-                # Higher confidence = lower risk = higher leverage
-                avg_confidence = sum(cal.values() for cal in calibrated_confidence.values()) / max(len(calibrated_confidence), 1)
-                ml_risk_multiplier = 0.5 + (avg_confidence * risk_multiplier)  # Use optimized risk multiplier
+            if valid_predictions > 0:
+                summary["average_confidence"] = total_confidence / valid_predictions
+                summary["average_precision_score"] = total_precision / valid_predictions
             
-            enhanced_leverage = base_leverage * ml_risk_multiplier
-            
-            return {
-                "enhanced_leverage": enhanced_leverage,
-                "ml_risk_multiplier": ml_risk_multiplier,
-                "original_leverage": base_leverage
-            }
+            return summary
             
         except Exception as e:
-            self.logger.error(error(f"❌ Error enhancing leverage sizer: {e}"))
-            return {"enhanced_leverage": base_leverage}
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generating final confidence scores",
-    )
-    @with_tracing_span("generate_final_confidence_scores")
-    @validate_data_quality(validation_level="WARNING")
-    async def _generate_final_confidence_scores(
-        self,
-        calibrated_predictions: dict[str, Any],
-        optimization_weights: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Generate final confidence scores for all predictions."""
-        try:
-            confidence_scores = {}
-            
-            for prediction_name, prediction_data in calibrated_predictions.items():
-                # Extract confidence from prediction data
-                base_confidence = prediction_data.get("confidence", 0.5)
-                
-                # Apply optimization weight
-                weight = optimization_weights.get(prediction_name, 1.0)
-                
-                # Calculate weighted confidence
-                weighted_confidence = base_confidence * weight
-                
-                # Normalize confidence score
-                normalized_confidence = min(max(weighted_confidence, 0.0), 1.0)
-                
-                confidence_scores[prediction_name] = {
-                    "base_confidence": base_confidence,
-                    "weight": weight,
-                    "weighted_confidence": weighted_confidence,
-                    "normalized_confidence": normalized_confidence,
-                    "confidence_level": self._get_confidence_level(normalized_confidence)
-                }
-
-            return confidence_scores
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error generating final confidence scores: {e}"))
-            return {}
-
-    @validate_data_quality(validation_level="WARNING")
-    def _prepare_features_for_prediction(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any]
-    ) -> pd.DataFrame:
-        """Prepare features for model prediction."""
-        try:
-            # Create a copy of market data
-            features = market_data.copy()
-            
-            # Add regime information
-            features["regime"] = regime_info.get("regime", "unknown")
-            features["regime_confidence"] = regime_info.get("confidence", 0.5)
-            
-            # Add technical indicators if not present
-            if "rsi" not in features.columns:
-                features["rsi"] = self._calculate_rsi(features["close"])
-            
-            if "macd" not in features.columns:
-                features["macd"] = self._calculate_macd(features["close"])
-            
-            # Select relevant features for prediction
-            feature_columns = [
-                "open", "high", "low", "close", "volume",
-                "rsi", "macd", "regime", "regime_confidence"
-            ]
-            
-            available_features = [col for col in feature_columns if col in features.columns]
-            return features[available_features].iloc[-1:].fillna(0)
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error preparing features: {e}"))
-            return pd.DataFrame()
-
-    @validate_data_quality(validation_level="WARNING")
-    def _prepare_features_with_analyst_signals(
-        self,
-        market_data: pd.DataFrame,
-        regime_info: dict[str, Any],
-        analyst_signals: dict[str, Any]
-    ) -> pd.DataFrame:
-        """Prepare features for prediction with analyst signals."""
-        try:
-            features = self._prepare_features_for_prediction(market_data, regime_info)
-            
-            # Add analyst signal information
-            features["analyst_signal"] = analyst_signals.get("signal", 0)
-            features["analyst_confidence"] = analyst_signals.get("confidence", 0.5)
-            features["analyst_prediction"] = analyst_signals.get("prediction", 0.0)
-            
-            return features
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error preparing features with analyst signals: {e}"))
-            return pd.DataFrame()
-
-    @validate_data_quality(validation_level="WARNING")
-    def _process_hmm_prediction(
-        self,
-        raw_prediction: Any,
-        model_data: dict[str, Any],
-        model_name: str
-    ) -> dict[str, Any]:
-        """Process HMM model prediction."""
-        try:
-            if isinstance(raw_prediction, np.ndarray):
-                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
-            else:
-                prediction_value = float(raw_prediction)
-
-            return {
-                "prediction": prediction_value,
-                "confidence": model_data.get("confidence", 0.5),
-                "model_type": "hmm",
-                "model_name": model_name,
-                "timestamp": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error processing HMM prediction: {e}"))
-            return {"prediction": 0.0, "confidence": 0.0, "model_type": "hmm", "model_name": model_name}
-
-    def _process_tactician_specialist_prediction(
-        self,
-        raw_prediction: Any,
-        model_data: dict[str, Any],
-        model_name: str
-    ) -> dict[str, Any]:
-        """Process tactician specialist model prediction."""
-        try:
-            if isinstance(raw_prediction, np.ndarray):
-                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
-            else:
-                prediction_value = float(raw_prediction)
-
-            return {
-                "prediction": prediction_value,
-                "confidence": model_data.get("confidence", 0.5),
-                "model_type": "tactician_specialist",
-                "model_name": model_name,
-                "timestamp": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error processing tactician specialist prediction: {e}"))
-            return {"prediction": 0.0, "confidence": 0.0, "model_type": "tactician_specialist", "model_name": model_name}
-
-    def _process_tactician_labeling_prediction(
-        self,
-        raw_prediction: Any,
-        labeling_data: dict[str, Any],
-        labeling_name: str
-    ) -> dict[str, Any]:
-        """Process tactician labeling prediction."""
-        try:
-            if isinstance(raw_prediction, np.ndarray):
-                prediction_value = float(raw_prediction[0]) if raw_prediction.size > 0 else 0.0
-            else:
-                prediction_value = float(raw_prediction)
-
-            return {
-                "prediction": prediction_value,
-                "confidence": labeling_data.get("confidence", 0.5),
-                "model_type": "tactician_labeling",
-                "model_name": labeling_name,
-                "timestamp": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error processing tactician labeling prediction: {e}"))
-            return {"prediction": 0.0, "confidence": 0.0, "model_type": "tactician_labeling", "model_name": labeling_name}
-
-    @validate_data_quality(validation_level="WARNING")
-    def _calibrate_prediction(
-        self,
-        prediction_data: dict[str, Any],
-        calibration_data: dict[str, Any],
-        prediction_name: str
-    ) -> dict[str, Any]:
-        """Apply calibration to prediction."""
-        try:
-            calibrated_prediction = prediction_data.copy()
-            
-            # Find relevant calibration for this prediction
-            model_calibration = calibration_data.get("model_calibrations", {}).get(prediction_name, {})
-            
-            if model_calibration:
-                # Apply calibration transformation
-                original_confidence = prediction_data.get("confidence", 0.5)
-                calibrated_confidence = model_calibration.get("calibrated_confidence", original_confidence)
-                
-                calibrated_prediction["confidence"] = calibrated_confidence
-                calibrated_prediction["calibration_applied"] = True
-            else:
-                calibrated_prediction["calibration_applied"] = False
-
-            return calibrated_prediction
-
-        except Exception as e:
-            self.logger.error(error(f"❌ Error calibrating prediction: {e}"))
-            return prediction_data
-
-    def _get_confidence_level(self, confidence: float) -> str:
-        """Get confidence level description."""
-        if confidence >= 0.9:
-            return "very_high"
-        elif confidence >= 0.8:
-            return "high"
-        elif confidence >= 0.7:
-            return "medium_high"
-        elif confidence >= 0.6:
-            return "medium"
-        elif confidence >= 0.5:
-            return "medium_low"
-        else:
-            return "low"
-
-    # REMOVED: Market condition analysis method
-    # This technical analysis should be handled by the ML models in steps 6-14
-    # The integrator should focus on integrating predictions, not generating market analysis
-
-    # REMOVED: RSI and MACD calculation methods
-    # These technical indicators should be handled by the ML models in steps 6-14
-    # The integrator should focus on integrating predictions, not generating features
+            self.logger.error(error(f"❌ Error getting prediction summary: {e}"))
+            return {"error": str(e)}

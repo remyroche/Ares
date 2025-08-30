@@ -94,9 +94,19 @@ class PositionMonitor:
         # Configuration
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
-        self.confidence_threshold = self.monitor_config.get("confidence_threshold", 0.6)
-        self.pnl_threshold = self.monitor_config.get("pnl_threshold", -0.05)  # -5%
-        self.max_position_age = self.monitor_config.get("max_position_age", 3600)  # 1 hour
+        
+        # Load step12 confidence optimization config
+        step12_config = config.get("step12_confidence_optimization", {})
+        position_monitor_config = step12_config.get("position_monitor", {})
+        
+        # Confidence thresholds for step12 optimization
+        self.confidence_threshold = position_monitor_config.get("confidence_threshold", 0.6)
+        self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", 0.6)
+        self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", 0.3)
+        self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", 0.3)
+        
+        self.pnl_threshold = position_monitor_config.get("pnl_threshold", -0.05)  # -5%
+        self.max_position_age = position_monitor_config.get("max_position_age", 3600)  # 1 hour
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -357,19 +367,20 @@ class PositionMonitor:
                 if position_age > self.max_position_age:
                     return PositionAction.FULL_CLOSE, f"Position age exceeded: {position_age:.0f}s"
 
-            # Check confidence-based actions
-            if combined_confidence < self.confidence_threshold:
-                if combined_confidence < 0.3:
-                    return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f}"
+            # Check confidence-based actions using step12 optimized thresholds
+            if combined_confidence < self.very_low_confidence_threshold:
+                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.very_low_confidence_threshold}"
+            elif combined_confidence < self.low_confidence_threshold:
+                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.low_confidence_threshold}"
+            elif combined_confidence >= self.high_confidence_threshold:
+                # Check for take profit (high confidence and positive PnL)
+                if unrealized_pnl > 0.02:  # 2% profit
+                    return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
                 else:
-                    return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f}"
+                    return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.high_confidence_threshold}"
 
-            # Check for take profit (high confidence and positive PnL)
-            if combined_confidence > 0.8 and unrealized_pnl > 0.02:  # 2% profit
-                return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
-
-            # Default action
-            return PositionAction.STAY, "No action required"
+            # Default action for medium confidence
+            return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within thresholds)"
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error determining position action: {e}"))

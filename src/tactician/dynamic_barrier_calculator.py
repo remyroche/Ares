@@ -160,7 +160,7 @@ class DynamicBarrierCalculator:
             self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
             for name, (upper, lower) in barriers.items():
                 self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
-            self.logger.info(f"   Note: ML model will choose optimal combination based on market conditions")
+            self.logger.info(f"   Note: Both barrier combinations will be used - position only opens if confidence is high enough for both")
             
             return barriers
             
@@ -198,6 +198,7 @@ class DynamicBarrierCalculator:
                 self.logger.info(f"   {tf}:")
                 for name, (upper, lower) in combinations.items():
                     self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
+            self.logger.info(f"   Note: Both barrier combinations will be used for each timeframe")
             
             return barriers
             

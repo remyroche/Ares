@@ -46,11 +46,11 @@ class FinalRegimeClusteringStep:
         self.config = config
         self.logger = system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time = None
-        self.step_timings = {}
         self.optimized_params = {}
         self.regime_results = {}
         self._initialize_components()
 
+    @secure_step_execution
     def _initialize_components(self) -> None:
         """Initialize regime clustering components."""
         self.logger.info("🔧 Initializing final regime clustering components...")
@@ -63,6 +63,7 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
             raise
 
+    @secure_data_processing
     def _load_optimized_parameters(self) -> None:
         """Load optimized parameters from step3."""
         try:
@@ -90,6 +91,7 @@ class FinalRegimeClusteringStep:
         default_return=False,
         context="regime_clustering_initialization"
     )
+    @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the final regime clustering step."""
         try:
@@ -151,6 +153,8 @@ class FinalRegimeClusteringStep:
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data"
     )
+    @comprehensive_data_validation
+    @ensure_data_integrity
     async def _load_and_prepare_data(self) -> dict[str, Any]:
         """Load and prepare data for regime clustering."""
         try:
@@ -210,6 +214,8 @@ class FinalRegimeClusteringStep:
         default_return=pd.DataFrame(),
         context="prepare_features_with_optimized_params"
     )
+    @monitor_feature_engineering()
+    @validate_data_structure
     async def _prepare_features_with_optimized_params(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features using optimized parameters from step3."""
         try:
@@ -274,6 +280,8 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="perform_hmm_regime_discovery"
     )
+    @resource_monitor
+    @secure_data_processing
     async def _perform_hmm_regime_discovery(self, data: pd.DataFrame) -> dict[str, Any]:
         """Perform HMM regime discovery using optimized parameters."""
         try:
@@ -340,6 +348,7 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="perform_simple_regime_detection"
     )
+    @secure_data_processing
     async def _perform_simple_regime_detection(self, features: pd.DataFrame) -> dict[str, Any]:
         """Perform simple regime detection as fallback."""
         try:
@@ -395,6 +404,8 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="perform_final_clustering"
     )
+    @resource_monitor
+    @secure_data_processing
     async def _perform_final_clustering(self, data: pd.DataFrame, hmm_results: dict[str, Any]) -> dict[str, Any]:
         """Perform final clustering using HMM results and optimized parameters."""
         try:
@@ -472,6 +483,7 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="analyze_regime_characteristics"
     )
+    @secure_data_processing
     async def _analyze_regime_characteristics(self, clustering_results: dict[str, Any], data: pd.DataFrame) -> dict[str, Any]:
         """Analyze regime characteristics and patterns."""
         try:
@@ -540,6 +552,11 @@ class FinalRegimeClusteringStep:
             self.logger.error(f"Failed to analyze regime characteristics: {e}")
             return {}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_regime_transitions"
+    )
     def _analyze_regime_transitions(self, cluster_labels: np.ndarray) -> dict[str, Any]:
         """Analyze regime transition patterns."""
         try:
@@ -569,6 +586,11 @@ class FinalRegimeClusteringStep:
             self.logger.warning(f"Failed to analyze regime transitions: {e}")
             return {}
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="analyze_regime_persistence"
+    )
     def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str, Any]:
         """Analyze how long regimes persist."""
         try:
@@ -613,6 +635,7 @@ class FinalRegimeClusteringStep:
         default_return={},
         context="generate_comprehensive_reports"
     )
+    @secure_data_processing
     async def _generate_comprehensive_reports(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any]) -> dict[str, Any]:
         """Generate comprehensive reports for regime clustering."""
         try:
@@ -669,6 +692,7 @@ class FinalRegimeClusteringStep:
         default_return=False,
         context="save_final_results"
     )
+    @secure_data_processing
     async def _save_final_results(self, clustering_results: dict[str, Any], regime_analysis: dict[str, Any], reports: dict[str, Any]) -> bool:
         """Save final regime clustering results."""
         try:
@@ -747,6 +771,11 @@ class FinalRegimeClusteringStep:
             return False
 
     # Helper methods for technical indicators
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_rsi"
+    )
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
@@ -756,6 +785,11 @@ class FinalRegimeClusteringStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_macd"
+    )
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span=fast).mean()
@@ -763,6 +797,11 @@ class FinalRegimeClusteringStep:
         macd = ema_fast - ema_slow
         return macd
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_atr"
+    )
     def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range."""
         high = df["high"]
@@ -782,6 +821,7 @@ class FinalRegimeClusteringStep:
         default_return=False,
         context="regime_clustering_cleanup"
     )
+    @secure_step_execution
     async def cleanup(self) -> bool:
         """Clean up resources after regime clustering."""
         try:
@@ -799,6 +839,7 @@ class FinalRegimeClusteringStep:
     default_return=False,
     context="step3_5_final_regime_clustering"
 )
+@secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the final regime clustering step."""
     try:

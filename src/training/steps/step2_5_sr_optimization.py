@@ -51,13 +51,12 @@ class SROptimizationStep:
         self.config = config
         self.logger = system_logger.getChild("SROptimizationStep")
         self.start_time = None
-        self.step_timings = {}
         self.optimizer = None
         self.sr_predictor = None
         self.sr_data_integration = None
-        self.report_data = {}
         self._initialize_components()
 
+    @secure_step_execution
     def _initialize_components(self) -> None:
         """Initialize S/R optimization components."""
         self.logger.info("🔧 Initializing S/R optimization components...")
@@ -87,6 +86,7 @@ class SROptimizationStep:
         default_return=False,
         context="sr_optimization_initialization"
     )
+    @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the S/R optimization step."""
         try:
@@ -171,6 +171,7 @@ class SROptimizationStep:
         default_return=None,
         context="sr_optimization_performance"
     )
+    @resource_monitor
     async def _perform_sr_optimization(self) -> Optional[Any]:
         """Perform comprehensive S/R detection optimization."""
         try:
@@ -217,6 +218,7 @@ class SROptimizationStep:
         default_return={},
         context="sr_analysis_reports"
     )
+    @secure_data_processing
     async def _generate_sr_analysis_reports(self, optimization_result: Any) -> dict[str, Any]:
         """Generate comprehensive SR analysis reports using SR Breakout Predictor."""
         try:
@@ -262,6 +264,7 @@ class SROptimizationStep:
         default_return={},
         context="sr_integration_analysis"
     )
+    @secure_data_processing
     async def _perform_sr_integration_analysis(self) -> dict[str, Any]:
         """Perform SR data integration analysis."""
         try:
@@ -296,6 +299,7 @@ class SROptimizationStep:
         default_return={},
         context="detailed_optimization_reports"
     )
+    @secure_data_processing
     async def _generate_detailed_optimization_reports(
         self, 
         optimization_result: Any, 
@@ -342,6 +346,7 @@ class SROptimizationStep:
         default_return=None,
         context="get_sample_market_data"
     )
+    @comprehensive_data_validation
     async def _get_sample_market_data(self) -> Optional[pd.DataFrame]:
         """Get sample market data for SR analysis."""
         try:
@@ -376,6 +381,7 @@ class SROptimizationStep:
         default_return={},
         context="analyze_sr_strength"
     )
+    @secure_data_processing
     async def _analyze_sr_strength(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR strength characteristics."""
         try:
@@ -424,6 +430,7 @@ class SROptimizationStep:
         default_return={},
         context="analyze_sr_proximity"
     )
+    @secure_data_processing
     async def _analyze_sr_proximity(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR proximity characteristics."""
         try:
@@ -466,6 +473,7 @@ class SROptimizationStep:
         default_return={},
         context="analyze_sr_breakouts"
     )
+    @secure_data_processing
     async def _analyze_sr_breakouts(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR breakout characteristics."""
         try:
@@ -555,6 +563,7 @@ class SROptimizationStep:
         default_return={},
         context="performance_comparison_report"
     )
+    @secure_data_processing
     async def _generate_performance_comparison_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate performance comparison report."""
         try:
@@ -588,6 +597,7 @@ class SROptimizationStep:
         default_return={},
         context="parameter_optimization_report"
     )
+    @secure_data_processing
     async def _generate_parameter_optimization_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate parameter optimization report."""
         try:
@@ -621,6 +631,7 @@ class SROptimizationStep:
         default_return={},
         context="method_effectiveness_report"
     )
+    @secure_data_processing
     async def _generate_method_effectiveness_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate method effectiveness report."""
         try:
@@ -654,6 +665,7 @@ class SROptimizationStep:
         default_return={},
         context="integration_analysis_report"
     )
+    @secure_data_processing
     async def _generate_integration_analysis_report(
         self, 
         sr_analysis_reports: dict[str, Any], 
@@ -697,6 +709,7 @@ class SROptimizationStep:
         default_return={},
         context="optimization_validation_report"
     )
+    @secure_data_processing
     async def _generate_optimization_validation_report(self, optimization_result: Any) -> dict[str, Any]:
         """Generate optimization validation report."""
         try:
@@ -731,6 +744,7 @@ class SROptimizationStep:
         default_return=None,
         context="sr_optimization_combination"
     )
+    @secure_data_processing
     async def _combine_optimization_results(self, results: List[Any]) -> Optional[Any]:
         """Combine multiple optimization results into a single optimized configuration."""
         try:
@@ -815,6 +829,7 @@ class SROptimizationStep:
         default_return=False,
         context="sr_optimization_save"
     )
+    @secure_data_processing
     async def _save_optimization_results(self, optimization_result: Any, detailed_reports: dict[str, Any]) -> bool:
         """Save optimization results and detailed reports for subsequent steps."""
         try:
@@ -870,6 +885,7 @@ class SROptimizationStep:
         default_return=False,
         context="sr_config_update"
     )
+    @secure_data_processing
     async def _update_config_with_optimized_params(self, optimization_result: Any) -> bool:
         """Update configuration with optimized parameters."""
         try:
@@ -913,6 +929,7 @@ class SROptimizationStep:
         default_return=False,
         context="final_comprehensive_report"
     )
+    @secure_data_processing
     async def _generate_final_comprehensive_report(
         self,
         optimization_result: Any,
@@ -994,6 +1011,7 @@ class SROptimizationStep:
         default_return=False,
         context="sr_optimization_cleanup"
     )
+    @secure_step_execution
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
         try:
@@ -1028,6 +1046,7 @@ class SROptimizationStep:
     default_return=False,
     context="step2_5_sr_optimization"
 )
+@secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S/R optimization step."""
     try:

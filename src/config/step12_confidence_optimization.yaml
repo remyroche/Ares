@@ -1,0 +1,90 @@
+# Step 12 Confidence Optimization Configuration
+# This file contains the confidence thresholds that will be optimized in step12
+
+step12_confidence_optimization:
+  # Position Monitor Confidence Thresholds (to be optimized)
+  position_monitor:
+    # High confidence threshold - positions stay open above this
+    high_confidence_threshold: 0.6
+    
+    # Low confidence threshold - positions scale down below this
+    low_confidence_threshold: 0.3
+    
+    # Very low confidence threshold - positions close below this
+    very_low_confidence_threshold: 0.3
+    
+    # Base confidence threshold (legacy, kept for compatibility)
+    confidence_threshold: 0.6
+    
+    # Other position monitor settings
+    monitoring_interval: 10  # seconds
+    pnl_threshold: -0.05     # -5%
+    max_position_age: 3600   # 1 hour
+
+  # ML Model Confidence Factors (to be determined by ML model, not hardcoded)
+  ml_confidence_factors:
+    # These will be outputs from the ML model, not configuration values
+    # The ML model will determine the appropriate confidence enhancement factors
+    price_deviation_prediction: null    # ML model output
+    price_direction_prediction: null    # ML model output
+    price_target_confidence: null       # ML model output
+
+  # Position Opening Requirements
+  position_opening:
+    # Both barrier combinations must have high confidence
+    require_both_barriers: true
+    
+    # Minimum confidence required for each barrier combination
+    min_barrier_confidence: 0.7
+    
+    # Combined confidence threshold for position opening
+    combined_confidence_threshold: 0.75
+
+  # Optimization Parameters for Step 12
+  optimization:
+    # Confidence threshold ranges to test
+    confidence_ranges:
+      high_confidence:
+        min: 0.5
+        max: 0.8
+        step: 0.05
+      
+      low_confidence:
+        min: 0.2
+        max: 0.5
+        step: 0.05
+      
+      very_low_confidence:
+        min: 0.1
+        max: 0.4
+        step: 0.05
+    
+    # Optimization objective
+    objective: "maximize_sharpe_ratio"
+    
+    # Backtest parameters
+    backtest:
+      start_date: "2024-01-01"
+      end_date: "2024-12-31"
+      symbols: ["BTCUSDT", "ETHUSDT"]
+      timeframes: ["1m", "5m"]
+    
+    # Performance metrics to track
+    metrics:
+      - "sharpe_ratio"
+      - "max_drawdown"
+      - "win_rate"
+      - "profit_factor"
+      - "total_return"
+      - "barrier_hit_rate"  # How often we hit barriers vs avoid them
+
+  # Validation Rules
+  validation:
+    # Ensure thresholds are in logical order
+    enforce_threshold_order: true
+    
+    # Minimum confidence spread between thresholds
+    min_threshold_spread: 0.1
+    
+    # Maximum confidence spread between thresholds
+    max_threshold_spread: 0.4

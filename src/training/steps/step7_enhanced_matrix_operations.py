@@ -18,6 +18,15 @@ from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,
@@ -59,6 +68,7 @@ class Step7EnhancedMatrixOperations:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.95}
     )
+    @with_enhanced_mlflow_logging("step7_enhanced_matrix_operations")
     @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
         self,
@@ -135,6 +145,13 @@ class Step7EnhancedMatrixOperations:
             }
             
             self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")
+            
+            # Log artifacts and create detailed report
+            await self._log_step7_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                training_input, pipeline_state, matrix_results, output_files, quality_metrics
+            )
+            
             return pipeline_state
             
         except Exception as e:
@@ -145,6 +162,138 @@ class Step7EnhancedMatrixOperations:
                 "timestamp": datetime.now().isoformat()
             }
             return pipeline_state
+
+    async def _log_step7_artifacts_and_report(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+        matrix_results: dict[str, Any],
+        output_files: dict[str, str],
+        quality_metrics: dict[str, Any]
+    ) -> None:
+        """Log step 7 artifacts and create detailed report."""
+        try:
+            symbol = training_input.get("symbol", "UNKNOWN")
+            exchange = training_input.get("exchange", "UNKNOWN")
+            timeframe = training_input.get("timeframe", "1m")
+            
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": quality_metrics.get("overall_quality", 0.0),
+                "processing_efficiency": 1.0 if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = list(output_files.values()) if output_files else []
+            
+            # Collect metrics
+            metrics_calculated = {
+                "matrix_operations_success": 1.0 if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
+                "matrix_operations_count": len(matrix_results) if matrix_results else 0,
+                "output_files_count": len(output_files) if output_files else 0,
+                "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
+                "data_completeness": quality_metrics.get("data_completeness", 0.0),
+                "feature_quality": quality_metrics.get("feature_quality", 0.0),
+            }
+            
+            # Create step data for report
+            step_data = {
+                "matrix_results": matrix_results,
+                "output_files": output_files,
+                "quality_metrics": quality_metrics,
+                "matrix_config": pipeline_state.get("step7_enhanced_matrix_operations", {}).get("matrix_config", {}),
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step7_enhanced_matrix_operations",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[] if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else ["Matrix operations failed"]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step7_enhanced_matrix_operations",
+                report_data=report_data,
+                report_type="matrix_operations_report",
+                additional_metadata={
+                    "matrix_operations_success": pipeline_state.get("step7_enhanced_matrix_operations", {,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }).get("status") == "completed",
+                    "matrix_operations_count": len(matrix_results) if matrix_results else 0,
+                    "timeframe": timeframe,
+                }
+            )
+            self.logger.info(f"✅ Logged matrix operations report: {report_name}")
+            
+            # Log matrix results
+            if matrix_results:
+                matrix_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step7_enhanced_matrix_operations",
+                    report_data=matrix_results,
+                    report_type="matrix_results",
+                    additional_metadata={
+                        "matrix_operations_count": len(matrix_results),
+                        "timeframe": timeframe,
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged matrix results: {matrix_report_name}")
+            
+            # Log quality metrics
+            if quality_metrics:
+                quality_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step7_enhanced_matrix_operations",
+                    report_data=quality_metrics,
+                    report_type="quality_metrics",
+                    additional_metadata={
+                        "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
+                        "timeframe": timeframe,
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged quality metrics: {quality_report_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step7_enhanced_matrix_operations",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "matrix_operations_performance",
+                    "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 7 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     def _prepare_matrix_operations_config(
         self, 
@@ -1387,7 +1536,11 @@ async def run_step(
             "data_dir": data_dir,
             "force_rerun": force_rerun,
             **kwargs
-        }
+        ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
         
         # Execute step
         pipeline_state = {}

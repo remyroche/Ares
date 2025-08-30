@@ -303,12 +303,24 @@ class RayModelTrainer:
             best_params: dict[str, Any] | None = None
             hpo_result: dict[str, Any] | None = None
             with mlflow.start_run() as run:
-                # Log training metadata
-                log_training_metadata_to_mlflow(
-                    symbol=training_input.get("symbol", "ETHUSDT"),
-                    timeframe="1m",
-                    model_type=hpo_model_type,
+                # Extract required metadata
+                symbol = training_input.get("symbol", "ETHUSDT")
+                exchange = training_input.get("exchange", "BINANCE")
+                lookback_years = training_input.get("lookback_years", 2)
+                lookback_period = f"{lookback_years}_years"
+                
+                # Log enhanced training metadata
+                from src.utils.mlflow_utils import log_enhanced_training_metadata
+                log_enhanced_training_metadata(
+                    asset=symbol,
+                    exchange=exchange,
+                    lookback_period=lookback_period,
                     run_id=run.info.run_id,
+                    additional_metadata={
+                        "model_type": hpo_model_type,
+                        "timeframe": "1m",
+                        "pipeline_step": "model_training",
+                    }
                 )
                 do_hpo = use_hpo
                 if do_hpo:
@@ -342,7 +354,18 @@ class RayModelTrainer:
                     )
                     best_params = hpo_result.get("best_params")
                     if best_params:
-                        mlflow.log_params(best_params)
+                        from src.utils.mlflow_utils import log_params_with_metadata
+                        log_params_with_metadata(
+                            params=best_params,
+                            asset=symbol,
+                            exchange=exchange,
+                            lookback_period=lookback_period,
+                            run_id=run.info.run_id,
+                            additional_metadata={
+                                "optimization_type": "optuna_hpo",
+                                "n_trials": hpo_trials,
+                            }
+                        )
                     self.logger.info(f"Optuna HPO best params: {best_params}")
                 training_results = self._train_models_with_ray(
                     training_data,
@@ -350,17 +373,58 @@ class RayModelTrainer:
                     best_params=best_params,
                 )
                 self._store_trained_models(training_results)
-                # Log model metrics and artifacts
+                # Log model metrics and artifacts with enhanced metadata
+                from src.utils.mlflow_utils import log_metrics_with_metadata, log_artifacts_with_metadata
                 tactician_models = training_results.get("tactician_models", {})
-                for result in tactician_models.values():
+                for model_name, result in tactician_models.items():
                     if result["training_status"] == "completed":
-                        mlflow.log_metrics(result["model_metrics"], step=0)
+                        # Log metrics with metadata
+                        log_metrics_with_metadata(
+                            metrics=result["model_metrics"],
+                            asset=symbol,
+                            exchange=exchange,
+                            lookback_period=lookback_period,
+                            run_id=run.info.run_id,
+                            step=0,
+                            additional_metadata={
+                                "model_name": model_name,
+                                "model_type": hpo_model_type,
+                            }
+                        )
+                        
                         model = joblib.load(result["model_path"])  # for SHAP
                         scaler: StandardScaler = joblib.load(result["scaler_path"])  # for SHAP
+                        
+                        # Log model artifacts with metadata
                         if "model_path" in result:
-                            mlflow.log_artifact(result["model_path"])
+                            log_artifacts_with_metadata(
+                                local_path=result["model_path"],
+                                artifact_path=f"models/{model_name}_model.joblib",
+                                asset=symbol,
+                                exchange=exchange,
+                                lookback_period=lookback_period,
+                                run_id=run.info.run_id,
+                                additional_metadata={
+                                    "artifact_type": "trained_model",
+                                    "model_name": model_name,
+                                    "model_type": hpo_model_type,
+                                }
+                            )
+                        
                         if "scaler_path" in result:
-                            mlflow.log_artifact(result["scaler_path"])
+                            log_artifacts_with_metadata(
+                                local_path=result["scaler_path"],
+                                artifact_path=f"models/{model_name}_scaler.joblib",
+                                asset=symbol,
+                                exchange=exchange,
+                                lookback_period=lookback_period,
+                                run_id=run.info.run_id,
+                                additional_metadata={
+                                    "artifact_type": "scaler",
+                                    "model_name": model_name,
+                                    "model_type": hpo_model_type,
+                                }
+                            )
                         # SHAP explainability integration
                         try:
                             X_sample = training_data["tactician_1m"].features.iloc[:200]
@@ -374,7 +438,20 @@ class RayModelTrainer:
                                 delete=False,
                             ) as tmpfile:
                                 plt.savefig(tmpfile.name)
-                                mlflow.log_artifact(tmpfile.name, artifact_path="shap")
+                                log_artifacts_with_metadata(
+                                    local_path=tmpfile.name,
+                                    artifact_path=f"shap/{model_name}_shap_summary.png",
+                                    asset=symbol,
+                                    exchange=exchange,
+                                    lookback_period=lookback_period,
+                                    run_id=run.info.run_id,
+                                    additional_metadata={
+                                        "artifact_type": "shap_plot",
+                                        "model_name": model_name,
+                                        "model_type": hpo_model_type,
+                                        "explainability_method": "tree_explainer",
+                                    }
+                                )
                             plt.close()
                         except Exception as e:
                             self.logger.warning(f"SHAP explainability failed: {e}")

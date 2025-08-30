@@ -8,9 +8,11 @@ PositionDivisionStrategy for consistency.
 """
 
 import asyncio
+import yaml
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
@@ -248,6 +250,9 @@ class PositionMonitor:
             while self.is_monitoring:
                 # Monitor all active positions
                 await self._monitor_positions()
+
+                # Auto-refresh step12 configuration if enabled
+                await self._auto_refresh_step12_config()
 
                 # Wait for next monitoring cycle
                 await asyncio.sleep(self.monitoring_interval)
@@ -525,6 +530,83 @@ class PositionMonitor:
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error cleaning up old positions: {e}"))
+
+    async def _auto_refresh_step12_config(self) -> None:
+        """
+        Automatically refresh step12 configuration and confidence thresholds.
+        This method is called periodically to check for new step12 results.
+        """
+        try:
+            # Check if auto-refresh is enabled
+            step12_config = self.config.get("step12_confidence_optimization", {})
+            auto_refresh = step12_config.get("auto_refresh", True)
+            
+            if not auto_refresh:
+                return
+            
+            # Check if we need to refresh (based on interval)
+            current_time = datetime.now()
+            if hasattr(self, '_last_step12_refresh'):
+                time_since_refresh = (current_time - self._last_step12_refresh).total_seconds()
+                refresh_interval = step12_config.get("refresh_interval", 300)  # 5 minutes default
+                
+                if time_since_refresh < refresh_interval:
+                    return
+            
+            # Try to load updated step12 configuration
+            updated_config = self._load_updated_step12_config()
+            if updated_config:
+                # Update confidence thresholds
+                position_monitor_config = updated_config.get("position_monitor", {})
+                
+                self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", self.high_confidence_threshold)
+                self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", self.low_confidence_threshold)
+                self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", self.very_low_confidence_threshold)
+                
+                self._last_step12_refresh = current_time
+                self.logger.info("✅ Refreshed step12 confidence thresholds automatically")
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
+
+    def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Load updated step12 configuration from results files.
+        
+        Returns:
+            Dict: Updated configuration or None if no updates found
+        """
+        try:
+            step12_config = self.config.get("step12_confidence_optimization", {})
+            result_paths = step12_config.get("step12_results_paths", [])
+            
+            for path in result_paths:
+                if Path(path).exists():
+                    try:
+                        with open(path, 'r') as f:
+                            import yaml
+                            updated_config = yaml.safe_load(f)
+                            
+                        # Check if this is newer than our current config
+                        if "timestamp" in updated_config:
+                            config_time = datetime.fromisoformat(updated_config["timestamp"])
+                            if hasattr(self, '_last_step12_refresh'):
+                                if config_time > self._last_step12_refresh:
+                                    return updated_config
+                            else:
+                                return updated_config
+                        else:
+                            return updated_config
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Could not load step12 config from {path}: {e}")
+                        continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
+            return None
 
     def add_position(self, position_data: Dict[str, Any]) -> None:
         """

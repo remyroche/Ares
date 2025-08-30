@@ -1167,21 +1167,24 @@ class SRBreakoutPredictor:
                 "support_proximity": support_proximity,
                 "resistance_proximity": resistance_proximity,
                 "pivot_levels": pivot_levels,
-                "support_levels": clustered_support,  # Use clustered levels
-                "resistance_levels": clustered_resistance,  # Use clustered levels
-                "sr_zone_width": abs(nearest_resistance.get("price", current_price) - nearest_support.get("price", current_price)) / current_price if nearest_resistance and nearest_support else 0.0,
                 
-                # Enhanced Strength Analysis
-                "enhanced_strength_support": enhanced_strength_support,
-                "enhanced_strength_resistance": enhanced_strength_resistance,
+                # Support and resistance level collections
+                "support_levels": clustered_support,
+                "resistance_levels": clustered_resistance,
                 
-                # DBSCAN Clustering Results
-                "clustering_result": clustering_result,
-                
-                # Advanced S/R Analysis
+                # Advanced analysis
                 "fibonacci_levels": fibonacci_levels,
                 "elliott_wave_levels": elliott_wave_levels,
                 "order_flow_analysis": order_flow_analysis,
+                
+                # Clustering results
+                "clustering_result": clustering_result,
+                
+                # Comparison metrics between price and VWAP approaches
+                "comparison_metrics": self._calculate_comparison_metrics(clustered_support, clustered_resistance, current_price),
+                
+                # Data source analysis
+                "data_source_analysis": self._analyze_data_sources(clustered_support, clustered_resistance),
                 
                 "timestamp": pd.Timestamp.now(),
             }
@@ -1200,7 +1203,7 @@ class SRBreakoutPredictor:
             return {}
 
     async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect support levels using configured method."""
+        """Detect support levels using configured method with both price and VWAP logic."""
         try:
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_support_levels(market_data)
@@ -1219,7 +1222,7 @@ class SRBreakoutPredictor:
             return []
 
     async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect resistance levels using configured method."""
+        """Detect resistance levels using configured method with both price and VWAP logic."""
         try:
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_resistance_levels(market_data)
@@ -1238,133 +1241,347 @@ class SRBreakoutPredictor:
             return []
 
     async def _detect_fractal_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect support levels using fractal analysis."""
+        """Detect support levels using fractal analysis with both price and VWAP logic."""
         try:
-            # Implement fractal-based support level detection
             support_levels = []
-
-            # Use VWAP if available, otherwise fall back to price
-            if 'vwap' in market_data.columns:
-                price_series = market_data['vwap']
-                self.logger.info("Using VWAP for fractal support level detection")
-            else:
-                price_series = market_data['low']
-                self.logger.info("Using low price for fractal support level detection")
-
-            # Find local minima in price data
-            low_prices = price_series.rolling(window=5, center=True).min()
-
-            # Identify significant support levels
-            for i in range(2, len(market_data) - 2):
-                if (price_series.iloc[i] == low_prices.iloc[i] and
-                    price_series.iloc[i] < price_series.iloc[i-1] and
-                    price_series.iloc[i] < price_series.iloc[i+1]):
-
-                    support_level = {
-                        "price": price_series.iloc[i],
-                        "strength": self._calculate_level_strength(market_data, i, "support"),
-                        "timestamp": market_data.index[i],
-                        "method": "fractal_vwap" if 'vwap' in market_data.columns else "fractal",
-                        "confidence": 0.7,
-                    }
-                    support_levels.append(support_level)
-
+            
+            # Detect support levels using both price and VWAP
+            price_support = await self._detect_fractal_support_levels_price(market_data)
+            vwap_support = await self._detect_fractal_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
+            
+            # Combine and deduplicate levels
+            all_support = price_support + vwap_support
+            support_levels = self._deduplicate_sr_levels(all_support)
+            
+            self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based support levels")
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
             self.logger.error(f"Error in fractal support detection: {e}")
             return []
 
-    async def _detect_fractal_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect resistance levels using fractal analysis."""
+    async def _detect_fractal_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect support levels using fractal analysis with price data."""
         try:
-            # Implement fractal-based resistance level detection
-            resistance_levels = []
+            support_levels = []
+            
+            # Find local minima in price data
+            low_prices = market_data['low'].rolling(window=5, center=True).min()
 
-            # Use VWAP if available, otherwise fall back to price
-            if 'vwap' in market_data.columns:
-                price_series = market_data['vwap']
-                self.logger.info("Using VWAP for fractal resistance level detection")
-            else:
-                price_series = market_data['high']
-                self.logger.info("Using high price for fractal resistance level detection")
-
-            # Find local maxima in price data
-            high_prices = price_series.rolling(window=5, center=True).max()
-
-            # Identify significant resistance levels
+            # Identify significant support levels
             for i in range(2, len(market_data) - 2):
-                if (price_series.iloc[i] == high_prices.iloc[i] and
-                    price_series.iloc[i] > price_series.iloc[i-1] and
-                    price_series.iloc[i] > price_series.iloc[i+1]):
+                if (market_data['low'].iloc[i] == low_prices.iloc[i] and
+                    market_data['low'].iloc[i] < market_data['low'].iloc[i-1] and
+                    market_data['low'].iloc[i] < market_data['low'].iloc[i+1]):
 
-                    resistance_level = {
-                        "price": price_series.iloc[i],
-                        "strength": self._calculate_level_strength(market_data, i, "resistance"),
+                    support_level = {
+                        "price": market_data['low'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "support"),
                         "timestamp": market_data.index[i],
-                        "method": "fractal_vwap" if 'vwap' in market_data.columns else "fractal",
+                        "method": "fractal_price",
+                        "data_source": "price",
                         "confidence": 0.7,
                     }
-                    resistance_levels.append(resistance_level)
+                    support_levels.append(support_level)
 
+            return support_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in price-based fractal support detection: {e}")
+            return []
+
+    async def _detect_fractal_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect support levels using fractal analysis with VWAP data."""
+        try:
+            support_levels = []
+            
+            # Find local minima in VWAP data
+            vwap_low_prices = market_data['vwap'].rolling(window=5, center=True).min()
+
+            # Identify significant support levels
+            for i in range(2, len(market_data) - 2):
+                if (market_data['vwap'].iloc[i] == vwap_low_prices.iloc[i] and
+                    market_data['vwap'].iloc[i] < market_data['vwap'].iloc[i-1] and
+                    market_data['vwap'].iloc[i] < market_data['vwap'].iloc[i+1]):
+
+                    support_level = {
+                        "price": market_data['vwap'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "support"),
+                        "timestamp": market_data.index[i],
+                        "method": "fractal_vwap",
+                        "data_source": "vwap",
+                        "confidence": 0.7,
+                    }
+                    support_levels.append(support_level)
+
+            return support_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in VWAP-based fractal support detection: {e}")
+            return []
+
+    async def _detect_fractal_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using fractal analysis with both price and VWAP logic."""
+        try:
+            resistance_levels = []
+            
+            # Detect resistance levels using both price and VWAP
+            price_resistance = await self._detect_fractal_resistance_levels_price(market_data)
+            vwap_resistance = await self._detect_fractal_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
+            
+            # Combine and deduplicate levels
+            all_resistance = price_resistance + vwap_resistance
+            resistance_levels = self._deduplicate_sr_levels(all_resistance)
+            
+            self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based resistance levels")
             return resistance_levels[:self.max_sr_levels]
 
         except Exception as e:
             self.logger.error(f"Error in fractal resistance detection: {e}")
             return []
 
-    async def _detect_volume_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect support levels using volume-weighted analysis."""
+    async def _detect_fractal_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using fractal analysis with price data."""
         try:
-            # Implement volume-weighted support level detection
-            support_levels = []
+            resistance_levels = []
+            
+            # Find local maxima in price data
+            high_prices = market_data['high'].rolling(window=5, center=True).max()
 
-            # Calculate volume-weighted average price
-            vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
+            # Identify significant resistance levels
+            for i in range(2, len(market_data) - 2):
+                if (market_data['high'].iloc[i] == high_prices.iloc[i] and
+                    market_data['high'].iloc[i] > market_data['high'].iloc[i-1] and
+                    market_data['high'].iloc[i] > market_data['high'].iloc[i+1]):
 
-            # Find support levels near VWAP
-            for i in range(len(market_data)):
-                if market_data['low'].iloc[i] <= vwap.iloc[i] * 1.01:  # Within 1% of VWAP
-                    support_level = {
-                        "price": market_data['low'].iloc[i],
-                        "strength": self._calculate_level_strength(market_data, i, "support"),
+                    resistance_level = {
+                        "price": market_data['high'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "resistance"),
                         "timestamp": market_data.index[i],
-                        "method": "volume",
-                        "confidence": 0.6,
+                        "method": "fractal_price",
+                        "data_source": "price",
+                        "confidence": 0.7,
                     }
-                    support_levels.append(support_level)
+                    resistance_levels.append(resistance_level)
 
+            return resistance_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in price-based fractal resistance detection: {e}")
+            return []
+
+    async def _detect_fractal_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using fractal analysis with VWAP data."""
+        try:
+            resistance_levels = []
+            
+            # Find local maxima in VWAP data
+            vwap_high_prices = market_data['vwap'].rolling(window=5, center=True).max()
+
+            # Identify significant resistance levels
+            for i in range(2, len(market_data) - 2):
+                if (market_data['vwap'].iloc[i] == vwap_high_prices.iloc[i] and
+                    market_data['vwap'].iloc[i] > market_data['vwap'].iloc[i-1] and
+                    market_data['vwap'].iloc[i] > market_data['vwap'].iloc[i+1]):
+
+                    resistance_level = {
+                        "price": market_data['vwap'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "resistance"),
+                        "timestamp": market_data.index[i],
+                        "method": "fractal_vwap",
+                        "data_source": "vwap",
+                        "confidence": 0.7,
+                    }
+                    resistance_levels.append(resistance_level)
+
+            return resistance_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in VWAP-based fractal resistance detection: {e}")
+            return []
+
+    def _deduplicate_sr_levels(self, levels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Deduplicate support/resistance levels based on price proximity and data source."""
+        try:
+            if not levels:
+                return []
+            
+            # Sort levels by price
+            sorted_levels = sorted(levels, key=lambda x: x["price"])
+            deduplicated = []
+            
+            for i, level in enumerate(sorted_levels):
+                is_duplicate = False
+                
+                # Check if this level is too close to any previously added level
+                for existing_level in deduplicated:
+                    price_diff = abs(level["price"] - existing_level["price"]) / existing_level["price"]
+                    
+                    # If levels are within 0.5% of each other, consider them duplicates
+                    if price_diff < 0.005:
+                        # Keep the one with higher strength or better data source
+                        if level.get("strength", 0) > existing_level.get("strength", 0):
+                            # Replace existing level with current one
+                            deduplicated.remove(existing_level)
+                            deduplicated.append(level)
+                        elif level.get("strength", 0) == existing_level.get("strength", 0):
+                            # If same strength, prefer VWAP over price
+                            if level.get("data_source") == "vwap" and existing_level.get("data_source") == "price":
+                                deduplicated.remove(existing_level)
+                                deduplicated.append(level)
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    deduplicated.append(level)
+            
+            self.logger.info(f"✅ Deduplicated {len(levels)} levels to {len(deduplicated)} unique levels")
+            return deduplicated
+            
+        except Exception as e:
+            self.logger.error(f"Error deduplicating SR levels: {e}")
+            return levels
+
+    async def _detect_volume_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect support levels using volume-weighted analysis with both price and VWAP logic."""
+        try:
+            support_levels = []
+            
+            # Detect support levels using both price and VWAP
+            price_support = await self._detect_volume_support_levels_price(market_data)
+            vwap_support = await self._detect_volume_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
+            
+            # Combine and deduplicate levels
+            all_support = price_support + vwap_support
+            support_levels = self._deduplicate_sr_levels(all_support)
+            
+            self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based volume support levels")
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
             self.logger.error(f"Error in volume support detection: {e}")
             return []
 
-    async def _detect_volume_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
-        """Detect resistance levels using volume-weighted analysis."""
+    async def _detect_volume_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect support levels using volume-weighted analysis with price data."""
         try:
-            # Implement volume-weighted resistance level detection
+            support_levels = []
+
+            # Calculate volume-weighted average price
+            vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
+
+            # Find support levels near VWAP using price data
+            for i in range(len(market_data)):
+                if market_data['low'].iloc[i] <= vwap.iloc[i] * 1.01:  # Within 1% of VWAP
+                    support_level = {
+                        "price": market_data['low'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "support"),
+                        "timestamp": market_data.index[i],
+                        "method": "volume_price",
+                        "data_source": "price",
+                        "confidence": 0.6,
+                    }
+                    support_levels.append(support_level)
+
+            return support_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in price-based volume support detection: {e}")
+            return []
+
+    async def _detect_volume_support_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect support levels using volume-weighted analysis with VWAP data."""
+        try:
+            support_levels = []
+
+            # Find support levels near VWAP using VWAP data
+            for i in range(len(market_data)):
+                if market_data['vwap'].iloc[i] <= market_data['vwap'].rolling(window=20).mean().iloc[i] * 1.01:  # Within 1% of VWAP mean
+                    support_level = {
+                        "price": market_data['vwap'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "support"),
+                        "timestamp": market_data.index[i],
+                        "method": "volume_vwap",
+                        "data_source": "vwap",
+                        "confidence": 0.6,
+                    }
+                    support_levels.append(support_level)
+
+            return support_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in VWAP-based volume support detection: {e}")
+            return []
+
+    async def _detect_volume_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using volume-weighted analysis with both price and VWAP logic."""
+        try:
+            resistance_levels = []
+            
+            # Detect resistance levels using both price and VWAP
+            price_resistance = await self._detect_volume_resistance_levels_price(market_data)
+            vwap_resistance = await self._detect_volume_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
+            
+            # Combine and deduplicate levels
+            all_resistance = price_resistance + vwap_resistance
+            resistance_levels = self._deduplicate_sr_levels(all_resistance)
+            
+            self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based volume resistance levels")
+            return resistance_levels[:self.max_sr_levels]
+
+        except Exception as e:
+            self.logger.error(f"Error in volume resistance detection: {e}")
+            return []
+
+    async def _detect_volume_resistance_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using volume-weighted analysis with price data."""
+        try:
             resistance_levels = []
 
             # Calculate volume-weighted average price
             vwap = (market_data['close'] * market_data['volume']).cumsum() / market_data['volume'].cumsum()
 
-            # Find resistance levels near VWAP
+            # Find resistance levels near VWAP using price data
             for i in range(len(market_data)):
                 if market_data['high'].iloc[i] >= vwap.iloc[i] * 0.99:  # Within 1% of VWAP
                     resistance_level = {
                         "price": market_data['high'].iloc[i],
                         "strength": self._calculate_level_strength(market_data, i, "resistance"),
                         "timestamp": market_data.index[i],
-                        "method": "volume",
+                        "method": "volume_price",
+                        "data_source": "price",
                         "confidence": 0.6,
                     }
                     resistance_levels.append(resistance_level)
 
-            return resistance_levels[:self.max_sr_levels]
+            return resistance_levels
 
         except Exception as e:
-            self.logger.error(f"Error in volume resistance detection: {e}")
+            self.logger.error(f"Error in price-based volume resistance detection: {e}")
+            return []
+
+    async def _detect_volume_resistance_levels_vwap(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
+        """Detect resistance levels using volume-weighted analysis with VWAP data."""
+        try:
+            resistance_levels = []
+
+            # Find resistance levels near VWAP using VWAP data
+            for i in range(len(market_data)):
+                if market_data['vwap'].iloc[i] >= market_data['vwap'].rolling(window=20).mean().iloc[i] * 0.99:  # Within 1% of VWAP mean
+                    resistance_level = {
+                        "price": market_data['vwap'].iloc[i],
+                        "strength": self._calculate_level_strength(market_data, i, "resistance"),
+                        "timestamp": market_data.index[i],
+                        "method": "volume_vwap",
+                        "data_source": "vwap",
+                        "confidence": 0.6,
+                    }
+                    resistance_levels.append(resistance_level)
+
+            return resistance_levels
+
+        except Exception as e:
+            self.logger.error(f"Error in VWAP-based volume resistance detection: {e}")
             return []
 
     async def _detect_pivot_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
@@ -3443,6 +3660,233 @@ class SRBreakoutPredictor:
             self.logger.info("✅ SR breakout predictor cleanup completed")
         except Exception as e:
             self.logger.error(f"Error cleaning up SR breakout predictor: {e}")
+
+    def _calculate_comparison_metrics(self, support_levels: list[dict[str, Any]], resistance_levels: list[dict[str, Any]], current_price: float) -> dict[str, Any]:
+        """Calculate comparison metrics between price and VWAP approaches."""
+        try:
+            comparison = {
+                "price_vs_vwap": {},
+                "detection_efficiency": {},
+                "level_quality": {},
+                "recommendations": {}
+            }
+            
+            # Analyze support levels by data source
+            price_support = [level for level in support_levels if level.get("data_source") == "price"]
+            vwap_support = [level for level in support_levels if level.get("data_source") == "vwap"]
+            
+            # Analyze resistance levels by data source
+            price_resistance = [level for level in resistance_levels if level.get("data_source") == "price"]
+            vwap_resistance = [level for level in resistance_levels if level.get("data_source") == "vwap"]
+            
+            # Price vs VWAP comparison
+            comparison["price_vs_vwap"] = {
+                "support_levels": {
+                    "price_count": len(price_support),
+                    "vwap_count": len(vwap_support),
+                    "price_avg_strength": np.mean([level.get("strength", 0) for level in price_support]) if price_support else 0,
+                    "vwap_avg_strength": np.mean([level.get("strength", 0) for level in vwap_support]) if vwap_support else 0,
+                    "price_avg_confidence": np.mean([level.get("confidence", 0) for level in price_support]) if price_support else 0,
+                    "vwap_avg_confidence": np.mean([level.get("confidence", 0) for level in vwap_support]) if vwap_support else 0,
+                },
+                "resistance_levels": {
+                    "price_count": len(price_resistance),
+                    "vwap_count": len(vwap_resistance),
+                    "price_avg_strength": np.mean([level.get("strength", 0) for level in price_resistance]) if price_resistance else 0,
+                    "vwap_avg_strength": np.mean([level.get("strength", 0) for level in price_resistance]) if price_resistance else 0,
+                    "price_avg_confidence": np.mean([level.get("confidence", 0) for level in price_resistance]) if price_resistance else 0,
+                    "vwap_avg_confidence": np.mean([level.get("confidence", 0) for level in price_resistance]) if price_resistance else 0,
+                }
+            }
+            
+            # Detection efficiency
+            total_levels = len(support_levels) + len(resistance_levels)
+            comparison["detection_efficiency"] = {
+                "total_levels": total_levels,
+                "price_detection_rate": (len(price_support) + len(price_resistance)) / total_levels if total_levels > 0 else 0,
+                "vwap_detection_rate": (len(vwap_support) + len(vwap_resistance)) / total_levels if total_levels > 0 else 0,
+                "overlap_rate": self._calculate_overlap_rate(price_support + price_resistance, vwap_support + vwap_resistance)
+            }
+            
+            # Level quality analysis
+            comparison["level_quality"] = {
+                "price_quality_score": self._calculate_quality_score(price_support + price_resistance),
+                "vwap_quality_score": self._calculate_quality_score(vwap_support + vwap_resistance),
+                "best_approach": "vwap" if comparison["level_quality"]["vwap_quality_score"] > comparison["level_quality"]["price_quality_score"] else "price"
+            }
+            
+            # Recommendations
+            comparison["recommendations"] = self._generate_comparison_recommendations(comparison)
+            
+            return comparison
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating comparison metrics: {e}")
+            return {}
+
+    def _analyze_data_sources(self, support_levels: list[dict[str, Any]], resistance_levels: list[dict[str, Any]]) -> dict[str, Any]:
+        """Analyze the distribution and characteristics of data sources."""
+        try:
+            analysis = {
+                "data_source_distribution": {},
+                "source_characteristics": {},
+                "method_effectiveness": {}
+            }
+            
+            all_levels = support_levels + resistance_levels
+            
+            # Data source distribution
+            price_levels = [level for level in all_levels if level.get("data_source") == "price"]
+            vwap_levels = [level for level in all_levels if level.get("data_source") == "vwap"]
+            
+            analysis["data_source_distribution"] = {
+                "total_levels": len(all_levels),
+                "price_levels": len(price_levels),
+                "vwap_levels": len(vwap_levels),
+                "price_percentage": len(price_levels) / len(all_levels) if all_levels else 0,
+                "vwap_percentage": len(vwap_levels) / len(all_levels) if all_levels else 0
+            }
+            
+            # Source characteristics
+            analysis["source_characteristics"] = {
+                "price": {
+                    "avg_strength": np.mean([level.get("strength", 0) for level in price_levels]) if price_levels else 0,
+                    "avg_confidence": np.mean([level.get("confidence", 0) for level in price_levels]) if price_levels else 0,
+                    "methods": list(set([level.get("method", "") for level in price_levels]))
+                },
+                "vwap": {
+                    "avg_strength": np.mean([level.get("strength", 0) for level in vwap_levels]) if vwap_levels else 0,
+                    "avg_confidence": np.mean([level.get("confidence", 0) for level in vwap_levels]) if vwap_levels else 0,
+                    "methods": list(set([level.get("method", "") for level in vwap_levels]))
+                }
+            }
+            
+            # Method effectiveness
+            analysis["method_effectiveness"] = self._analyze_method_effectiveness(all_levels)
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing data sources: {e}")
+            return {}
+
+    def _calculate_overlap_rate(self, price_levels: list[dict[str, Any]], vwap_levels: list[dict[str, Any]]) -> float:
+        """Calculate the overlap rate between price and VWAP detected levels."""
+        try:
+            if not price_levels or not vwap_levels:
+                return 0.0
+            
+            overlap_count = 0
+            total_comparisons = len(price_levels) * len(vwap_levels)
+            
+            for price_level in price_levels:
+                for vwap_level in vwap_levels:
+                    price_diff = abs(price_level["price"] - vwap_level["price"]) / price_level["price"]
+                    if price_diff < 0.01:  # Within 1%
+                        overlap_count += 1
+            
+            return overlap_count / total_comparisons if total_comparisons > 0 else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating overlap rate: {e}")
+            return 0.0
+
+    def _calculate_quality_score(self, levels: list[dict[str, Any]]) -> float:
+        """Calculate a quality score for a set of levels based on strength and confidence."""
+        try:
+            if not levels:
+                return 0.0
+            
+            # Weighted average of strength and confidence
+            total_score = 0.0
+            for level in levels:
+                strength = level.get("strength", 0)
+                confidence = level.get("confidence", 0)
+                # Weight: 70% strength, 30% confidence
+                level_score = (strength * 0.7) + (confidence * 0.3)
+                total_score += level_score
+            
+            return total_score / len(levels)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating quality score: {e}")
+            return 0.0
+
+    def _analyze_method_effectiveness(self, levels: list[dict[str, Any]]) -> dict[str, Any]:
+        """Analyze the effectiveness of different detection methods."""
+        try:
+            method_stats = {}
+            
+            for level in levels:
+                method = level.get("method", "unknown")
+                data_source = level.get("data_source", "unknown")
+                
+                if method not in method_stats:
+                    method_stats[method] = {
+                        "count": 0,
+                        "total_strength": 0.0,
+                        "total_confidence": 0.0,
+                        "data_sources": {"price": 0, "vwap": 0}
+                    }
+                
+                method_stats[method]["count"] += 1
+                method_stats[method]["total_strength"] += level.get("strength", 0)
+                method_stats[method]["total_confidence"] += level.get("confidence", 0)
+                method_stats[method]["data_sources"][data_source] += 1
+            
+            # Calculate averages
+            for method in method_stats:
+                count = method_stats[method]["count"]
+                method_stats[method]["avg_strength"] = method_stats[method]["total_strength"] / count
+                method_stats[method]["avg_confidence"] = method_stats[method]["total_confidence"] / count
+            
+            return method_stats
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing method effectiveness: {e}")
+            return {}
+
+    def _generate_comparison_recommendations(self, comparison: dict[str, Any]) -> dict[str, Any]:
+        """Generate recommendations based on comparison analysis."""
+        try:
+            recommendations = {
+                "primary_approach": "",
+                "secondary_approach": "",
+                "rationale": "",
+                "optimization_suggestions": []
+            }
+            
+            # Determine primary approach
+            vwap_quality = comparison["level_quality"]["vwap_quality_score"]
+            price_quality = comparison["level_quality"]["price_quality_score"]
+            
+            if vwap_quality > price_quality:
+                recommendations["primary_approach"] = "vwap"
+                recommendations["secondary_approach"] = "price"
+                recommendations["rationale"] = f"VWAP approach shows better quality (score: {vwap_quality:.3f} vs price: {price_quality:.3f})"
+            else:
+                recommendations["primary_approach"] = "price"
+                recommendations["secondary_approach"] = "vwap"
+                recommendations["rationale"] = f"Price approach shows better quality (score: {price_quality:.3f} vs VWAP: {vwap_quality:.3f})"
+            
+            # Optimization suggestions
+            if comparison["detection_efficiency"]["overlap_rate"] < 0.3:
+                recommendations["optimization_suggestions"].append("Low overlap between approaches - consider adjusting detection parameters")
+            
+            if abs(vwap_quality - price_quality) < 0.1:
+                recommendations["optimization_suggestions"].append("Similar performance - both approaches are viable")
+            
+            if comparison["detection_efficiency"]["vwap_detection_rate"] < 0.2:
+                recommendations["optimization_suggestions"].append("Low VWAP detection rate - check VWAP calculation and parameters")
+            
+            if comparison["detection_efficiency"]["price_detection_rate"] < 0.2:
+                recommendations["optimization_suggestions"].append("Low price detection rate - check price-based detection parameters")
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"Error generating comparison recommendations: {e}")
+            return {}
 
 
 async def setup_sr_breakout_predictor(

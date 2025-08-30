@@ -101,6 +101,12 @@ This implementation ensures that all models in the `enhanced_training_manager` p
 - Pattern for automatic metadata association
 - Best practices for artifact logging
 
+#### Standardized Artifact Naming Guide (`docs/standardized_artifact_naming_guide.md`)
+- Comprehensive guide for standardized artifact naming pattern
+- Implementation examples for all pipeline steps
+- Best practices and troubleshooting
+- Integration checklist and validation
+
 ## Required Metadata Associations
 
 Every model and artifact is now automatically associated with:
@@ -110,6 +116,25 @@ Every model and artifact is now automatically associated with:
 3. **Lookback Period** - Data lookback period (e.g., "2_years")
 4. **Project Version** - Current project version (from `ARES_VERSION`)
 5. **Date** - Training date (automatically set to current timestamp)
+
+## Standardized Artifact Naming
+
+All artifacts follow the standardized pattern:
+```
+exchange_token_date_hourminute_NumberOfStep_Artifact
+```
+
+### Examples:
+- `BINANCE_ETHUSDT_20241201_1430_3_composite_clusters.parquet`
+- `BINANCE_ETHUSDT_20241201_1430_6_features_train.parquet`
+- `BINANCE_ETHUSDT_20241201_1430_9_hmm_model.pkl`
+- `BINANCE_ETHUSDT_20241201_1430_21_training_summary.json`
+
+### Key Features:
+- **Consistency**: All artifacts follow the same naming pattern
+- **Traceability**: Each artifact is associated with specific exchange, token, date, and step
+- **Organization**: Artifacts are naturally sorted and easy to find
+- **Reproducibility**: Timestamped for exact reproduction
 
 ## Key Features
 

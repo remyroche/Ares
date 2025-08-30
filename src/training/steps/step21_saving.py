@@ -180,11 +180,15 @@ class SavingStep:
             # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
             from src.utils.mlflow_utils import (
-                log_enhanced_training_metadata,
-                log_metrics_with_metadata,
-                log_artifacts_with_metadata,
-                log_params_with_metadata,
-            )
+    log_enhanced_training_metadata,
+    log_metrics_with_metadata,
+    log_artifacts_with_metadata,
+    log_params_with_metadata,
+)
+from src.utils.enhanced_mlflow_integration import (
+    log_step_report,
+    log_step_artifact_with_standardized_name
+)
 
             cfg = get_mlflow_config() or {}
 
@@ -267,18 +271,43 @@ class SavingStep:
                     json.dump(training_summary, f, indent=2, default=str)
                     temp_path = f.name
                 
-                log_artifacts_with_metadata(
-                    local_path=temp_path,
-                    artifact_path="artifacts/training_summary.json",
-                    asset=symbol,
-                    exchange=exchange,
-                    lookback_period=lookback_period,
-                    run_id=run_id,
+                # Log training summary with standardized naming
+                summary_artifact_name = log_step_artifact_with_standardized_name(
+                    config=self.config,
+                    step_name="step21_saving",
+                    artifact_path=temp_path,
+                    artifact_type="training_summary",
                     additional_metadata={
-                        "artifact_type": "training_summary",
                         "summary_size": len(training_summary),
                     }
                 )
+                self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
+                
+                # Log comprehensive final report
+                final_report_data = {
+                    "training_summary": training_summary,
+                    "pipeline_state": pipeline_state,
+                    "training_config": {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "lookback_years": lookback_years,
+                        "timeframe": self.config.get("trading_interval", "1h"),
+                    },
+                    "execution_timestamp": datetime.now().isoformat(),
+                    "pipeline_completion": True,
+                }
+                
+                report_name = log_step_report(
+                    config=self.config,
+                    step_name="step21_saving",
+                    report_data=final_report_data,
+                    report_type="final_training_report",
+                    additional_metadata={
+                        "pipeline_steps_completed": len([k for k, v in pipeline_state.items() if v]),
+                        "pipeline_status": "completed",
+                    }
+                )
+                self.logger.info(f"✅ Logged final training report: {report_name}")
                 
                 os.unlink(temp_path)
 

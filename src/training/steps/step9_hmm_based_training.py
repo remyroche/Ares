@@ -38,7 +38,14 @@ from src.utils.centralized_decorators import (
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging, log_step_model, log_step_metrics, log_step_artifact
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging, 
+    log_step_model, 
+    log_step_metrics, 
+    log_step_artifact,
+    log_step_report,
+    log_step_artifact_with_standardized_name
+)
 from ..model_probability_generator import ModelProbabilityGenerator
 from ..model_saving_utils import save_model_with_probabilities
 
@@ -2370,9 +2377,9 @@ class HMMBasedTrainingStep:
                 f"✅ Saved comprehensive training summary to {summary_path}",
             )
             
-            # Log training summary to MLflow
+            # Log training summary to MLflow with standardized naming
             try:
-                log_step_artifact(
+                summary_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
                     step_name="step9_hmm_based_training",
                     artifact_path=summary_path,
@@ -2383,6 +2390,30 @@ class HMMBasedTrainingStep:
                         "summary_type": "comprehensive_training_summary",
                     }
                 )
+                self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
+                
+                # Log comprehensive training report
+                report_data = {
+                    "training_summary": summary,
+                    "model_architectures": self.model_architectures,
+                    "validation_config": self.validation_config,
+                    "data_source_config": self.data_source_config,
+                    "training_results": training_results,
+                    "execution_timestamp": datetime.now().isoformat(),
+                }
+                
+                report_name = log_step_report(
+                    config=self.config,
+                    step_name="step9_hmm_based_training",
+                    report_data=report_data,
+                    report_type="hmm_training_report",
+                    additional_metadata={
+                        "models_trained": len(training_results),
+                        "timeframes": list(training_results.keys()),
+                        "model_architectures": list(self.model_architectures.keys()),
+                    }
+                )
+                self.logger.info(f"✅ Logged HMM training report: {report_name}")
                 
                 # Log training metrics
                 all_metrics = {}

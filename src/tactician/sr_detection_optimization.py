@@ -542,8 +542,8 @@ class SRDetectionOptimizer:
             if not backtest_result:
                 return 0.0
             
-            # Use the overall performance score from backtesting
-            performance_score = backtest_result.overall_performance_score
+            # Use the S/R validation score from backtesting
+            performance_score = backtest_result.sr_validation_score
             
             # Store backtesting results for analysis
             if not hasattr(self, 'backtest_results'):

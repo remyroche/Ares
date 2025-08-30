@@ -175,10 +175,16 @@ class SavingStep:
     async def _save_to_mlflow(
         self, training_summary: dict[str, Any], symbol: str, exchange: str,
     ) -> None:
-        """Save training results to MLflow. MLflow is required; do not skip."""
+        """Save training results to MLflow with enhanced metadata associations."""
         try:
             # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
+            from src.utils.mlflow_utils import (
+                log_enhanced_training_metadata,
+                log_metrics_with_metadata,
+                log_artifacts_with_metadata,
+                log_params_with_metadata,
+            )
 
             cfg = get_mlflow_config() or {}
 
@@ -197,22 +203,60 @@ class SavingStep:
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
+            # Extract lookback period from config
+            lookback_years = self.config.get("lookback_years", 2)
+            lookback_period = f"{lookback_years}_years"
+
             # Start MLflow run
             with mlflow.start_run(
                 run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            ):
-                # Log parameters
-                mlflow.log_param("symbol", symbol)
-                mlflow.log_param("exchange", exchange)
-                mlflow.log_param("training_date", datetime.now().isoformat())
+            ) as run:
+                run_id = run.info.run_id
+                
+                # Log enhanced training metadata with all required associations
+                log_enhanced_training_metadata(
+                    asset=symbol,
+                    exchange=exchange,
+                    lookback_period=lookback_period,
+                    run_id=run_id,
+                    additional_metadata={
+                        "pipeline_step": "step21_saving",
+                        "training_summary_keys": list(training_summary.keys()),
+                    }
+                )
 
-                # Log metrics
+                # Log parameters with metadata
+                params = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "lookback_years": lookback_years,
+                    "timeframe": self.config.get("trading_interval", "1h"),
+                }
+                log_params_with_metadata(
+                    params=params,
+                    asset=symbol,
+                    exchange=exchange,
+                    lookback_period=lookback_period,
+                    run_id=run_id,
+                )
+
+                # Log metrics with metadata
                 if "metrics" in training_summary:
+                    metrics = {}
                     for metric_name, metric_value in training_summary["metrics"].items():
                         if isinstance(metric_value, (int, float)):
-                            mlflow.log_metric(metric_name, float(metric_value))
+                            metrics[metric_name] = float(metric_value)
+                    
+                    if metrics:
+                        log_metrics_with_metadata(
+                            metrics=metrics,
+                            asset=symbol,
+                            exchange=exchange,
+                            lookback_period=lookback_period,
+                            run_id=run_id,
+                        )
 
-                # Log training summary as artifact
+                # Log training summary as artifact with metadata
                 import tempfile
 
                 with tempfile.NamedTemporaryFile(
@@ -222,11 +266,23 @@ class SavingStep:
                 ) as f:
                     json.dump(training_summary, f, indent=2, default=str)
                     temp_path = f.name
-                # Store under a stable artifacts directory in the run
-                mlflow.log_artifact(temp_path, artifact_path="artifacts")
+                
+                log_artifacts_with_metadata(
+                    local_path=temp_path,
+                    artifact_path="artifacts/training_summary.json",
+                    asset=symbol,
+                    exchange=exchange,
+                    lookback_period=lookback_period,
+                    run_id=run_id,
+                    additional_metadata={
+                        "artifact_type": "training_summary",
+                        "summary_size": len(training_summary),
+                    }
+                )
+                
                 os.unlink(temp_path)
 
-            self.logger.info("✅ Training results saved to MLflow successfully")
+            self.logger.info(f"✅ Training results saved to MLflow successfully with enhanced metadata (Run ID: {run_id})")
 
         except Exception:
             self.logger.exception("🚨 MLflow saving failed")

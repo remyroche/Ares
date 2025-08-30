@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import os
 import json
+from pathlib import Path
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
@@ -43,6 +44,9 @@ class SRBreakoutPredictor:
         self.is_initialized: bool = False
         self.sr_predictions: dict[str, Any] = {}
         
+        # Configuration
+        self.sr_config: dict[str, Any] = self.config.get("sr_breakout_predictor", {})
+        
         # Reporting system
         self.reporting_enabled: bool = self.sr_config.get("enable_detailed_reporting", True)
         self.report_directory: str = self.sr_config.get("report_directory", "reports/sr_analysis")
@@ -50,9 +54,6 @@ class SRBreakoutPredictor:
         self.report_retention_days: int = self.sr_config.get("report_retention_days", 30)
         self.metrics_history: list[dict[str, Any]] = []
         self.current_report_id: str = ""
-
-        # Configuration
-        self.sr_config: dict[str, Any] = self.config.get("sr_breakout_predictor", {})
         self.enable_sr_breakout_tactics: bool = self.sr_config.get(
             "enable_sr_breakout_tactics",
             True,

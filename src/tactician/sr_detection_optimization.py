@@ -1,14 +1,17 @@
 # src/tactician/sr_detection_optimization.py
 
 """
-Comprehensive S/R Detection Optimization Module
+Enhanced S/R Detection Optimization Module
 
-This module implements multiple optimization strategies for S/R detection:
+This module implements comprehensive optimization strategies for S/R detection
+specifically optimized for 1-30m timeframes. It includes:
+
 1. Multi-Method Ensemble Optimization
 2. Advanced Strength Scoring Optimization  
 3. Multi-Timeframe Confluence Optimization
 4. Advanced S/R Method Optimization
 5. DBSCAN Clustering Optimization with real data testing
+6. Timeframe-specific parameter optimization
 
 The optimized parameters are then used by the main S/R predictor.
 """
@@ -71,12 +74,20 @@ class OptimizationResult:
     out_of_sample_score: float = 0.0
     statistical_significance: float = 0.0
     
+    # S/R specific metrics
+    sr_validation_score: float = 0.0
+    bounce_rate: float = 0.0
+    false_breakout_rate: float = 0.0
+    volume_confirmation_rate: float = 0.0
+    level_detection_accuracy: float = 0.0
+    
     # Optimization metadata
     optimization_time: float = 0.0
     n_trials: int = 0
     best_trial_number: int = 0
     optimization_method: str = ""
     market_regime: str = ""
+    timeframe_optimized: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""
@@ -94,6 +105,13 @@ class OptimizationResult:
                 "profit_factor": self.profit_factor,
                 "signal_clarity": self.signal_clarity,
             },
+            "sr_metrics": {
+                "sr_validation_score": self.sr_validation_score,
+                "bounce_rate": self.bounce_rate,
+                "false_breakout_rate": self.false_breakout_rate,
+                "volume_confirmation_rate": self.volume_confirmation_rate,
+                "level_detection_accuracy": self.level_detection_accuracy,
+            },
             "validation_metrics": {
                 "cross_validation_score": self.cross_validation_score,
                 "out_of_sample_score": self.out_of_sample_score,
@@ -105,6 +123,7 @@ class OptimizationResult:
                 "best_trial_number": self.best_trial_number,
                 "optimization_method": self.optimization_method,
                 "market_regime": self.market_regime,
+                "timeframe_optimized": self.timeframe_optimized,
                 "timestamp": datetime.now().isoformat(),
             }
         }
@@ -112,7 +131,7 @@ class OptimizationResult:
 
 class SRDetectionOptimizer:
     """
-    Comprehensive S/R Detection Optimizer.
+    Enhanced S/R Detection Optimizer for 1-30m timeframes.
     
     Implements multiple optimization strategies:
     1. Multi-Method Ensemble Optimization
@@ -120,6 +139,7 @@ class SRDetectionOptimizer:
     3. Multi-Timeframe Confluence Optimization
     4. Advanced S/R Method Optimization
     5. DBSCAN Clustering Optimization with real data testing
+    6. Timeframe-specific parameter optimization
     """
     
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -134,13 +154,45 @@ class SRDetectionOptimizer:
         self.test_size = self.opt_config.get("test_size", 0.2)
         self.optimization_timeout = self.opt_config.get("optimization_timeout", 3600)  # 1 hour
         
-        # Performance thresholds
+        # Timeframe-specific configuration for 1-30m
+        self.timeframe_config = self.opt_config.get("timeframe_config", {
+            "1m": {
+                "touch_threshold": 0.0005,  # 0.05% for 1m
+                "bounce_threshold": 0.002,  # 0.2% for 1m
+                "breakout_threshold": 0.005,  # 0.5% for 1m
+                "min_touches": 3,
+                "volume_spike_threshold": 1.3,
+            },
+            "5m": {
+                "touch_threshold": 0.001,  # 0.1% for 5m
+                "bounce_threshold": 0.003,  # 0.3% for 5m
+                "breakout_threshold": 0.008,  # 0.8% for 5m
+                "min_touches": 3,
+                "volume_spike_threshold": 1.4,
+            },
+            "15m": {
+                "touch_threshold": 0.0015,  # 0.15% for 15m
+                "bounce_threshold": 0.005,  # 0.5% for 15m
+                "breakout_threshold": 0.01,  # 1% for 15m
+                "min_touches": 2,
+                "volume_spike_threshold": 1.5,
+            },
+            "30m": {
+                "touch_threshold": 0.002,  # 0.2% for 30m
+                "bounce_threshold": 0.008,  # 0.8% for 30m
+                "breakout_threshold": 0.015,  # 1.5% for 30m
+                "min_touches": 2,
+                "volume_spike_threshold": 1.6,
+            }
+        })
+        
+        # Performance thresholds for 1-30m timeframes
         self.performance_thresholds = self.opt_config.get("performance_thresholds", {
-            "min_sharpe_ratio": 0.5,
-            "max_drawdown": -0.15,
-            "min_win_rate": 0.55,
-            "min_profit_factor": 1.3,
-            "min_signal_clarity": 0.1,
+            "min_sr_validation_score": 0.6,  # Lower threshold for shorter timeframes
+            "min_bounce_rate": 0.5,  # 50% minimum bounce rate
+            "max_false_breakout_rate": 0.4,  # 40% max false breakouts
+            "min_volume_confirmation": 0.4,  # 40% volume confirmation
+            "min_level_detection_accuracy": 0.3,  # 30% level detection accuracy
         })
         
         # Optimization state
@@ -167,7 +219,7 @@ class SRDetectionOptimizer:
     async def initialize(self) -> bool:
         """Initialize the S/R detection optimizer."""
         try:
-            self.logger.info("🚀 Initializing S/R Detection Optimizer...")
+            self.logger.info("🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes...")
             
             # Initialize S/R predictor
             self.sr_predictor = SRBreakoutPredictor(self.config)
@@ -179,7 +231,7 @@ class SRDetectionOptimizer:
             if not self._validate_configuration():
                 return False
             
-            self.logger.info("✅ S/R Detection Optimizer initialized successfully")
+            self.logger.info("✅ Enhanced S/R Detection Optimizer initialized successfully")
             return True
             
         except Exception as e:
@@ -201,6 +253,14 @@ class SRDetectionOptimizer:
                 self.logger.error("test_size must be between 0 and 1")
                 return False
             
+            # Validate timeframe configuration
+            for timeframe, config in self.timeframe_config.items():
+                required_keys = ["touch_threshold", "bounce_threshold", "breakout_threshold", "min_touches"]
+                for key in required_keys:
+                    if key not in config:
+                        self.logger.error(f"Missing {key} in {timeframe} configuration")
+                        return False
+            
             return True
             
         except Exception as e:
@@ -219,21 +279,28 @@ class SRDetectionOptimizer:
         self,
         market_data: pd.DataFrame,
         multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None,
-        target_data: Optional[pd.Series] = None
+        target_data: Optional[pd.Series] = None,
+        target_timeframe: str = "15m"
     ) -> Optional[OptimizationResult]:
         """
-        Run comprehensive S/R detection optimization.
+        Run comprehensive S/R detection optimization for specific timeframe.
         
         Args:
             market_data: Main market data for optimization
             multi_timeframe_data: Multi-timeframe data for confluence optimization
             target_data: Target data for supervised optimization (optional)
+            target_timeframe: Target timeframe for optimization (1m, 5m, 15m, 30m)
             
         Returns:
             OptimizationResult: Optimized parameters and performance metrics
         """
         try:
-            self.logger.info("🎯 Starting comprehensive S/R detection optimization...")
+            self.logger.info(f"🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe...")
+            
+            # Validate target timeframe
+            if target_timeframe not in self.timeframe_config:
+                self.logger.error(f"Invalid target timeframe: {target_timeframe}")
+                return None
             
             # Prepare data
             self.training_data = market_data
@@ -244,22 +311,25 @@ class SRDetectionOptimizer:
             self.validation_data = market_data.iloc[split_idx:]
             training_data = market_data.iloc[:split_idx]
             
+            # Update configuration for target timeframe
+            await self._update_timeframe_config(target_timeframe)
+            
             # Run optimization
             if OPTUNA_AVAILABLE:
-                result = await self._run_optuna_optimization(training_data, target_data)
+                result = await self._run_optuna_optimization(training_data, target_data, target_timeframe)
             else:
-                result = await self._run_basic_optimization(training_data, target_data)
+                result = await self._run_basic_optimization(training_data, target_data, target_timeframe)
             
             if result:
                 # Validate on out-of-sample data
-                await self._validate_optimization_result(result)
+                await self._validate_optimization_result(result, target_timeframe)
                 
                 # Store results
                 self.optimization_results.append(result)
                 if not self.best_result or result.optimization_score > self.best_result.optimization_score:
                     self.best_result = result
                 
-                self.logger.info(f"✅ Optimization completed. Best score: {result.optimization_score:.4f}")
+                self.logger.info(f"✅ Optimization completed for {target_timeframe}. Best score: {result.optimization_score:.4f}")
                 return result
             
             return None
@@ -268,12 +338,38 @@ class SRDetectionOptimizer:
             self.logger.error(f"Optimization failed: {e}")
             return None
     
+    async def _update_timeframe_config(self, target_timeframe: str) -> None:
+        """Update configuration for specific timeframe."""
+        try:
+            timeframe_config = self.timeframe_config[target_timeframe]
+            
+            # Update S/R predictor configuration
+            if self.sr_predictor:
+                # Update touch and bounce thresholds
+                self.sr_predictor.sr_proximity_threshold = timeframe_config["touch_threshold"]
+                
+                # Update backtesting configuration
+                if hasattr(self.sr_predictor, 'backtest_config'):
+                    self.sr_predictor.backtest_config.update({
+                        "touch_threshold": timeframe_config["touch_threshold"],
+                        "bounce_threshold": timeframe_config["bounce_threshold"],
+                        "breakout_threshold": timeframe_config["breakout_threshold"],
+                        "min_touches": timeframe_config["min_touches"],
+                        "volume_spike_threshold": timeframe_config["volume_spike_threshold"],
+                    })
+            
+            self.logger.info(f"Updated configuration for {target_timeframe} timeframe")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update timeframe configuration: {e}")
+    
     async def _run_optuna_optimization(
         self,
         training_data: pd.DataFrame,
-        target_data: Optional[pd.Series]
+        target_data: Optional[pd.Series],
+        target_timeframe: str
     ) -> Optional[OptimizationResult]:
-        """Run optimization using Optuna."""
+        """Run optimization using Optuna with timeframe-specific parameters."""
         try:
             study = optuna.create_study(
                 direction="maximize",
@@ -283,7 +379,14 @@ class SRDetectionOptimizer:
             
             # Define objective function
             def objective(trial):
-                return asyncio.run(self._evaluate_parameters(trial, training_data, target_data))
+                # Use asyncio.create_task instead of asyncio.run
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Create a task and wait for it
+                    task = loop.create_task(self._evaluate_parameters(trial, training_data, target_data, target_timeframe))
+                    return loop.run_until_complete(task)
+                else:
+                    return asyncio.run(self._evaluate_parameters(trial, training_data, target_data, target_timeframe))
             
             # Run optimization
             study.optimize(
@@ -307,7 +410,8 @@ class SRDetectionOptimizer:
                 n_trials=self.n_trials,
                 best_trial_number=study.best_trial.number,
                 optimization_method="optuna_tpe",
-                optimization_time=study.duration.total_seconds()
+                optimization_time=study.duration.total_seconds(),
+                timeframe_optimized=target_timeframe
             )
             
             return result
@@ -319,14 +423,15 @@ class SRDetectionOptimizer:
     async def _run_basic_optimization(
         self,
         training_data: pd.DataFrame,
-        target_data: Optional[pd.Series]
+        target_data: Optional[pd.Series],
+        target_timeframe: str
     ) -> Optional[OptimizationResult]:
         """Run basic optimization without Optuna."""
         try:
-            self.logger.info("Running basic optimization (Optuna not available)")
+            self.logger.info(f"Running basic optimization for {target_timeframe} (Optuna not available)")
             
-            # Define parameter ranges
-            param_ranges = self._get_basic_parameter_ranges()
+            # Define parameter ranges for specific timeframe
+            param_ranges = self._get_timeframe_parameter_ranges(target_timeframe)
             
             best_result = None
             best_score = -np.inf
@@ -336,7 +441,7 @@ class SRDetectionOptimizer:
                 if i >= self.n_trials:
                     break
                 
-                score = await self._evaluate_parameters_basic(params, training_data, target_data)
+                score = await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
                 
                 if score > best_score:
                     best_score = score
@@ -349,7 +454,8 @@ class SRDetectionOptimizer:
                         optimization_score=score,
                         n_trials=i + 1,
                         best_trial_number=i,
-                        optimization_method="basic_grid_search"
+                        optimization_method="basic_grid_search",
+                        timeframe_optimized=target_timeframe
                     )
                 
                 if i % 10 == 0:
@@ -361,46 +467,97 @@ class SRDetectionOptimizer:
             self.logger.error(f"Basic optimization failed: {e}")
             return None
     
+    def _get_timeframe_parameter_ranges(self, target_timeframe: str) -> Dict[str, List[Any]]:
+        """Get parameter ranges optimized for specific timeframe."""
+        base_ranges = {
+            "fractal_weight": [0.2, 0.3, 0.4, 0.5, 0.6],
+            "volume_weight": [0.2, 0.3, 0.4, 0.5],
+            "pivot_weight": [0.1, 0.2, 0.3, 0.4],
+            "atr_weight": [0.05, 0.1, 0.15, 0.2],
+            "touch_count_weight": [0.2, 0.3, 0.4, 0.5],
+            "total_volume_weight": [0.1, 0.2, 0.3, 0.4],
+            "level_age_weight": [0.1, 0.2, 0.3, 0.4],
+            "bounce_rate_weight": [0.1, 0.2, 0.3, 0.4],
+            "isolation_score_weight": [0.05, 0.1, 0.15, 0.2],
+        }
+        
+        # Adjust ranges based on timeframe
+        if target_timeframe == "1m":
+            # More sensitive parameters for 1m
+            base_ranges.update({
+                "dbscan_eps": [0.002, 0.005, 0.008, 0.01],
+                "dbscan_min_samples": [2, 3, 4],
+            })
+        elif target_timeframe == "5m":
+            base_ranges.update({
+                "dbscan_eps": [0.005, 0.008, 0.01, 0.015],
+                "dbscan_min_samples": [2, 3, 4, 5],
+            })
+        elif target_timeframe == "15m":
+            base_ranges.update({
+                "dbscan_eps": [0.008, 0.01, 0.015, 0.02],
+                "dbscan_min_samples": [3, 4, 5, 6],
+            })
+        elif target_timeframe == "30m":
+            # Less sensitive parameters for 30m
+            base_ranges.update({
+                "dbscan_eps": [0.01, 0.015, 0.02, 0.025],
+                "dbscan_min_samples": [4, 5, 6],
+            })
+        
+        return base_ranges
+    
     async def _evaluate_parameters(
         self,
         trial: optuna.Trial,
         training_data: pd.DataFrame,
-        target_data: Optional[pd.Series]
+        target_data: Optional[pd.Series],
+        target_timeframe: str
     ) -> float:
-        """Evaluate parameters using Optuna trial."""
+        """Evaluate parameters using Optuna trial with timeframe-specific suggestions."""
         try:
-            # Suggest parameters
-            params = self._suggest_parameters(trial)
+            # Suggest parameters with timeframe-specific ranges
+            params = self._suggest_timeframe_parameters(trial, target_timeframe)
             
             # Evaluate parameters
-            return await self._evaluate_parameters_basic(params, training_data, target_data)
+            return await self._evaluate_parameters_basic(params, training_data, target_data, target_timeframe)
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
             return -np.inf
     
-    def _suggest_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest parameters for Optuna trial."""
+    def _suggest_timeframe_parameters(self, trial: optuna.Trial, target_timeframe: str) -> Dict[str, Any]:
+        """Suggest parameters optimized for specific timeframe."""
         params = {}
         
-        # Method weights
+        # Method weights (same for all timeframes)
         params["fractal_weight"] = trial.suggest_float("fractal_weight", 0.1, 0.6)
         params["volume_weight"] = trial.suggest_float("volume_weight", 0.1, 0.5)
         params["pivot_weight"] = trial.suggest_float("pivot_weight", 0.1, 0.4)
         params["atr_weight"] = trial.suggest_float("atr_weight", 0.05, 0.3)
         
-        # Strength weights
+        # Strength weights (same for all timeframes)
         params["touch_count_weight"] = trial.suggest_float("touch_count_weight", 0.2, 0.5)
         params["total_volume_weight"] = trial.suggest_float("total_volume_weight", 0.1, 0.4)
         params["level_age_weight"] = trial.suggest_float("level_age_weight", 0.1, 0.4)
         params["bounce_rate_weight"] = trial.suggest_float("bounce_rate_weight", 0.1, 0.4)
         params["isolation_score_weight"] = trial.suggest_float("isolation_score_weight", 0.05, 0.3)
         
-        # DBSCAN parameters
-        params["dbscan_eps"] = trial.suggest_float("dbscan_eps", 0.005, 0.02)
-        params["dbscan_min_samples"] = trial.suggest_int("dbscan_min_samples", 2, 6)
+        # DBSCAN parameters (timeframe-specific)
+        if target_timeframe == "1m":
+            params["dbscan_eps"] = trial.suggest_float("dbscan_eps", 0.002, 0.01)
+            params["dbscan_min_samples"] = trial.suggest_int("dbscan_min_samples", 2, 4)
+        elif target_timeframe == "5m":
+            params["dbscan_eps"] = trial.suggest_float("dbscan_eps", 0.005, 0.015)
+            params["dbscan_min_samples"] = trial.suggest_int("dbscan_min_samples", 2, 5)
+        elif target_timeframe == "15m":
+            params["dbscan_eps"] = trial.suggest_float("dbscan_eps", 0.008, 0.02)
+            params["dbscan_min_samples"] = trial.suggest_int("dbscan_min_samples", 3, 6)
+        elif target_timeframe == "30m":
+            params["dbscan_eps"] = trial.suggest_float("dbscan_eps", 0.01, 0.025)
+            params["dbscan_min_samples"] = trial.suggest_int("dbscan_min_samples", 4, 6)
         
-        # Timeframe weights
+        # Timeframe weights (emphasize target timeframe)
         params["tf_1m_weight"] = trial.suggest_float("tf_1m_weight", 0.05, 0.2)
         params["tf_5m_weight"] = trial.suggest_float("tf_5m_weight", 0.1, 0.25)
         params["tf_15m_weight"] = trial.suggest_float("tf_15m_weight", 0.15, 0.3)
@@ -408,10 +565,17 @@ class SRDetectionOptimizer:
         params["tf_4h_weight"] = trial.suggest_float("tf_4h_weight", 0.15, 0.3)
         params["tf_1d_weight"] = trial.suggest_float("tf_1d_weight", 0.05, 0.2)
         
-        # Advanced parameters
-        params["fibonacci_sensitivity"] = trial.suggest_float("fibonacci_sensitivity", 0.5, 0.9)
-        params["elliott_confidence_threshold"] = trial.suggest_float("elliott_confidence_threshold", 0.4, 0.8)
-        params["order_flow_hvn_threshold"] = trial.suggest_float("order_flow_hvn_threshold", 1.2, 2.0)
+        # Advanced parameters (timeframe-specific)
+        if target_timeframe in ["1m", "5m"]:
+            # More sensitive for shorter timeframes
+            params["fibonacci_sensitivity"] = trial.suggest_float("fibonacci_sensitivity", 0.6, 0.9)
+            params["elliott_confidence_threshold"] = trial.suggest_float("elliott_confidence_threshold", 0.5, 0.8)
+            params["order_flow_hvn_threshold"] = trial.suggest_float("order_flow_hvn_threshold", 1.1, 1.8)
+        else:
+            # Less sensitive for longer timeframes
+            params["fibonacci_sensitivity"] = trial.suggest_float("fibonacci_sensitivity", 0.5, 0.8)
+            params["elliott_confidence_threshold"] = trial.suggest_float("elliott_confidence_threshold", 0.4, 0.7)
+            params["order_flow_hvn_threshold"] = trial.suggest_float("order_flow_hvn_threshold", 1.3, 2.0)
         
         return params
     
@@ -419,9 +583,10 @@ class SRDetectionOptimizer:
         self,
         params: Dict[str, Any],
         training_data: pd.DataFrame,
-        target_data: Optional[pd.Series]
+        target_data: Optional[pd.Series],
+        target_timeframe: str
     ) -> float:
-        """Evaluate parameters using basic approach."""
+        """Evaluate parameters using basic approach with enhanced S/R validation."""
         try:
             # Update S/R predictor with new parameters
             await self._update_sr_predictor_params(params)
@@ -440,8 +605,8 @@ class SRDetectionOptimizer:
                     current_price = val_data['close'].iloc[-1]
                     sr_context = await self.sr_predictor.get_sr_context(val_data, current_price)
                     
-                    # Calculate performance metrics
-                    score = self._calculate_performance_score(sr_context, val_data, target_data)
+                    # Calculate performance metrics with enhanced S/R validation
+                    score = await self._calculate_enhanced_performance_score(sr_context, val_data, target_data, target_timeframe)
                     cv_scores.append(score)
                 
                 # Return mean CV score
@@ -450,7 +615,7 @@ class SRDetectionOptimizer:
                 # Use simple validation if not enough data
                 current_price = training_data['close'].iloc[-1]
                 sr_context = await self.sr_predictor.get_sr_context(training_data, current_price)
-                return self._calculate_performance_score(sr_context, training_data, target_data)
+                return await self._calculate_enhanced_performance_score(sr_context, training_data, target_data, target_timeframe)
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
@@ -504,13 +669,14 @@ class SRDetectionOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to update S/R predictor parameters: {e}")
     
-    def _calculate_performance_score(
+    async def _calculate_enhanced_performance_score(
         self,
         sr_context: Dict[str, Any],
         market_data: pd.DataFrame,
-        target_data: Optional[pd.Series]
+        target_data: Optional[pd.Series],
+        target_timeframe: str
     ) -> float:
-        """Calculate performance score for optimization using proper backtesting."""
+        """Calculate enhanced performance score with comprehensive S/R validation."""
         try:
             # Import backtesting validator
             from src.tactician.sr_backtesting_validator import setup_sr_backtesting_validator
@@ -542,8 +708,8 @@ class SRDetectionOptimizer:
             if not backtest_result:
                 return 0.0
             
-            # Use the S/R validation score from backtesting
-            performance_score = backtest_result.sr_validation_score
+            # Calculate enhanced performance score
+            performance_score = self._calculate_timeframe_specific_score(backtest_result, target_timeframe)
             
             # Store backtesting results for analysis
             if not hasattr(self, 'backtest_results'):
@@ -551,15 +717,69 @@ class SRDetectionOptimizer:
             self.backtest_results.append({
                 'backtest_result': backtest_result,
                 'sr_context': sr_context,
+                'target_timeframe': target_timeframe,
                 'timestamp': pd.Timestamp.now()
             })
             
             return performance_score
             
         except Exception as e:
-            self.logger.error(f"Backtesting performance score calculation failed: {e}")
+            self.logger.error(f"Enhanced performance score calculation failed: {e}")
             # Fallback to basic scoring
             return self._calculate_fallback_score(sr_context, market_data, target_data)
+    
+    def _calculate_timeframe_specific_score(self, backtest_result, target_timeframe: str) -> float:
+        """Calculate performance score optimized for specific timeframe."""
+        try:
+            # Base S/R validation score
+            base_score = backtest_result.sr_validation_score
+            
+            # Timeframe-specific adjustments
+            timeframe_adjustments = {
+                "1m": {
+                    "bounce_rate_weight": 0.4,
+                    "volume_weight": 0.3,
+                    "accuracy_weight": 0.2,
+                    "false_breakout_weight": 0.1,
+                },
+                "5m": {
+                    "bounce_rate_weight": 0.35,
+                    "volume_weight": 0.3,
+                    "accuracy_weight": 0.25,
+                    "false_breakout_weight": 0.1,
+                },
+                "15m": {
+                    "bounce_rate_weight": 0.3,
+                    "volume_weight": 0.25,
+                    "accuracy_weight": 0.3,
+                    "false_breakout_weight": 0.15,
+                },
+                "30m": {
+                    "bounce_rate_weight": 0.25,
+                    "volume_weight": 0.2,
+                    "accuracy_weight": 0.35,
+                    "false_breakout_weight": 0.2,
+                }
+            }
+            
+            weights = timeframe_adjustments.get(target_timeframe, timeframe_adjustments["15m"])
+            
+            # Calculate weighted score
+            weighted_score = (
+                backtest_result.overall_bounce_rate * weights["bounce_rate_weight"] +
+                backtest_result.avg_volume_confirmation_rate * weights["volume_weight"] +
+                backtest_result.level_detection_accuracy * weights["accuracy_weight"] +
+                (1 - backtest_result.overall_false_breakout_rate) * weights["false_breakout_weight"]
+            )
+            
+            # Combine base score with weighted score
+            final_score = (base_score * 0.6) + (weighted_score * 0.4)
+            
+            return max(0.0, min(1.0, final_score))
+            
+        except Exception as e:
+            self.logger.error(f"Timeframe-specific score calculation failed: {e}")
+            return backtest_result.sr_validation_score if backtest_result else 0.0
     
     def _calculate_fallback_score(
         self,
@@ -664,7 +884,7 @@ class SRDetectionOptimizer:
             self.logger.error(f"Feature extraction failed: {e}")
             return None
     
-    async def _validate_optimization_result(self, result: OptimizationResult) -> None:
+    async def _validate_optimization_result(self, result: OptimizationResult, target_timeframe: str) -> None:
         """Validate optimization result on out-of-sample data."""
         try:
             if self.validation_data is None:
@@ -684,7 +904,7 @@ class SRDetectionOptimizer:
             sr_context = await self.sr_predictor.get_sr_context(self.validation_data, current_price)
             
             # Calculate out-of-sample score
-            oos_score = self._calculate_performance_score(sr_context, self.validation_data, None)
+            oos_score = await self._calculate_enhanced_performance_score(sr_context, self.validation_data, None, target_timeframe)
             result.out_of_sample_score = oos_score
             
             # Calculate statistical significance (simplified)
@@ -697,7 +917,7 @@ class SRDetectionOptimizer:
                 else:
                     result.statistical_significance = 0.0
             
-            self.logger.info(f"Validation completed. OOS score: {oos_score:.4f}")
+            self.logger.info(f"Validation completed for {target_timeframe}. OOS score: {oos_score:.4f}")
             
         except Exception as e:
             self.logger.error(f"Validation failed: {e}")

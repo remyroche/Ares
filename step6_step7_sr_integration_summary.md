@@ -25,10 +25,10 @@ This document summarizes the comprehensive integration of all features from `src
   - `sr_order_flow_poc`
   - `sr_order_flow_hvns`
   - `sr_order_flow_imbalances`
-- **Pivot Level Features**:
-  - `sr_pivot_level`
-  - `sr_support_1`, `sr_support_2`
-  - `sr_resistance_1`, `sr_resistance_2`
+- **Pivot Level Features** (as percentages):
+  - `sr_pivot_level_pct`
+  - `sr_support_1_pct`, `sr_support_2_pct`
+  - `sr_resistance_1_pct`, `sr_resistance_2_pct`
 
 #### New Function: `_add_sr_optimization_features()`
 - **Optimization Parameter Features**:
@@ -40,16 +40,8 @@ This document summarizes the comprehensive integration of all features from `src
   - `sr_optimized_elliott_confidence`
   - `sr_optimized_order_flow_threshold`
   - `sr_optimized_tf_*_weight` (timeframe weights)
-- **Optimization Performance Features**:
+- **Optimization Score**:
   - `sr_optimization_score`
-  - `sr_optimization_sharpe_ratio`
-  - `sr_optimization_win_rate`
-  - `sr_optimization_max_drawdown`
-  - `sr_optimization_profit_factor`
-  - `sr_optimization_signal_clarity`
-  - `sr_optimization_cv_score`
-  - `sr_optimization_oos_score`
-  - `sr_optimization_statistical_significance`
 
 ### 2. Comprehensive SR Features from SR Breakout Predictor
 
@@ -79,11 +71,11 @@ The system now identifies and analyzes all SR-related features:
 - Enhanced strength: `sr_enhanced_support_strength`, `sr_enhanced_resistance_strength`
 - Clustering: `sr_clusters_detected`, `sr_noise_points`, `sr_clustering_quality`
 - Advanced analysis: `sr_fibonacci_levels`, `sr_elliott_waves`, `sr_order_flow_*`
-- Pivot levels: `sr_pivot_level`, `sr_support_1`, `sr_support_2`, `sr_resistance_1`, `sr_resistance_2`
+- Pivot levels (as percentages): `sr_pivot_level_pct`, `sr_support_1_pct`, `sr_support_2_pct`, `sr_resistance_1_pct`, `sr_resistance_2_pct`
 
 **SR Optimization Features from SR Detection Optimization**:
 - Optimized parameters: `sr_optimized_*`
-- Performance metrics: `sr_optimization_*`
+- Optimization score: `sr_optimization_score`
 
 ### 2. New Analysis Functions
 
@@ -97,7 +89,6 @@ Performs specialized analysis on enhanced SR features:
 #### `_execute_sr_optimization_analysis()`
 Performs specialized analysis on SR optimization features:
 - **SR Optimization Feature Correlation Analysis**
-- **SR Optimization Performance Analysis**
 - **SR Optimization Parameter Analysis**
 
 ### 3. Enhanced Analysis Functions
@@ -117,10 +108,7 @@ Performs specialized analysis on SR optimization features:
 - Groups importance by feature type
 - Provides comprehensive feature ranking
 
-#### `_analyze_sr_optimization_performance()`
-- Analyzes SR optimization performance metrics
-- Calculates performance statistics and correlations
-- Provides overall performance scoring
+
 
 #### `_analyze_sr_optimization_parameters()`
 - Analyzes SR optimization parameters
@@ -139,13 +127,12 @@ The quality report now includes:
 
 **Section 10: Enhanced Actionable Recommendations**
 - SR-specific recommendations
-- SR optimization performance recommendations
 - Feature selection and validation recommendations
 
 **Section 11: Enhanced Summary**
 - SR analysis status
 - Total SR feature count
-- SR optimization performance status
+- SR optimization status
 
 ## Key Features Integrated
 
@@ -198,6 +185,27 @@ The quality report now includes:
    - Performance metric tracking
    - Optimization history management
 
+## Percentage-Based Features
+
+The integration emphasizes the use of **returns and percentages** instead of raw values:
+
+### Percentage-Based SR Features
+- **Pivot Levels**: All pivot levels are converted to percentages relative to current price
+  - `sr_pivot_level_pct`, `sr_support_1_pct`, `sr_support_2_pct`, `sr_resistance_1_pct`, `sr_resistance_2_pct`
+- **Momentum Features**: All momentum features use percentage returns
+  - `sr_momentum_pct`, `sr_volatility_pct`, `sr_trend_pct`
+- **Zone Position**: Zone position calculated as percentage within SR zone
+  - `sr_zone_position_pct`
+- **Proximity Features**: All proximity features already use percentages/ratios
+- **Strength Features**: All strength features use normalized ratios (0-1)
+
+### Benefits of Percentage-Based Features
+1. **Scale Independence**: Features work across different price ranges
+2. **Comparability**: Features can be compared across different assets
+3. **Stability**: Percentage-based features are more stable over time
+4. **Interpretability**: Easier to interpret and understand
+5. **Model Performance**: Better model performance with normalized features
+
 ## Benefits of Integration
 
 1. **Comprehensive Feature Coverage**: All available SR features are now utilized
@@ -206,6 +214,7 @@ The quality report now includes:
 4. **Quality Assurance**: Comprehensive quality reporting includes SR-specific metrics
 5. **Scalability**: Modular design allows for easy addition of new SR features
 6. **Performance Monitoring**: Continuous monitoring of SR feature performance and optimization
+7. **Percentage-Based Features**: All features use returns/percentages for better model performance
 
 ## Usage
 

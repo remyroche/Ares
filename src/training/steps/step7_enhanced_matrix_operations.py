@@ -169,7 +169,7 @@ class Step7EnhancedMatrixOperations:
             "sr_clusters_detected", "sr_noise_points", "sr_clustering_quality",
             "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_poc",
             "sr_order_flow_hvns", "sr_order_flow_imbalances",
-            "sr_pivot_level", "sr_support_1", "sr_support_2", "sr_resistance_1", "sr_resistance_2",
+            "sr_pivot_level_pct", "sr_support_1_pct", "sr_support_2_pct", "sr_resistance_1_pct", "sr_resistance_2_pct",
             
             # SR optimization features from SR detection optimization
             "sr_optimized_method_weights", "sr_optimized_strength_weights",
@@ -180,7 +180,8 @@ class Step7EnhancedMatrixOperations:
             
             # Additional SR features
             "sr_distance", "sr_proximity", "sr_zone_width", "sr_nearest_support",
-            "sr_nearest_resistance", "sr_total_support_levels", "sr_total_resistance_levels"
+            "sr_nearest_resistance", "sr_total_support_levels", "sr_total_resistance_levels",
+            "sr_zone_position_pct", "sr_momentum_pct", "sr_volatility_pct", "sr_trend_pct"
         ])]
         
         # Basic matrix operations configuration
@@ -397,7 +398,7 @@ class Step7EnhancedMatrixOperations:
             # Identify enhanced SR features
             enhanced_sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
                 "sr_enhanced_", "sr_clusters_", "sr_fibonacci_", "sr_elliott_", "sr_order_flow_",
-                "sr_pivot_", "sr_support_1", "sr_support_2", "sr_resistance_1", "sr_resistance_2"
+                "sr_pivot_", "sr_support_1_pct", "sr_support_2_pct", "sr_resistance_1_pct", "sr_resistance_2_pct"
             ])]
             
             if not enhanced_sr_features:
@@ -541,6 +542,8 @@ class Step7EnhancedMatrixOperations:
                         feature_type = "order_flow"
                     elif "pivot" in column or "support_" in column or "resistance_" in column:
                         feature_type = "pivot"
+                    elif "momentum_pct" in column or "volatility_pct" in column or "trend_pct" in column:
+                        feature_type = "momentum"
                     
                     stability_metrics[column] = {
                         "coefficient_of_variation": float(cv),
@@ -597,7 +600,8 @@ class Step7EnhancedMatrixOperations:
                 "fibonacci": [],
                 "elliott": [],
                 "order_flow": [],
-                "pivot": []
+                "pivot": [],
+                "momentum": []
             }
             
             for feature, importance in combined_importance.items():
@@ -613,6 +617,8 @@ class Step7EnhancedMatrixOperations:
                     feature_importance_by_type["order_flow"].append((feature, importance))
                 elif "pivot" in feature or "support_" in feature or "resistance_" in feature:
                     feature_importance_by_type["pivot"].append((feature, importance))
+                elif "momentum_pct" in feature or "volatility_pct" in feature or "trend_pct" in feature:
+                    feature_importance_by_type["momentum"].append((feature, importance))
             
             # Sort each group by importance
             for feature_type in feature_importance_by_type:

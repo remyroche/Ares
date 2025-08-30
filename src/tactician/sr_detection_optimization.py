@@ -48,6 +48,7 @@ except ImportError:
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 
 
 @dataclass
@@ -202,6 +203,9 @@ class SRDetectionOptimizer:
         
         # S/R predictor for testing
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
+        
+        # Data integration
+        self.data_integration: Optional[SRDataIntegrationSimple] = None
         
         # Data storage
         self.training_data: Optional[pd.DataFrame] = None

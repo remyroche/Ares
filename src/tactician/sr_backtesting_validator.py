@@ -20,6 +20,7 @@ warnings.filterwarnings('ignore')
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 
 
 @dataclass
@@ -155,6 +156,56 @@ class SRBacktestingValidator:
         self.timeframe_weights = self.backtest_config.get("timeframe_weights", {
             "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
         })
+        
+        # Data integration
+        self.data_integration: Optional[SRDataIntegrationSimple] = None
+    
+    async def initialize_data_integration(
+        self,
+        symbol: str = "BTCUSDT",
+        exchange: str = "binance",
+        timeframes: Optional[List[str]] = None,
+        lookback_days: Optional[int] = None,
+        training_mode: str = "blank"
+    ) -> bool:
+        """Initialize the data integration system.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframes: List of timeframes to use
+            lookback_days: Override default lookback period
+            training_mode: Training mode to use for lookback period
+            
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        try:
+            if self.logger:
+                self.logger.info("🔧 Initializing data integration for S/R backtesting...")
+            
+            # Create and initialize data integration
+            self.data_integration = await create_sr_data_integration_simple(
+                symbol=symbol,
+                exchange=exchange,
+                timeframes=timeframes,
+                lookback_days=lookback_days,
+                training_mode=training_mode
+            )
+            
+            if self.data_integration:
+                if self.logger:
+                    self.logger.info("✅ Data integration initialized successfully")
+                return True
+            else:
+                if self.logger:
+                    self.logger.error("❌ Failed to initialize data integration")
+                return False
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"❌ Data integration initialization failed: {e}")
+            return False
         
     @handle_specific_errors(
         error_handlers={

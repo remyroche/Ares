@@ -31,28 +31,28 @@ class LeverageSizer:
 
             self.print = _shim_print  # type: ignore[attr-defined]
 
-        # Load configuration
+        # Load configuration from step17 optimization results
         self.leverage_config: dict[str, Any] = self.config.get("leverage_sizing", {})
-        self.min_leverage: float = get_parameter_value(
-            "leverage_sizing_parameters.min_leverage",
-            10.0,
-        )
-        self.max_leverage: float = get_parameter_value(
-            "leverage_sizing_parameters.max_leverage",
-            100.0,
-        )
-        self.confidence_threshold: float = get_parameter_value(
-            "confidence_thresholds.base_entry_threshold",
-            0.6,
-        )
-        self.liquidation_buffer: float = get_parameter_value(
-            "risk_management_parameters.liquidation_buffer",
-            0.05,
-        )
-
-        # Component weights
-        self.ml_weight: float = self.leverage_config.get("ml_weight", 0.6)
-        self.liquidation_weight: float = self.leverage_config.get("liquidation_weight", 0.4)
+        
+        # Load step17 optimized parameters
+        step17_config = self.config.get("step17_optimization", {})
+        leverage_optimization = step17_config.get("leverage", {})
+        
+        # Load optimized leverage parameters
+        self.min_leverage: float = leverage_optimization.get("min_leverage", 10.0)
+        self.max_leverage: float = leverage_optimization.get("max_leverage", 100.0)
+        self.confidence_threshold: float = leverage_optimization.get("confidence_threshold", 0.6)
+        self.liquidation_buffer: float = leverage_optimization.get("liquidation_buffer", 0.05)
+        
+        # Load optimized component weights
+        self.ml_weight: float = leverage_optimization.get("ml_weight", 0.6)
+        self.liquidation_weight: float = leverage_optimization.get("liquidation_weight", 0.4)
+        
+        # Load additional optimized parameters
+        self.leverage_multiplier: float = leverage_optimization.get("leverage_multiplier", 1.0)
+        self.risk_adjustment_factor: float = leverage_optimization.get("risk_adjustment_factor", 1.0)
+        self.confidence_boost_threshold: float = leverage_optimization.get("confidence_boost_threshold", 0.8)
+        self.max_risk_leverage: float = leverage_optimization.get("max_risk_leverage", 50.0)
 
         self.is_initialized: bool = False
         self.leverage_sizing_history: list[dict[str, Any]] = []
@@ -106,6 +106,39 @@ class LeverageSizer:
         except Exception as e:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
+
+    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+        
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            if "leverage" in step17_results:
+                leverage_optimization = step17_results["leverage"]
+                
+                # Update leverage parameters
+                self.min_leverage = leverage_optimization.get("min_leverage", self.min_leverage)
+                self.max_leverage = leverage_optimization.get("max_leverage", self.max_leverage)
+                self.confidence_threshold = leverage_optimization.get("confidence_threshold", self.confidence_threshold)
+                self.liquidation_buffer = leverage_optimization.get("liquidation_buffer", self.liquidation_buffer)
+                
+                # Update component weights
+                self.ml_weight = leverage_optimization.get("ml_weight", self.ml_weight)
+                self.liquidation_weight = leverage_optimization.get("liquidation_weight", self.liquidation_weight)
+                
+                # Update additional parameters
+                self.leverage_multiplier = leverage_optimization.get("leverage_multiplier", self.leverage_multiplier)
+                self.risk_adjustment_factor = leverage_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+                self.confidence_boost_threshold = leverage_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
+                self.max_risk_leverage = leverage_optimization.get("max_risk_leverage", self.max_risk_leverage)
+                
+                self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
+                
+        except Exception as e:
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     @handle_specific_errors(
         error_handlers={

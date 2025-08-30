@@ -448,6 +448,9 @@ async def _create_comprehensive_features(
         # Add SR-aware feature selection
         features_df = await _add_sr_aware_feature_selection(features_df, merged_data, config)
         
+        # Add SR detection optimization features
+        features_df = await _add_sr_optimization_features(features_df, merged_data, config)
+        
         # Better integration with vectorized advanced features
         features_df = await _enhanced_integration_with_vectorized_features(features_df, feature_engineer, symbol, exchange, timeframe)
         
@@ -641,7 +644,7 @@ async def _add_sr_features(
     market_data: pd.DataFrame,
     config: dict[str, Any]
 ) -> pd.DataFrame:
-    """Add comprehensive S/R features using centralized logic."""
+    """Add comprehensive S/R features using all features from SR breakout predictor."""
     try:
         # Check for existing SR features to avoid redundancy
         existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
@@ -661,15 +664,16 @@ async def _add_sr_features(
         sr_predictor = SRBreakoutPredictor(sr_config)
         await sr_predictor.initialize()
         
-        # Get comprehensive S/R context
+        # Get comprehensive S/R context with all advanced features
         current_price = market_data['close'].iloc[-1]
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         
-        # Calculate comprehensive S/R features
+        # Calculate comprehensive S/R features using all available methods
         sr_features = await sr_predictor.calculate_comprehensive_sr_features(market_data)
         
-        # Add S/R context features
+        # Add all S/R context features including advanced analysis
         context_features = {
+            # Basic SR features
             "sr_support_proximity": sr_context.get("support_proximity", 1.0),
             "sr_resistance_proximity": sr_context.get("resistance_proximity", 1.0),
             "sr_support_strength": sr_context.get("support_strength", 0.5),
@@ -679,7 +683,34 @@ async def _add_sr_features(
             "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
             "sr_total_support_levels": len(sr_context.get("support_levels", [])),
             "sr_total_resistance_levels": len(sr_context.get("resistance_levels", [])),
+            
+            # Enhanced strength features
+            "sr_enhanced_support_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("support_levels", [])]) if sr_context.get("support_levels") else 0.5,
+            "sr_enhanced_resistance_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("resistance_levels", [])]) if sr_context.get("resistance_levels") else 0.5,
+            
+            # Clustering features
+            "sr_clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
+            "sr_noise_points": sr_context.get("clustering_result", {}).get("noise_points", 0),
+            "sr_clustering_quality": 1.0 if sr_context.get("clustering_result", {}).get("n_clusters", 0) > 0 else 0.0,
+            
+            # Advanced analysis features
+            "sr_fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
+            "sr_elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
+            "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else 0.0,
+            "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis", {}).get("volume_profile", {}).get("high_volume_nodes", [])),
+            "sr_order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
         }
+        
+        # Add pivot levels features (as percentages relative to current price)
+        pivot_levels = sr_context.get("pivot_levels", {})
+        if pivot_levels and current_price > 0:
+            context_features.update({
+                "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price,
+                "sr_support_1_pct": (pivot_levels.get("s1", current_price) - current_price) / current_price,
+                "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price,
+                "sr_resistance_1_pct": (pivot_levels.get("r1", current_price) - current_price) / current_price,
+                "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price,
+            })
         
         # Add all features to DataFrame with conflict resolution
         all_sr_features = {**sr_features, **context_features}
@@ -746,7 +777,7 @@ async def _add_sr_aware_feature_selection(
         # Add proximity-based feature weights (using percentages)
         features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
         
-        # Add SR strength features
+        # Add SR strength features (already as percentages/ratios)
         features["sr_combined_strength"] = (
             sr_context.get("support_strength", 0.5) + 
             sr_context.get("resistance_strength", 0.5)
@@ -758,19 +789,19 @@ async def _add_sr_aware_feature_selection(
             zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
         else:
             zone_position_pct = 0.5
-        features["sr_zone_position"] = zone_position_pct
+        features["sr_zone_position_pct"] = zone_position_pct
         
-        # Add SR momentum features
-        features["sr_momentum"] = market_data['close'].pct_change().iloc[-5:].mean()
+        # Add SR momentum features (as percentage returns)
+        features["sr_momentum_pct"] = market_data['close'].pct_change().iloc[-5:].mean()
         
-        # Add SR volatility features
-        features["sr_volatility"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
+        # Add SR volatility features (as percentage returns)
+        features["sr_volatility_pct"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
         
-        # Add SR volume features
+        # Add SR volume features (as ratio/percentage)
         features["sr_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
         
-        # Add SR trend features
-        features["sr_trend"] = 1 if market_data['close'].iloc[-1] > market_data['close'].iloc[-20] else -1
+        # Add SR trend features (as percentage change)
+        features["sr_trend_pct"] = (market_data['close'].iloc[-1] - market_data['close'].iloc[-20]) / market_data['close'].iloc[-20]
         
         await sr_predictor.cleanup()
         system_logger.info("✅ Added SR-aware feature selection features")
@@ -779,6 +810,65 @@ async def _add_sr_aware_feature_selection(
     except Exception as e:
         system_logger.warning(f"SR-aware feature selection failed: {e}")
         return features
+
+async def _add_sr_optimization_features(
+    features: pd.DataFrame,
+    market_data: pd.DataFrame,
+    config: dict[str, Any]
+) -> pd.DataFrame:
+    """Add SR detection optimization features using all optimization capabilities."""
+    try:
+        from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
+        
+        # Initialize SR detection optimizer
+        optimizer = await setup_sr_detection_optimizer(config)
+        if not optimizer:
+            system_logger.warning("⚠️ SR detection optimizer not available, skipping optimization features")
+            return features
+        
+        # Get optimized parameters if available
+        optimized_params = optimizer.get_optimized_parameters()
+        if optimized_params:
+            system_logger.info("✅ Using optimized SR parameters")
+            
+            # Add optimization-based features
+            features["sr_optimized_method_weights"] = np.mean(list(optimized_params.get("method_weights", {}).values()))
+            features["sr_optimized_strength_weights"] = np.mean(list(optimized_params.get("strength_weights", {}).values()))
+            features["sr_optimized_dbscan_eps"] = optimized_params.get("dbscan_params", {}).get("eps", 0.01)
+            features["sr_optimized_dbscan_min_samples"] = optimized_params.get("dbscan_params", {}).get("min_samples", 3)
+            features["sr_optimized_fibonacci_sensitivity"] = optimized_params.get("advanced_params", {}).get("fibonacci_sensitivity", 0.7)
+            features["sr_optimized_elliott_confidence"] = optimized_params.get("advanced_params", {}).get("elliott_confidence_threshold", 0.6)
+            features["sr_optimized_order_flow_threshold"] = optimized_params.get("advanced_params", {}).get("order_flow_hvn_threshold", 1.5)
+            
+            # Add timeframe optimization features
+            timeframe_weights = optimized_params.get("timeframe_weights", {})
+            for tf, weight in timeframe_weights.items():
+                features[f"sr_optimized_tf_{tf}_weight"] = weight
+        else:
+            system_logger.info("ℹ️ No optimized parameters available, using default values")
+            # Add default optimization features
+            features["sr_optimized_method_weights"] = 0.25  # Default average
+            features["sr_optimized_strength_weights"] = 0.2  # Default average
+            features["sr_optimized_dbscan_eps"] = 0.01
+            features["sr_optimized_dbscan_min_samples"] = 3
+            features["sr_optimized_fibonacci_sensitivity"] = 0.7
+            features["sr_optimized_elliott_confidence"] = 0.6
+            features["sr_optimized_order_flow_threshold"] = 1.5
+        
+        # Add optimization score if available (keeping only the main optimization score)
+        if hasattr(optimizer, 'best_result') and optimizer.best_result:
+            features["sr_optimization_score"] = optimizer.best_result.optimization_score
+        else:
+            # Add default optimization score
+            features["sr_optimization_score"] = 0.5
+        
+        system_logger.info("✅ Added SR optimization features")
+        return features
+        
+    except Exception as e:
+        system_logger.warning(f"SR optimization feature integration failed: {e}")
+        return features
+
 
 async def _enhanced_integration_with_vectorized_features(
     features: pd.DataFrame, 

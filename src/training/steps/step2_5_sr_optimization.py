@@ -130,6 +130,7 @@ class SROptimizationStep:
         default_return=False,
         context="sr_optimization_execution"
     )
+    @with_enhanced_mlflow_logging("step2_5")
     async def execute(self) -> bool:
         """Execute the S/R optimization step with comprehensive reporting."""
         try:
@@ -170,6 +171,7 @@ class SROptimizationStep:
             
             # Log artifacts and create detailed report
             await self._log_step2_5_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 optimization_result, sr_analysis_reports, sr_integration_analysis, detailed_reports
             )
             
@@ -224,6 +226,10 @@ class SROptimizationStep:
                 "exchange": self.config.get("EXCHANGE", "BINANCE"),
                 "timeframe": self.config.get("TIMEFRAME", "1m"),
                 "lookback_years": self.config.get("LOOKBACK_YEARS", 2),
+            ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
             }
             
             # Create step data for report
@@ -255,6 +261,10 @@ class SROptimizationStep:
                     "optimization_success": True,
                     "optimization_methods": list(optimization_result.keys()) if optimization_result else [],
                     "timeframe": training_input["timeframe"],
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged SR optimization report: {report_name}")
@@ -269,7 +279,11 @@ class SROptimizationStep:
                     additional_metadata={
                         "optimization_methods": list(optimization_result.keys()),
                         "timeframe": training_input["timeframe"],
-                    }
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
                 )
                 self.logger.info(f"✅ Logged optimization results: {optimization_report_name}")
             
@@ -283,7 +297,11 @@ class SROptimizationStep:
                     additional_metadata={
                         "analysis_reports_count": len(sr_analysis_reports),
                         "timeframe": training_input["timeframe"],
-                    }
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
                 )
                 self.logger.info(f"✅ Logged SR analysis reports: {sr_analysis_report_name}")
             
@@ -297,7 +315,11 @@ class SROptimizationStep:
                     additional_metadata={
                         "integration_analysis_count": len(sr_integration_analysis),
                         "timeframe": training_input["timeframe"],
-                    }
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
                 )
                 self.logger.info(f"✅ Logged SR integration analysis: {integration_report_name}")
             
@@ -311,7 +333,11 @@ class SROptimizationStep:
                     additional_metadata={
                         "detailed_reports_count": len(detailed_reports),
                         "timeframe": training_input["timeframe"],
-                    }
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
                 )
                 self.logger.info(f"✅ Logged detailed optimization reports: {detailed_reports_name}")
             
@@ -323,6 +349,10 @@ class SROptimizationStep:
                 additional_metadata={
                     "metrics_type": "sr_optimization_performance",
                     "timeframe": training_input["timeframe"],
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             

@@ -187,6 +187,7 @@ class LabelingStep:
             
             # Log artifacts and create detailed report
             await self._log_step5_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
             )
             
@@ -241,6 +242,10 @@ class LabelingStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "data_dir": data_dir,
+            ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
             }
             
             # Create step data for report
@@ -271,6 +276,10 @@ class LabelingStep:
                 additional_metadata={
                     "labeling_success": True,
                     "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged labeling report: {report_name}")
@@ -285,7 +294,11 @@ class LabelingStep:
                     additional_metadata={
                         "artifact_type": "labeled_data",
                         "dataframe_shape": list(labeled_data.shape),
-                        "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {},
+                        "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                },
                         "timeframe": timeframe,
                     }
                 )
@@ -301,7 +314,11 @@ class LabelingStep:
                     additional_metadata={
                         "metadata_type": "labeling_metadata",
                         "timeframe": timeframe,
-                    }
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
                 )
                 self.logger.info(f"✅ Logged labeling metadata: {metadata_artifact_name}")
             
@@ -313,6 +330,10 @@ class LabelingStep:
                 additional_metadata={
                     "metrics_type": "labeling_performance",
                     "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             

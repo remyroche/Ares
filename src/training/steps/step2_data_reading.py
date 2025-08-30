@@ -339,6 +339,7 @@ class DataReadingStep:
             
             # Log artifacts and create detailed report
             await self._log_step2_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 symbol, exchange, timeframe, data_dir, unified_data, validation_results, output_path
             )
             
@@ -398,6 +399,9 @@ class DataReadingStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "data_dir": data_dir,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
             }
             
             # Create step data for report
@@ -428,6 +432,9 @@ class DataReadingStep:
                     "validation_passed": validation_results.get("passed", False),
                     "data_quality_score": validation_results.get("quality_score", 0.0),
                     "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged data reading report: {report_name}")
@@ -444,6 +451,9 @@ class DataReadingStep:
                         "dataframe_shape": list(unified_data.shape),
                         "validation_passed": validation_results.get("passed", False),
                         "timeframe": timeframe,
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
                     }
                 )
                 self.logger.info(f"✅ Logged validated data: {artifact_name}")
@@ -457,6 +467,9 @@ class DataReadingStep:
                 additional_metadata={
                     "validation_passed": validation_results.get("passed", False),
                     "quality_score": validation_results.get("quality_score", 0.0),
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                     "timeframe": timeframe,
                 }
             )
@@ -470,6 +483,10 @@ class DataReadingStep:
                 additional_metadata={
                     "metrics_type": "data_reading_performance",
                     "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             

@@ -135,6 +135,7 @@ class RegimeDataSplittingStep:
             
             # Log artifacts and create detailed report
             await self._log_step8_artifacts_and_report(regime_splits, summary)
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
             
             return {"success": True, "regime_splits": summary}
         except Exception as e:
@@ -182,6 +183,9 @@ class RegimeDataSplittingStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "lookback_days": self.config.get("lookback_days", 1095),
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),
+                "project_version": self.config.get("project_version", "1.0.0"),
             }
             
             # Create step data for report
@@ -212,6 +216,9 @@ class RegimeDataSplittingStep:
                     "regime_splitting_success": True,
                     "total_regimes": len(regime_splits),
                     "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             self.logger.info(f"✅ Logged regime data splitting report: {report_name}")
@@ -226,6 +233,9 @@ class RegimeDataSplittingStep:
                     additional_metadata={
                         "total_regimes": len(regime_splits),
                         "timeframe": timeframe,
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
                     }
                 )
                 self.logger.info(f"✅ Logged regime splits summary: {summary_report_name}")
@@ -238,6 +248,9 @@ class RegimeDataSplittingStep:
                 additional_metadata={
                     "metrics_type": "regime_splitting_performance",
                     "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
             

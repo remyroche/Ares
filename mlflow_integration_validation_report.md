@@ -1,6 +1,6 @@
 # MLflow Integration Validation Report
 
-Generated: 2025-08-30T19:54:22.653573
+Generated: 2025-08-30T20:24:01.276608
 
 ## Summary
 
@@ -12,7 +12,7 @@ Generated: 2025-08-30T19:54:22.653573
 
 ## Detailed Results
 
-### step1_data_collection.py - ⚠️ Partial (55.5%)
+### step1_data_collection.py - ⚠️ Partial (59.5%)
 
 - **Imports**: 85.7%
   - ✅ enhanced_mlflow_integration
@@ -32,9 +32,9 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ create_detailed_step_report_call
   - ✅ log_step_report_call
   - ✅ log_step_metrics_call
-- **Metadata**: 0.0%
+- **Metadata**: 20.0%
   - ❌ asset
-  - ❌ exchange
+  - ✅ exchange
   - ❌ lookback_period
   - ❌ project_version
   - ❌ date
@@ -74,7 +74,7 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ log_step_artifact_with_standardized_name
   - ❌ standardized_naming_pattern
 
-### step2_5_sr_optimization.py - ⚠️ Partial (60.5%)
+### step2_5_sr_optimization.py - ⚠️ Partial (74.5%)
 
 - **Imports**: 85.7%
   - ✅ enhanced_mlflow_integration
@@ -84,19 +84,19 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ log_step_metrics
   - ❌ log_step_dataframe_with_standardized_name
   - ✅ log_step_artifact_with_standardized_name
-- **Decorator**: 50.0%
+- **Decorator**: 100.0%
   - ✅ decorator_present
   - ✅ execute_methods_found
-  - ❌ methods_decorated
+  - ✅ methods_decorated
   - ❌ all_methods_decorated
 - **Artifact Logging**: 100.0%
   - ✅ method_present
   - ✅ create_detailed_step_report_call
   - ✅ log_step_report_call
   - ✅ log_step_metrics_call
-- **Metadata**: 0.0%
+- **Metadata**: 20.0%
   - ❌ asset
-  - ❌ exchange
+  - ✅ exchange
   - ❌ lookback_period
   - ❌ project_version
   - ❌ date
@@ -229,7 +229,7 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ log_step_artifact_with_standardized_name
   - ❌ standardized_naming_pattern
 
-### step7_enhanced_matrix_operations.py - ⚠️ Partial (65.7%)
+### step7_enhanced_matrix_operations.py - ⚠️ Partial (69.7%)
 
 - **Imports**: 100.0%
   - ✅ enhanced_mlflow_integration
@@ -249,9 +249,9 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ create_detailed_step_report_call
   - ✅ log_step_report_call
   - ✅ log_step_metrics_call
-- **Metadata**: 20.0%
+- **Metadata**: 40.0%
   - ❌ asset
-  - ❌ exchange
+  - ✅ exchange
   - ❌ lookback_period
   - ❌ project_version
   - ✅ date
@@ -260,7 +260,7 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ log_step_artifact_with_standardized_name
   - ❌ standardized_naming_pattern
 
-### step8_regime_data_splitting.py - ⚠️ Partial (81.7%)
+### step8_regime_data_splitting.py - ⚠️ Partial (85.7%)
 
 - **Imports**: 100.0%
   - ✅ enhanced_mlflow_integration
@@ -280,9 +280,9 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ create_detailed_step_report_call
   - ✅ log_step_report_call
   - ✅ log_step_metrics_call
-- **Metadata**: 0.0%
+- **Metadata**: 20.0%
   - ❌ asset
-  - ❌ exchange
+  - ✅ exchange
   - ❌ lookback_period
   - ❌ project_version
   - ❌ date
@@ -322,7 +322,7 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ log_step_artifact_with_standardized_name
   - ❌ standardized_naming_pattern
 
-### step9_5_hmm_lm_generalist_training.py - ⚠️ Partial (61.7%)
+### step9_5_hmm_lm_generalist_training.py - ⚠️ Partial (65.7%)
 
 - **Imports**: 100.0%
   - ✅ enhanced_mlflow_integration
@@ -342,9 +342,9 @@ Generated: 2025-08-30T19:54:22.653573
   - ✅ create_detailed_step_report_call
   - ✅ log_step_report_call
   - ✅ log_step_metrics_call
-- **Metadata**: 0.0%
+- **Metadata**: 20.0%
   - ❌ asset
-  - ❌ exchange
+  - ✅ exchange
   - ❌ lookback_period
   - ❌ project_version
   - ❌ date

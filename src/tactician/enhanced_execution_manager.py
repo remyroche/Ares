@@ -209,20 +209,22 @@ class EnhancedExecutionManager:
                     "validation_details": validation
                 }
             
-            # Calculate dynamic barriers for the appropriate timeframe
-            # Determine timeframe based on market data frequency or use primary timeframe
-            timeframe = self._determine_timeframe(market_data)
+            # Get dynamic barriers for the primary timeframe
+            # No dynamic adaptation - ML model handles market conditions
+            timeframe = self.primary_timeframe
             
             # Get dynamic barriers for this timeframe
-            dynamic_upper, dynamic_lower = self.barrier_calculator.calculate_dynamic_barriers(
+            barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
                 timeframe=timeframe
             )
             
-            # Calculate adaptive barriers based on market conditions
-            volatility = self._calculate_volatility(market_data)
-            adaptive_upper, adaptive_lower = self._calculate_adaptive_barriers(
-                current_price, volatility, validation["trade_direction"], dynamic_upper, dynamic_lower
-            )
+            # Use the first barrier combination (ML model will select optimal one)
+            barrier_name = list(barrier_combinations.keys())[0]
+            dynamic_upper, dynamic_lower = barrier_combinations[barrier_name]
+            
+            # No adaptive barriers - ML model handles market conditions
+            adaptive_upper = current_price * (1 + dynamic_upper)
+            adaptive_lower = current_price * (1 - dynamic_lower)
             
             # Calculate position sizing with precision multiplier
             base_position_size = analyst_signal.get("position_size", 0.1)
@@ -240,9 +242,9 @@ class EnhancedExecutionManager:
             # Calculate execution timing
             entry_timing = self._calculate_entry_timing(market_data, tactician_confidence)
             
-            # Calculate precision score
+            # Calculate precision score (no volatility adjustment - ML model handles it)
             precision_score = self._calculate_precision_score(
-                validation["combined_confidence"], volatility, market_data
+                validation["combined_confidence"], 0.01, market_data  # Default volatility
             )
             
             execution_params = {
@@ -255,7 +257,7 @@ class EnhancedExecutionManager:
                 "leverage": precision_leverage,
                 "entry_timing": entry_timing,
                 "precision_score": precision_score,
-                "volatility": volatility,
+                "volatility": 0.01,  # Default volatility - ML model handles market conditions
                 "analyst_confidence": validation["analyst_confidence"],
                 "tactician_confidence": validation["tactician_confidence"],
                 "combined_confidence": validation["combined_confidence"],
@@ -281,75 +283,7 @@ class EnhancedExecutionManager:
                 "error": str(e)
             }
 
-    def _calculate_volatility(self, market_data: pd.DataFrame) -> float:
-        """Calculate current market volatility."""
-        try:
-            if len(market_data) >= 20:
-                returns = market_data["close"].pct_change().dropna().tail(20)
-                return returns.std()
-            return 0.01  # Default volatility
-        except Exception:
-            return 0.01
-
-    def _determine_timeframe(self, market_data: pd.DataFrame) -> str:
-        """Determine the timeframe based on market data frequency."""
-        try:
-            if market_data is None or len(market_data) < 2:
-                return self.primary_timeframe
-            
-            # Calculate time difference between consecutive rows
-            time_diff = market_data.index[1] - market_data.index[0]
-            
-            # Convert to minutes
-            if hasattr(time_diff, 'total_seconds'):
-                minutes_diff = time_diff.total_seconds() / 60
-            else:
-                # If not datetime index, assume 1m
-                minutes_diff = 1
-            
-            # Determine timeframe based on frequency
-            if minutes_diff <= 1.5:
-                return "1m"
-            elif minutes_diff <= 7.5:  # Allow some tolerance for 5m
-                return "5m"
-            else:
-                return self.primary_timeframe
-                
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error determining timeframe: {e}")
-            return self.primary_timeframe
-
-    def _calculate_adaptive_barriers(
-        self, 
-        current_price: float, 
-        volatility: float, 
-        direction: str,
-        base_upper_pct: float,
-        base_lower_pct: float
-    ) -> Tuple[float, float]:
-        """Calculate adaptive barriers based on volatility and direction using dynamic base values."""
-        try:
-            # Volatility adjustment
-            volatility_multiplier = min(2.0, max(0.5, 1.0 / (volatility * 100)))
-            
-            # Direction adjustment
-            if direction == "short":
-                # For short positions, invert the barriers
-                adaptive_upper = current_price * (1 - base_upper_pct * volatility_multiplier)
-                adaptive_lower = current_price * (1 + base_lower_pct * volatility_multiplier)
-            else:
-                # For long positions, use standard barriers
-                adaptive_upper = current_price * (1 + base_upper_pct * volatility_multiplier)
-                adaptive_lower = current_price * (1 - base_lower_pct * volatility_multiplier)
-            
-            return adaptive_upper, adaptive_lower
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating adaptive barriers: {e}")
-            # Fallback to base barriers
-            base_upper = current_price * (1 + base_upper_pct)
-            base_lower = current_price * (1 - base_lower_pct)
-            return base_upper, base_lower
+    # Removed dynamic adaptation methods - ML model handles market conditions
 
     def _calculate_risk_adjusted_size(
         self, 

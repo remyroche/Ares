@@ -20,6 +20,7 @@ warnings.filterwarnings('ignore')
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 
 
 @dataclass
@@ -125,23 +126,23 @@ class SRBacktestingValidator:
         self.config = config
         self.logger = system_logger.getChild("SRBacktestingValidator")
         
-            # Backtesting configuration
-    self.backtest_config = config.get("sr_backtesting", {})
-    self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
-    self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
-    self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
-    self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
-    self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
-    self.min_touches = self.backtest_config.get("min_touches", 2)
-    
-    # Volume analysis configuration
-    self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
-    self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
-    self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
-    self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
-    self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
+        # Backtesting configuration
+        self.backtest_config = config.get("sr_backtesting", {})
+        self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
+        self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
+        self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
+        self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
+        self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
+        self.min_touches = self.backtest_config.get("min_touches", 2)
         
-                    # S/R validation configuration
+        # Volume analysis configuration
+        self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
+        self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
+        self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
+        self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
+        self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
+        
+        # S/R validation configuration
         self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
         self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
         self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
@@ -155,6 +156,56 @@ class SRBacktestingValidator:
         self.timeframe_weights = self.backtest_config.get("timeframe_weights", {
             "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
         })
+        
+        # Data integration
+        self.data_integration: Optional[SRDataIntegrationSimple] = None
+    
+    async def initialize_data_integration(
+        self,
+        symbol: str = "BTCUSDT",
+        exchange: str = "binance",
+        timeframes: Optional[List[str]] = None,
+        lookback_days: Optional[int] = None,
+        training_mode: str = "blank"
+    ) -> bool:
+        """Initialize the data integration system.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframes: List of timeframes to use
+            lookback_days: Override default lookback period
+            training_mode: Training mode to use for lookback period
+            
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        try:
+            if self.logger:
+                self.logger.info("🔧 Initializing data integration for S/R backtesting...")
+            
+            # Create and initialize data integration
+            self.data_integration = await create_sr_data_integration_simple(
+                symbol=symbol,
+                exchange=exchange,
+                timeframes=timeframes,
+                lookback_days=lookback_days,
+                training_mode=training_mode
+            )
+            
+            if self.data_integration:
+                if self.logger:
+                    self.logger.info("✅ Data integration initialized successfully")
+                return True
+            else:
+                if self.logger:
+                    self.logger.error("❌ Failed to initialize data integration")
+                return False
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"❌ Data integration initialization failed: {e}")
+            return False
         
     @handle_specific_errors(
         error_handlers={

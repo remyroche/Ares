@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
+from datetime import datetime
 
 # Handle optional dependencies
 try:

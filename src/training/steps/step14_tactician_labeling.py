@@ -164,41 +164,26 @@ class TacticianTripleBarrierLabeler:
     ) -> dict[str, Any]:
         """Generate multi-outcome predictions similar to Analyst but with Tactician characteristics."""
         try:
-            # Calculate price deviation (smaller than Analyst)
+            # Calculate price deviation for both 50% and 25% of Analyst barriers
             if signal == 1:  # Long position
+                # Use upper barrier (50% of Analyst's upper barrier)
                 price_deviation = (upper_barrier - entry_price) / entry_price
                 price_direction = 1
             else:  # Short position
+                # Use lower barrier (25% of Analyst's lower barrier)
                 price_deviation = (entry_price - lower_barrier) / entry_price
                 price_direction = -1
             
-            # Calculate price target confidence (higher than Analyst)
-            # Base confidence from precision score, boosted for Tactician
+            # Calculate price target confidence (calculated by ML model)
+            # This should be enhanced by the ML model based on market conditions
             base_confidence = precision_score
-            confidence_boost = 1.4  # 40% higher confidence than Analyst
-            price_target_confidence = min(1.0, base_confidence * confidence_boost)
-            
-            # Determine regime based on signal and market conditions
-            if signal == 1:
-                regime = 0.7  # Bullish regime
-            else:
-                regime = 0.3  # Bearish regime
-            
-            # Calculate volatility prediction (higher for shorter timeframes)
-            recent_volatility = data['close'].pct_change().tail(10).std()
-            volatility_prediction = recent_volatility * 1.5  # 50% higher for Tactician
-            
-            # Calculate momentum prediction (higher for shorter timeframes)
-            recent_momentum = (data['close'].iloc[-1] - data['close'].iloc[-5]) / data['close'].iloc[-5]
-            momentum_prediction = recent_momentum * 1.8  # 80% higher for Tactician
+            # ML model will calculate the actual confidence, not just boost it
+            price_target_confidence = base_confidence
             
             return {
                 "price_deviation": price_deviation,
                 "price_direction": price_direction,
                 "price_target_confidence": price_target_confidence,
-                "regime": regime,
-                "volatility": volatility_prediction,
-                "momentum": momentum_prediction,
                 "label": signal,  # Traditional label for backward compatibility
                 "precision_score": precision_score,
                 "execution_quality": quality_score
@@ -210,9 +195,6 @@ class TacticianTripleBarrierLabeler:
                 "price_deviation": 0.0,
                 "price_direction": 0,
                 "price_target_confidence": 0.0,
-                "regime": 0.5,
-                "volatility": 0.0,
-                "momentum": 0.0,
                 "label": signal,
                 "precision_score": precision_score,
                 "execution_quality": quality_score
@@ -259,13 +241,10 @@ class TacticianTripleBarrierLabeler:
         # Calculate fixed percentage barriers for each entry point
         entry_prices = data["open"].iloc[entry_indices + 1]
 
-        # Initialize multi-outcome predictions
+        # Initialize multi-outcome predictions (only 3 types)
         price_deviation_predictions = pd.Series(0.0, index=data.index)
         price_direction_predictions = pd.Series(0, index=data.index)
         price_target_confidence = pd.Series(0.0, index=data.index)
-        regime_predictions = pd.Series(0.0, index=data.index)
-        volatility_predictions = pd.Series(0.0, index=data.index)
-        momentum_predictions = pd.Series(0.0, index=data.index)
         
         # Initialize traditional labels for backward compatibility
         labels = pd.Series(-1, index=data.index)  # Default to sell signal
@@ -328,13 +307,10 @@ class TacticianTripleBarrierLabeler:
                 data, entry_idx, signal, upper, lower, entry_prices.iloc[i], precision_score, quality_score
             )
             
-            # Store multi-outcome predictions
+            # Store multi-outcome predictions (only 3 types)
             price_deviation_predictions.iloc[entry_idx] = predictions["price_deviation"]
             price_direction_predictions.iloc[entry_idx] = predictions["price_direction"]
             price_target_confidence.iloc[entry_idx] = predictions["price_target_confidence"]
-            regime_predictions.iloc[entry_idx] = predictions["regime"]
-            volatility_predictions.iloc[entry_idx] = predictions["volatility"]
-            momentum_predictions.iloc[entry_idx] = predictions["momentum"]
             
             # Apply high precision mode filtering
             if self.enable_high_precision_mode:
@@ -345,20 +321,14 @@ class TacticianTripleBarrierLabeler:
                     price_deviation_predictions.iloc[entry_idx] = 0.0
                     price_direction_predictions.iloc[entry_idx] = 0
                     price_target_confidence.iloc[entry_idx] = 0.0
-                    regime_predictions.iloc[entry_idx] = 0.0
-                    volatility_predictions.iloc[entry_idx] = 0.0
-                    momentum_predictions.iloc[entry_idx] = 0.0
 
             precision_scores.iloc[entry_idx] = precision_score
             execution_quality.iloc[entry_idx] = quality_score
 
-        # Add multi-outcome predictions to data
+        # Add multi-outcome predictions to data (only 3 types)
         data["tactician_price_deviation"] = price_deviation_predictions
         data["tactician_price_direction"] = price_direction_predictions
         data["tactician_price_target_confidence"] = price_target_confidence
-        data["tactician_regime"] = regime_predictions
-        data["tactician_volatility"] = volatility_predictions
-        data["tactician_momentum"] = momentum_predictions
         
         # Add traditional labels for backward compatibility
         data["tactician_label"] = labels

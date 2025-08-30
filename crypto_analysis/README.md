@@ -23,7 +23,7 @@ A comprehensive tool for downloading and analyzing cryptocurrency data to calcul
 - **Triple Barrier Profit Analysis:**
   - **Multiple barrier levels:** 0.3% to 1.5% in 0.1% increments (13 levels)
   - **Theoretical perfect trades:** Only captures successful movements at their peak
-  - **Daily analysis:** Each day's open, high, low prices are analyzed
+  - **15-minute analysis:** Each 15-minute period's open, high, low prices are analyzed
   - **Long/Short positions:** Both directions are evaluated independently
   - **100% capture:** Assumes perfect execution at optimal entry/exit points
 
@@ -115,7 +115,7 @@ This will:
 - **Average Profit:** Mean profit per successful trade
 - **Long Trades:** Number of successful long positions
 - **Short Trades:** Number of successful short positions
-- **Profit Frequency:** Successful trades per day
+- **Profit Frequency:** Successful trades per 15-minute period
 - **Max Profit:** Maximum single trade profit
 - **Total Potential Profit:** Cumulative profit across all successful trades
 
@@ -139,7 +139,7 @@ This will:
 - **Barrier Levels:** 0.3%, 0.4%, 0.5%, 0.6%, 0.7%, 0.8%, 0.9%, 1.0%, 1.1%, 1.2%, 1.3%, 1.4%, 1.5%
 
 ### Analysis Method
-- **Daily Analysis:** Each day's open, high, low prices are analyzed
+- **15-Minute Analysis:** Each 15-minute period's open, high, low prices are analyzed
 - **Long Position:** Buy at open, sell at high (if profit ≥ barrier)
 - **Short Position:** Sell at open, buy at low (if profit ≥ barrier)
 - **Perfect Execution:** Assumes optimal entry/exit at exact prices
@@ -147,11 +147,12 @@ This will:
 
 ### Key Insights Provided
 - **Profit Potential:** Average profit per successful trade for each barrier level
-- **Trade Frequency:** How often successful trades occur for each barrier level
+- **Trade Frequency:** How often successful trades occur for each barrier level (per 15-min period)
 - **Long vs Short Analysis:** Which direction works better for each asset
 - **Asset Comparison:** Which assets offer the best profit opportunities
 - **Barrier Performance:** Which barrier levels work best for each asset
 - **Theoretical Maximum:** Perfect profit capture potential for each asset
+- **Intraday Patterns:** Trading opportunities throughout the day
 
 ## Supported Assets
 

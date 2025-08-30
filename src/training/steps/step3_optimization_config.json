@@ -1,0 +1,58 @@
+{
+  "automatic_optimization": {
+    "enabled": true,
+    "max_trials": 50,
+    "timeout_minutes": 30,
+    "force_rerun_days": 7,
+    "study_name_prefix": "auto_optimization"
+  },
+  "optimization_settings": {
+    "n_trials": 50,
+    "timeout": 1800,
+    "study_name": "automatic_optimization",
+    "random_state": 42
+  },
+  "hmm_parameters": {
+    "n_components_range": [2, 10],
+    "covariance_types": ["full", "tied", "diag", "spherical"],
+    "n_iter_range": [100, 300],
+    "tol_range": [1e-4, 1e-2],
+    "reg_covar_range": [1e-6, 1e-3]
+  },
+  "clustering_parameters": {
+    "clustering_methods": ["kmeans", "gaussian_mixture"],
+    "n_clusters_range": [3, 15],
+    "kmeans_init_methods": ["k-means++", "random"],
+    "kmeans_n_init_range": [5, 15],
+    "kmeans_max_iter_range": [200, 500],
+    "gmm_init_params": ["kmeans", "random"],
+    "gmm_max_iter_range": [100, 400]
+  },
+  "regime_merging_parameters": {
+    "initial_clusters_range": [25, 50],
+    "target_regimes_range": [15, 20],
+    "merging_methods": ["hierarchical", "kmeans", "dbscan", "spectral"],
+    "similarity_threshold_range": [0.3, 0.8],
+    "min_regime_size_range": [100, 500],
+    "max_regime_size_range": [2000, 5000],
+    "coherence_threshold_range": [0.6, 0.9],
+    "differentiation_threshold_range": [0.4, 0.8]
+  },
+  "evaluation_weights": {
+    "regime_differentiation": 0.4,
+    "internal_coherence": 0.3,
+    "regime_balance": 0.15,
+    "target_count_penalty": 0.15
+  },
+  "market_condition_keywords": [
+    "volatility", "momentum", "volume", "returns", "price_change",
+    "trend", "regime", "market", "condition", "state",
+    "rsi", "macd", "bollinger", "atr", "adx", "stoch", "cci"
+  ],
+  "output_settings": {
+    "save_optimization_results": true,
+    "generate_optimization_report": true,
+    "create_optimization_visualizations": true,
+    "optimization_results_dir": "optimization_results"
+  }
+}

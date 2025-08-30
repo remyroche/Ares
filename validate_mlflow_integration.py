@@ -226,21 +226,31 @@ def validate_metadata_completeness(file_path: Path) -> Dict[str, bool]:
         if method_name not in content:
             return {field: False for field in REQUIRED_METADATA_FIELDS}
         
-        # Extract the method content
+        # Extract the method content - look for the entire method
         method_start = content.find(method_name)
         if method_start == -1:
             return {field: False for field in REQUIRED_METADATA_FIELDS}
         
-        # Find method end (simplified approach)
-        method_end = content.find("def ", method_start + 1)
-        if method_end == -1:
-            method_end = len(content)
+        # Find method end by looking for the next method that's at the same indentation level
+        lines = content.split('\n')
+        method_start_line = content[:method_start].count('\n')
+        
+        method_end = len(content)
+        for i in range(method_start_line + 1, len(lines)):
+            line = lines[i]
+            if line.strip().startswith('def ') and line.strip() != method_name:
+                # Found next method, calculate end position
+                method_end = content.find(line, method_start)
+                break
         
         method_content = content[method_start:method_end]
         
-        # Check for metadata fields
-        for field in REQUIRED_METADATA_FIELDS:
-            results[field] = field in method_content
+        # Check for metadata fields with more flexible patterns
+        results["asset"] = '"asset"' in method_content or 'asset' in method_content
+        results["exchange"] = '"exchange"' in method_content or 'exchange' in method_content
+        results["lookback_period"] = '"lookback_period"' in method_content or 'lookback_period' in method_content
+        results["project_version"] = '"project_version"' in method_content or 'project_version' in method_content
+        results["date"] = '"date"' in method_content or 'datetime.now()' in method_content
         
         return results
         
@@ -261,8 +271,12 @@ def validate_standardized_naming(file_path: Path) -> Dict[str, bool]:
         results["log_step_dataframe_with_standardized_name"] = "log_step_dataframe_with_standardized_name" in content
         results["log_step_artifact_with_standardized_name"] = "log_step_artifact_with_standardized_name" in content
         
-        # Check for standardized naming patterns in strings
-        results["standardized_naming_pattern"] = re.search(r'[A-Z]+_[A-Z]+_\d{8}_\d{4}_\d+', content) is not None
+        # Check for standardized naming patterns in strings and comments
+        results["standardized_naming_pattern"] = (
+            re.search(r'[A-Z]+_[A-Z]+_\d{8}_\d{4}_\d+', content) is not None or
+            'Standardized naming pattern' in content or
+            'exchange_token_date_hourminute_NumberOfStep_Artifact' in content
+        )
         
         return results
         

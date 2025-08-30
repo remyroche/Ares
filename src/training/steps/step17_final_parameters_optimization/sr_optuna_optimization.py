@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization/sr_optuna_optimization.py
+# src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py
 
 """
 S/R Parameter Optimization with Optuna

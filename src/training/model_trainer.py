@@ -313,7 +313,7 @@ class RayModelTrainer:
                 do_hpo = use_hpo
                 if do_hpo:
                     try:
-                        from src.training.steps.step12_final_parameters_optimization.optimized_optuna_optimization import (
+                        from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (
                             AdvancedOptunaManager,
                         )
                     except Exception as e:  # ImportError or dependency issues

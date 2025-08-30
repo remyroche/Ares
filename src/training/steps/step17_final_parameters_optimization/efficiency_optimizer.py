@@ -1,4 +1,4 @@
-# src/training/steps/step12_final_parameters_optimization/efficiency_optimizer.py
+# src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py
 
 """Efficiency Optimizer for Hyperparameter Optimization.
 

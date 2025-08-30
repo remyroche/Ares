@@ -214,6 +214,12 @@ async def test_direct_backtesting(config: dict, market_data: pd.DataFrame):
             logger.info(f"  Support Breakout Rate: {backtest_result.support_breakout_rate:.2%}")
             logger.info(f"  Resistance Breakout Rate: {backtest_result.resistance_breakout_rate:.2%}")
             
+            logger.info("\n📊 Volume Analysis:")
+            logger.info(f"  Average Volume Spike Ratio: {backtest_result.avg_volume_spike_ratio:.2f}x")
+            logger.info(f"  Volume Confirmation Rate: {backtest_result.avg_volume_confirmation_rate:.2%}")
+            logger.info(f"  Institutional Volume Ratio: {backtest_result.avg_institutional_volume_ratio:.2%}")
+            logger.info(f"  Volume Cluster Score: {backtest_result.avg_volume_cluster_score:.2f}")
+            
             logger.info("\n💰 Trading Performance:")
             logger.info(f"  Win Rate: {backtest_result.win_rate:.2%}")
             logger.info(f"  Profit Factor: {backtest_result.profit_factor:.2f}")
@@ -227,6 +233,10 @@ async def test_direct_backtesting(config: dict, market_data: pd.DataFrame):
                 logger.info(f"    Touches: {level_test.touches}, Bounces: {level_test.bounces}")
                 logger.info(f"    Bounce Rate: {level_test.bounce_rate:.2%}")
                 logger.info(f"    Confidence Score: {level_test.confidence_score:.3f}")
+                logger.info(f"    Volume Spike Ratio: {level_test.volume_spike_ratio:.2f}x")
+                logger.info(f"    Volume Confirmation: {level_test.volume_confirmation_rate:.2%}")
+                logger.info(f"    Institutional Volume: {level_test.institutional_volume_ratio:.2%}")
+                logger.info(f"    Volume Cluster Score: {level_test.volume_cluster_score:.2f}")
             
             # Assess S/R level validity
             await assess_sr_level_validity(backtest_result)

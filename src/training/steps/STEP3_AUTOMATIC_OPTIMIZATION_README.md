@@ -12,6 +12,8 @@ Step 3 now includes **automatic parameter optimization** that runs before HMM re
 - ✅ **Configurable** - easily adjustable via configuration file
 - ✅ **Comprehensive reporting** - generates detailed optimization reports
 - ✅ **Visualization** - creates optimization progress charts
+- ✅ **Vectorized operations** - uses matrix operations for better performance
+- ✅ **Force rerun** - always runs optimization with `--force` flag
 
 ### Optimization Goals
 - 🎯 **15-20 final regimes** - targets optimal regime count
@@ -28,7 +30,8 @@ Step 3 now includes **automatic parameter optimization** that runs before HMM re
     "enabled": true,           // Enable/disable automatic optimization
     "max_trials": 50,          // Maximum optimization trials
     "timeout_minutes": 30,     // Maximum optimization time
-    "force_rerun_days": 7      // Re-run if results older than X days
+    "force_rerun_days": 1,     // Re-run if results older than X days (default: 1 day)
+    "vectorized_optimization": true  // Use vectorized operations for performance
   }
 }
 ```
@@ -60,8 +63,9 @@ The optimizer searches through:
 ### Automatic Execution
 Step 3 automatically runs optimization when:
 1. **First time** - no existing optimization results
-2. **Outdated results** - optimization older than configured days
-3. **Force rerun** - `force_rerun=True` parameter
+2. **Outdated results** - optimization older than configured days (default: 1 day)
+3. **Force rerun** - `force_rerun=True` parameter (--force flag)
+4. **Vectorized operations** - uses matrix operations for better performance
 
 ### Manual Control
 ```python
@@ -77,7 +81,7 @@ config = {
     "automatic_optimization": {
         "max_trials": 100,        # More thorough search
         "timeout_minutes": 60,    # Longer timeout
-        "force_rerun_days": 1     # Re-run daily
+        "force_rerun_days": 1     # Re-run daily (default)
     }
 }
 ```
@@ -148,6 +152,20 @@ The optimizer evaluates regimes using:
 ### Step 4: Parameter Selection
 - Optuna selects best parameters based on scores
 - Continues until max trials or timeout reached
+
+## ⚡ Performance Optimizations
+
+### Vectorized Operations
+- **Matrix-based calculations** for regime differentiation
+- **Broadcasting operations** for pairwise comparisons
+- **Vectorized statistics** for coherence and balance scores
+- **Pre-processed data structures** for faster access
+
+### Smart Caching Logic
+- **Force rerun**: Always runs optimization with `--force` flag
+- **Daily updates**: Default 1-day outdated threshold
+- **Configurable frequency**: Adjustable via configuration
+- **Efficient file checking**: Minimal overhead for cache validation
 
 ## 🎛️ Integration with Step 3
 

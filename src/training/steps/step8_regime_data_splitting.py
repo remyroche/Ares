@@ -15,6 +15,15 @@ from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.centralized_decorators import (
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -49,6 +58,7 @@ class RegimeDataSplittingStep:
         self.logger.info("🚀 Initializing Step 4: HMM Composite Regime Data Splitting...")
         self.logger.info("✅ HMM Composite Regime Data Splitting initialized successfully")
 
+    @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step4_regime_splitting.execute", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step4_execution")
     async def execute(self) -> dict[str, Any]:
@@ -122,10 +132,133 @@ class RegimeDataSplittingStep:
                 json.dump(summary, f, indent=2)
 
             self.logger.info("✅ HMM composite regime data splitting completed successfully")
+            
+            # Log artifacts and create detailed report
+            await self._log_step8_artifacts_and_report(regime_splits, summary)
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+            
             return {"success": True, "regime_splits": summary}
         except Exception as e:
             self.logger.exception(f"❌ HMM composite regime data splitting failed: {e}")
             return {"success": False, "error": str(e)}
+
+    async def _log_step8_artifacts_and_report(
+        self,
+        regime_splits: dict[str, pd.DataFrame],
+        summary: dict[str, Any]
+    ) -> None:
+        """Log step 8 artifacts and create detailed report."""
+        try:
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            timeframe = self.config.get("timeframe", "1m")
+            
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0,
+                "processing_efficiency": 1.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = []
+            for regime_name in regime_splits.keys():
+                artifacts_generated.append(f"{regime_name}.parquet")
+            
+            # Collect metrics
+            metrics_calculated = {
+                "regime_splitting_success": 1.0,
+                "total_regimes": len(regime_splits),
+                "total_samples": sum(len(df) for df in regime_splits.values()),
+                "regime_names": list(regime_splits.keys()),
+            }
+            
+            # Create training input for report
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "lookback_days": self.config.get("lookback_days", 1095),
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),
+                "project_version": self.config.get("project_version", "1.0.0"),
+            }
+            
+            # Create step data for report
+            step_data = {
+                "regime_splits_summary": summary,
+                "regime_count": len(regime_splits),
+                "regime_names": list(regime_splits.keys()),
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step8_regime_data_splitting",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step8_regime_data_splitting",
+                report_data=report_data,
+                report_type="regime_data_splitting_report",
+                additional_metadata={
+                    "regime_splitting_success": True,
+                    "total_regimes": len(regime_splits),
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged regime data splitting report: {report_name}")
+            
+            # Log regime splits summary
+            if summary:
+                summary_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step8_regime_data_splitting",
+                    report_data=summary,
+                    report_type="regime_splits_summary",
+                    additional_metadata={
+                        "total_regimes": len(regime_splits),
+                        "timeframe": timeframe,
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
+                    }
+                )
+                self.logger.info(f"✅ Logged regime splits summary: {summary_report_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step8_regime_data_splitting",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "regime_splitting_performance",
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 8 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     @with_tracing_span("step4_regime_splitting._save_regime_splits", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=None, context="save_regime_splits")

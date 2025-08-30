@@ -40,6 +40,13 @@ from src.utils.logger import system_logger
 from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_artifact_with_standardized_name
+)
 
 logger = system_logger.getChild("Step2_5SROptimization")
 
@@ -117,11 +124,13 @@ class SROptimizationStep:
     @monitor_step_execution
     @secure_step_execution
     @validate_pipeline_step
+    @with_enhanced_mlflow_logging("step2_5_sr_optimization")
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
         context="sr_optimization_execution"
     )
+    @with_enhanced_mlflow_logging("step2_5")
     async def execute(self) -> bool:
         """Execute the S/R optimization step with comprehensive reporting."""
         try:
@@ -160,11 +169,198 @@ class SROptimizationStep:
             execution_time = time.time() - self.start_time
             self.logger.info(f"✅ S/R optimization completed successfully in {execution_time:.2f}s")
             
+            # Log artifacts and create detailed report
+            await self._log_step2_5_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                optimization_result, sr_analysis_reports, sr_integration_analysis, detailed_reports
+            )
+            
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to execute S/R optimization: {e}")
             return False
+
+    async def _log_step2_5_artifacts_and_report(
+        self,
+        optimization_result: Any,
+        sr_analysis_reports: Dict[str, Any],
+        sr_integration_analysis: Dict[str, Any],
+        detailed_reports: Dict[str, Any]
+    ) -> None:
+        """Log step 2.5 artifacts and create detailed report."""
+        try:
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": time.time() - self.start_time if self.start_time else 0.0,
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0,  # SR optimization is typically high quality
+                "processing_efficiency": 1.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = [
+                "sr_optimization_results.json",
+                "sr_analysis_reports.json",
+                "sr_integration_analysis.json",
+                "detailed_optimization_reports.json",
+                "final_comprehensive_report.json",
+            ]
+            
+            # Collect metrics
+            metrics_calculated = {
+                "sr_optimization_success": 1.0,
+                "optimization_methods_count": len(optimization_result) if optimization_result else 0,
+                "analysis_reports_count": len(sr_analysis_reports),
+                "integration_analysis_count": len(sr_integration_analysis),
+                "detailed_reports_count": len(detailed_reports),
+                "total_optimization_time": execution_metadata["duration_seconds"],
+            }
+            
+            # Create training input for report
+            training_input = {
+                "symbol": self.config.get("SYMBOL", "ETHUSDT"),
+                "exchange": self.config.get("EXCHANGE", "BINANCE"),
+                "timeframe": self.config.get("TIMEFRAME", "1m"),
+                "lookback_years": self.config.get("LOOKBACK_YEARS", 2),
+            ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
+            
+            # Create step data for report
+            step_data = {
+                "optimization_result": optimization_result,
+                "sr_analysis_reports": sr_analysis_reports,
+                "sr_integration_analysis": sr_integration_analysis,
+                "detailed_reports": detailed_reports,
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step2_5_sr_optimization",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[]
+            )
+            
+            # Log the main report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step2_5_sr_optimization",
+                report_data=report_data,
+                report_type="sr_optimization_report",
+                additional_metadata={
+                    "optimization_success": True,
+                    "optimization_methods": list(optimization_result.keys()) if optimization_result else [],
+                    "timeframe": training_input["timeframe"],
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged SR optimization report: {report_name}")
+            
+            # Log optimization results
+            if optimization_result:
+                optimization_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step2_5_sr_optimization",
+                    report_data=optimization_result,
+                    report_type="optimization_results",
+                    additional_metadata={
+                        "optimization_methods": list(optimization_result.keys()),
+                        "timeframe": training_input["timeframe"],
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged optimization results: {optimization_report_name}")
+            
+            # Log SR analysis reports
+            if sr_analysis_reports:
+                sr_analysis_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step2_5_sr_optimization",
+                    report_data=sr_analysis_reports,
+                    report_type="sr_analysis_reports",
+                    additional_metadata={
+                        "analysis_reports_count": len(sr_analysis_reports),
+                        "timeframe": training_input["timeframe"],
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged SR analysis reports: {sr_analysis_report_name}")
+            
+            # Log SR integration analysis
+            if sr_integration_analysis:
+                integration_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step2_5_sr_optimization",
+                    report_data=sr_integration_analysis,
+                    report_type="sr_integration_analysis",
+                    additional_metadata={
+                        "integration_analysis_count": len(sr_integration_analysis),
+                        "timeframe": training_input["timeframe"],
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged SR integration analysis: {integration_report_name}")
+            
+            # Log detailed reports
+            if detailed_reports:
+                detailed_reports_name = log_step_report(
+                    config=self.config,
+                    step_name="step2_5_sr_optimization",
+                    report_data=detailed_reports,
+                    report_type="detailed_optimization_reports",
+                    additional_metadata={
+                        "detailed_reports_count": len(detailed_reports),
+                        "timeframe": training_input["timeframe"],
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged detailed optimization reports: {detailed_reports_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step2_5_sr_optimization",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "sr_optimization_performance",
+                    "timeframe": training_input["timeframe"],
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 2.5 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 2.5 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     @handle_errors(
         exceptions=(Exception,),

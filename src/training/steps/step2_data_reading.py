@@ -50,6 +50,14 @@ from src.utils.centralized_decorators import (
     monitor_feature_engineering,
 )
 from src.utils.logger import system_logger
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
 
 logger = system_logger.getChild("Step2DataReading")
 
@@ -289,6 +297,7 @@ class DataReadingStep:
             self.logger.exception(f"❌ Error saving validation report: {e}")
             return False
 
+    @with_enhanced_mlflow_logging("step2_data_reading")
     @with_tracing_span("execute_data_reading_step")
     @handle_errors
     @resource_monitor
@@ -329,6 +338,12 @@ class DataReadingStep:
             self.logger.info(f"   - Validated data saved to: {output_path}")
             self.logger.info(f"   - Total execution time: {time.time() - self.start_time:.2f} seconds")
             
+            # Log artifacts and create detailed report
+            await self._log_step2_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                symbol, exchange, timeframe, data_dir, unified_data, validation_results, output_path
+            )
+            
             return {
                 "success": True,
                 "data_path": str(output_path),
@@ -339,6 +354,148 @@ class DataReadingStep:
         except Exception as e:
             self.logger.exception(f"❌ Error in Step 2: {e}")
             return {"success": False, "error": str(e)}
+
+    async def _log_step2_artifacts_and_report(
+        self, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        unified_data: pd.DataFrame, 
+        validation_results: Dict[str, Any], 
+        output_path: Path
+    ) -> None:
+        """Log step 2 artifacts and create detailed report."""
+        try:
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": time.time() - self.start_time if self.start_time else 0.0,
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": validation_results.get("quality_score", 0.0),
+                "processing_efficiency": 1.0 if validation_results.get("passed", False) else 0.5,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = [
+                str(output_path),
+                f"{exchange}_{symbol}_{timeframe}_validation_report.json",
+            ]
+            
+            # Collect metrics
+            metrics_calculated = {
+                "data_reading_success": 1.0,
+                "validation_passed": 1.0 if validation_results.get("passed", False) else 0.0,
+                "data_quality_score": validation_results.get("quality_score", 0.0),
+                "total_rows": len(unified_data) if unified_data is not None else 0,
+                "total_columns": len(unified_data.columns) if unified_data is not None else 0,
+                "validation_issues_count": len(validation_results.get("issues", [])),
+            }
+            
+            # Create training input for report
+            training_input = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "data_dir": data_dir,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
+            
+            # Create step data for report
+            step_data = {
+                "validation_results": validation_results,
+                "step_timings": self.step_timings,
+                "data_path": str(output_path),
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step2_data_reading",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[] if validation_results.get("passed", False) else validation_results.get("issues", [])
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step2_data_reading",
+                report_data=report_data,
+                report_type="data_reading_report",
+                additional_metadata={
+                    "validation_passed": validation_results.get("passed", False),
+                    "data_quality_score": validation_results.get("quality_score", 0.0),
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged data reading report: {report_name}")
+            
+            # Log validated data DataFrame
+            if unified_data is not None:
+                artifact_name = log_step_dataframe_with_standardized_name(
+                    config=self.config,
+                    step_name="step2_data_reading",
+                    df=unified_data,
+                    artifact_type="validated_data",
+                    additional_metadata={
+                        "artifact_type": "validated_data",
+                        "dataframe_shape": list(unified_data.shape),
+                        "validation_passed": validation_results.get("passed", False),
+                        "timeframe": timeframe,
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
+                    }
+                )
+                self.logger.info(f"✅ Logged validated data: {artifact_name}")
+            
+            # Log validation results
+            validation_report_name = log_step_report(
+                config=self.config,
+                step_name="step2_data_reading",
+                report_data=validation_results,
+                report_type="validation_results",
+                additional_metadata={
+                    "validation_passed": validation_results.get("passed", False),
+                    "quality_score": validation_results.get("quality_score", 0.0),
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "timeframe": timeframe,
+                }
+            )
+            self.logger.info(f"✅ Logged validation results: {validation_report_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step2_data_reading",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "data_reading_performance",
+                    "timeframe": timeframe,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 2 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
 
 async def run_step_enhanced(

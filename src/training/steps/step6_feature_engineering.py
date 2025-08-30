@@ -48,6 +48,14 @@ from src.utils.training_pipeline_decorators import (
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging, 
+    log_step_dataframe, 
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_report,
+    log_step_artifact_with_standardized_name
+)
 
 
 @validate_step_prerequisites(
@@ -119,6 +127,7 @@ from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
     },
     validation_timeout=600,
 )
+@with_enhanced_mlflow_logging("step6_feature_engineering")
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
@@ -958,16 +967,126 @@ async def _save_feature_artifacts(
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Save feature files
-        features_result["features_train"].to_parquet(
-            output_dir / f"{exchange}_{symbol}_{timeframe}_features_train.parquet"
-        )
-        features_result["features_val"].to_parquet(
-            output_dir / f"{exchange}_{symbol}_{timeframe}_features_val.parquet"
-        )
+        train_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_train.parquet"
+        val_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_features_val.parquet"
+        metadata_file_path = output_dir / f"{exchange}_{symbol}_{timeframe}_feature_metadata.json"
+        
+        features_result["features_train"].to_parquet(train_file_path)
+        features_result["features_val"].to_parquet(val_file_path)
         
         # Save metadata
-        with open(output_dir / f"{exchange}_{symbol}_{timeframe}_feature_metadata.json", "w") as f:
+        with open(metadata_file_path, "w") as f:
             json.dump(features_result["metadata"], f, indent=2, default=str)
+        
+        # Log artifacts to MLflow with standardized naming
+        try:
+            # Create a config dict for MLflow logging
+            config = {
+                "trading_symbol": symbol,
+                "exchange_name": exchange,
+                "lookback_years": 2,  # Default value
+            }
+            
+            # Log training features DataFrame with standardized naming
+            train_artifact_name = log_step_dataframe_with_standardized_name(
+                config=config,
+                step_name="step6_feature_engineering",
+                df=features_result["features_train"],
+                artifact_type="features_train",
+                additional_metadata={
+                    "artifact_type": "training_features",
+                    "feature_count": len(features_result["features_train"].columns),
+                    "sample_count": len(features_result["features_train"]),
+                    "timeframe": timeframe,
+                }
+            )
+            system_logger.info(f"✅ Logged training features: {train_artifact_name}")
+            
+            # Log validation features DataFrame with standardized naming
+            val_artifact_name = log_step_dataframe_with_standardized_name(
+                config=config,
+                step_name="step6_feature_engineering",
+                df=features_result["features_val"],
+                artifact_type="features_val",
+                additional_metadata={
+                    "artifact_type": "validation_features",
+                    "feature_count": len(features_result["features_val"].columns),
+                    "sample_count": len(features_result["features_val"]),
+                    "timeframe": timeframe,
+                }
+            )
+            system_logger.info(f"✅ Logged validation features: {val_artifact_name}")
+            
+            # Log feature metadata with standardized naming
+            metadata_artifact_name = log_step_artifact_with_standardized_name(
+                config=config,
+                step_name="step6_feature_engineering",
+                artifact_path=str(metadata_file_path),
+                artifact_type="feature_metadata",
+                additional_metadata={
+                    "metadata_keys": list(features_result["metadata"].keys()),
+                    "feature_count": features_result["metadata"].get("feature_count", 0),
+                    "timeframe": timeframe,
+                }
+            )
+            system_logger.info(f"✅ Logged feature metadata: {metadata_artifact_name}")
+            
+            # Log feature engineering report
+            report_data = {
+                "feature_engineering_summary": {
+                    "total_features": len(features_result["features_train"].columns),
+                    "training_samples": len(features_result["features_train"]),
+                    "validation_samples": len(features_result["features_val"]),
+                    "feature_categories": features_result["metadata"].get("feature_categories", {}),
+                    "feature_importance": features_result["metadata"].get("feature_importance", {}),
+                },
+                "metadata": features_result["metadata"],
+                "training_input": {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": timeframe,
+                },
+                "execution_timestamp": datetime.now().isoformat(),
+            }
+            
+            report_name = log_step_report(
+                config=config,
+                step_name="step6_feature_engineering",
+                report_data=report_data,
+                report_type="feature_engineering_report",
+                additional_metadata={
+                    "total_features": len(features_result["features_train"].columns),
+                    "feature_categories": len(features_result["metadata"].get("feature_categories", {})),
+                    "timeframe": timeframe,
+                }
+            )
+            system_logger.info(f"✅ Logged feature engineering report: {report_name}")
+            
+            # Log feature engineering metrics
+            if "metadata" in features_result and "metrics" in features_result["metadata"]:
+                metrics = features_result["metadata"]["metrics"]
+                numeric_metrics = {}
+                for key, value in metrics.items():
+                    if isinstance(value, (int, float)):
+                        numeric_metrics[f"step6_{key}"] = float(value)
+                
+                if numeric_metrics:
+                    log_step_metrics(
+                        config=config,
+                        step_name="step6_feature_engineering",
+                        metrics=numeric_metrics,
+                        additional_metadata={
+                            "metrics_type": "feature_engineering",
+                            "feature_count": len(features_result["features_train"].columns),
+                            "timeframe": timeframe,
+                        }
+                    )
+            
+            system_logger.info("✅ Feature artifacts logged to MLflow with standardized naming successfully")
+            
+        except Exception as e:
+            system_logger.warning(f"⚠️ MLflow logging failed for step 6: {e}")
+            # Don't fail the step if MLflow logging fails
         
         system_logger.info(f"✅ Saved feature artifacts to {output_dir}")
         return True

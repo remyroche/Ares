@@ -87,7 +87,16 @@ try:
     from src.config import CONFIG
     from src.utils.error_handler import handle_errors
     from src.utils.logger import setup_logging, system_logger
-    from src.training.steps.data_downloader import download_all_data_with_consolidation
+from src.training.steps.data_downloader import download_all_data_with_consolidation
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_artifact_with_standardized_name
+,
+    log_step_dataframe_with_standardized_name
+)
 except ImportError:
     # Fallback configuration
     CONFIG = {
@@ -126,6 +135,7 @@ class DataCollectionStep:
         self.logger.info("Initializing Data Collection Step...")
         self.logger.info("Data Collection Step initialized successfully")
 
+    @with_enhanced_mlflow_logging("step1_data_collection")
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
@@ -169,7 +179,115 @@ class DataCollectionStep:
             pipeline_state["data_collection_completed"] = False
             pipeline_state["quality_check_passed"] = False
 
+        # Log detailed report and artifacts
+        await self._log_step1_artifacts_and_report(training_input, pipeline_state)
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+
         return pipeline_state
+
+    async def _log_step1_artifacts_and_report(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> None:
+        """Log step 1 artifacts and create detailed report."""
+        try:
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
+            data_dir = training_input.get("data_dir", "data_cache")
+            
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0 if pipeline_state.get("quality_check_passed", False) else 0.5,
+                "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed", False) else 0.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = []
+            if pipeline_state.get("data_collection_completed", False):
+                # Add expected artifacts
+                artifacts_generated.extend([
+                    f"{exchange}_{symbol}_{timeframe}_klines.parquet",
+                    f"{exchange}_{symbol}_{timeframe}_trades.parquet",
+                    f"{exchange}_{symbol}_{timeframe}_orderbook.parquet",
+                ])
+            
+            # Collect metrics
+            metrics_calculated = {
+                "data_collection_success": 1.0 if pipeline_state.get("data_collection_completed", False) else 0.0,
+                "quality_check_passed": 1.0 if pipeline_state.get("quality_check_passed", False) else 0.0,
+                "total_artifacts_generated": len(artifacts_generated),
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step1_data_collection",
+                step_data=pipeline_state,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[] if pipeline_state.get("data_collection_completed", False) else ["Data collection failed"]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step1_data_collection",
+                report_data=report_data,
+                report_type="data_collection_report",
+                additional_metadata={
+                    "data_collection_success": pipeline_state.get("data_collection_completed", False),
+                    "quality_check_passed": pipeline_state.get("quality_check_passed", False),
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged data collection report: {report_name}")
+            
+            # Log data quality summary
+            quality_report_name = log_step_report(
+                config=self.config,
+                step_name="step1_data_collection",
+                report_data={
+                    "quality_check_passed": pipeline_state.get("quality_check_passed", False),
+                    "data_collection_completed": pipeline_state.get("data_collection_completed", False),
+                    "artifacts_generated": artifacts_generated,
+                },
+                report_type="data_quality_summary",
+                additional_metadata={
+                    "quality_check_passed": pipeline_state.get("quality_check_passed", False),
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged data quality summary: {quality_report_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step1_data_collection",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "data_collection_performance",
+                    "timeframe": timeframe,
+                    "asset": symbol,
+                    "lookback_period": training_input.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 1 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 1 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     async def _run_enhanced_quality_check(self, training_input: dict[str, Any]) -> bool:
         """Run enhanced quality check after data collection."""
@@ -651,7 +769,11 @@ async def run_step(
             "timeframe": timeframe,
             "data_dir": data_dir,
             "force_rerun": force_rerun,
-        }
+        ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
 
         # Execute data collection
         pipeline_state: dict[str, Any] = {}

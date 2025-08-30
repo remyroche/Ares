@@ -818,29 +818,63 @@ class EnhancedLMOptimizer:
     ) -> None:
         """Log experiment trial to MLflow and/or Weights & Biases."""
         try:
-            # Log to MLflow
+            # Log to MLflow with enhanced metadata
             if hasattr(self, "mlflow_available") and self.mlflow_available:
                 try:
                     import mlflow
-                    with mlflow.start_run(nested=True):
-                        # Log hyperparameters
-                        mlflow.log_params(params)
-                        mlflow.log_params({
+                    from src.utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
+                    
+                    # Extract metadata from config
+                    config = getattr(self, 'config', {})
+                    symbol = config.get('trading_symbol', 'ETHUSDT')
+                    exchange = config.get('exchange_name', 'BINANCE')
+                    lookback_years = config.get('lookback_years', 2)
+                    lookback_period = f"{lookback_years}_years"
+                    
+                    with mlflow.start_run(nested=True) as run:
+                        # Log hyperparameters with metadata
+                        all_params = {
+                            **params,
                             "step_name": step_name,
                             "architecture": architecture,
                             "model_type": model_type,
                             "trial_number": trial.number,
-                        })
+                        }
+                        
+                        log_params_with_metadata(
+                            params=all_params,
+                            asset=symbol,
+                            exchange=exchange,
+                            lookback_period=lookback_period,
+                            run_id=run.info.run_id,
+                            additional_metadata={
+                                "optimization_type": "enhanced_lm_optimizer",
+                                "trial_type": "hyperparameter_optimization",
+                            }
+                        )
 
-                        # Log metrics
-                        mlflow.log_metric("final_score", final_score)
-                        mlflow.log_metric("cv_mean", cv_scores.mean())
-                        mlflow.log_metric("cv_std", cv_scores.std())
-                        mlflow.log_metric("cv_min", cv_scores.min())
-                        mlflow.log_metric("cv_max", cv_scores.max())
-
-                        # Log CV scores as list
-                        mlflow.log_metric("cv_scores", cv_scores.tolist())
+                        # Log metrics with metadata
+                        metrics = {
+                            "final_score": final_score,
+                            "cv_mean": cv_scores.mean(),
+                            "cv_std": cv_scores.std(),
+                            "cv_min": cv_scores.min(),
+                            "cv_max": cv_scores.max(),
+                            "cv_scores": cv_scores.tolist(),
+                        }
+                        
+                        log_metrics_with_metadata(
+                            metrics=metrics,
+                            asset=symbol,
+                            exchange=exchange,
+                            lookback_period=lookback_period,
+                            run_id=run.info.run_id,
+                            additional_metadata={
+                                "optimization_type": "enhanced_lm_optimizer",
+                                "architecture": architecture,
+                                "model_type": model_type,
+                            }
+                        )
 
                 except Exception as e:
                     self.logger.warning(f"⚠️ MLflow logging failed: {e}")

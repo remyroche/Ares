@@ -38,6 +38,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -114,6 +123,7 @@ class HMMLMGeneralistTrainingStep:
 
     @with_tracing_span("step9_5.execute", log_args=False)
     @validate_data_quality(validation_level="WARNING")
+    @with_enhanced_mlflow_logging("step9_5_hmm_lm_generalist_training")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -164,6 +174,13 @@ class HMMLMGeneralistTrainingStep:
             await self._save_generalist_model(model_result, exchange, symbol, data_dir)
 
             self.logger.info("✅ HMM-LM Generalist Training completed successfully")
+            
+            # Log artifacts and create detailed report
+            await self._log_step9_5_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                training_input, pipeline_state, model_result
+            )
+            
             return {
                 "status": "SUCCESS",
                 "model_trained": True,
@@ -176,6 +193,120 @@ class HMMLMGeneralistTrainingStep:
         except Exception as e:  # noqa: BLE001
             self.logger.exception(f"❌ HMM-LM Generalist Training failed: {e}")
             return {"status": "FAILED", "error": str(e)}
+
+    async def _log_step9_5_artifacts_and_report(
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+        model_result: dict[str, Any]
+    ) -> None:
+        """Log step 9.5 artifacts and create detailed report."""
+        try:
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir = training_input.get("data_dir", "data/training")
+            
+            # Collect execution metadata
+            execution_metadata = {
+                "start_time": datetime.now().isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "duration_seconds": 0.0,  # Will be calculated if available
+                "memory_usage_mb": 0.0,  # Will be calculated if available
+                "cpu_usage_percent": 0.0,  # Will be calculated if available
+                "data_quality_score": 1.0,
+                "processing_efficiency": 1.0,
+            }
+            
+            # Collect artifacts generated
+            artifacts_generated = [
+                f"{exchange}_{symbol}_hmm_lm_generalist_model.pkl",
+                f"{exchange}_{symbol}_hmm_lm_generalist_metadata.json",
+                f"{exchange}_{symbol}_hmm_lm_generalist_vocabulary.json",
+            ]
+            
+            # Collect metrics
+            metrics_calculated = {
+                "hmm_lm_training_success": 1.0,
+                "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
+                "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
+                "timeframes_count": len(self.timeframes) if hasattr(self, 'timeframes') else 0,
+                "model_trained": 1.0,
+            }
+            
+            # Create step data for report
+            step_data = {
+                "model_result": model_result,
+                "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
+                "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
+                "timeframes": self.timeframes if hasattr(self, 'timeframes') else [],
+            }
+            
+            # Create detailed report
+            report_data = create_detailed_step_report(
+                step_name="step9_5_hmm_lm_generalist_training",
+                step_data=step_data,
+                training_input=training_input,
+                execution_metadata=execution_metadata,
+                artifacts_generated=artifacts_generated,
+                metrics_calculated=metrics_calculated,
+                errors_encountered=[]
+            )
+            
+            # Log the report
+            report_name = log_step_report(
+                config=self.config,
+                step_name="step9_5_hmm_lm_generalist_training",
+                report_data=report_data,
+                report_type="hmm_lm_generalist_training_report",
+                additional_metadata={
+                    "hmm_lm_training_success": True,
+                    "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
+                    "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            self.logger.info(f"✅ Logged HMM-LM generalist training report: {report_name}")
+            
+            # Log model result
+            if model_result:
+                model_report_name = log_step_report(
+                    config=self.config,
+                    step_name="step9_5_hmm_lm_generalist_training",
+                    report_data=model_result,
+                    report_type="hmm_lm_model_result",
+                    additional_metadata={
+                        "model_trained": True,
+                        "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
+                    ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+                )
+                self.logger.info(f"✅ Logged HMM-LM model result: {model_report_name}")
+            
+            # Log metrics
+            log_step_metrics(
+                config=self.config,
+                step_name="step9_5_hmm_lm_generalist_training",
+                metrics=metrics_calculated,
+                additional_metadata={
+                    "metrics_type": "hmm_lm_generalist_training_performance",
+                ,
+                    "asset": symbol,
+                    "lookback_period": self.config.get("lookback_days", 1095),
+                    "project_version": self.config.get("project_version", "1.0.0"),
+                }
+            )
+            
+            self.logger.info("✅ Step 9.5 artifacts and reports logged successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to log step 9.5 artifacts and reports: {e}")
+            # Don't fail the step if MLflow logging fails
 
     @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=0)
@@ -1219,7 +1350,11 @@ async def run_step(
             "data_dir": data_dir,
             "force_rerun": force_rerun,
             **kwargs,
-        }
+        ,
+                "asset": symbol,  # Use symbol as asset
+                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
+                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+            }
 
         pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)

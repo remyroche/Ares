@@ -133,6 +133,19 @@ async def test_sr_backtesting_validation():
                 "min_bounce_rate": 0.6,  # 60% minimum bounce rate
                 "max_false_breakout_rate": 0.3,  # 30% max false breakouts
                 "min_volume_confirmation": 0.5,  # 50% volume confirmation
+                "age_decay_factor": 0.95,  # 5% decay per period
+                "max_level_age_days": 365,  # 1 year max age
+                "trend_period": 50,  # Periods for trend calculation
+                "volatility_period": 20,  # Periods for volatility calculation
+                "enable_multi_timeframe": True,
+                "timeframe_weights": {
+                    "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
+                },
+                "enable_price_action_analysis": True,
+                "candlestick_patterns": ["doji", "hammer", "shooting_star", "engulfing", "pin_bar"],
+                "enable_statistical_validation": True,
+                "monte_carlo_iterations": 100,  # Reduced for testing
+                "out_of_sample_ratio": 0.2,
             }
         }
         

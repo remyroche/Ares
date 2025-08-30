@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import warnings
+from scipy import stats
+from sklearn.cluster import DBSCAN
 warnings.filterwarnings('ignore')
 
 from src.utils.logger import system_logger
@@ -47,6 +49,30 @@ class SRLevelTest:
     volume_weighted_bounce_rate: float = 0.0  # Bounce rate weighted by volume
     institutional_volume_ratio: float = 0.0  # Large volume bars ratio
     volume_cluster_score: float = 0.0  # Volume clustering around level
+    
+    # Time-based analysis
+    level_age_days: int = 0
+    age_decay_factor: float = 1.0  # How much level effectiveness decays over time
+    first_touch_date: datetime = None
+    last_touch_date: datetime = None
+    
+    # Market context analysis
+    trend_context_score: float = 0.0  # How well level works in current trend
+    volatility_regime_score: float = 0.0  # Performance in current volatility
+    market_structure_score: float = 0.0  # Bull/bear market performance
+    
+    # Multi-timeframe validation
+    multi_timeframe_score: float = 0.0  # Confluence across timeframes
+    higher_timeframe_alignment: float = 0.0  # Alignment with higher timeframes
+    
+    # Price action confirmation
+    candlestick_confirmation_rate: float = 0.0  # % of touches with confirming patterns
+    rejection_pattern_score: float = 0.0  # Strength of rejection signals
+    consolidation_score: float = 0.0  # Price consolidation around level
+    
+    # Statistical validation
+    statistical_significance: float = 0.0  # P-value for statistical significance
+    monte_carlo_score: float = 0.0  # Robustness score from Monte Carlo simulation
 
 
 @dataclass
@@ -76,6 +102,30 @@ class BacktestResult:
     avg_volume_confirmation_rate: float = 0.0
     avg_institutional_volume_ratio: float = 0.0
     avg_volume_cluster_score: float = 0.0
+    
+    # Time-based analysis metrics
+    avg_level_age_days: float = 0.0
+    avg_age_decay_factor: float = 1.0
+    level_persistence_score: float = 0.0  # How long levels remain valid
+    
+    # Market context metrics
+    avg_trend_context_score: float = 0.0
+    avg_volatility_regime_score: float = 0.0
+    avg_market_structure_score: float = 0.0
+    
+    # Multi-timeframe metrics
+    avg_multi_timeframe_score: float = 0.0
+    avg_higher_timeframe_alignment: float = 0.0
+    
+    # Price action metrics
+    avg_candlestick_confirmation_rate: float = 0.0
+    avg_rejection_pattern_score: float = 0.0
+    avg_consolidation_score: float = 0.0
+    
+    # Statistical validation metrics
+    avg_statistical_significance: float = 0.0
+    avg_monte_carlo_score: float = 0.0
+    out_of_sample_score: float = 0.0  # Performance on unseen data
     
     # S/R validation score
     sr_validation_score: float = 0.0
@@ -120,10 +170,35 @@ class SRBacktestingValidator:
     self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
     self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
         
-            # S/R validation configuration
-    self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
-    self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
-    self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
+                    # S/R validation configuration
+        self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
+        self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
+        self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
+        
+        # Time-based analysis configuration
+        self.age_decay_factor = self.backtest_config.get("age_decay_factor", 0.95)  # 5% decay per period
+        self.max_level_age_days = self.backtest_config.get("max_level_age_days", 365)  # 1 year max age
+        
+        # Market context configuration
+        self.trend_period = self.backtest_config.get("trend_period", 50)  # Periods for trend calculation
+        self.volatility_period = self.backtest_config.get("volatility_period", 20)  # Periods for volatility calculation
+        
+        # Multi-timeframe configuration
+        self.enable_multi_timeframe = self.backtest_config.get("enable_multi_timeframe", True)
+        self.timeframe_weights = self.backtest_config.get("timeframe_weights", {
+            "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
+        })
+        
+        # Price action configuration
+        self.enable_price_action_analysis = self.backtest_config.get("enable_price_action_analysis", True)
+        self.candlestick_patterns = self.backtest_config.get("candlestick_patterns", [
+            "doji", "hammer", "shooting_star", "engulfing", "pin_bar"
+        ])
+        
+        # Statistical validation configuration
+        self.enable_statistical_validation = self.backtest_config.get("enable_statistical_validation", True)
+        self.monte_carlo_iterations = self.backtest_config.get("monte_carlo_iterations", 1000)
+        self.out_of_sample_ratio = self.backtest_config.get("out_of_sample_ratio", 0.2)
         
     @handle_specific_errors(
         error_handlers={
@@ -137,7 +212,8 @@ class SRBacktestingValidator:
         self,
         market_data: pd.DataFrame,
         sr_levels: List[Dict[str, Any]],
-        current_price: float
+        current_price: float,
+        multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
     ) -> Optional[BacktestResult]:
         """
         Validate S/R levels through comprehensive backtesting.
@@ -157,14 +233,19 @@ class SRBacktestingValidator:
             result = BacktestResult()
             result.total_levels_tested = len(sr_levels)
             
+            # Calculate market context metrics
+            market_context = await self._calculate_market_context(market_data)
+            
             # Test each S/R level
             for level in sr_levels:
-                level_test = await self._test_single_level(market_data, level, current_price)
+                level_test = await self._test_single_level(
+                    market_data, level, current_price, market_context, multi_timeframe_data
+                )
                 if level_test:
                     result.level_tests.append(level_test)
                     
                     # Update overall metrics
-                    if level_test.bounce_rate > 0.6:  # Consider successful if >60% bounce rate
+                    if level_test.bounce_rate > self.min_bounce_rate:
                         result.successful_levels += 1
             
             # Calculate overall metrics
@@ -173,7 +254,11 @@ class SRBacktestingValidator:
             # Calculate S/R validation score
             await self._calculate_sr_validation_score(result)
             
-            self.logger.info(f"✅ S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
+            # Perform statistical validation if enabled
+            if self.enable_statistical_validation:
+                await self._perform_statistical_validation(result, market_data)
+            
+            self.logger.info(f"✅ Comprehensive S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
             return result
             
         except Exception as e:
@@ -184,7 +269,9 @@ class SRBacktestingValidator:
         self,
         market_data: pd.DataFrame,
         level: Dict[str, Any],
-        current_price: float
+        current_price: float,
+        market_context: Dict[str, Any],
+        multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
     ) -> Optional[SRLevelTest]:
         """Test a single S/R level."""
         try:
@@ -224,7 +311,16 @@ class SRBacktestingValidator:
             # Analyze volume patterns
             await self._analyze_volume_patterns(test, market_data, touch_volumes, touch_indices, level_price)
             
-            # Calculate confidence score with volume analysis
+            # Analyze time-based factors
+            await self._analyze_time_based_factors(test, market_data, touch_indices)
+            
+            # Analyze market context
+            await self._analyze_market_context(test, market_context, touch_indices)
+            
+            # Analyze price action patterns
+            await self._analyze_price_action(test, market_data, touch_indices)
+            
+            # Calculate confidence score with comprehensive analysis
             test.confidence_score = self._calculate_level_confidence(test)
             
             return test
@@ -584,6 +680,34 @@ class SRBacktestingValidator:
                 result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
                 result.avg_volume_cluster_score = np.mean([test.volume_cluster_score for test in result.level_tests])
             
+            # Calculate time-based metrics
+            if result.level_tests:
+                result.avg_level_age_days = np.mean([test.level_age_days for test in result.level_tests])
+                result.avg_age_decay_factor = np.mean([test.age_decay_factor for test in result.level_tests])
+                result.level_persistence_score = np.mean([1 - test.age_decay_factor for test in result.level_tests])
+            
+            # Calculate market context metrics
+            if result.level_tests:
+                result.avg_trend_context_score = np.mean([test.trend_context_score for test in result.level_tests])
+                result.avg_volatility_regime_score = np.mean([test.volatility_regime_score for test in result.level_tests])
+                result.avg_market_structure_score = np.mean([test.market_structure_score for test in result.level_tests])
+            
+            # Calculate multi-timeframe metrics
+            if result.level_tests:
+                result.avg_multi_timeframe_score = np.mean([test.multi_timeframe_score for test in result.level_tests])
+                result.avg_higher_timeframe_alignment = np.mean([test.higher_timeframe_alignment for test in result.level_tests])
+            
+            # Calculate price action metrics
+            if result.level_tests:
+                result.avg_candlestick_confirmation_rate = np.mean([test.candlestick_confirmation_rate for test in result.level_tests])
+                result.avg_rejection_pattern_score = np.mean([test.rejection_pattern_score for test in result.level_tests])
+                result.avg_consolidation_score = np.mean([test.consolidation_score for test in result.level_tests])
+            
+            # Calculate statistical validation metrics
+            if result.level_tests:
+                result.avg_statistical_significance = np.mean([test.statistical_significance for test in result.level_tests])
+                result.avg_monte_carlo_score = np.mean([test.monte_carlo_score for test in result.level_tests])
+            
             # Calculate level detection accuracy
             if result.total_levels_tested > 0:
                 result.level_detection_accuracy = result.successful_levels / result.total_levels_tested
@@ -605,13 +729,18 @@ class SRBacktestingValidator:
             
             level_accuracy_score = result.level_detection_accuracy
             
-            # Weighted S/R validation score
+            # Enhanced S/R validation score with comprehensive factors
             result.sr_validation_score = (
-                bounce_score * 0.3 +           # 30% - Bounce rate
-                false_breakout_score * 0.25 +   # 25% - Low false breakouts
-                volume_score * 0.2 +           # 20% - Volume confirmation
-                confidence_score * 0.15 +      # 15% - Overall confidence
-                level_accuracy_score * 0.1     # 10% - Level detection accuracy
+                bounce_score * 0.25 +                    # 25% - Bounce rate
+                false_breakout_score * 0.20 +            # 20% - Low false breakouts
+                volume_score * 0.15 +                    # 15% - Volume confirmation
+                confidence_score * 0.10 +                # 10% - Overall confidence
+                level_accuracy_score * 0.05 +            # 5% - Level detection accuracy
+                result.level_persistence_score * 0.05 +  # 5% - Level persistence
+                result.avg_trend_context_score * 0.05 +  # 5% - Trend context
+                result.avg_candlestick_confirmation_rate * 0.05 +   # 5% - Price action confirmation
+                result.avg_statistical_significance * 0.05 +  # 5% - Statistical significance
+                result.avg_monte_carlo_score * 0.05      # 5% - Monte Carlo robustness
             )
             
             self.logger.info(f"📊 S/R Validation Score Components:")
@@ -624,6 +753,305 @@ class SRBacktestingValidator:
             
         except Exception as e:
             self.logger.error(f"Failed to calculate S/R validation score: {e}")
+    
+    async def _calculate_market_context(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate market context metrics for S/R validation."""
+        try:
+            context = {}
+            
+            # Calculate trend
+            if len(market_data) >= self.trend_period:
+                sma = market_data['close'].rolling(window=self.trend_period).mean()
+                current_price = market_data['close'].iloc[-1]
+                current_sma = sma.iloc[-1]
+                
+                if current_price > current_sma:
+                    context['trend'] = 'bullish'
+                    context['trend_strength'] = (current_price - current_sma) / current_sma
+                else:
+                    context['trend'] = 'bearish'
+                    context['trend_strength'] = (current_sma - current_price) / current_sma
+            
+            # Calculate volatility regime
+            if len(market_data) >= self.volatility_period:
+                returns = market_data['close'].pct_change().dropna()
+                volatility = returns.rolling(window=self.volatility_period).std()
+                current_volatility = volatility.iloc[-1]
+                avg_volatility = volatility.mean()
+                
+                if current_volatility > avg_volatility * 1.2:
+                    context['volatility_regime'] = 'high'
+                elif current_volatility < avg_volatility * 0.8:
+                    context['volatility_regime'] = 'low'
+                else:
+                    context['volatility_regime'] = 'normal'
+                
+                context['volatility_ratio'] = current_volatility / avg_volatility
+            
+            # Determine market structure (bull/bear market)
+            if len(market_data) >= 200:  # Need enough data for market structure
+                long_sma = market_data['close'].rolling(window=200).mean()
+                short_sma = market_data['close'].rolling(window=50).mean()
+                
+                if short_sma.iloc[-1] > long_sma.iloc[-1]:
+                    context['market_structure'] = 'bull'
+                else:
+                    context['market_structure'] = 'bear'
+            
+            return context
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate market context: {e}")
+            return {}
+    
+    async def _analyze_time_based_factors(
+        self,
+        test: SRLevelTest,
+        market_data: pd.DataFrame,
+        touch_indices: List[int]
+    ) -> None:
+        """Analyze time-based factors affecting S/R level validity."""
+        try:
+            if not touch_indices:
+                return
+            
+            # Calculate level age
+            first_touch_idx = min(touch_indices)
+            last_touch_idx = max(touch_indices)
+            
+            test.first_touch_date = market_data.index[first_touch_idx]
+            test.last_touch_date = market_data.index[last_touch_idx]
+            
+            # Calculate age in days
+            if test.first_touch_date and test.last_touch_date:
+                age_delta = test.last_touch_date - test.first_touch_date
+                test.level_age_days = age_delta.days
+            
+            # Calculate age decay factor
+            if test.level_age_days > 0:
+                # Exponential decay based on age
+                test.age_decay_factor = self.age_decay_factor ** (test.level_age_days / 30)  # Decay per month
+            
+        except Exception as e:
+            self.logger.error(f"Failed to analyze time-based factors: {e}")
+    
+    async def _analyze_market_context(
+        self,
+        test: SRLevelTest,
+        market_context: Dict[str, Any],
+        touch_indices: List[int]
+    ) -> None:
+        """Analyze how market context affects S/R level performance."""
+        try:
+            if not market_context:
+                return
+            
+            # Trend context score
+            if 'trend' in market_context:
+                if test.level_type == 'support' and market_context['trend'] == 'bullish':
+                    test.trend_context_score = 1.0
+                elif test.level_type == 'resistance' and market_context['trend'] == 'bearish':
+                    test.trend_context_score = 1.0
+                else:
+                    test.trend_context_score = 0.5  # Neutral
+            
+            # Volatility regime score
+            if 'volatility_regime' in market_context:
+                if market_context['volatility_regime'] == 'normal':
+                    test.volatility_regime_score = 1.0
+                elif market_context['volatility_regime'] == 'low':
+                    test.volatility_regime_score = 0.8  # Slightly better in low volatility
+                else:
+                    test.volatility_regime_score = 0.6  # Worse in high volatility
+            
+            # Market structure score
+            if 'market_structure' in market_context:
+                if test.level_type == 'support' and market_context['market_structure'] == 'bull':
+                    test.market_structure_score = 1.0
+                elif test.level_type == 'resistance' and market_context['market_structure'] == 'bear':
+                    test.market_structure_score = 1.0
+                else:
+                    test.market_structure_score = 0.7  # Still works but less effective
+            
+        except Exception as e:
+            self.logger.error(f"Failed to analyze market context: {e}")
+    
+    async def _analyze_price_action(
+        self,
+        test: SRLevelTest,
+        market_data: pd.DataFrame,
+        touch_indices: List[int]
+    ) -> None:
+        """Analyze price action patterns at S/R levels."""
+        try:
+            if not touch_indices or not self.enable_price_action_analysis:
+                return
+            
+            candlestick_confirmations = 0
+            rejection_strength = 0.0
+            consolidation_periods = 0
+            
+            for touch_idx in touch_indices:
+                if touch_idx >= len(market_data) - 1:
+                    continue
+                
+                # Analyze candlestick patterns
+                current_bar = market_data.iloc[touch_idx]
+                next_bar = market_data.iloc[touch_idx + 1]
+                
+                # Check for rejection patterns
+                if test.level_type == 'support':
+                    # Hammer, doji, or strong bounce
+                    body_size = abs(current_bar['close'] - current_bar['open'])
+                    lower_shadow = min(current_bar['open'], current_bar['close']) - current_bar['low']
+                    
+                    if lower_shadow > body_size * 2:  # Hammer-like pattern
+                        candlestick_confirmations += 1
+                        rejection_strength += lower_shadow / current_bar['close']
+                    
+                    # Check for bounce in next bar
+                    if next_bar['close'] > current_bar['close']:
+                        rejection_strength += (next_bar['close'] - current_bar['close']) / current_bar['close']
+                
+                elif test.level_type == 'resistance':
+                    # Shooting star, doji, or strong rejection
+                    body_size = abs(current_bar['close'] - current_bar['open'])
+                    upper_shadow = current_bar['high'] - max(current_bar['open'], current_bar['close'])
+                    
+                    if upper_shadow > body_size * 2:  # Shooting star-like pattern
+                        candlestick_confirmations += 1
+                        rejection_strength += upper_shadow / current_bar['close']
+                    
+                    # Check for rejection in next bar
+                    if next_bar['close'] < current_bar['close']:
+                        rejection_strength += (current_bar['close'] - next_bar['close']) / current_bar['close']
+                
+                # Check for consolidation
+                if touch_idx > 0 and touch_idx < len(market_data) - 1:
+                    prev_bar = market_data.iloc[touch_idx - 1]
+                    price_range = max(prev_bar['high'], current_bar['high'], next_bar['high']) - \
+                                 min(prev_bar['low'], current_bar['low'], next_bar['low'])
+                    avg_price = (prev_bar['close'] + current_bar['close'] + next_bar['close']) / 3
+                    
+                    if price_range / avg_price < 0.02:  # Less than 2% range
+                        consolidation_periods += 1
+            
+            # Calculate scores
+            if touch_indices:
+                test.candlestick_confirmation_rate = candlestick_confirmations / len(touch_indices)
+                test.rejection_pattern_score = min(rejection_strength / len(touch_indices), 1.0)
+                test.consolidation_score = min(consolidation_periods / len(touch_indices), 1.0)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to analyze price action: {e}")
+    
+    async def _perform_statistical_validation(
+        self,
+        result: BacktestResult,
+        market_data: pd.DataFrame
+    ) -> None:
+        """Perform statistical validation of S/R level results."""
+        try:
+            if not result.level_tests:
+                return
+            
+            # Calculate statistical significance
+            bounce_rates = [test.bounce_rate for test in result.level_tests if test.touches > 0]
+            if bounce_rates:
+                # Test if bounce rate is significantly different from random (50%)
+                t_stat, p_value = stats.ttest_1samp(bounce_rates, 0.5)
+                result.avg_statistical_significance = 1 - p_value  # Convert to confidence level
+            
+            # Monte Carlo simulation
+            await self._run_monte_carlo_simulation(result, market_data)
+            
+            # Out-of-sample validation
+            await self._perform_out_of_sample_validation(result, market_data)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to perform statistical validation: {e}")
+    
+    async def _run_monte_carlo_simulation(
+        self,
+        result: BacktestResult,
+        market_data: pd.DataFrame
+    ) -> None:
+        """Run Monte Carlo simulation to test robustness."""
+        try:
+            if not result.level_tests:
+                return
+            
+            # Simulate random S/R levels and compare performance
+            random_scores = []
+            actual_score = result.sr_validation_score
+            
+            for _ in range(self.monte_carlo_iterations):
+                # Generate random levels
+                random_levels = []
+                for _ in range(len(result.level_tests)):
+                    random_price = np.random.uniform(
+                        market_data['low'].min(),
+                        market_data['high'].max()
+                    )
+                    random_levels.append({
+                        'price': random_price,
+                        'type': np.random.choice(['support', 'resistance'])
+                    })
+                
+                # Test random levels
+                random_validator = SRBacktestingValidator(self.config)
+                random_result = await random_validator.validate_sr_levels(
+                    market_data, random_levels, market_data['close'].iloc[-1]
+                )
+                
+                if random_result:
+                    random_scores.append(random_result.sr_validation_score)
+            
+            # Calculate robustness score
+            if random_scores:
+                better_than_random = sum(1 for score in random_scores if actual_score > score)
+                result.avg_monte_carlo_score = better_than_random / len(random_scores)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to run Monte Carlo simulation: {e}")
+    
+    async def _perform_out_of_sample_validation(
+        self,
+        result: BacktestResult,
+        market_data: pd.DataFrame
+    ) -> None:
+        """Perform out-of-sample validation."""
+        try:
+            if len(market_data) < 100:  # Need enough data
+                return
+            
+            # Split data into training and testing
+            split_idx = int(len(market_data) * (1 - self.out_of_sample_ratio))
+            train_data = market_data.iloc[:split_idx]
+            test_data = market_data.iloc[split_idx:]
+            
+            # Get S/R levels from training data
+            from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+            sr_predictor = SRBreakoutPredictor(self.config)
+            await sr_predictor.initialize()
+            
+            train_price = train_data['close'].iloc[-1]
+            train_context = await sr_predictor.get_sr_context(train_data, train_price)
+            
+            train_levels = train_context.get("support_levels", []) + train_context.get("resistance_levels", [])
+            
+            if train_levels:
+                # Test on out-of-sample data
+                test_validator = SRBacktestingValidator(self.config)
+                test_result = await test_validator.validate_sr_levels(
+                    test_data, train_levels, test_data['close'].iloc[-1]
+                )
+                
+                if test_result:
+                    result.out_of_sample_score = test_result.sr_validation_score
+            
+        except Exception as e:
+            self.logger.error(f"Failed to perform out-of-sample validation: {e}")
 
 
 # Setup function for easy integration

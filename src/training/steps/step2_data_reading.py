@@ -6,6 +6,7 @@ data quality validation before proceeding to HMM regime discovery.
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -106,8 +107,8 @@ class DataReadingStep:
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
         
         try:
-            # Construct path to unified data
-            unified_data_path = Path(data_dir) / "data_cache" / "unified" / exchange.lower() / symbol / timeframe
+            # Construct path to unified data in structured directory
+            unified_data_path = Path(data_dir) / "unified" / exchange.lower() / symbol / timeframe
             
             if not unified_data_path.exists():
                 self.logger.error(f"❌ Unified data path does not exist: {unified_data_path}")
@@ -320,7 +321,7 @@ class DataReadingStep:
                 }
             
             # Save processed data for next step
-            output_path = Path(data_dir) / "data_cache" / "processed" / f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
+            output_path = Path(data_dir) / "processed" / f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             unified_data.to_parquet(output_path, index=False)
             
@@ -344,10 +345,14 @@ async def run_step_enhanced(
     symbol: str,
     exchange: str,
     timeframe: str,
-    data_dir: str,
+    data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
     **kwargs
 ) -> Dict[str, Any]:
     """Enhanced entry point for Step 2: Data Reading and Validation."""
+    
+    # Construct structured data directory
+    if data_dir is None:
+        data_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
     
     logger.info("🚀 Starting Step 2: Data Reading and Validation (Enhanced)")
     
@@ -379,7 +384,7 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str,
-    data_dir: str,
+    data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
     **kwargs
 ) -> bool:
     """Standard entry point for Step 2: Data Reading and Validation."""
@@ -391,11 +396,17 @@ async def run_step(
 if __name__ == "__main__":
     # Test the step
     async def test():
+        # Test with parameters - these should be passed as arguments in real usage
+        # Note: In real usage, these would be command line arguments or function parameters
+        test_symbol = "TEST_SYMBOL"  # Placeholder for testing
+        test_exchange = "TEST_EXCHANGE"  # Placeholder for testing
+        test_timeframe = "1m"  # Placeholder for testing
+        
         result = await run_step_enhanced(
-            symbol="ETHUSDT",
-            exchange="BINANCE",
-            timeframe="1m",
-            data_dir="data"
+            symbol=test_symbol,
+            exchange=test_exchange,
+            timeframe=test_timeframe,
+            data_dir=None  # Will use structured directory
         )
         print(f"Result: {result}")
     

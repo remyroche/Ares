@@ -27,11 +27,11 @@ def run_command(command, description):
 
 def main():
     """Main function to run the complete analysis pipeline"""
-    print("🚀 CRYPTOCURRENCY TRADING ANALYSIS PIPELINE")
+    print("🚀 CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS PIPELINE")
     print("=" * 60)
     print("This script will:")
     print("1. Download 2 years of 15-minute klines from Binance")
-    print("2. Analyze the data for scalping vs swing trading strategies")
+    print("2. Analyze price movements and triple barrier profit potential")
     print("3. Generate reports and visualizations")
     print("=" * 60)
     
@@ -84,10 +84,12 @@ def main():
     print("   4. Check log files for detailed information")
     
     print(f"\n💡 Tips:")
-    print("   - Higher Sharpe ratios indicate better risk-adjusted returns")
-    print("   - Compare win rates between scalping and swing strategies")
-    print("   - Look for assets with high volume and manageable volatility")
-    print("   - Consider transaction costs in real trading scenarios")
+    print("   - Higher average daily profits indicate better profit potential")
+    print("   - Compare profit frequencies across different barrier levels")
+    print("   - Look for assets with high profit frequency and manageable volatility")
+    print("   - Consider transaction costs and slippage in real trading scenarios")
+    print("   - Lower barrier levels capture more frequent but smaller profits")
+    print("   - Higher barrier levels capture less frequent but larger profits")
 
 if __name__ == "__main__":
     main()

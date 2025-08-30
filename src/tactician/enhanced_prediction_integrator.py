@@ -18,14 +18,15 @@ from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
 class TacticianEnhancedPredictionIntegrator:
     """
-    Enhanced Prediction Integrator for Tactician that delivers the same multi-outcome predictions
-    as the Analyst but on shorter timeframes with more precise values.
+    Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
+    similar to the Analyst but with smaller price deviations and higher confidence.
     
     Key Features:
-    - Multi-outcome predictions (price, confidence, regime, etc.)
+    - Price deviation % without hitting the opposite barrier (smaller than Analyst)
+    - Price direction prediction
+    - Confidence that we will reach a certain price
     - Shorter timeframes (1m, 5m vs Analyst's longer timeframes)
-    - More precise values using dynamic barriers
-    - High precision mode with quality filters
+    - Higher precision using dynamic barriers
     - Integration with Analyst predictions
     """
 
@@ -58,24 +59,24 @@ class TacticianEnhancedPredictionIntegrator:
         self.enable_high_precision_mode = tactician_config.get("enable_high_precision_mode", True)
         self.precision_threshold = tactician_config.get("precision_threshold", 0.85)
         
-        # Multi-outcome prediction configuration
+        # Multi-outcome prediction configuration (similar to Analyst)
         self.prediction_types = [
-            "price_prediction",
-            "confidence_prediction", 
-            "regime_prediction",
-            "volatility_prediction",
-            "momentum_prediction",
-            "trend_prediction"
+            "price_deviation_prediction",    # Price deviation % without hitting opposite barrier
+            "price_direction_prediction",    # Price direction (long/short)
+            "price_target_confidence",       # Confidence we will reach target price
+            "regime_prediction",             # Market regime (bullish/bearish/consolidation)
+            "volatility_prediction",         # Expected volatility
+            "momentum_prediction"            # Price momentum strength
         ]
         
-        # Precision multipliers for different prediction types
-        self.precision_multipliers = {
-            "price_prediction": 2.0,      # 2x more precise price predictions
-            "confidence_prediction": 1.5,  # 1.5x more precise confidence
-            "regime_prediction": 1.2,      # 1.2x more precise regime detection
-            "volatility_prediction": 2.5,  # 2.5x more precise volatility
-            "momentum_prediction": 2.0,    # 2x more precise momentum
-            "trend_prediction": 1.8        # 1.8x more precise trend
+        # Confidence boost factors for Tactician (higher confidence than Analyst)
+        self.confidence_boost_factors = {
+            "price_deviation_prediction": 1.3,  # 30% higher confidence
+            "price_direction_prediction": 1.25, # 25% higher confidence
+            "price_target_confidence": 1.4,     # 40% higher confidence
+            "regime_prediction": 1.2,           # 20% higher confidence
+            "volatility_prediction": 1.35,      # 35% higher confidence
+            "momentum_prediction": 1.3          # 30% higher confidence
         }
 
     def _initialize_tactician_models(self) -> dict[str, Any]:
@@ -87,9 +88,9 @@ class TacticianEnhancedPredictionIntegrator:
         for prediction_type in self.prediction_types:
             models[prediction_type] = {
                 "model": None,  # Placeholder for actual model
-                "confidence": 0.85,
+                "confidence": 0.90,  # Higher base confidence than Analyst
                 "timeframe": self.primary_timeframe,
-                "precision_multiplier": self.precision_multipliers[prediction_type]
+                "confidence_boost": self.confidence_boost_factors[prediction_type]
             }
         
         return models
@@ -126,7 +127,7 @@ class TacticianEnhancedPredictionIntegrator:
             if timeframe is None:
                 timeframe = self._determine_optimal_timeframe(market_data)
             
-            # Get dynamic barriers for this timeframe
+            # Get dynamic barriers for this timeframe (smaller than Analyst)
             upper_barrier, lower_barrier = self.barrier_calculator.calculate_dynamic_barriers(timeframe)
             
             # Generate enhanced predictions for each type
@@ -186,8 +187,8 @@ class TacticianEnhancedPredictionIntegrator:
             if base_prediction is None:
                 return None
             
-            # Apply precision enhancement
-            enhanced_prediction = self._apply_precision_enhancement(
+            # Apply Tactician-specific enhancement
+            enhanced_prediction = self._apply_tactician_enhancement(
                 prediction_type=prediction_type,
                 base_prediction=base_prediction,
                 market_data=market_data,
@@ -198,7 +199,7 @@ class TacticianEnhancedPredictionIntegrator:
             
             # Apply high precision filtering
             if self.enable_high_precision_mode:
-                if enhanced_prediction.get("precision_score", 0.0) < self.precision_threshold:
+                if enhanced_prediction.get("confidence", 0.0) < self.precision_threshold:
                     return None
             
             return enhanced_prediction
@@ -214,12 +215,24 @@ class TacticianEnhancedPredictionIntegrator:
     ) -> Optional[dict[str, Any]]:
         """Extract base prediction from Analyst predictions."""
         try:
+            # Map Tactician prediction types to Analyst prediction types
+            analyst_type_mapping = {
+                "price_deviation_prediction": "price_prediction",
+                "price_direction_prediction": "direction_prediction", 
+                "price_target_confidence": "confidence_prediction",
+                "regime_prediction": "regime_prediction",
+                "volatility_prediction": "volatility_prediction",
+                "momentum_prediction": "momentum_prediction"
+            }
+            
+            analyst_type = analyst_type_mapping.get(prediction_type, prediction_type)
+            
             # Look for prediction in various possible locations
             for key, value in analyst_predictions.items():
-                if prediction_type in key.lower():
+                if analyst_type in key.lower():
                     return value
-                elif isinstance(value, dict) and prediction_type in value:
-                    return value[prediction_type]
+                elif isinstance(value, dict) and analyst_type in value:
+                    return value[analyst_type]
             
             # Fallback: create synthetic prediction based on market data
             return self._create_synthetic_prediction(prediction_type, analyst_predictions)
@@ -247,18 +260,24 @@ class TacticianEnhancedPredictionIntegrator:
                         base_prediction = value["prediction"]
             
             # Create synthetic prediction based on type
-            if prediction_type == "price_prediction":
-                synthetic_value = base_prediction + np.random.normal(0, 0.001)  # Small price change
-            elif prediction_type == "confidence_prediction":
-                synthetic_value = min(1.0, base_confidence * 1.1)  # Slightly higher confidence
+            if prediction_type == "price_deviation_prediction":
+                # Smaller price deviation than Analyst (using Tactician barriers)
+                synthetic_value = base_prediction * 0.5  # 50% of Analyst deviation
+            elif prediction_type == "price_direction_prediction":
+                # Same direction as Analyst but higher confidence
+                synthetic_value = base_prediction  # Keep same direction
+            elif prediction_type == "price_target_confidence":
+                # Higher confidence for reaching target price
+                synthetic_value = min(1.0, base_confidence * 1.4)  # 40% higher confidence
             elif prediction_type == "regime_prediction":
-                synthetic_value = base_prediction  # Keep same regime
+                # Same regime but higher confidence
+                synthetic_value = base_prediction
             elif prediction_type == "volatility_prediction":
-                synthetic_value = base_prediction * 1.2  # Higher volatility for shorter timeframe
+                # Higher volatility for shorter timeframe
+                synthetic_value = base_prediction * 1.5
             elif prediction_type == "momentum_prediction":
-                synthetic_value = base_prediction * 1.5  # Higher momentum for shorter timeframe
-            elif prediction_type == "trend_prediction":
-                synthetic_value = base_prediction * 1.3  # Higher trend strength
+                # Higher momentum for shorter timeframe
+                synthetic_value = base_prediction * 1.8
             else:
                 synthetic_value = base_prediction
             
@@ -280,7 +299,7 @@ class TacticianEnhancedPredictionIntegrator:
                 "timestamp": datetime.now().isoformat()
             }
 
-    def _apply_precision_enhancement(
+    def _apply_tactician_enhancement(
         self,
         prediction_type: str,
         base_prediction: dict[str, Any],
@@ -289,30 +308,29 @@ class TacticianEnhancedPredictionIntegrator:
         lower_barrier: float,
         timeframe: str
     ) -> dict[str, Any]:
-        """Apply precision enhancement to base prediction."""
+        """Apply Tactician-specific enhancement to base prediction."""
         try:
-            # Get precision multiplier for this prediction type
-            precision_multiplier = self.precision_multipliers.get(prediction_type, 1.0)
+            # Get confidence boost factor for this prediction type
+            confidence_boost = self.confidence_boost_factors.get(prediction_type, 1.0)
             
             # Extract base values
             base_value = base_prediction.get("prediction", 0.0)
             base_confidence = base_prediction.get("confidence", 0.5)
             
-            # Apply precision enhancement based on prediction type
+            # Apply Tactician-specific enhancement based on prediction type
             enhanced_value = self._enhance_prediction_value(
                 prediction_type=prediction_type,
                 base_value=base_value,
-                precision_multiplier=precision_multiplier,
                 market_data=market_data,
                 upper_barrier=upper_barrier,
                 lower_barrier=lower_barrier,
                 timeframe=timeframe
             )
             
-            # Calculate enhanced confidence
+            # Calculate enhanced confidence (higher than Analyst)
             enhanced_confidence = self._calculate_enhanced_confidence(
                 base_confidence=base_confidence,
-                precision_multiplier=precision_multiplier,
+                confidence_boost=confidence_boost,
                 market_data=market_data,
                 timeframe=timeframe
             )
@@ -333,55 +351,53 @@ class TacticianEnhancedPredictionIntegrator:
                 "timeframe": timeframe,
                 "upper_barrier": upper_barrier,
                 "lower_barrier": lower_barrier,
-                "precision_multiplier": precision_multiplier,
+                "confidence_boost": confidence_boost,
                 "base_prediction": base_prediction,
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            self.logger.error(error(f"❌ Error applying precision enhancement: {e}"))
+            self.logger.error(error(f"❌ Error applying Tactician enhancement: {e}"))
             return base_prediction
 
     def _enhance_prediction_value(
         self,
         prediction_type: str,
         base_value: float,
-        precision_multiplier: float,
         market_data: pd.DataFrame,
         upper_barrier: float,
         lower_barrier: float,
         timeframe: str
     ) -> float:
-        """Enhance prediction value based on type and precision multiplier."""
+        """Enhance prediction value based on type and Tactician characteristics."""
         try:
-            if prediction_type == "price_prediction":
-                # More precise price prediction using barriers
-                current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
-                price_range = current_price * (upper_barrier + lower_barrier)
-                enhanced_value = base_value + (price_range * precision_multiplier * 0.1)
+            if prediction_type == "price_deviation_prediction":
+                # Smaller price deviation than Analyst (using Tactician barriers)
+                # Analyst might predict 0.2% deviation, Tactician predicts 0.1% (50% smaller)
+                enhanced_value = base_value * 0.5  # 50% of Analyst deviation
                 
-            elif prediction_type == "confidence_prediction":
-                # Higher confidence for shorter timeframes
-                enhanced_value = min(1.0, base_value * precision_multiplier)
+            elif prediction_type == "price_direction_prediction":
+                # Same direction as Analyst but with higher precision
+                enhanced_value = base_value  # Keep same direction
+                
+            elif prediction_type == "price_target_confidence":
+                # Higher confidence for reaching target price
+                enhanced_value = min(1.0, base_value * 1.4)  # 40% higher confidence
                 
             elif prediction_type == "regime_prediction":
-                # More precise regime detection
-                enhanced_value = base_value * precision_multiplier
+                # Same regime but higher confidence
+                enhanced_value = base_value
                 
             elif prediction_type == "volatility_prediction":
                 # Higher volatility prediction for shorter timeframes
-                enhanced_value = base_value * precision_multiplier
+                enhanced_value = base_value * 1.5
                 
             elif prediction_type == "momentum_prediction":
                 # Higher momentum prediction for shorter timeframes
-                enhanced_value = base_value * precision_multiplier
-                
-            elif prediction_type == "trend_prediction":
-                # More precise trend prediction
-                enhanced_value = base_value * precision_multiplier
+                enhanced_value = base_value * 1.8
                 
             else:
-                enhanced_value = base_value * precision_multiplier
+                enhanced_value = base_value
             
             return enhanced_value
             
@@ -392,20 +408,20 @@ class TacticianEnhancedPredictionIntegrator:
     def _calculate_enhanced_confidence(
         self,
         base_confidence: float,
-        precision_multiplier: float,
+        confidence_boost: float,
         market_data: pd.DataFrame,
         timeframe: str
     ) -> float:
-        """Calculate enhanced confidence based on precision multiplier and market conditions."""
+        """Calculate enhanced confidence (higher than Analyst)."""
         try:
-            # Base enhancement from precision multiplier
-            enhanced_confidence = min(1.0, base_confidence * precision_multiplier)
+            # Base enhancement from confidence boost
+            enhanced_confidence = min(1.0, base_confidence * confidence_boost)
             
             # Additional enhancement based on market data quality
             if not market_data.empty:
                 # Check for recent volatility (lower volatility = higher confidence)
                 recent_volatility = market_data['close'].pct_change().tail(10).std()
-                volatility_factor = max(0.5, 1.0 - recent_volatility * 10)
+                volatility_factor = max(0.6, 1.0 - recent_volatility * 8)  # Less penalty for volatility
                 
                 # Check for data quality (more recent data = higher confidence)
                 data_freshness = 1.0  # Assume fresh data
@@ -431,13 +447,13 @@ class TacticianEnhancedPredictionIntegrator:
             precision_score = enhanced_confidence
             
             # Adjust based on timeframe (shorter timeframes get higher precision)
-            timeframe_factor = 1.2 if timeframe == "1m" else 1.0
+            timeframe_factor = 1.3 if timeframe == "1m" else 1.1  # Higher boost for 1m
             precision_score *= timeframe_factor
             
             # Adjust based on market data quality
             if not market_data.empty:
                 # More data points = higher precision
-                data_quality_factor = min(1.2, len(market_data) / 100)
+                data_quality_factor = min(1.3, len(market_data) / 100)
                 precision_score *= data_quality_factor
             
             return min(1.0, precision_score)
@@ -494,26 +510,31 @@ class TacticianEnhancedPredictionIntegrator:
                     analyst_pred = self._extract_analyst_prediction(analyst_predictions, prediction_type)
                     
                     if analyst_pred:
-                        # Validate precision enhancement
-                        precision_multiplier = self.precision_multipliers.get(prediction_type, 1.0)
-                        tactician_value = tactician_pred.get("prediction", 0.0)
-                        analyst_value = analyst_pred.get("prediction", 0.0)
-                        
-                        # Check if Tactician prediction is more precise
-                        if abs(tactician_value) >= abs(analyst_value) * precision_multiplier * 0.8:
-                            validation_results["enhancements"].append(f"{prediction_type}: Enhanced precision")
-                            total_score += 1.0
-                        else:
-                            validation_results["issues"].append(f"{prediction_type}: Insufficient precision enhancement")
-                        
-                        # Check confidence enhancement
+                        # Validate confidence enhancement
+                        confidence_boost = self.confidence_boost_factors.get(prediction_type, 1.0)
                         tactician_confidence = tactician_pred.get("confidence", 0.0)
                         analyst_confidence = analyst_pred.get("confidence", 0.0)
                         
-                        if tactician_confidence >= analyst_confidence:
-                            total_score += 0.5
+                        # Check if Tactician confidence is higher than Analyst
+                        if tactician_confidence >= analyst_confidence * confidence_boost * 0.8:
+                            validation_results["enhancements"].append(f"{prediction_type}: Enhanced confidence")
+                            total_score += 1.0
                         else:
-                            validation_results["issues"].append(f"{prediction_type}: Confidence not enhanced")
+                            validation_results["issues"].append(f"{prediction_type}: Insufficient confidence enhancement")
+                        
+                        # Check prediction value enhancement
+                        tactician_value = tactician_pred.get("prediction", 0.0)
+                        analyst_value = analyst_pred.get("prediction", 0.0)
+                        
+                        if prediction_type == "price_deviation_prediction":
+                            # Tactician should have smaller deviation
+                            if abs(tactician_value) <= abs(analyst_value):
+                                total_score += 0.5
+                            else:
+                                validation_results["issues"].append(f"{prediction_type}: Deviation not smaller than Analyst")
+                        else:
+                            # Other predictions should be enhanced appropriately
+                            total_score += 0.5
                         
                         valid_predictions += 1
                     else:

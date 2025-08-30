@@ -22,16 +22,20 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
 
 class TacticianTripleBarrierLabeler:
-    """Applies a triple barrier to generate labels specifically for a short-term, high-leverage Tactician model.
+    """Applies triple barrier labeling for Tactician multi-outcome predictions.
 
-    This labeler uses FIXED PERCENTAGE barriers and a short time horizon to reward
-    models that can accurately predict immediate, favorable price action under strict risk parameters.
+    This labeler generates multi-outcome predictions similar to the Analyst but with:
+    - Smaller price deviations (using Tactician's 50%/25% barriers)
+    - Higher confidence for reaching target prices
+    - Price direction predictions
+    - Market regime detection
+    - Volatility and momentum predictions
     
     Enhanced for high precision completion of Analyst signals with:
-    - 50% smaller profit take barriers (0.1% vs 0.2%)
-    - 25% smaller stop loss barriers (0.025% vs 0.1%)
-    - Shorter time horizons for precision
-    - Quality filters for execution
+    - 50% smaller upper barriers (0.1% vs 0.2%)
+    - 25% smaller lower barriers (0.025% vs 0.1%)
+    - Higher confidence scores
+    - Multi-outcome prediction structure
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -147,10 +151,77 @@ class TacticianTripleBarrierLabeler:
             self.logger.warning(f"⚠️ Adaptive barrier calculation error: {e}")
             return base_pt, base_sl
 
+    def _generate_multi_outcome_predictions(
+        self,
+        data: pd.DataFrame,
+        entry_idx: int,
+        signal: int,
+        upper_barrier: float,
+        lower_barrier: float,
+        entry_price: float,
+        precision_score: float,
+        quality_score: float
+    ) -> dict[str, Any]:
+        """Generate multi-outcome predictions similar to Analyst but with Tactician characteristics."""
+        try:
+            # Calculate price deviation (smaller than Analyst)
+            if signal == 1:  # Long position
+                price_deviation = (upper_barrier - entry_price) / entry_price
+                price_direction = 1
+            else:  # Short position
+                price_deviation = (entry_price - lower_barrier) / entry_price
+                price_direction = -1
+            
+            # Calculate price target confidence (higher than Analyst)
+            # Base confidence from precision score, boosted for Tactician
+            base_confidence = precision_score
+            confidence_boost = 1.4  # 40% higher confidence than Analyst
+            price_target_confidence = min(1.0, base_confidence * confidence_boost)
+            
+            # Determine regime based on signal and market conditions
+            if signal == 1:
+                regime = 0.7  # Bullish regime
+            else:
+                regime = 0.3  # Bearish regime
+            
+            # Calculate volatility prediction (higher for shorter timeframes)
+            recent_volatility = data['close'].pct_change().tail(10).std()
+            volatility_prediction = recent_volatility * 1.5  # 50% higher for Tactician
+            
+            # Calculate momentum prediction (higher for shorter timeframes)
+            recent_momentum = (data['close'].iloc[-1] - data['close'].iloc[-5]) / data['close'].iloc[-5]
+            momentum_prediction = recent_momentum * 1.8  # 80% higher for Tactician
+            
+            return {
+                "price_deviation": price_deviation,
+                "price_direction": price_direction,
+                "price_target_confidence": price_target_confidence,
+                "regime": regime,
+                "volatility": volatility_prediction,
+                "momentum": momentum_prediction,
+                "label": signal,  # Traditional label for backward compatibility
+                "precision_score": precision_score,
+                "execution_quality": quality_score
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating multi-outcome predictions: {e}")
+            return {
+                "price_deviation": 0.0,
+                "price_direction": 0,
+                "price_target_confidence": 0.0,
+                "regime": 0.5,
+                "volatility": 0.0,
+                "momentum": 0.0,
+                "label": signal,
+                "precision_score": precision_score,
+                "execution_quality": quality_score
+            }
+
     def apply_labels(
         self, data: pd.DataFrame, strategic_signals: pd.Series,
     ) -> pd.DataFrame:
-        """Vectorized application of the enhanced triple barrier method with high precision.
+        """Vectorized application of the enhanced triple barrier method with multi-outcome predictions.
 
         Args:
             data: The 1-minute market data (must contain OHLC columns).
@@ -158,10 +229,10 @@ class TacticianTripleBarrierLabeler:
                                as values, indicating when the Analyst has identified a setup.
 
         Returns:
-            A DataFrame with the new 'tactician_label' column and precision metrics.
+            A DataFrame with multi-outcome predictions and precision metrics.
         """
         self.logger.info(
-            "🔧 Applying enhanced Tactician triple barrier labels with high precision...",
+            "🔧 Applying Tactician multi-outcome predictions with enhanced triple barrier method...",
         )
 
         # Align signals with the data index
@@ -172,6 +243,13 @@ class TacticianTripleBarrierLabeler:
             self.logger.warning(
                 "⚠️ No strategic signals found to label. Returning data without labels.",
             )
+            # Initialize multi-outcome predictions with defaults
+            data["tactician_price_deviation"] = 0.0
+            data["tactician_price_direction"] = 0
+            data["tactician_price_target_confidence"] = 0.0
+            data["tactician_regime"] = 0.0
+            data["tactician_volatility"] = 0.0
+            data["tactician_momentum"] = 0.0
             data["tactician_label"] = -1  # Default to sell signal for binary classification
             data["tactician_precision_score"] = 0.0
             return data
@@ -181,7 +259,15 @@ class TacticianTripleBarrierLabeler:
         # Calculate fixed percentage barriers for each entry point
         entry_prices = data["open"].iloc[entry_indices + 1]
 
-        # Initialize labels and precision scores
+        # Initialize multi-outcome predictions
+        price_deviation_predictions = pd.Series(0.0, index=data.index)
+        price_direction_predictions = pd.Series(0, index=data.index)
+        price_target_confidence = pd.Series(0.0, index=data.index)
+        regime_predictions = pd.Series(0.0, index=data.index)
+        volatility_predictions = pd.Series(0.0, index=data.index)
+        momentum_predictions = pd.Series(0.0, index=data.index)
+        
+        # Initialize traditional labels for backward compatibility
         labels = pd.Series(-1, index=data.index)  # Default to sell signal
         precision_scores = pd.Series(0.0, index=data.index)
         execution_quality = pd.Series(0.0, index=data.index)
@@ -237,29 +323,59 @@ class TacticianTripleBarrierLabeler:
                 precision_score = max(0.0, 1.0 - (time_to_hit / 30)) * 0.5  # Penalty for lower barrier hit
                 quality_score = 0.0  # No quality score for lower barrier hit
 
+            # Generate multi-outcome predictions
+            predictions = self._generate_multi_outcome_predictions(
+                data, entry_idx, signal, upper, lower, entry_prices.iloc[i], precision_score, quality_score
+            )
+            
+            # Store multi-outcome predictions
+            price_deviation_predictions.iloc[entry_idx] = predictions["price_deviation"]
+            price_direction_predictions.iloc[entry_idx] = predictions["price_direction"]
+            price_target_confidence.iloc[entry_idx] = predictions["price_target_confidence"]
+            regime_predictions.iloc[entry_idx] = predictions["regime"]
+            volatility_predictions.iloc[entry_idx] = predictions["volatility"]
+            momentum_predictions.iloc[entry_idx] = predictions["momentum"]
+            
             # Apply high precision mode filtering
             if self.enable_high_precision_mode:
                 if precision_score < self.precision_threshold:
                     labels.iloc[entry_idx] = 0  # Filter out low precision signals
                     precision_score = 0.0
+                    # Reset multi-outcome predictions for low precision signals
+                    price_deviation_predictions.iloc[entry_idx] = 0.0
+                    price_direction_predictions.iloc[entry_idx] = 0
+                    price_target_confidence.iloc[entry_idx] = 0.0
+                    regime_predictions.iloc[entry_idx] = 0.0
+                    volatility_predictions.iloc[entry_idx] = 0.0
+                    momentum_predictions.iloc[entry_idx] = 0.0
 
             precision_scores.iloc[entry_idx] = precision_score
             execution_quality.iloc[entry_idx] = quality_score
 
-        # Add precision metrics to data
+        # Add multi-outcome predictions to data
+        data["tactician_price_deviation"] = price_deviation_predictions
+        data["tactician_price_direction"] = price_direction_predictions
+        data["tactician_price_target_confidence"] = price_target_confidence
+        data["tactician_regime"] = regime_predictions
+        data["tactician_volatility"] = volatility_predictions
+        data["tactician_momentum"] = momentum_predictions
+        
+        # Add traditional labels for backward compatibility
         data["tactician_label"] = labels
         data["tactician_precision_score"] = precision_scores
         data["tactician_execution_quality"] = execution_quality
         
-        # Log enhanced results
+        # Log results
         label_distribution = labels.value_counts()
         avg_precision = precision_scores[precision_scores > 0].mean()
         avg_quality = execution_quality[execution_quality > 0].mean()
+        avg_confidence = price_target_confidence[price_target_confidence > 0].mean()
         
-        self.logger.info(f"Enhanced Tactician labeling complete:")
+        self.logger.info(f"Tactician multi-outcome predictions complete:")
         self.logger.info(f"   Label distribution: {label_distribution}")
         self.logger.info(f"   Average precision score: {avg_precision:.3f}")
         self.logger.info(f"   Average execution quality: {avg_quality:.3f}")
+        self.logger.info(f"   Average price target confidence: {avg_confidence:.3f}")
         self.logger.info(f"   High precision signals: {(precision_scores >= self.precision_threshold).sum()}")
         
         return data

@@ -87,69 +87,80 @@ class EnhancedExecutionManager:
         context="enhanced_execution_manager.validate_analyst_signal"
     )
     @with_tracing_span("EnhancedExecution.validateAnalystSignal")
-    def validate_analyst_signal(
+    def validate_analyst_predictions(
         self, 
-        analyst_signal: Dict[str, Any], 
-        tactician_confidence: float
+        analyst_predictions: Dict[str, Any], 
+        tactician_predictions: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Validate Analyst signal and ensure agreement for high precision execution."""
+        """Validate Analyst predictions and Tactician predictions for execution."""
         try:
-            if not analyst_signal:
+            if not analyst_predictions or not tactician_predictions:
                 return {
                     "valid": False,
-                    "reason": "no_analyst_signal",
+                    "reason": "missing_predictions",
                     "should_execute": False
                 }
             
-            # Check if Analyst wants to enter
-            should_enter = analyst_signal.get("should_enter_position", False)
-            if not should_enter:
+            # Extract key predictions from Analyst
+            analyst_price_pred = analyst_predictions.get("price_prediction", {}).get("prediction", 0.0)
+            analyst_confidence = analyst_predictions.get("confidence_prediction", {}).get("prediction", 0.5)
+            analyst_regime = analyst_predictions.get("regime_prediction", {}).get("prediction", "unknown")
+            
+            # Extract key predictions from Tactician
+            tactician_price_pred = tactician_predictions.get("price_prediction", {}).get("prediction", 0.0)
+            tactician_confidence = tactician_predictions.get("confidence_prediction", {}).get("prediction", 0.5)
+            tactician_regime = tactician_predictions.get("regime_prediction", {}).get("prediction", "unknown")
+            
+            # Check if predictions are valid
+            if analyst_confidence < 0.5 or tactician_confidence < 0.5:
                 return {
                     "valid": False,
-                    "reason": "analyst_no_entry",
-                    "should_execute": False
+                    "should_execute": False,
+                    "reason": "insufficient_confidence",
+                    "analyst_confidence": analyst_confidence,
+                    "tactician_confidence": tactician_confidence
                 }
             
-            # Check direction agreement if required
-            if self.direction_agreement_required:
-                analyst_direction = analyst_signal.get("trade_direction", "neutral")
-                tactician_direction = self._determine_tactician_direction(tactician_confidence)
-                
-                if not self._directions_agree(analyst_direction, tactician_direction):
-                    return {
-                        "valid": False,
-                        "reason": "direction_mismatch",
-                        "analyst_direction": analyst_direction,
-                        "tactician_direction": tactician_direction,
-                        "should_execute": False
-                    }
+            # Determine trade direction based on price predictions
+            if analyst_price_pred > 0 and tactician_price_pred > 0:
+                trade_direction = "long"
+            elif analyst_price_pred < 0 and tactician_price_pred < 0:
+                trade_direction = "short"
+            else:
+                return {
+                    "valid": False,
+                    "should_execute": False,
+                    "reason": "conflicting_price_predictions",
+                    "analyst_price": analyst_price_pred,
+                    "tactician_price": tactician_price_pred
+                }
             
-            # Check confidence thresholds
-            analyst_confidence = analyst_signal.get("entry_confidence", 0.0)
+            # Calculate combined confidence
             combined_confidence = (analyst_confidence + tactician_confidence) / 2
             
             if combined_confidence < self.precision_threshold:
                 return {
                     "valid": False,
-                    "reason": "low_combined_confidence",
+                    "should_execute": False,
+                    "reason": "insufficient_combined_confidence",
                     "analyst_confidence": analyst_confidence,
                     "tactician_confidence": tactician_confidence,
-                    "combined_confidence": combined_confidence,
-                    "should_execute": False
+                    "combined_confidence": combined_confidence
                 }
             
             return {
                 "valid": True,
-                "reason": "signal_validated",
                 "should_execute": True,
+                "trade_direction": trade_direction,
                 "analyst_confidence": analyst_confidence,
                 "tactician_confidence": tactician_confidence,
                 "combined_confidence": combined_confidence,
-                "trade_direction": analyst_signal.get("trade_direction", "neutral")
+                "analyst_regime": analyst_regime,
+                "tactician_regime": tactician_regime
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Error validating analyst signal: {e}")
+            self.logger.error(f"❌ Error validating predictions: {e}")
             return {
                 "valid": False,
                 "reason": "validation_error",
@@ -183,14 +194,14 @@ class EnhancedExecutionManager:
     def calculate_execution_parameters(
         self,
         market_data: pd.DataFrame,
-        analyst_signal: Dict[str, Any],
-        tactician_confidence: float,
+        analyst_predictions: Dict[str, Any],
+        tactician_predictions: Dict[str, Any],
         current_price: float
     ) -> Dict[str, Any]:
-        """Calculate execution parameters with high precision triple barrier strategy."""
+        """Calculate execution parameters with high precision triple barrier strategy based on multi-outcome predictions."""
         try:
-            # Validate analyst signal first
-            validation = self.validate_analyst_signal(analyst_signal, tactician_confidence)
+            # Validate predictions first
+            validation = self.validate_analyst_predictions(analyst_predictions, tactician_predictions)
             if not validation["should_execute"]:
                 return {
                     "should_execute": False,

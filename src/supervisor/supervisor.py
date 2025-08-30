@@ -587,12 +587,6 @@ class Supervisor:
         Enhanced with high precision triple barrier completion.
         """
         try:
-            # Import enhanced execution manager
-            from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-            
-            # Initialize enhanced execution manager
-            enhanced_manager = EnhancedExecutionManager(self.config)
-            
             # Check if Analyst wants to enter
             analyst_decision = analyst_signals.get("analyst_decision", {})
             if not analyst_decision.get("should_enter_position", False):
@@ -613,32 +607,21 @@ class Supervisor:
             # Get current price for execution calculations
             current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
             
-            # Use enhanced execution manager for high precision parameters
-            execution_params = enhanced_manager.calculate_execution_parameters(
-                market_data=market_data,
-                analyst_signal=analyst_decision,
-                tactician_confidence=avg_tactician_confidence,
-                current_price=current_price
-            )
-            
-            if not execution_params.get("should_execute", False):
-                return execution_params
-            
-            # Add additional metadata
-            execution_params.update({
+            # Simple execution parameters (no enhanced execution manager)
+            execution_params = {
+                "should_execute": True,
                 "symbol": symbol,
                 "exchange": exchange,
-                "execution_manager": "enhanced_precision",
-                "barrier_strategy": "fraction_based",
-                "barrier_types": ["upper_barrier", "lower_barrier"],
+                "current_price": current_price,
+                "tactician_confidence": avg_tactician_confidence,
+                "execution_manager": "simple",
+                "barrier_strategy": "step14_based",
                 "timeframes": ["1m", "5m"]
-            })
+            }
             
-            self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")
+            self.logger.info(f"🎯 Simple Tactician Execution Parameters:")
             self.logger.info(f"   Symbol: {symbol}")
-            self.logger.info(f"   Direction: {execution_params.get('trade_direction', 'unknown')}")
-            self.logger.info(f"   Precision Score: {execution_params.get('precision_score', 0.0):.3f}")
-            self.logger.info(f"   Combined Confidence: {execution_params.get('combined_confidence', 0.0):.3f}")
+            self.logger.info(f"   Tactician Confidence: {avg_tactician_confidence:.3f}")
             
             return execution_params
 

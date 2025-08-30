@@ -47,16 +47,8 @@ class TacticianTripleBarrierLabeler:
 
     def _load_enhanced_config(self) -> None:
         """Load enhanced configuration for high precision execution."""
-        # Import dynamic barrier calculator
-        from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-        
-        # Initialize dynamic barrier calculator
-        self.barrier_calculator = DynamicBarrierCalculator(self.config)
-        
-        # Get all 4 barrier combinations for primary timeframe (1m)
-        self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
-            timeframe="1m"
-        )
+        # Calculate 2 barrier combinations directly (no external dependency)
+        self.barrier_combinations = self._calculate_barrier_combinations()
         
         # Get configuration for other settings
         self.max_lookahead = self.config.get("max_lookahead", 50)  # Reduced lookahead
@@ -83,14 +75,43 @@ class TacticianTripleBarrierLabeler:
         self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
         
         # Log configuration
-        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (4 Barrier Combinations):")
+        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (2 Barrier Combinations):")
         self.logger.info(f"   Timeframes: {self.timeframes}")
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
-        self.logger.info(f"   4 Barrier Combinations:")
+        self.logger.info(f"   2 Barrier Combinations:")
         for name, (upper, lower) in self.barrier_combinations.items():
             self.logger.info(f"     {name}: Upper={upper:.4f} ({upper*100:.3f}%), Lower={lower:.4f} ({lower*100:.3f}%)")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
+
+    def _calculate_barrier_combinations(self) -> Dict[str, Tuple[float, float]]:
+        """Calculate 2 barrier combinations based on Analyst values."""
+        # Analyst base values (from step4_analyst_labeling_feature_engineering_components)
+        analyst_upper = 0.002  # 0.2% (Analyst default - profit take)
+        analyst_lower = 0.001  # 0.1% (Analyst default - stop loss)
+        
+        # Get fractions from configuration
+        tactician_config = self.config.get("tactician_triple_barrier", {})
+        fractions = tactician_config.get("analyst_barrier_fractions", {})
+        
+        upper_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
+        lower_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
+        upper_25_fraction = fractions.get("upper_barrier_25_fraction", 0.25)
+        lower_25_fraction = fractions.get("lower_barrier_25_fraction", 0.25)
+        
+        # Calculate 2 barrier combinations
+        barriers = {
+            "barrier_50_50": (
+                analyst_upper * upper_50_fraction,  # 50% upper
+                analyst_lower * lower_50_fraction   # 50% lower
+            ),
+            "barrier_25_25": (
+                analyst_upper * upper_25_fraction,  # 25% upper
+                analyst_lower * lower_25_fraction   # 25% lower
+            )
+        }
+        
+        return barriers
 
     def _apply_quality_filters(self, data: pd.DataFrame, entry_idx: int) -> bool:
         """Apply quality filters for high precision execution."""

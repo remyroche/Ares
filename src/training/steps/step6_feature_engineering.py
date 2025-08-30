@@ -277,6 +277,7 @@ def _categorize_features(feature_columns: List[str]) -> dict:
     categories = {
         "price_features": [],
         "volume_features": [],
+        "vwap_features": [],
         "technical_indicators": [],
         "statistical_features": [],
         "regime_features": [],
@@ -291,6 +292,8 @@ def _categorize_features(feature_columns: List[str]) -> dict:
             categories["price_features"].append(col)
         elif "volume" in col.lower():
             categories["volume_features"].append(col)
+        elif "vwap" in col.lower():
+            categories["vwap_features"].append(col)
         elif any(keyword in col.lower() for keyword in ["sma", "ema", "rsi", "macd", "bb", "atr", "stoch"]):
             categories["technical_indicators"].append(col)
         elif any(keyword in col.lower() for keyword in ["mean", "std", "skew", "kurt", "zscore"]):
@@ -501,6 +504,36 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
     features["price_range"] = (data["high"] - data["low"]) / data["close"]
     features["body_size"] = abs(data["close"] - data["open"]) / data["close"]
     
+    # VWAP calculation and VWAP-based features
+    features["vwap"] = (data["close"] * data["volume"]).rolling(window=20).sum() / data["volume"].rolling(window=20).sum()
+    features["vwap_returns"] = features["vwap"].pct_change()
+    features["vwap_log_returns"] = np.log(features["vwap"] / features["vwap"].shift(1))
+    
+    # VWAP vs Price features
+    features["price_vwap_ratio"] = data["close"] / features["vwap"]
+    features["price_vwap_deviation"] = (data["close"] - features["vwap"]) / features["vwap"]
+    features["price_vwap_spread"] = data["close"] - features["vwap"]
+    
+    # VWAP momentum features
+    features["vwap_momentum_5"] = features["vwap"] / features["vwap"].shift(5) - 1
+    features["vwap_momentum_10"] = features["vwap"] / features["vwap"].shift(10) - 1
+    features["vwap_momentum_20"] = features["vwap"] / features["vwap"].shift(20) - 1
+    
+    # VWAP acceleration features
+    features["vwap_acceleration_5"] = features["vwap_momentum_5"] - features["vwap_momentum_5"].shift(5)
+    features["vwap_acceleration_10"] = features["vwap_momentum_10"] - features["vwap_momentum_10"].shift(10)
+    features["vwap_acceleration_20"] = features["vwap_momentum_20"] - features["vwap_momentum_20"].shift(20)
+    
+    # VWAP volatility features
+    features["vwap_volatility_5"] = features["vwap_returns"].rolling(window=5).std()
+    features["vwap_volatility_10"] = features["vwap_returns"].rolling(window=10).std()
+    features["vwap_volatility_20"] = features["vwap_returns"].rolling(window=20).std()
+    
+    # VWAP momentum volatility features
+    features["vwap_momentum_volatility_5"] = features["vwap_momentum_5"].rolling(window=5).std()
+    features["vwap_momentum_volatility_10"] = features["vwap_momentum_10"].rolling(window=10).std()
+    features["vwap_momentum_volatility_20"] = features["vwap_momentum_20"].rolling(window=20).std()
+    
     # Volume features
     features["volume_ratio"] = data["volume"] / data["volume"].rolling(window=20).mean()
     features["volume_std"] = data["volume"].rolling(window=20).std()
@@ -515,6 +548,12 @@ def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
 def _create_lagged_features(features: pd.DataFrame, lags: list = [1, 2, 3, 5, 10]) -> pd.DataFrame:
     """Create lagged versions of important features."""
     important_features = ["returns", "volume_ratio", "volatility", "rsi"]
+    
+    # Add VWAP-based features to important features list
+    if "vwap_returns" in features.columns:
+        important_features.extend(["vwap_returns", "vwap_momentum_20", "vwap_volatility_20"])
+    if "price_vwap_ratio" in features.columns:
+        important_features.extend(["price_vwap_ratio", "price_vwap_deviation"])
     
     for feature in important_features:
         if feature in features.columns:
@@ -547,7 +586,26 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
             features[f"volume_skew_{window}"] = features["volume_ratio"].rolling(window).skew()
             features[f"volume_kurt_{window}"] = features["volume_ratio"].rolling(window).kurt()
     
-    system_logger.info(f"✅ Created {len(windows) * 7} rolling window features")
+    # VWAP-based rolling window features
+    if "vwap_returns" in features.columns:
+        for window in windows:
+            # VWAP returns rolling statistics
+            features[f"vwap_returns_skew_{window}"] = features["vwap_returns"].rolling(window).skew()
+            features[f"vwap_returns_kurt_{window}"] = features["vwap_returns"].rolling(window).kurt()
+            features[f"vwap_returns_q25_{window}"] = features["vwap_returns"].rolling(window).quantile(0.25)
+            features[f"vwap_returns_q75_{window}"] = features["vwap_returns"].rolling(window).quantile(0.75)
+            features[f"vwap_returns_max_{window}"] = features["vwap_returns"].rolling(window).max()
+            features[f"vwap_returns_min_{window}"] = features["vwap_returns"].rolling(window).min()
+    
+    # VWAP momentum rolling window features
+    if "vwap_momentum_20" in features.columns:
+        for window in [5, 10, 20]:
+            features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window).skew()
+            features[f"vwap_momentum_kurt_{window}"] = features["vwap_momentum_20"].rolling(window).kurt()
+            features[f"vwap_momentum_q25_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.25)
+            features[f"vwap_momentum_q75_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.75)
+    
+    system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else 0) + (3 * 5 if 'vwap_momentum_20' in features.columns else 0)} rolling window features")
     return features
 
 
@@ -567,6 +625,12 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
             regime_mask = data["regime"] == regime
             features[f"regime_{regime}_returns_mean"] = features["returns"].where(regime_mask).rolling(20).mean()
             features[f"regime_{regime}_volatility_mean"] = features["volatility"].where(regime_mask).rolling(20).mean()
+            
+            # VWAP-based regime features
+            if "vwap_returns" in features.columns:
+                features[f"regime_{regime}_vwap_returns_mean"] = features["vwap_returns"].where(regime_mask).rolling(20).mean()
+                features[f"regime_{regime}_vwap_volatility_mean"] = features["vwap_volatility_20"].where(regime_mask).rolling(20).mean()
+                features[f"regime_{regime}_vwap_momentum_mean"] = features["vwap_momentum_20"].where(regime_mask).rolling(20).mean()
     
     return features
 
@@ -609,6 +673,33 @@ def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
     features["ema_12"] = features["close"].ewm(span=12).mean()
     features["ema_26"] = features["close"].ewm(span=26).mean()
     
+    # VWAP-based moving averages
+    if "vwap" in features.columns:
+        features["vwap_sma_20"] = features["vwap"].rolling(window=20).mean()
+        features["vwap_sma_50"] = features["vwap"].rolling(window=50).mean()
+        features["vwap_ema_12"] = features["vwap"].ewm(span=12).mean()
+        features["vwap_ema_26"] = features["vwap"].ewm(span=26).mean()
+        
+        # VWAP Bollinger Bands
+        vwap_bb_middle = features["vwap"].rolling(window=20).mean()
+        vwap_bb_std = features["vwap"].rolling(window=20).std()
+        features["vwap_bb_upper"] = vwap_bb_middle + (vwap_bb_std * 2)
+        features["vwap_bb_lower"] = vwap_bb_middle - (vwap_bb_std * 2)
+        features["vwap_bb_width"] = features["vwap_bb_upper"] - features["vwap_bb_lower"]
+        features["vwap_bb_position"] = (features["vwap"] - features["vwap_bb_lower"]) / features["vwap_bb_width"]
+        
+        # VWAP RSI
+        vwap_delta = features["vwap"].diff()
+        vwap_gain = (vwap_delta.where(vwap_delta > 0, 0)).rolling(window=14).mean()
+        vwap_loss = (-vwap_delta.where(vwap_delta < 0, 0)).rolling(window=14).mean()
+        vwap_rs = vwap_gain / vwap_loss
+        features["vwap_rsi"] = 100 - (100 / (1 + vwap_rs))
+        
+        # VWAP MACD
+        features["vwap_macd"] = features["vwap_ema_12"] - features["vwap_ema_26"]
+        features["vwap_macd_signal"] = features["vwap_macd"].ewm(span=9).mean()
+        features["vwap_macd_histogram"] = features["vwap_macd"] - features["vwap_macd_signal"]
+    
     # RSI
     delta = features["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -641,9 +732,30 @@ def _add_statistical_features(features: pd.DataFrame) -> pd.DataFrame:
         features[f"returns_skew_{window}"] = features["returns"].rolling(window=window).skew()
         features[f"returns_kurt_{window}"] = features["returns"].rolling(window=window).kurt()
     
+    # VWAP-based rolling statistics
+    if "vwap_returns" in features.columns:
+        for window in [5, 10, 20, 50]:
+            features[f"vwap_returns_mean_{window}"] = features["vwap_returns"].rolling(window=window).mean()
+            features[f"vwap_returns_std_{window}"] = features["vwap_returns"].rolling(window=window).std()
+            features[f"vwap_returns_skew_{window}"] = features["vwap_returns"].rolling(window=window).skew()
+            features[f"vwap_returns_kurt_{window}"] = features["vwap_returns"].rolling(window=window).kurt()
+    
+    # VWAP momentum rolling statistics
+    if "vwap_momentum_20" in features.columns:
+        for window in [5, 10, 20]:
+            features[f"vwap_momentum_mean_{window}"] = features["vwap_momentum_20"].rolling(window=window).mean()
+            features[f"vwap_momentum_std_{window}"] = features["vwap_momentum_20"].rolling(window=window).std()
+            features[f"vwap_momentum_skew_{window}"] = features["vwap_momentum_20"].rolling(window=window).skew()
+            features[f"vwap_momentum_kurt_{window}"] = features["vwap_momentum_20"].rolling(window=window).kurt()
+    
     # Z-score features
     features["returns_zscore"] = (features["returns"] - features["returns"].rolling(20).mean()) / features["returns"].rolling(20).std()
     features["volume_zscore"] = (features["volume"] - features["volume"].rolling(20).mean()) / features["volume"].rolling(20).std()
+    
+    # VWAP Z-score features
+    if "vwap_returns" in features.columns:
+        features["vwap_returns_zscore"] = (features["vwap_returns"] - features["vwap_returns"].rolling(20).mean()) / features["vwap_returns"].rolling(20).std()
+        features["vwap_momentum_zscore"] = (features["vwap_momentum_20"] - features["vwap_momentum_20"].rolling(20).mean()) / features["vwap_momentum_20"].rolling(20).std()
     
     return features
 

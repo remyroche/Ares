@@ -9,8 +9,8 @@ This implementation ensures the Tactician completes the Analyst nicely by implem
 ### 1. **Dynamic Barrier Calculation**
 - **Dynamic loading** of Analyst triple barrier configuration
 - **Fraction-based calculation**: Tactician barriers calculated as fractions of Analyst values
-- **Multi-timeframe support**: Both 1m and 5m timeframes with appropriate adjustments
-- **Real-time adaptation**: Barriers adjust based on market conditions and volatility
+- **Multi-timeframe support**: Both 1m and 5m timeframes (both equal, ML model decides usage)
+- **Simple approach**: No real-time adaptation - only fractions of Analyst barriers
 
 ### 2. **Barrier Reduction Strategy**
 - **Profit Take**: 50% of Analyst's profit take barrier (dynamically calculated)
@@ -68,7 +68,7 @@ tactician_triple_barrier:
   
   # Dynamic calculation settings
   enable_dynamic_barriers: true
-  dynamic_calculation_method: "fraction_based"  # "fraction_based" or "adaptive"
+  dynamic_calculation_method: "fraction_based"  # Only fraction-based, no adaptation
   
   # Precision Settings
   enable_high_precision_mode: true
@@ -89,7 +89,7 @@ tactician_triple_barrier:
 - Dynamic loading of Analyst triple barrier configuration
 - Fraction-based barrier calculation
 - Multi-timeframe support (1m and 5m)
-- Market condition adaptation
+- Simple fraction-based approach (no market adaptation)
 
 **Methods:**
 - `_load_analyst_config()`: Load Analyst triple barrier configuration
@@ -105,7 +105,7 @@ tactician_triple_barrier:
 - Enhanced `TacticianTripleBarrierLabeler` class with dynamic barriers
 - Integration with `DynamicBarrierCalculator`
 - Quality filters for execution
-- Adaptive barrier calculation
+- Fraction-based barrier calculation
 - Precision scoring system
 - High precision mode filtering
 - Multi-timeframe support
@@ -113,7 +113,7 @@ tactician_triple_barrier:
 **Methods:**
 - `_load_enhanced_config()`: Load configuration and initialize dynamic calculator
 - `_apply_quality_filters()`: Apply volume, spread, and volatility filters
-- `_calculate_adaptive_barriers()`: Calculate barriers based on market conditions
+- `_calculate_adaptive_barriers()`: Calculate barriers using dynamic fractions
 - `apply_labels()`: Enhanced labeling with precision metrics
 
 ### 4. **Enhanced Execution Manager**
@@ -133,7 +133,7 @@ tactician_triple_barrier:
 - `validate_analyst_signal()`: Validate Analyst signal and ensure agreement
 - `calculate_execution_parameters()`: Calculate high precision execution parameters
 - `_determine_timeframe()`: Determine timeframe based on market data
-- `_calculate_adaptive_barriers()`: Adaptive barriers based on volatility
+- `_calculate_adaptive_barriers()`: Calculate barriers using dynamic fractions
 - `_calculate_risk_adjusted_size()`: Risk-adjusted position sizing
 - `execute_trade()`: Execute trade with high precision parameters
 
@@ -332,19 +332,19 @@ python test_enhanced_tactician_precision.py
 ### 1. **Dynamic Barrier Calculation**
 - Automatically adapts to Analyst barrier changes
 - Fraction-based calculation ensures consistent ratios
-- Multi-timeframe support with appropriate adjustments
-- Real-time market condition adaptation
+- Multi-timeframe support (both timeframes equal)
+- Simple fraction-based approach (no real-time adaptation)
 
 ### 2. **Risk Reduction**
 - Dynamic 50% smaller profit take barriers reduce exposure
 - Dynamic 25% smaller stop loss barriers limit downside
 - Risk-adjusted position sizing
-- Timeframe-specific risk management
+- Multi-timeframe risk management
 
 ### 3. **Precision Improvement**
 - High precision mode filters low-quality signals
 - Quality filters ensure optimal execution conditions
-- Adaptive barriers respond to market conditions
+- Fraction-based barriers maintain consistency
 - Multi-timeframe precision optimization
 
 ### 4. **Analyst Completion**
@@ -363,8 +363,8 @@ python test_enhanced_tactician_precision.py
 
 | Metric | Analyst | Tactician 1m | Tactician 5m | Improvement |
 |--------|---------|--------------|--------------|-------------|
-| Profit Take | 0.2% | 0.1% (50%) | 0.12% (60%) | 50-60% reduction |
-| Stop Loss | 0.1% | 0.025% (25%) | 0.03% (30%) | 70-75% reduction |
+| Profit Take | 0.2% | 0.1% (50%) | 0.1% (50%) | 50% reduction |
+| Stop Loss | 0.1% | 0.025% (25%) | 0.025% (25%) | 75% reduction |
 | Time Barrier | 30 min | 15 min (50%) | 6 periods (50%) | 50% reduction |
 | Risk-Reward | 2:1 | 4:1 | 4:1 | 100% improvement |
 | Timeframes | Single | 1m + 5m | 1m + 5m | Multi-timeframe |
@@ -443,14 +443,15 @@ python test_enhanced_tactician_precision.py
 
 ## Conclusion
 
-The **Dynamic Tactician Triple Barrier** implementation provides a robust solution for ensuring the Tactician completes the Analyst nicely with high precision execution. The dynamic fraction-based barrier calculation, combined with multi-timeframe support and adaptive barriers, creates a system that maximizes precision while minimizing risk.
+The **Dynamic Tactician Triple Barrier** implementation provides a robust solution for ensuring the Tactician completes the Analyst nicely with high precision execution. The dynamic fraction-based barrier calculation, combined with multi-timeframe support, creates a system that maximizes precision while minimizing risk.
 
 Key benefits include:
 - **Dynamic Barriers**: Automatically adapts to Analyst barrier changes
-- **Multi-timeframe Support**: Both 1m and 5m timeframes with appropriate adjustments
-- **Higher Precision**: Quality filters and adaptive barriers
+- **Multi-timeframe Support**: Both 1m and 5m timeframes (both equal, ML model decides usage)
+- **Higher Precision**: Quality filters and fraction-based barriers
 - **Lower Risk**: Dynamic smaller barriers and risk-adjusted sizing
 - **Better Completion**: Enhanced Analyst signal integration with dynamic synchronization
 - **Comprehensive Tracking**: Performance metrics and monitoring across timeframes
+- **Simple Approach**: No real-time adaptation - only fractions of Analyst barriers
 
-This implementation establishes a solid foundation for high-precision trading execution that complements the Analyst's strategic insights with tactical precision, while maintaining the flexibility to adapt to changing market conditions and Analyst configurations.
+This implementation establishes a solid foundation for high-precision trading execution that complements the Analyst's strategic insights with tactical precision, while maintaining the flexibility to adapt to changing Analyst configurations through simple fraction-based calculations.

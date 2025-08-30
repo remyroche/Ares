@@ -2837,21 +2837,21 @@ async def run_step(
             self.logger.info("🔧 Automatic optimization is disabled")
             return False
         
-        # Check if optimization results already exist
-        optimization_file = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_optimization_results.json"
-        
-        # Always run optimization if force_rerun is True
+        # Always run optimization if force_rerun is True (--force flag)
         if force_rerun:
             self.logger.info("🔄 Force rerun enabled - will run optimization")
             return True
+        
+        # Check if optimization results already exist
+        optimization_file = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_optimization_results.json"
         
         # Run optimization if results don't exist
         if not optimization_file.exists():
             self.logger.info("🔧 No existing optimization results found - will run optimization")
             return True
         
-        # Check if optimization is outdated
-        force_rerun_days = auto_config.get("force_rerun_days", 7)
+        # Check if optimization is outdated (default: 1 day)
+        force_rerun_days = auto_config.get("force_rerun_days", 1)  # Changed default to 1 day
         try:
             import json
             from datetime import datetime, timedelta
@@ -2863,7 +2863,7 @@ async def run_step(
             if 'timestamp' in optimization_data:
                 optimization_time = datetime.fromisoformat(optimization_data['timestamp'])
                 if datetime.now() - optimization_time > timedelta(days=force_rerun_days):
-                    self.logger.info(f"🔧 Optimization results are outdated (>{force_rerun_days} days) - will re-run optimization")
+                    self.logger.info(f"🔧 Optimization results are outdated (>{force_rerun_days} day) - will re-run optimization")
                     return True
             
             self.logger.info("✅ Using existing optimization results")

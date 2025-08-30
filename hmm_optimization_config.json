@@ -1,4 +1,12 @@
 {
+  "automatic_optimization": {
+    "enabled": true,
+    "max_trials": 50,
+    "timeout_minutes": 30,
+    "force_rerun_days": 1,
+    "study_name_prefix": "auto_optimization",
+    "vectorized_optimization": true
+  },
   "optimization_settings": {
     "n_trials": 150,
     "timeout": 3600,

@@ -3,7 +3,7 @@
     "enabled": true,
     "max_trials": 50,
     "timeout_minutes": 30,
-    "force_rerun_days": 7,
+    "force_rerun_days": 1,
     "study_name_prefix": "auto_optimization"
   },
   "optimization_settings": {

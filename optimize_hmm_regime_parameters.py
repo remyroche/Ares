@@ -223,27 +223,26 @@ class HMMRegimeOptimizer:
     
     def _calculate_regime_characteristics(self, cluster_data: pd.DataFrame, 
                                         market_condition_columns: List[str]) -> pd.DataFrame:
-        """Calculate characteristics for each regime to enable merging."""
+        """Calculate characteristics for each regime to enable merging using vectorized operations."""
         
-        regime_chars = []
+        # Filter valid market condition columns
+        valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         
-        for regime_id in cluster_data['composite_cluster_id'].unique():
-            regime_mask = cluster_data['composite_cluster_id'] == regime_id
-            regime_subset = cluster_data[regime_mask]
-            
-            char = {'regime_id': regime_id, 'size': len(regime_subset)}
-            
-            # Calculate market condition characteristics
-            for col in market_condition_columns:
-                if col in regime_subset.columns:
-                    char[f'{col}_mean'] = regime_subset[col].mean()
-                    char[f'{col}_std'] = regime_subset[col].std()
-                    char[f'{col}_min'] = regime_subset[col].min()
-                    char[f'{col}_max'] = regime_subset[col].max()
-            
-            regime_chars.append(char)
+        # Vectorized calculation of regime characteristics for all market conditions at once
+        regime_stats = cluster_data.groupby('composite_cluster_id')[valid_columns].agg(['mean', 'std', 'min', 'max'])
         
-        return pd.DataFrame(regime_chars)
+        # Flatten column names
+        regime_stats.columns = [f'{col[0]}_{col[1]}' for col in regime_stats.columns]
+        
+        # Add regime size
+        regime_sizes = cluster_data['composite_cluster_id'].value_counts()
+        regime_stats['size'] = regime_sizes
+        
+        # Reset index to get regime_id as a column
+        regime_stats = regime_stats.reset_index()
+        regime_stats = regime_stats.rename(columns={'composite_cluster_id': 'regime_id'})
+        
+        return regime_stats
     
     def _hierarchical_regime_merging(self, cluster_data: pd.DataFrame, 
                                    regime_characteristics: pd.DataFrame,
@@ -503,84 +502,102 @@ class HMMRegimeOptimizer:
     
     def _calculate_regime_differentiation_score(self, cluster_data: pd.DataFrame, 
                                              market_condition_columns: List[str]) -> float:
-        """Calculate how well regimes are differentiated from each other."""
+        """Calculate how well regimes are differentiated from each other using vectorized operations."""
         
         if not market_condition_columns:
             return 0.0
         
+        # Filter valid market condition columns
+        valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
+        if not valid_columns:
+            return 0.0
+        
+        # Vectorized calculation of regime means for all market conditions at once
+        regime_means_matrix = cluster_data.groupby('composite_cluster_id')[valid_columns].mean()
+        
+        if len(regime_means_matrix) < 2:
+            return 0.0
+        
+        # Calculate pairwise differences using matrix operations
+        n_regimes = len(regime_means_matrix)
         differentiation_scores = []
         
-        for col in market_condition_columns:
-            if col not in cluster_data.columns:
-                continue
+        for col in valid_columns:
+            # Get regime means for this column
+            regime_means = regime_means_matrix[col].values
             
-            # Calculate average market condition value for each regime
-            regime_means = cluster_data.groupby('composite_cluster_id')[col].mean()
+            # Calculate pairwise differences using broadcasting
+            # Create matrices for efficient pairwise comparison
+            means_i = regime_means[:, np.newaxis]  # Shape: (n_regimes, 1)
+            means_j = regime_means[np.newaxis, :]  # Shape: (1, n_regimes)
             
-            if len(regime_means) < 2:
-                continue
+            # Calculate absolute differences (excluding self-comparisons)
+            differences = np.abs(means_i - means_j)
             
-            # Calculate how different regimes are from each other
-            differences = []
-            for i, mean1 in regime_means.items():
-                for j, mean2 in regime_means.items():
-                    if i != j:
-                        differences.append(abs(mean1 - mean2))
+            # Remove diagonal (self-comparisons) and get upper triangle
+            mask = ~np.eye(n_regimes, dtype=bool)
+            valid_differences = differences[mask]
             
-            if differences:
+            if len(valid_differences) > 0:
                 # Normalize by the overall range of the market condition
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
-                    avg_difference = np.mean(differences) / overall_range
+                    avg_difference = np.mean(valid_differences) / overall_range
                     differentiation_scores.append(avg_difference)
         
         return np.mean(differentiation_scores) if differentiation_scores else 0.0
     
     def _calculate_internal_coherence_score(self, cluster_data: pd.DataFrame, 
                                           market_condition_columns: List[str]) -> float:
-        """Calculate how internally coherent each regime is."""
+        """Calculate how internally coherent each regime is using vectorized operations."""
         
         if not market_condition_columns:
             return 0.0
         
+        # Filter valid market condition columns
+        valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
+        if not valid_columns:
+            return 0.0
+        
         coherence_scores = []
         
-        for col in market_condition_columns:
-            if col not in cluster_data.columns:
-                continue
+        for col in valid_columns:
+            # Vectorized calculation of coefficient of variation for all regimes at once
+            regime_stats = cluster_data.groupby('composite_cluster_id')[col].agg(['mean', 'std', 'count'])
             
-            # Calculate coefficient of variation within each regime
-            regime_cvs = []
-            for regime_id in cluster_data['composite_cluster_id'].unique():
-                regime_mask = cluster_data['composite_cluster_id'] == regime_id
-                regime_subset = cluster_data[regime_mask]
+            # Filter regimes with more than 1 sample
+            valid_regimes = regime_stats[regime_stats['count'] > 1]
+            
+            if len(valid_regimes) > 0:
+                # Calculate coefficient of variation using vectorized operations
+                means = valid_regimes['mean'].values
+                stds = valid_regimes['std'].values
                 
-                if len(regime_subset) > 1:
-                    mean_val = regime_subset[col].mean()
-                    std_val = regime_subset[col].std()
-                    if mean_val != 0:
-                        cv = std_val / abs(mean_val)
-                        regime_cvs.append(cv)
-            
-            if regime_cvs:
-                # Lower CV means more coherent, so invert
-                avg_cv = np.mean(regime_cvs)
-                coherence = 1.0 / (1.0 + avg_cv)
-                coherence_scores.append(coherence)
+                # Avoid division by zero
+                non_zero_means = means != 0
+                if np.any(non_zero_means):
+                    cvs = stds[non_zero_means] / np.abs(means[non_zero_means])
+                    
+                    if len(cvs) > 0:
+                        # Lower CV means more coherent, so invert
+                        avg_cv = np.mean(cvs)
+                        coherence = 1.0 / (1.0 + avg_cv)
+                        coherence_scores.append(coherence)
         
         return np.mean(coherence_scores) if coherence_scores else 0.0
     
     def _calculate_regime_balance_score(self, cluster_data: pd.DataFrame) -> float:
-        """Calculate how balanced the regime sizes are."""
+        """Calculate how balanced the regime sizes are using vectorized operations."""
         
-        regime_sizes = cluster_data['composite_cluster_id'].value_counts()
+        # Vectorized calculation of regime sizes
+        regime_sizes = cluster_data['composite_cluster_id'].value_counts().values
         
         if len(regime_sizes) < 2:
             return 0.0
         
-        # Calculate coefficient of variation of regime sizes
-        mean_size = regime_sizes.mean()
-        std_size = regime_sizes.std()
+        # Calculate coefficient of variation using vectorized operations
+        mean_size = np.mean(regime_sizes)
+        std_size = np.std(regime_sizes)
         
         if mean_size == 0:
             return 0.0
@@ -812,6 +829,82 @@ class HMMRegimeOptimizer:
             'study': self.study,
             'optimization_history': self.optimization_history
         }
+    
+    def _preprocess_data_for_optimization(self, data: pd.DataFrame, feature_columns: List[str], 
+                                        market_condition_columns: List[str]) -> Dict[str, Any]:
+        """Pre-process data for vectorized optimization operations."""
+        
+        # Filter valid columns
+        valid_features = [col for col in feature_columns if col in data.columns]
+        valid_market_conditions = [col for col in market_condition_columns if col in data.columns]
+        
+        # Create pre-processed data structure
+        processed_data = {
+            'data': data.copy(),
+            'feature_columns': valid_features,
+            'market_condition_columns': valid_market_conditions,
+            'feature_matrix': data[valid_features].values if valid_features else np.array([]),
+            'market_condition_matrix': data[valid_market_conditions].values if valid_market_conditions else np.array([]),
+            'feature_ranges': {},
+            'market_condition_ranges': {}
+        }
+        
+        # Pre-calculate ranges for normalization
+        for col in valid_features:
+            col_data = data[col].dropna()
+            if len(col_data) > 0:
+                processed_data['feature_ranges'][col] = {
+                    'min': col_data.min(),
+                    'max': col_data.max(),
+                    'range': col_data.max() - col_data.min()
+                }
+        
+        for col in valid_market_conditions:
+            col_data = data[col].dropna()
+            if len(col_data) > 0:
+                processed_data['market_condition_ranges'][col] = {
+                    'min': col_data.min(),
+                    'max': col_data.max(),
+                    'range': col_data.max() - col_data.min()
+                }
+        
+        return processed_data
+    
+    def _generate_initial_clusters_vectorized(self, processed_data: Dict[str, Any], 
+                                            hmm_params: Dict[str, Any], 
+                                            clustering_params: Dict[str, Any]) -> pd.DataFrame:
+        """Generate initial clusters using vectorized operations."""
+        
+        # Use pre-processed feature matrix
+        feature_matrix = processed_data['feature_matrix']
+        
+        if feature_matrix.size == 0:
+            # Fallback to original method
+            return self._generate_initial_clusters_with_params(
+                processed_data['data'], 
+                processed_data['feature_columns'], 
+                processed_data['market_condition_columns'], 
+                hmm_params, 
+                clustering_params
+            )
+        
+        # Handle missing values using vectorized operations
+        feature_matrix = np.nan_to_num(feature_matrix, nan=0.0)
+        
+        # Standard scaling using vectorized operations
+        feature_mean = np.mean(feature_matrix, axis=0)
+        feature_std = np.std(feature_matrix, axis=0)
+        feature_std = np.where(feature_std == 0, 1.0, feature_std)  # Avoid division by zero
+        feature_matrix_scaled = (feature_matrix - feature_mean) / feature_std
+        
+        # Generate initial clusters
+        initial_cluster_labels = self._apply_clustering(feature_matrix_scaled, clustering_params)
+        
+        # Create result dataframe
+        result_data = processed_data['data'].copy()
+        result_data['composite_cluster_id'] = initial_cluster_labels
+        
+        return result_data
     
     def generate_optimization_report(self, output_path: Optional[str] = None) -> str:
         """Generate a comprehensive optimization report."""

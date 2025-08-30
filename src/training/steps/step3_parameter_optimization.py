@@ -47,10 +47,10 @@ class ParameterOptimizationStep:
         self.config = config
         self.logger = system_logger.getChild("ParameterOptimizationStep")
         self.start_time = None
-        self.step_timings = {}
         self.optimization_results = {}
         self._initialize_components()
 
+    @secure_step_execution
     def _initialize_components(self) -> None:
         """Initialize parameter optimization components."""
         self.logger.info("🔧 Initializing parameter optimization components...")
@@ -67,6 +67,7 @@ class ParameterOptimizationStep:
         default_return=False,
         context="parameter_optimization_initialization"
     )
+    @secure_step_execution
     async def initialize(self) -> bool:
         """Initialize the parameter optimization step."""
         try:
@@ -139,6 +140,8 @@ class ParameterOptimizationStep:
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_validate_data"
     )
+    @comprehensive_data_validation
+    @ensure_data_integrity
     async def _load_and_validate_data(self) -> dict[str, Any]:
         """Load and validate data for parameter optimization."""
         try:
@@ -170,16 +173,6 @@ class ParameterOptimizationStep:
                     "error": "Data is empty"
                 }
             
-            # Validate required columns
-            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                self.logger.error(f"❌ Missing required columns: {missing_columns}")
-                return {
-                    "success": False,
-                    "error": f"Missing required columns: {missing_columns}"
-                }
-            
             # Prepare features for optimization
             features = await self._prepare_features_for_optimization(df)
             
@@ -208,6 +201,8 @@ class ParameterOptimizationStep:
         default_return=pd.DataFrame(),
         context="prepare_features_for_optimization"
     )
+    @monitor_feature_engineering()
+    @validate_data_structure
     async def _prepare_features_for_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features for parameter optimization."""
         try:
@@ -260,6 +255,8 @@ class ParameterOptimizationStep:
         default_return={},
         context="optimize_hmm_parameters"
     )
+    @resource_monitor
+    @secure_data_processing
     async def _optimize_hmm_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize HMM parameters."""
         try:
@@ -313,6 +310,8 @@ class ParameterOptimizationStep:
         default_return={},
         context="optimize_clustering_parameters"
     )
+    @resource_monitor
+    @secure_data_processing
     async def _optimize_clustering_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize clustering parameters."""
         try:
@@ -364,6 +363,8 @@ class ParameterOptimizationStep:
         default_return={},
         context="optimize_feature_parameters"
     )
+    @resource_monitor
+    @secure_data_processing
     async def _optimize_feature_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize feature engineering parameters."""
         try:
@@ -425,6 +426,7 @@ class ParameterOptimizationStep:
         default_return={},
         context="combine_optimization_results"
     )
+    @secure_data_processing
     async def _combine_optimization_results(self, results: List[dict[str, Any]]) -> dict[str, Any]:
         """Combine all optimization results."""
         try:
@@ -493,6 +495,7 @@ class ParameterOptimizationStep:
         default_return=False,
         context="save_optimization_results"
     )
+    @secure_data_processing
     async def _save_optimization_results(self, optimization_results: dict[str, Any]) -> bool:
         """Save optimization results."""
         try:
@@ -520,6 +523,7 @@ class ParameterOptimizationStep:
         default_return=False,
         context="generate_optimization_reports"
     )
+    @secure_data_processing
     async def _generate_optimization_reports(self, optimization_results: dict[str, Any]) -> bool:
         """Generate optimization reports."""
         try:
@@ -565,6 +569,11 @@ class ParameterOptimizationStep:
             return False
 
     # Helper methods for technical indicators
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_rsi"
+    )
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = prices.diff()
@@ -574,6 +583,11 @@ class ParameterOptimizationStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_macd"
+    )
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
         """Calculate MACD."""
         ema_fast = prices.ewm(span=fast).mean()
@@ -581,6 +595,11 @@ class ParameterOptimizationStep:
         macd = ema_fast - ema_slow
         return macd
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=pd.Series(),
+        context="calculate_atr"
+    )
     def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
         """Calculate Average True Range."""
         high = df["high"]
@@ -600,6 +619,7 @@ class ParameterOptimizationStep:
         default_return=False,
         context="parameter_optimization_cleanup"
     )
+    @secure_step_execution
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
         try:
@@ -617,6 +637,7 @@ class ParameterOptimizationStep:
     default_return=False,
     context="step3_parameter_optimization"
 )
+@secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the parameter optimization step."""
     try:

@@ -241,6 +241,7 @@ class DataCollectionStep:
                     symbol=symbol,
                     exchange_name=exchange,
                     interval=timeframe,
+                    data_dir=data_dir,
                 )
                 
                 if success:
@@ -523,7 +524,7 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str = "1m",
-    data_dir: str = "data_cache",
+    data_dir: str = None,  # Will be constructed as data_cache/exchange/asset/
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
@@ -550,15 +551,19 @@ async def run_step(
         logger.info(f"🎯 Symbol: {symbol}")
         logger.info(f"🏢 Exchange: {exchange}")
         logger.info(f"📊 Timeframe: {timeframe}")
+        # Construct structured data directory
+        if data_dir is None:
+            data_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
         logger.info(f"📁 Data directory: {data_dir}")
         logger.info(f"🔄 Force rerun: {force_rerun}")
 
         # Check if data already exists and force_rerun is False
         if not force_rerun:
-            # Check for existing consolidated data
+            # Check for existing consolidated data in structured directory
+            data_cache_path = os.path.join("data_cache", exchange.lower(), symbol.lower())
             consolidated_files = [
-                f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
-                f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
+                f"{data_cache_path}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+                f"{data_cache_path}/aggtrades_{exchange}_{symbol}_consolidated.parquet",
             ]
 
             existing_files: list[str] = []
@@ -575,7 +580,7 @@ async def run_step(
                 # Check if data is complete by examining the date range
                 try:
                     import pandas as pd
-                    klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                    klines_file = f"{data_cache_path}/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
                     if Path(klines_file).exists():
                         df = pd.read_parquet(klines_file)
                         if "timestamp" in df.columns:

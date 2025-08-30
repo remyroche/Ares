@@ -22,6 +22,7 @@ async def download_all_data_with_consolidation(
     symbol: str,
     exchange_name: str,
     interval: str = "1m",
+    data_dir: str = None,
 ) -> bool:
     """Unified entrypoint used by training steps to download raw data.
 
@@ -57,6 +58,7 @@ async def download_all_data_with_consolidation(
             exchange=exchange_name,
             interval=interval,
             lookback_years=lookback_years,
+            data_dir=data_dir,
         )
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
@@ -79,6 +81,7 @@ async def download_all_data_with_consolidation(
             exchange=exchange_name,
             interval=interval,
             lookback_years=lookback_years,
+            data_dir=data_dir,
         )
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()

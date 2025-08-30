@@ -43,12 +43,18 @@ class TacticianTripleBarrierLabeler:
 
     def _load_enhanced_config(self) -> None:
         """Load enhanced configuration for high precision execution."""
-        # Barrier Configuration - 50% and 25% of Analyst barriers
-        self.pt_pct = self.config.get("profit_take_pct", 0.001)  # 0.1% (50% of Analyst's 0.2%)
-        self.sl_pct = self.config.get("stop_loss_pct", 0.00025)  # 0.025% (25% of Analyst's 0.1%)
+        # Import dynamic barrier calculator
+        from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
         
-        # Time Configuration - Shorter for precision
-        self.time_barrier = self.config.get("time_barrier_periods", 15)  # 15 minutes (50% of Analyst's 30)
+        # Initialize dynamic barrier calculator
+        self.barrier_calculator = DynamicBarrierCalculator(self.config)
+        
+        # Get dynamic barriers for primary timeframe (1m)
+        self.pt_pct, self.sl_pct, self.time_barrier = self.barrier_calculator.calculate_dynamic_barriers(
+            timeframe="1m"
+        )
+        
+        # Get configuration for other settings
         self.max_lookahead = self.config.get("max_lookahead", 50)  # Reduced lookahead
         
         # Precision Settings
@@ -67,11 +73,18 @@ class TacticianTripleBarrierLabeler:
         self.direction_agreement_required = self.config.get("direction_agreement_required", True)
         self.confidence_boost_threshold = self.config.get("confidence_boost_threshold", 0.9)
         
+        # Timeframe settings
+        self.timeframes = self.config.get("timeframes", ["1m", "5m"])
+        self.primary_timeframe = self.config.get("primary_timeframe", "1m")
+        self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
+        
         # Log configuration
-        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration:")
-        self.logger.info(f"   Profit Take: {self.pt_pct:.4f} ({self.pt_pct*100:.3f}%)")
-        self.logger.info(f"   Stop Loss: {self.sl_pct:.4f} ({self.sl_pct*100:.3f}%)")
-        self.logger.info(f"   Time Barrier: {self.time_barrier} periods")
+        self.logger.info(f"🔧 Enhanced Tactician Triple Barrier Configuration (Dynamic):")
+        self.logger.info(f"   Timeframes: {self.timeframes}")
+        self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
+        self.logger.info(f"   Dynamic Profit Take: {self.pt_pct:.4f} ({self.pt_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Stop Loss: {self.sl_pct:.4f} ({self.sl_pct*100:.3f}%)")
+        self.logger.info(f"   Dynamic Time Barrier: {self.time_barrier} periods")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 

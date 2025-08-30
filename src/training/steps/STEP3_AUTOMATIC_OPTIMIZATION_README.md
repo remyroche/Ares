@@ -61,11 +61,11 @@ The optimizer searches through:
 ## 🚀 Usage
 
 ### Automatic Execution
-Step 3 automatically runs optimization when:
-1. **First time** - no existing optimization results
-2. **Outdated results** - optimization older than configured days (default: 1 day)
-3. **Force rerun** - `force_rerun=True` parameter (--force flag)
-4. **Vectorized operations** - uses matrix operations for better performance
+Step 3 **ALWAYS** runs optimization:
+1. **Every execution** - optimization runs on every Step 3 execution
+2. **Fresh parameters** - ensures optimal parameters for current data
+3. **Vectorized operations** - uses matrix operations for better performance
+4. **No caching** - always produces fresh optimization results
 
 ### Manual Control
 ```python
@@ -161,22 +161,21 @@ The optimizer evaluates regimes using:
 - **Vectorized statistics** for coherence and balance scores
 - **Pre-processed data structures** for faster access
 
-### Smart Caching Logic
-- **Force rerun**: Always runs optimization with `--force` flag
-- **Daily updates**: Default 1-day outdated threshold
-- **Configurable frequency**: Adjustable via configuration
-- **Efficient file checking**: Minimal overhead for cache validation
+### Always-On Optimization
+- **Every execution**: Optimization runs on every Step 3 execution
+- **Fresh parameters**: Ensures optimal parameters for current data
+- **No caching**: Always produces fresh optimization results
+- **Consistent quality**: Maintains high-quality regime discovery
 
 ## 🎛️ Integration with Step 3
 
 ### Automatic Integration
 ```python
 # Step 3 automatically:
-1. Checks if optimization needed
-2. Runs optimization if required
-3. Applies optimized parameters
-4. Performs HMM regime discovery
-5. Generates comprehensive reports
+1. ALWAYS runs optimization
+2. Applies optimized parameters
+3. Performs HMM regime discovery
+4. Generates comprehensive reports
 ```
 
 ### Parameter Application

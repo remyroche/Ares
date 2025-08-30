@@ -701,15 +701,15 @@ async def _add_sr_features(
             "sr_order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
         }
         
-        # Add pivot levels features
+        # Add pivot levels features (as percentages relative to current price)
         pivot_levels = sr_context.get("pivot_levels", {})
-        if pivot_levels:
+        if pivot_levels and current_price > 0:
             context_features.update({
-                "sr_pivot_level": pivot_levels.get("pivot", current_price),
-                "sr_support_1": pivot_levels.get("s1", current_price),
-                "sr_support_2": pivot_levels.get("s2", current_price),
-                "sr_resistance_1": pivot_levels.get("r1", current_price),
-                "sr_resistance_2": pivot_levels.get("r2", current_price),
+                "sr_pivot_level_pct": (pivot_levels.get("pivot", current_price) - current_price) / current_price,
+                "sr_support_1_pct": (pivot_levels.get("s1", current_price) - current_price) / current_price,
+                "sr_support_2_pct": (pivot_levels.get("s2", current_price) - current_price) / current_price,
+                "sr_resistance_1_pct": (pivot_levels.get("r1", current_price) - current_price) / current_price,
+                "sr_resistance_2_pct": (pivot_levels.get("r2", current_price) - current_price) / current_price,
             })
         
         # Add all features to DataFrame with conflict resolution
@@ -777,7 +777,7 @@ async def _add_sr_aware_feature_selection(
         # Add proximity-based feature weights (using percentages)
         features["sr_proximity_weight"] = 1.0 / (1.0 + min(support_proximity, resistance_proximity))
         
-        # Add SR strength features
+        # Add SR strength features (already as percentages/ratios)
         features["sr_combined_strength"] = (
             sr_context.get("support_strength", 0.5) + 
             sr_context.get("resistance_strength", 0.5)
@@ -789,19 +789,19 @@ async def _add_sr_aware_feature_selection(
             zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
         else:
             zone_position_pct = 0.5
-        features["sr_zone_position"] = zone_position_pct
+        features["sr_zone_position_pct"] = zone_position_pct
         
-        # Add SR momentum features
-        features["sr_momentum"] = market_data['close'].pct_change().iloc[-5:].mean()
+        # Add SR momentum features (as percentage returns)
+        features["sr_momentum_pct"] = market_data['close'].pct_change().iloc[-5:].mean()
         
-        # Add SR volatility features
-        features["sr_volatility"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
+        # Add SR volatility features (as percentage returns)
+        features["sr_volatility_pct"] = market_data['close'].pct_change().rolling(20).std().iloc[-1]
         
-        # Add SR volume features
+        # Add SR volume features (as ratio/percentage)
         features["sr_volume_ratio"] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1]
         
-        # Add SR trend features
-        features["sr_trend"] = 1 if market_data['close'].iloc[-1] > market_data['close'].iloc[-20] else -1
+        # Add SR trend features (as percentage change)
+        features["sr_trend_pct"] = (market_data['close'].iloc[-1] - market_data['close'].iloc[-20]) / market_data['close'].iloc[-20]
         
         await sr_predictor.cleanup()
         system_logger.info("✅ Added SR-aware feature selection features")

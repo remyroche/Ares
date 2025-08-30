@@ -155,12 +155,33 @@ class Step7EnhancedMatrixOperations:
     ) -> dict[str, Any]:
         """Prepare configuration for matrix operations."""
         
-        # Identify SR features for specialized analysis
+        # Identify SR features for specialized analysis (comprehensive list)
         sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
+            # Basic SR features
             "sr_", "support", "resistance", "proximity", "sr_distance",
             "sr_proximity", "sr_outcome", "normalized_distance", "sr_proximity_score",
             "strength_score", "clarity_factor", "directional_pressure", "sr_score",
-            "delta_sr_score", "isolation_score", "sr_level", "sr_multi_timeframe", "support_", "resistance_"
+            "delta_sr_score", "isolation_score", "sr_level", "sr_multi_timeframe", 
+            "support_", "resistance_",
+            
+            # Enhanced SR features from SR breakout predictor
+            "sr_enhanced_support_strength", "sr_enhanced_resistance_strength",
+            "sr_clusters_detected", "sr_noise_points", "sr_clustering_quality",
+            "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_poc",
+            "sr_order_flow_hvns", "sr_order_flow_imbalances",
+            "sr_pivot_level_pct", "sr_support_1_pct", "sr_support_2_pct", "sr_resistance_1_pct", "sr_resistance_2_pct",
+            
+            # SR optimization features from SR detection optimization
+            "sr_optimized_method_weights", "sr_optimized_strength_weights",
+            "sr_optimized_dbscan_eps", "sr_optimized_dbscan_min_samples",
+            "sr_optimized_fibonacci_sensitivity", "sr_optimized_elliott_confidence",
+            "sr_optimized_order_flow_threshold", "sr_optimized_tf_",
+            "sr_optimization_score",
+            
+            # Additional SR features
+            "sr_distance", "sr_proximity", "sr_zone_width", "sr_nearest_support",
+            "sr_nearest_resistance", "sr_total_support_levels", "sr_total_resistance_levels",
+            "sr_zone_position_pct", "sr_momentum_pct", "sr_volatility_pct", "sr_trend_pct"
         ])]
         
         # Basic matrix operations configuration
@@ -228,6 +249,12 @@ class Step7EnhancedMatrixOperations:
         if config.get("enable_sr_analysis", False) and config.get("sr_features"):
             self.logger.info("🎯 Performing SR-specific matrix operations...")
             results["sr_analysis"] = await self._execute_sr_matrix_operations(df, config)
+            
+            # Enhanced SR analysis using SR breakout predictor features
+            results["sr_enhanced_analysis"] = await self._execute_enhanced_sr_analysis(df, config)
+            
+            # SR optimization analysis
+            results["sr_optimization_analysis"] = await self._execute_sr_optimization_analysis(df, config)
         
         return results
 
@@ -359,6 +386,322 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             self.logger.error(f"Error in SR matrix operations: {e}")
+            return {"error": str(e)}
+
+    async def _execute_enhanced_sr_analysis(
+        self, 
+        df: pd.DataFrame, 
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute enhanced SR analysis using SR breakout predictor features."""
+        try:
+            # Identify enhanced SR features
+            enhanced_sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
+                "sr_enhanced_", "sr_clusters_", "sr_fibonacci_", "sr_elliott_", "sr_order_flow_",
+                "sr_pivot_", "sr_support_1_pct", "sr_support_2_pct", "sr_resistance_1_pct", "sr_resistance_2_pct"
+            ])]
+            
+            if not enhanced_sr_features:
+                return {"error": "No enhanced SR features found"}
+            
+            enhanced_sr_df = df[enhanced_sr_features].select_dtypes(include=[np.number])
+            
+            if len(enhanced_sr_df.columns) == 0:
+                return {"error": "No numeric enhanced SR features found"}
+            
+            self.logger.info(f"🎯 Analyzing {len(enhanced_sr_df.columns)} enhanced SR features")
+            
+            results = {}
+            
+            # 1. Enhanced SR Feature Correlation Analysis
+            self.logger.info("📊 Performing enhanced SR feature correlation analysis...")
+            enhanced_correlation_matrix = enhanced_sr_df.corr()
+            results["enhanced_sr_correlation_analysis"] = {
+                "correlation_matrix": enhanced_correlation_matrix.to_dict(),
+                "high_correlations": self._find_high_correlations(enhanced_correlation_matrix, config["sr_correlation_threshold"]),
+                "enhanced_sr_feature_count": len(enhanced_sr_df.columns)
+            }
+            
+            # 2. Enhanced SR Feature Clustering Analysis
+            self.logger.info("🔧 Performing enhanced SR feature clustering analysis...")
+            results["enhanced_sr_clustering_analysis"] = self._analyze_enhanced_sr_feature_clusters(enhanced_sr_df)
+            
+            # 3. Enhanced SR Feature Stability Analysis
+            self.logger.info("📊 Analyzing enhanced SR feature stability...")
+            results["enhanced_sr_stability_analysis"] = self._analyze_enhanced_sr_feature_stability(enhanced_sr_df)
+            
+            # 4. Enhanced SR Feature Importance Analysis
+            self.logger.info("🎯 Analyzing enhanced SR feature importance...")
+            results["enhanced_sr_importance_analysis"] = self._analyze_enhanced_sr_feature_importance(enhanced_sr_df)
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced SR analysis: {e}")
+            return {"error": str(e)}
+
+    async def _execute_sr_optimization_analysis(
+        self, 
+        df: pd.DataFrame, 
+        config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute SR optimization analysis using optimization features."""
+        try:
+            # Identify SR optimization features
+            optimization_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
+                "sr_optimized_", "sr_optimization_"
+            ])]
+            
+            if not optimization_features:
+                return {"error": "No SR optimization features found"}
+            
+            optimization_df = df[optimization_features].select_dtypes(include=[np.number])
+            
+            if len(optimization_df.columns) == 0:
+                return {"error": "No numeric SR optimization features found"}
+            
+            self.logger.info(f"🎯 Analyzing {len(optimization_df.columns)} SR optimization features")
+            
+            results = {}
+            
+            # 1. SR Optimization Feature Correlation Analysis
+            self.logger.info("📊 Performing SR optimization feature correlation analysis...")
+            optimization_correlation_matrix = optimization_df.corr()
+            results["sr_optimization_correlation_analysis"] = {
+                "correlation_matrix": optimization_correlation_matrix.to_dict(),
+                "high_correlations": self._find_high_correlations(optimization_correlation_matrix, config["sr_correlation_threshold"]),
+                "optimization_feature_count": len(optimization_df.columns)
+            }
+            
+            # 2. SR Optimization Parameter Analysis
+            self.logger.info("🔧 Analyzing SR optimization parameters...")
+            results["sr_optimization_parameter_analysis"] = self._analyze_sr_optimization_parameters(optimization_df)
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in SR optimization analysis: {e}")
+            return {"error": str(e)}
+
+    def _analyze_enhanced_sr_feature_clusters(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze enhanced SR feature clusters."""
+        try:
+            # Group enhanced SR features by type
+            feature_groups = {
+                "enhanced_strength": [col for col in enhanced_sr_df.columns if "enhanced_strength" in col],
+                "clustering": [col for col in enhanced_sr_df.columns if "clusters" in col or "noise" in col],
+                "fibonacci": [col for col in enhanced_sr_df.columns if "fibonacci" in col],
+                "elliott": [col for col in enhanced_sr_df.columns if "elliott" in col],
+                "order_flow": [col for col in enhanced_sr_df.columns if "order_flow" in col],
+                "pivot": [col for col in enhanced_sr_df.columns if "pivot" in col or "support_1" in col or "resistance_1" in col]
+            }
+            
+            # Calculate group statistics
+            group_stats = {}
+            for group_name, group_features in feature_groups.items():
+                if group_features:
+                    group_data = enhanced_sr_df[group_features]
+                    group_stats[group_name] = {
+                        "feature_count": len(group_features),
+                        "mean_correlation": group_data.corr().abs().mean().mean(),
+                        "mean_variance": group_data.var().mean(),
+                        "features": group_features
+                    }
+            
+            return {
+                "feature_groups": group_stats,
+                "total_groups": len([g for g in group_stats.values() if g["feature_count"] > 0]),
+                "group_correlations": self._calculate_group_correlations(enhanced_sr_df, feature_groups)
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_enhanced_sr_feature_stability(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze enhanced SR feature stability."""
+        try:
+            stability_metrics = {}
+            
+            for column in enhanced_sr_df.columns:
+                values = enhanced_sr_df[column].dropna()
+                if len(values) > 1:
+                    # Coefficient of variation
+                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
+                    
+                    # Feature type classification
+                    feature_type = "unknown"
+                    if "enhanced_strength" in column:
+                        feature_type = "enhanced_strength"
+                    elif "clusters" in column or "noise" in column:
+                        feature_type = "clustering"
+                    elif "fibonacci" in column:
+                        feature_type = "fibonacci"
+                    elif "elliott" in column:
+                        feature_type = "elliott"
+                    elif "order_flow" in column:
+                        feature_type = "order_flow"
+                    elif "pivot" in column or "support_" in column or "resistance_" in column:
+                        feature_type = "pivot"
+                    elif "momentum_pct" in column or "volatility_pct" in column or "trend_pct" in column:
+                        feature_type = "momentum"
+                    
+                    stability_metrics[column] = {
+                        "coefficient_of_variation": float(cv),
+                        "feature_type": feature_type,
+                        "mean": float(values.mean()),
+                        "std": float(values.std()),
+                        "stability_score": 1.0 / (1.0 + cv) if cv != float('inf') else 0.0
+                    }
+            
+            # Group stability by feature type
+            type_stability = {}
+            for metrics in stability_metrics.values():
+                feature_type = metrics["feature_type"]
+                if feature_type not in type_stability:
+                    type_stability[feature_type] = []
+                type_stability[feature_type].append(metrics["stability_score"])
+            
+            # Calculate average stability by type
+            for feature_type, scores in type_stability.items():
+                type_stability[feature_type] = {
+                    "average_stability": np.mean(scores),
+                    "stability_count": len(scores)
+                }
+            
+            return {
+                "feature_stability": stability_metrics,
+                "type_stability": type_stability,
+                "overall_stability": np.mean([m["stability_score"] for m in stability_metrics.values()])
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_enhanced_sr_feature_importance(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze enhanced SR feature importance."""
+        try:
+            # Calculate variance-based importance
+            variances = enhanced_sr_df.var()
+            variance_importance = variances.sort_values(ascending=False)
+            
+            # Calculate correlation-based importance
+            correlation_matrix = enhanced_sr_df.corr()
+            avg_correlations = correlation_matrix.abs().mean()
+            correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending=False)
+            
+            # Combined importance score
+            combined_importance = (variance_importance + correlation_importance) / 2
+            combined_importance = combined_importance.sort_values(ascending=False)
+            
+            # Group importance by feature type
+            feature_importance_by_type = {
+                "enhanced_strength": [],
+                "clustering": [],
+                "fibonacci": [],
+                "elliott": [],
+                "order_flow": [],
+                "pivot": [],
+                "momentum": []
+            }
+            
+            for feature, importance in combined_importance.items():
+                if "enhanced_strength" in feature:
+                    feature_importance_by_type["enhanced_strength"].append((feature, importance))
+                elif "clusters" in feature or "noise" in feature:
+                    feature_importance_by_type["clustering"].append((feature, importance))
+                elif "fibonacci" in feature:
+                    feature_importance_by_type["fibonacci"].append((feature, importance))
+                elif "elliott" in feature:
+                    feature_importance_by_type["elliott"].append((feature, importance))
+                elif "order_flow" in feature:
+                    feature_importance_by_type["order_flow"].append((feature, importance))
+                elif "pivot" in feature or "support_" in feature or "resistance_" in feature:
+                    feature_importance_by_type["pivot"].append((feature, importance))
+                elif "momentum_pct" in feature or "volatility_pct" in feature or "trend_pct" in feature:
+                    feature_importance_by_type["momentum"].append((feature, importance))
+            
+            # Sort each group by importance
+            for feature_type in feature_importance_by_type:
+                feature_importance_by_type[feature_type].sort(key=lambda x: x[1], reverse=True)
+            
+            return {
+                "variance_importance": variance_importance.to_dict(),
+                "correlation_importance": correlation_importance.to_dict(),
+                "combined_importance": combined_importance.to_dict(),
+                "importance_by_type": feature_importance_by_type,
+                "top_features": combined_importance.head(10).index.tolist()
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+
+
+    def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> dict[str, Any]:
+        """Analyze SR optimization parameters."""
+        try:
+            # Identify parameter features
+            parameter_features = [col for col in optimization_df.columns if "sr_optimized_" in col and any(param in col for param in [
+                "method_weights", "strength_weights", "dbscan", "fibonacci", "elliott", "order_flow", "tf_"
+            ])]
+            
+            if not parameter_features:
+                return {"error": "No parameter features found"}
+            
+            parameter_data = optimization_df[parameter_features]
+            
+            # Calculate parameter statistics
+            parameter_stats = {}
+            for col in parameter_data.columns:
+                values = parameter_data[col].dropna()
+                if len(values) > 0:
+                    parameter_stats[col] = {
+                        "mean": float(values.mean()),
+                        "std": float(values.std()),
+                        "min": float(values.min()),
+                        "max": float(values.max()),
+                        "median": float(values.median())
+                    }
+            
+            # Group parameters by type
+            parameter_groups = {
+                "weights": [col for col in parameter_features if "weights" in col],
+                "dbscan": [col for col in parameter_features if "dbscan" in col],
+                "advanced": [col for col in parameter_features if any(adv in col for adv in ["fibonacci", "elliott", "order_flow"])],
+                "timeframe": [col for col in parameter_features if "tf_" in col]
+            }
+            
+            return {
+                "parameter_features": parameter_features,
+                "parameter_statistics": parameter_stats,
+                "parameter_groups": parameter_groups,
+                "parameter_correlations": parameter_data.corr().to_dict()
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _calculate_group_correlations(self, df: pd.DataFrame, feature_groups: dict[str, list]) -> dict[str, float]:
+        """Calculate correlations between feature groups."""
+        try:
+            group_correlations = {}
+            
+            for group1_name, group1_features in feature_groups.items():
+                for group2_name, group2_features in feature_groups.items():
+                    if group1_name < group2_name and group1_features and group2_features:
+                        # Calculate average correlation between groups
+                        group1_data = df[group1_features]
+                        group2_data = df[group2_features]
+                        
+                        # Calculate cross-correlations
+                        cross_corr = group1_data.corrwith(group2_data, axis=0)
+                        avg_correlation = cross_corr.abs().mean()
+                        
+                        group_correlations[f"{group1_name}_vs_{group2_name}"] = float(avg_correlation)
+            
+            return group_correlations
+            
+        except Exception as e:
             return {"error": str(e)}
 
     def _analyze_sr_feature_clusters(self, sr_df: pd.DataFrame) -> dict[str, Any]:
@@ -791,8 +1134,40 @@ class Step7EnhancedMatrixOperations:
                 report.append("   ✅ Memory usage is reasonable")
             report.append("")
             
-            # 9. Actionable Recommendations
-            report.append("🚀 9. ACTIONABLE RECOMMENDATIONS")
+            # 9. SR-Specific Analysis (if available)
+            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+                report.append("🎯 9. SR-SPECIFIC ANALYSIS")
+                report.append("-" * 40)
+                
+                # Basic SR analysis
+                if "sr_analysis" in matrix_results:
+                    sr_analysis = matrix_results["sr_analysis"]
+                    if "sr_feature_count" in sr_analysis:
+                        report.append(f"   SR Features: {sr_analysis['sr_feature_count']}")
+                    if "sr_correlation_analysis" in sr_analysis:
+                        high_corrs = sr_analysis["sr_correlation_analysis"].get("high_correlations", [])
+                        report.append(f"   SR High Correlations: {len(high_corrs)}")
+                
+                # Enhanced SR analysis
+                if "sr_enhanced_analysis" in matrix_results:
+                    enhanced_analysis = matrix_results["sr_enhanced_analysis"]
+                    if "enhanced_sr_feature_count" in enhanced_analysis:
+                        report.append(f"   Enhanced SR Features: {enhanced_analysis['enhanced_sr_feature_count']}")
+                    if "enhanced_sr_importance_analysis" in enhanced_analysis:
+                        importance = enhanced_analysis["enhanced_sr_importance_analysis"]
+                        if "top_features" in importance:
+                            report.append(f"   Top Enhanced SR Features: {len(importance['top_features'])}")
+                
+                # SR optimization analysis
+                if "sr_optimization_analysis" in matrix_results:
+                    opt_analysis = matrix_results["sr_optimization_analysis"]
+                    if "optimization_feature_count" in opt_analysis:
+                        report.append(f"   SR Optimization Features: {opt_analysis['optimization_feature_count']}")
+                
+                report.append("")
+            
+            # 10. Actionable Recommendations
+            report.append("🚀 10. ACTIONABLE RECOMMENDATIONS")
             report.append("-" * 40)
             
             recommendations = []
@@ -821,6 +1196,14 @@ class Step7EnhancedMatrixOperations:
             if memory.get('memory_usage_mb', 0) > 1000:
                 recommendations.append("• Optimize data types to reduce memory usage")
             
+            # SR-specific recommendations
+            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results:
+                recommendations.append("• Review SR feature correlations and consider feature selection")
+                recommendations.append("• Validate SR feature stability across different market conditions")
+                recommendations.append("• Consider SR feature importance for model training prioritization")
+            
+
+            
             if not recommendations:
                 recommendations.append("• No immediate actions required - feature matrix is in good condition")
             
@@ -829,10 +1212,38 @@ class Step7EnhancedMatrixOperations:
             
             report.append("")
             
-            # 10. Summary
-            report.append("📋 10. SUMMARY")
+            # 11. Summary
+            report.append("📋 11. SUMMARY")
             report.append("-" * 40)
             report.append(f"   Overall Quality Score: {overall_score:.2f}/1.00")
+            
+            # SR-specific summary
+            if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+                report.append("   SR Analysis: ✅ COMPREHENSIVE SR FEATURES ANALYZED")
+                
+                total_sr_features = 0
+                if "sr_analysis" in matrix_results:
+                    total_sr_features += matrix_results["sr_analysis"].get("sr_feature_count", 0)
+                if "sr_enhanced_analysis" in matrix_results:
+                    total_sr_features += matrix_results["sr_enhanced_analysis"].get("enhanced_sr_feature_count", 0)
+                if "sr_optimization_analysis" in matrix_results:
+                    total_sr_features += matrix_results["sr_optimization_analysis"].get("optimization_feature_count", 0)
+                
+                report.append(f"   Total SR Features: {total_sr_features}")
+                
+                # SR optimization status
+                if "sr_optimization_analysis" in matrix_results:
+                    opt_analysis = matrix_results["sr_optimization_analysis"]
+                    if "sr_optimization_performance_analysis" in opt_analysis:
+                        perf_score = opt_analysis["sr_optimization_performance_analysis"].get("overall_performance_score", 0)
+                        if perf_score >= 0.7:
+                            report.append("   SR Optimization: ✅ HIGH PERFORMANCE")
+                        elif perf_score >= 0.5:
+                            report.append("   SR Optimization: ⚠️  MODERATE PERFORMANCE")
+                        else:
+                            report.append("   SR Optimization: 🔴 LOW PERFORMANCE")
+            else:
+                report.append("   SR Analysis: ⚠️  NO SR FEATURES DETECTED")
             
             if overall_score >= 0.8:
                 report.append("   Status: ✅ READY FOR MODEL TRAINING")

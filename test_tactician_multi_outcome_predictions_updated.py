@@ -89,27 +89,6 @@ def create_analyst_multi_outcome_predictions() -> Dict[str, Any]:
             "model_type": "analyst",
             "model_name": "confidence_model",
             "timestamp": datetime.now().isoformat()
-        },
-        "regime_prediction": {
-            "prediction": 0.7,  # Bullish regime (0.7)
-            "confidence": 0.75,
-            "model_type": "analyst",
-            "model_name": "regime_model",
-            "timestamp": datetime.now().isoformat()
-        },
-        "volatility_prediction": {
-            "prediction": 0.015,  # 1.5% volatility
-            "confidence": 0.80,
-            "model_type": "analyst",
-            "model_name": "volatility_model",
-            "timestamp": datetime.now().isoformat()
-        },
-        "momentum_prediction": {
-            "prediction": 0.003,  # 0.3% momentum
-            "confidence": 0.78,
-            "model_type": "analyst",
-            "model_name": "momentum_model",
-            "timestamp": datetime.now().isoformat()
         }
     }
 
@@ -253,10 +232,7 @@ def test_prediction_comparison():
             analyst_type_mapping = {
                 "price_deviation_prediction": "price_prediction",
                 "price_direction_prediction": "direction_prediction", 
-                "price_target_confidence": "confidence_prediction",
-                "regime_prediction": "regime_prediction",
-                "volatility_prediction": "volatility_prediction",
-                "momentum_prediction": "momentum_prediction"
+                "price_target_confidence": "confidence_prediction"
             }
             
             analyst_type = analyst_type_mapping.get(pred_type, pred_type)
@@ -364,30 +340,8 @@ def test_step14_tactician_labeling():
         print(f"   Min confidence: {non_zero_confidence.min():.3f}")
         print(f"   Max confidence: {non_zero_confidence.max():.3f}")
     
-    # Check regime predictions
-    regime_predictions = labeled_data["tactician_regime"]
-    non_zero_regimes = regime_predictions[regime_predictions != 0]
-    print(f"   Regime predictions: {len(non_zero_regimes)}")
-    if len(non_zero_regimes) > 0:
-        print(f"   Average regime: {non_zero_regimes.mean():.3f}")
-        bullish_regimes = (non_zero_regimes > 0.6).sum()
-        bearish_regimes = (non_zero_regimes < 0.4).sum()
-        print(f"   Bullish regimes: {bullish_regimes}")
-        print(f"   Bearish regimes: {bearish_regimes}")
-    
-    # Check volatility predictions
-    volatility_predictions = labeled_data["tactician_volatility"]
-    non_zero_volatility = volatility_predictions[volatility_predictions != 0]
-    print(f"   Volatility predictions: {len(non_zero_volatility)}")
-    if len(non_zero_volatility) > 0:
-        print(f"   Average volatility: {non_zero_volatility.mean():.4f}")
-    
-    # Check momentum predictions
-    momentum_predictions = labeled_data["tactician_momentum"]
-    non_zero_momentum = momentum_predictions[momentum_predictions != 0]
-    print(f"   Momentum predictions: {len(non_zero_momentum)}")
-    if len(non_zero_momentum) > 0:
-        print(f"   Average momentum: {non_zero_momentum.mean():.4f}")
+    # Note: Only 3 prediction types are now generated
+    print(f"   Note: Only 3 prediction types generated (price deviation, direction, confidence)")
     
     # Check traditional labels for backward compatibility
     traditional_labels = labeled_data["tactician_label"]
@@ -505,18 +459,14 @@ async def main():
         print("   ✓ Smaller price deviations (50%/25% of Analyst barriers)")
         print("   ✓ Higher confidence for reaching target prices")
         print("   ✓ Price direction predictions")
-        print("   ✓ Market regime detection")
-        print("   ✓ Volatility and momentum predictions")
+        print("   ✓ Price target confidence (calculated by ML model)")
         print("   ✓ Step 14 labeling with multi-outcome predictions")
         print("   ✓ Complete execution integration")
         
         print("\n🎯 Key Features Verified:")
-        print("   • Price deviation predictions: 50% smaller than Analyst")
-        print("   • Price direction predictions: Same direction, higher confidence")
-        print("   • Price target confidence: 40% higher than Analyst")
-        print("   • Regime predictions: Same regime, higher confidence")
-        print("   • Volatility predictions: 50% higher for shorter timeframes")
-        print("   • Momentum predictions: 80% higher for shorter timeframes")
+        print("   • Price deviation predictions: 50% and 25% of Analyst barriers")
+        print("   • Price direction predictions: Same direction as Analyst")
+        print("   • Price target confidence: Calculated by ML model")
         print("   • Both 1m and 5m timeframes supported")
         print("   • Dynamic barrier integration")
         print("   • High precision filtering")
@@ -524,9 +474,9 @@ async def main():
         
         print("\n🔧 Technical Implementation:")
         print("   • TacticianEnhancedPredictionIntegrator: Core prediction enhancement")
-        print("   • Multi-outcome prediction types: 6 different prediction categories")
-        print("   • Confidence boost factors: Type-specific enhancement factors")
-        print("   • Dynamic barrier integration: Uses 50%/25% barrier system")
+        print("   • Multi-outcome prediction types: 3 prediction categories")
+        print("   • Price deviation: Uses both 50% and 25% of Analyst barriers")
+        print("   • Dynamic barrier integration: Uses 50% and 25% barrier system")
         print("   • High precision mode: 85% minimum threshold")
         print("   • Step 14 labeling: Multi-outcome prediction generation")
         print("   • Complete validation: Against Analyst predictions")

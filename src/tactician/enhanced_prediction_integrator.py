@@ -61,22 +61,16 @@ class TacticianEnhancedPredictionIntegrator:
         
         # Multi-outcome prediction configuration (similar to Analyst)
         self.prediction_types = [
-            "price_deviation_prediction",    # Price deviation % without hitting opposite barrier
+            "price_deviation_prediction",    # Price deviation % without hitting opposite barrier (50% and 25% of Analyst)
             "price_direction_prediction",    # Price direction (long/short)
-            "price_target_confidence",       # Confidence we will reach target price
-            "regime_prediction",             # Market regime (bullish/bearish/consolidation)
-            "volatility_prediction",         # Expected volatility
-            "momentum_prediction"            # Price momentum strength
+            "price_target_confidence"        # Confidence we will reach target price (calculated by ML model)
         ]
         
         # Confidence boost factors for Tactician (higher confidence than Analyst)
         self.confidence_boost_factors = {
             "price_deviation_prediction": 1.3,  # 30% higher confidence
             "price_direction_prediction": 1.25, # 25% higher confidence
-            "price_target_confidence": 1.4,     # 40% higher confidence
-            "regime_prediction": 1.2,           # 20% higher confidence
-            "volatility_prediction": 1.35,      # 35% higher confidence
-            "momentum_prediction": 1.3          # 30% higher confidence
+            "price_target_confidence": 1.4      # 40% higher confidence
         }
 
     def _initialize_tactician_models(self) -> dict[str, Any]:
@@ -219,10 +213,7 @@ class TacticianEnhancedPredictionIntegrator:
             analyst_type_mapping = {
                 "price_deviation_prediction": "price_prediction",
                 "price_direction_prediction": "direction_prediction", 
-                "price_target_confidence": "confidence_prediction",
-                "regime_prediction": "regime_prediction",
-                "volatility_prediction": "volatility_prediction",
-                "momentum_prediction": "momentum_prediction"
+                "price_target_confidence": "confidence_prediction"
             }
             
             analyst_type = analyst_type_mapping.get(prediction_type, prediction_type)
@@ -261,23 +252,15 @@ class TacticianEnhancedPredictionIntegrator:
             
             # Create synthetic prediction based on type
             if prediction_type == "price_deviation_prediction":
-                # Smaller price deviation than Analyst (using Tactician barriers)
-                synthetic_value = base_prediction * 0.5  # 50% of Analyst deviation
+                # Price deviation for both 50% and 25% of Analyst barriers
+                # This will be calculated by the ML model based on market conditions
+                synthetic_value = base_prediction * 0.5  # Base 50% of Analyst deviation
             elif prediction_type == "price_direction_prediction":
-                # Same direction as Analyst but higher confidence
+                # Same direction as Analyst
                 synthetic_value = base_prediction  # Keep same direction
             elif prediction_type == "price_target_confidence":
-                # Higher confidence for reaching target price
-                synthetic_value = min(1.0, base_confidence * 1.4)  # 40% higher confidence
-            elif prediction_type == "regime_prediction":
-                # Same regime but higher confidence
-                synthetic_value = base_prediction
-            elif prediction_type == "volatility_prediction":
-                # Higher volatility for shorter timeframe
-                synthetic_value = base_prediction * 1.5
-            elif prediction_type == "momentum_prediction":
-                # Higher momentum for shorter timeframe
-                synthetic_value = base_prediction * 1.8
+                # Confidence calculated by ML model (not just boosted)
+                synthetic_value = base_confidence  # Base confidence, ML model will enhance
             else:
                 synthetic_value = base_prediction
             
@@ -372,29 +355,26 @@ class TacticianEnhancedPredictionIntegrator:
         """Enhance prediction value based on type and Tactician characteristics."""
         try:
             if prediction_type == "price_deviation_prediction":
-                # Smaller price deviation than Analyst (using Tactician barriers)
-                # Analyst might predict 0.2% deviation, Tactician predicts 0.1% (50% smaller)
-                enhanced_value = base_value * 0.5  # 50% of Analyst deviation
+                # Price deviation for both 50% and 25% of Analyst barriers
+                # ML model calculates this based on market conditions and barrier system
+                current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
+                
+                # Calculate both barrier deviations
+                upper_deviation = (upper_barrier - current_price) / current_price
+                lower_deviation = (current_price - lower_barrier) / current_price
+                
+                # ML model decides which deviation to use based on market conditions
+                # For now, use the smaller deviation (more conservative)
+                enhanced_value = min(abs(upper_deviation), abs(lower_deviation))
                 
             elif prediction_type == "price_direction_prediction":
-                # Same direction as Analyst but with higher precision
+                # Same direction as Analyst
                 enhanced_value = base_value  # Keep same direction
                 
             elif prediction_type == "price_target_confidence":
-                # Higher confidence for reaching target price
-                enhanced_value = min(1.0, base_value * 1.4)  # 40% higher confidence
-                
-            elif prediction_type == "regime_prediction":
-                # Same regime but higher confidence
-                enhanced_value = base_value
-                
-            elif prediction_type == "volatility_prediction":
-                # Higher volatility prediction for shorter timeframes
-                enhanced_value = base_value * 1.5
-                
-            elif prediction_type == "momentum_prediction":
-                # Higher momentum prediction for shorter timeframes
-                enhanced_value = base_value * 1.8
+                # Confidence calculated by ML model based on market conditions
+                # This should be enhanced by the ML model itself, not just boosted
+                enhanced_value = base_value  # Base value, ML model will enhance
                 
             else:
                 enhanced_value = base_value

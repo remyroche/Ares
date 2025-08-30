@@ -20,7 +20,9 @@ src/utils/
 ├── enhanced_decorators.py       # New enhanced decorators
 ├── decorator_compatibility.py   # Backwards compatibility layer
 ├── centralized_decorators_v2.py # Updated centralized interface
-└── decorators.py               # Original decorators (unchanged)
+├── decorators.py               # Original decorators (ENHANCED)
+├── data_quality_decorators.py  # Data quality decorators (ENHANCED)
+└── training_pipeline_decorators.py # Training decorators (ENHANCED)
 ```
 
 ## Key Components
@@ -79,9 +81,57 @@ config = decorator_registry.export_config()
 - Deprecation management
 - Alias support
 
-### 3. Enhanced Decorators (`enhanced_decorators.py`)
+### 3. Enhanced Existing Decorators
 
-New decorators with improved functionality and performance.
+**ALL existing decorators have been enhanced** with new functionality while maintaining their exact API:
+
+#### Core Decorators (`decorators.py`)
+
+```python
+from src.utils.decorators import (
+    validate_call_or_runtime_types,  # Enhanced with caching & performance monitoring
+    pa_check_input,                  # Enhanced with intelligent caching
+    pa_check_output,                 # Enhanced with performance tracking
+    pa_check_io,                     # Enhanced with better error handling
+    enforce_ndarray,                 # Enhanced with performance monitoring
+    auto_vectorize,                  # Enhanced with intelligent caching
+    guard_array_nan_inf,             # Enhanced with caching & recovery
+    guard_dataframe_nulls,           # Enhanced with performance metrics
+    normalize_errors,                # Enhanced with intelligent recovery
+    with_tracing_span,               # Enhanced with performance monitoring
+)
+```
+
+**New Features Added:**
+- **Intelligent Caching**: Automatic caching for expensive operations
+- **Performance Monitoring**: Execution time and memory usage tracking
+- **Better Error Handling**: Enhanced recovery strategies
+- **Configuration Integration**: Automatic use of global settings
+
+#### Data Quality Decorators (`data_quality_decorators.py`)
+
+```python
+from src.utils.data_quality_decorators import (
+    validate_data_quality,           # Enhanced with caching & monitoring
+    validate_data_quality_at_step,   # Enhanced with performance tracking
+    # ... all other decorators enhanced
+)
+```
+
+#### Training Pipeline Decorators (`training_pipeline_decorators.py`)
+
+```python
+from src.utils.training_pipeline_decorators import (
+    deterministic_seed,              # Enhanced with performance monitoring
+    idempotent_step,                 # Enhanced with intelligent caching
+    artifact_write_lock,             # Enhanced with better error handling
+    # ... all other decorators enhanced
+)
+```
+
+### 4. New Enhanced Decorators (`enhanced_decorators.py`)
+
+Brand new decorators with advanced functionality:
 
 #### Smart Error Recovery
 
@@ -175,7 +225,7 @@ def resource_intensive_function():
 - I/O operation monitoring
 - Structured metric logging
 
-### 4. Backwards Compatibility (`decorator_compatibility.py`)
+### 5. Backwards Compatibility (`decorator_compatibility.py`)
 
 Ensures existing code continues to work while providing access to new features.
 
@@ -203,7 +253,7 @@ from src.utils.decorator_compatibility import (
 )
 ```
 
-### 5. Centralized Decorators v2 (`centralized_decorators_v2.py`)
+### 6. Centralized Decorators v2 (`centralized_decorators_v2.py`)
 
 Updated centralized interface with enhanced functionality.
 
@@ -245,11 +295,13 @@ def feature_engineering_step(data):
 
 ### Phase 1: Immediate Benefits (No Code Changes)
 
-Existing code automatically benefits from:
+**Existing code automatically benefits from:**
 - Improved error handling
 - Better performance monitoring
 - Enhanced logging and tracing
 - Centralized configuration
+- **Intelligent caching for all decorators**
+- **Performance metrics for all operations**
 
 ### Phase 2: Gradual Enhancement
 
@@ -451,6 +503,7 @@ Enable debug logging for detailed decorator behavior:
 import logging
 logging.getLogger("src.utils.enhanced_decorators").setLevel(logging.DEBUG)
 logging.getLogger("src.utils.decorator_registry").setLevel(logging.DEBUG)
+logging.getLogger("src.utils.decorators").setLevel(logging.DEBUG)
 ```
 
 ## Future Enhancements
@@ -483,6 +536,15 @@ def custom_decorator(func):
 
 ## Conclusion
 
-The Enhanced Decorator System provides a robust, performant, and maintainable foundation for your codebase while ensuring complete backwards compatibility. By following the migration guide and best practices, you can gradually adopt new features and improve your application's reliability and performance.
+The Enhanced Decorator System provides a robust, performant, and maintainable foundation for your codebase while ensuring complete backwards compatibility. **All existing decorators have been enhanced** with new features, and you can gradually adopt new capabilities as needed.
+
+**Key Benefits:**
+- **Zero Breaking Changes**: All existing code continues to work
+- **Automatic Improvements**: Existing decorators get caching and performance monitoring
+- **Gradual Enhancement**: Adopt new features at your own pace
+- **Unified Management**: Centralized configuration and monitoring
+- **Better Performance**: Intelligent caching and optimization
+
+By following the migration guide and best practices, you can gradually adopt new features and improve your application's reliability and performance.
 
 For questions or issues, refer to the test files and examples provided in the codebase.

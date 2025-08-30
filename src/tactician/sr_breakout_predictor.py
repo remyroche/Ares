@@ -5,6 +5,8 @@ from src.utils.logger import system_logger
 from typing import Any
 import numpy as np
 import pandas as pd
+import os
+import json
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.centralized_decorators import validate_data_quality
 
@@ -230,6 +232,10 @@ class SRBreakoutPredictor:
         self.isolation_distance_threshold: float = self.strength_config.get("isolation_distance_threshold", 0.05)  # 5% distance
         self.age_decay_factor: float = self.strength_config.get("age_decay_factor", 0.95)  # 5% decay per period
 
+        # Optimization integration
+        self.optimized_params: Optional[dict[str, Any]] = None
+        self.use_optimized_params: bool = self.sr_config.get("use_optimized_params", True)
+
     @handle_specific_errors(
         error_handlers={
             ValueError: (False, "Invalid SR breakout predictor configuration"),
@@ -310,12 +316,115 @@ class SRBreakoutPredictor:
             # if hasattr(self, "regime_classifier"):
             #     await self.regime_classifier.initialize()
 
+            # Load optimized parameters if enabled
+            if self.use_optimized_params:
+                await self._load_optimized_parameters()
+
             self.logger.info("✅ SR breakout predictor components initialized")
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to initialize components: {e}")
             return False
+
+    async def _load_optimized_parameters(self) -> None:
+        """Load optimized parameters from optimization results."""
+        try:
+            # Try to load from optimization results file
+            optimization_file = self.sr_config.get("optimization_results_file", "optimization_results.json")
+            
+            if os.path.exists(optimization_file):
+                with open(optimization_file, 'r') as f:
+                    data = json.load(f)
+                
+                if data.get("best_result"):
+                    best_result = data["best_result"]
+                    
+                    # Apply optimized parameters
+                    self.optimized_params = {
+                        "method_weights": best_result.get("method_weights", {}),
+                        "strength_weights": best_result.get("strength_weights", {}),
+                        "dbscan_params": best_result.get("dbscan_params", {}),
+                        "timeframe_weights": best_result.get("timeframe_weights", {}),
+                        "advanced_params": best_result.get("advanced_params", {}),
+                    }
+                    
+                    # Update current parameters with optimized values
+                    await self._apply_optimized_parameters()
+                    
+                    self.logger.info("✅ Loaded and applied optimized parameters")
+                else:
+                    self.logger.warning("No best result found in optimization file")
+            else:
+                self.logger.info("No optimization results file found, using default parameters")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load optimized parameters: {e}")
+
+    async def _apply_optimized_parameters(self) -> None:
+        """Apply optimized parameters to the S/R predictor."""
+        try:
+            if not self.optimized_params:
+                return
+            
+            # Apply method weights
+            method_weights = self.optimized_params.get("method_weights", {})
+            if method_weights:
+                self.model_weights.update(method_weights)
+                self.logger.info(f"Applied optimized method weights: {method_weights}")
+            
+            # Apply strength weights
+            strength_weights = self.optimized_params.get("strength_weights", {})
+            if strength_weights:
+                self.strength_score_weights.update(strength_weights)
+                self.logger.info(f"Applied optimized strength weights: {strength_weights}")
+            
+            # Apply DBSCAN parameters
+            dbscan_params = self.optimized_params.get("dbscan_params", {})
+            if dbscan_params:
+                if "eps" in dbscan_params:
+                    self.dbscan_eps = dbscan_params["eps"]
+                if "min_samples" in dbscan_params:
+                    self.dbscan_min_samples = dbscan_params["min_samples"]
+                self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
+            
+            # Apply advanced parameters
+            advanced_params = self.optimized_params.get("advanced_params", {})
+            if advanced_params:
+                # Store advanced parameters for use in advanced methods
+                self.advanced_params = advanced_params
+                self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
+            
+            # Apply timeframe weights
+            timeframe_weights = self.optimized_params.get("timeframe_weights", {})
+            if timeframe_weights:
+                self.timeframe_weights = timeframe_weights
+                self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to apply optimized parameters: {e}")
+
+    async def set_optimized_parameters(self, optimized_params: dict[str, Any]) -> None:
+        """Set optimized parameters directly."""
+        try:
+            self.optimized_params = optimized_params
+            await self._apply_optimized_parameters()
+            self.logger.info("✅ Set optimized parameters directly")
+        except Exception as e:
+            self.logger.error(f"Failed to set optimized parameters: {e}")
+
+    def get_current_parameters(self) -> dict[str, Any]:
+        """Get current parameters for comparison."""
+        return {
+            "method_weights": self.model_weights,
+            "strength_weights": self.strength_score_weights,
+            "dbscan_params": {
+                "eps": self.dbscan_eps,
+                "min_samples": self.dbscan_min_samples,
+            },
+            "advanced_params": getattr(self, 'advanced_params', {}),
+            "timeframe_weights": getattr(self, 'timeframe_weights', {}),
+        }
 
     def _initialize_reporting_system(self) -> None:
         """Initialize the reporting system."""

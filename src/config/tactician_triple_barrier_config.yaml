@@ -3,10 +3,14 @@
 # calculated as fractions of the Analyst's triple barrier values
 
 tactician_triple_barrier:
-  # Dynamic Barrier Configuration - Fractions of Analyst barriers
+  # Dynamic Barrier Configuration - 4 Barrier Combinations
   analyst_barrier_fractions:
-    upper_barrier_fraction: 0.5    # 50% of Analyst's upper barrier (profit take)
-    lower_barrier_fraction: 0.25   # 25% of Analyst's lower barrier (stop loss)
+    # 50% of Analyst barriers
+    upper_barrier_50_fraction: 0.5    # 50% of Analyst's upper barrier
+    lower_barrier_50_fraction: 0.5    # 50% of Analyst's lower barrier
+    # 25% of Analyst barriers  
+    upper_barrier_25_fraction: 0.25   # 25% of Analyst's upper barrier
+    lower_barrier_25_fraction: 0.25   # 25% of Analyst's lower barrier
   
   # Analyst Base Values (will be dynamically loaded from Analyst configuration)
   analyst_base_values:

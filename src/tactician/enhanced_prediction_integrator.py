@@ -61,9 +61,9 @@ class TacticianEnhancedPredictionIntegrator:
         
         # Multi-outcome prediction configuration (similar to Analyst)
         self.prediction_types = [
-            "price_deviation_prediction",    # Price deviation % without hitting opposite barrier (50% and 25% of Analyst)
+            "price_deviation_prediction",    # Price deviation % for all 4 barrier combinations
             "price_direction_prediction",    # Price direction (long/short)
-            "price_target_confidence"        # Confidence we will reach target price (calculated by ML model)
+            "price_target_confidence"        # Confidence to reach upper barrier before lower barrier
         ]
         
         # Confidence boost factors for Tactician (higher confidence than Analyst)
@@ -348,42 +348,55 @@ class TacticianEnhancedPredictionIntegrator:
         prediction_type: str,
         base_value: float,
         market_data: pd.DataFrame,
-        upper_barrier: float,
-        lower_barrier: float,
+        barrier_combinations: Dict[str, Tuple[float, float]],
         timeframe: str
-    ) -> float:
-        """Enhance prediction value based on type and Tactician characteristics."""
+    ) -> Dict[str, float]:
+        """Enhance prediction value for all 4 barrier combinations."""
         try:
             if prediction_type == "price_deviation_prediction":
-                # Price deviation for both 50% and 25% of Analyst barriers
-                # ML model calculates this based on market conditions and barrier system
+                # Calculate price deviations for all 4 barrier combinations
                 current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
                 
-                # Calculate both barrier deviations
-                upper_deviation = (upper_barrier - current_price) / current_price
-                lower_deviation = (current_price - lower_barrier) / current_price
+                deviations = {}
+                for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+                    # Calculate deviations for this barrier combination
+                    upper_deviation = (upper_barrier - current_price) / current_price
+                    lower_deviation = (current_price - lower_barrier) / current_price
+                    
+                    # Store both deviations for this combination
+                    deviations[barrier_name] = {
+                        "upper_deviation": upper_deviation,
+                        "lower_deviation": lower_deviation
+                    }
                 
-                # ML model decides which deviation to use based on market conditions
-                # For now, use the smaller deviation (more conservative)
-                enhanced_value = min(abs(upper_deviation), abs(lower_deviation))
+                return deviations
                 
             elif prediction_type == "price_direction_prediction":
-                # Same direction as Analyst
-                enhanced_value = base_value  # Keep same direction
+                # Same direction as Analyst for all barrier combinations
+                directions = {}
+                for barrier_name in barrier_combinations.keys():
+                    directions[barrier_name] = base_value  # Keep same direction
+                
+                return directions
                 
             elif prediction_type == "price_target_confidence":
-                # Confidence calculated by ML model based on market conditions
-                # This should be enhanced by the ML model itself, not just boosted
-                enhanced_value = base_value  # Base value, ML model will enhance
+                # Confidence to reach upper barrier before lower barrier for each combination
+                confidences = {}
+                for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+                    # ML model calculates confidence based on market conditions and barrier distances
+                    # For now, use base confidence - ML model will enhance this
+                    confidences[barrier_name] = base_value
+                
+                return confidences
                 
             else:
-                enhanced_value = base_value
-            
-            return enhanced_value
+                # Return base value for all combinations
+                return {name: base_value for name in barrier_combinations.keys()}
             
         except Exception as e:
-            self.logger.error(error(f"❌ Error enhancing prediction value: {e}"))
-            return base_value
+            self.logger.error(f"❌ Error enhancing prediction value: {e}")
+            # Return fallback values for all combinations
+            return {name: base_value for name in barrier_combinations.keys()}
 
     def _calculate_enhanced_confidence(
         self,

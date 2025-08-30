@@ -125,23 +125,23 @@ class SRBacktestingValidator:
         self.config = config
         self.logger = system_logger.getChild("SRBacktestingValidator")
         
-            # Backtesting configuration
-    self.backtest_config = config.get("sr_backtesting", {})
-    self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
-    self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
-    self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
-    self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
-    self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
-    self.min_touches = self.backtest_config.get("min_touches", 2)
-    
-    # Volume analysis configuration
-    self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
-    self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
-    self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
-    self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
-    self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
+        # Backtesting configuration
+        self.backtest_config = config.get("sr_backtesting", {})
+        self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
+        self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
+        self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
+        self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
+        self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
+        self.min_touches = self.backtest_config.get("min_touches", 2)
         
-                    # S/R validation configuration
+        # Volume analysis configuration
+        self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
+        self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
+        self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
+        self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
+        self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
+        
+        # S/R validation configuration
         self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
         self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
         self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation

@@ -1,0 +1,30 @@
+2025-08-30 10:33:57,963 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-30 10:33:58,424 INFO AresTradingSystem.System.MainBacktestingTest 🚀 Starting S/R Backtesting Validation Tests - -
+2025-08-30 10:33:58,424 INFO AresTradingSystem.System.MainBacktestingTest This demonstrates how S/R levels are validated through proper backtesting - -
+2025-08-30 10:33:58,424 INFO AresTradingSystem.System.MainBacktestingTest and how success metrics are calculated to assess S/R level effectiveness. - -
+2025-08-30 10:33:58,424 INFO AresTradingSystem.System.TestSRBacktesting 🚀 Starting S/R Backtesting Validation Test - -
+2025-08-30 10:33:58,424 INFO AresTradingSystem.System.TestSRBacktesting 📊 Generating realistic market data with known S/R levels... - -
+2025-08-30 10:33:58,435 INFO AresTradingSystem.System.TestSRBacktesting Generated 1000 data points - -
+2025-08-30 10:33:58,435 INFO AresTradingSystem.System.TestSRBacktesting Price range: 66.02 - 106.79 - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting TEST 1: Direct S/R Backtesting Validation - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:33:58,436 ERROR AresTradingSystem.System.DirectBacktesting ❌ Direct backtesting test failed: 'SRBreakoutPredictor' object has no attribute 'sr_config' - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting TEST 2: S/R Detection with Backtesting Optimization - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.SRDetectionOptimizer 🚀 Initializing S/R Detection Optimizer... - -
+2025-08-30 10:33:58,436 ERROR AresTradingSystem.System.SRDetectionOptimizer Failed to initialize S/R detection optimizer: 'SRBreakoutPredictor' object has no attribute 'sr_config' - -
+2025-08-30 10:33:58,436 ERROR AresTradingSystem.System.OptimizationBacktesting ❌ Failed to initialize optimizer - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting TEST 3: Success Metrics Analysis - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.SuccessMetrics 📊 Analyzing S/R Level Success Metrics... - -
+2025-08-30 10:33:58,436 ERROR AresTradingSystem.System.SuccessMetrics ❌ Success metrics analysis failed: 'SRBreakoutPredictor' object has no attribute 'sr_config' - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting 
+============================================================ - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting 🎉 All backtesting validation tests completed! - -
+2025-08-30 10:33:58,436 INFO AresTradingSystem.System.TestSRBacktesting ============================================================ - -

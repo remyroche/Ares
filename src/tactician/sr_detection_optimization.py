@@ -510,7 +510,64 @@ class SRDetectionOptimizer:
         market_data: pd.DataFrame,
         target_data: Optional[pd.Series]
     ) -> float:
-        """Calculate performance score for optimization."""
+        """Calculate performance score for optimization using proper backtesting."""
+        try:
+            # Import backtesting validator
+            from src.tactician.sr_backtesting_validator import setup_sr_backtesting_validator
+            
+            # Initialize backtesting validator
+            validator = await setup_sr_backtesting_validator(self.config)
+            if not validator:
+                self.logger.warning("Backtesting validator not available, using fallback scoring")
+                return self._calculate_fallback_score(sr_context, market_data, target_data)
+            
+            # Extract S/R levels from context
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
+            all_levels = support_levels + resistance_levels
+            
+            if not all_levels:
+                return 0.0
+            
+            # Get current price
+            current_price = market_data['close'].iloc[-1]
+            
+            # Validate S/R levels through backtesting
+            backtest_result = await validator.validate_sr_levels(
+                market_data=market_data,
+                sr_levels=all_levels,
+                current_price=current_price
+            )
+            
+            if not backtest_result:
+                return 0.0
+            
+            # Use the overall performance score from backtesting
+            performance_score = backtest_result.overall_performance_score
+            
+            # Store backtesting results for analysis
+            if not hasattr(self, 'backtest_results'):
+                self.backtest_results = []
+            self.backtest_results.append({
+                'backtest_result': backtest_result,
+                'sr_context': sr_context,
+                'timestamp': pd.Timestamp.now()
+            })
+            
+            return performance_score
+            
+        except Exception as e:
+            self.logger.error(f"Backtesting performance score calculation failed: {e}")
+            # Fallback to basic scoring
+            return self._calculate_fallback_score(sr_context, market_data, target_data)
+    
+    def _calculate_fallback_score(
+        self,
+        sr_context: Dict[str, Any],
+        market_data: pd.DataFrame,
+        target_data: Optional[pd.Series]
+    ) -> float:
+        """Fallback performance score calculation when backtesting is not available."""
         try:
             score = 0.0
             
@@ -557,10 +614,7 @@ class SRDetectionOptimizer:
             
             # If target data is provided, calculate supervised score
             if target_data is not None and len(target_data) > 0:
-                # This would implement supervised learning metrics
-                # For now, we'll use a simple correlation-based score
                 try:
-                    # Extract features from S/R context
                     features = self._extract_sr_features(sr_context, market_data)
                     if features and len(features) == len(target_data):
                         correlation = np.corrcoef(features, target_data)[0, 1]
@@ -572,7 +626,7 @@ class SRDetectionOptimizer:
             return max(0.0, min(1.0, score))  # Ensure score is between 0 and 1
             
         except Exception as e:
-            self.logger.error(f"Performance score calculation failed: {e}")
+            self.logger.error(f"Fallback performance score calculation failed: {e}")
             return 0.0
     
     def _extract_sr_features(

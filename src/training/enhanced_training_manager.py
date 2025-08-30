@@ -168,6 +168,7 @@ class EnhancedTrainingManager:
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
             "step2_data_reading",              # Read and validate data quality
+            "step2_5_sr_optimization",         # S/R detection optimization
             "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
             "step4_triple_barrier_method",     # Apply triple barrier method
             "step4_regime_data_splitting",     # Regime data splitting (legacy step)
@@ -205,6 +206,10 @@ class EnhancedTrainingManager:
             "step2_feature_engineering": [
                 "data/training/{exchange}_{symbol}_features_train.parquet",
                 "data/training/{exchange}_{symbol}_features_metadata.json",
+            ],
+            "step2_5_sr_optimization": [
+                "data/optimization/sr_optimization_results.json",
+                "optimization_results.json",
             ],
             "step3_hmm_regime_discovery": [
                 "data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
@@ -1690,6 +1695,70 @@ class EnhancedTrainingManager:
                         except Exception as e:
                             self.logger.exception(f"❌ Step 2 validator failed: {e} - stopping pipeline")
                             return False
+
+                # Step 2.5: S/R Detection Optimization - Fatal on failure
+                self._heartbeat("Step 2.5: S/R Detection Optimization")
+
+                should_run_step2_5 = _should_run("step2_5_sr_optimization")
+                step_start_2_5 = time.time()
+
+                if not should_run_step2_5:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 2.5: S/R Detection Optimization (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["sr_optimization"] = {
+                        "status": "SKIPPED",
+                        "success": True,
+                        "skipped": True,
+                        "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    # Verify previous step artifacts BEFORE execution
+                    if not await self.verify_previous_step_artifacts("step2_5_sr_optimization", symbol, exchange, timeframe):
+                        self.logger.error("❌ Previous step artifacts not found for step2.5, stopping pipeline")
+                        return False
+
+                    # Validate step dependencies BEFORE execution
+                    if not await self.validate_step_dependencies("step2_5_sr_optimization", pipeline_state, self.force_rerun):
+                        self.logger.error("❌ Step 2.5 dependencies not met, stopping pipeline")
+                        return False
+
+                    step_start_2_5 = time.time()
+                    try:
+                        from src.training.steps import step2_5_sr_optimization
+
+                        step2_5_success = await step2_5_sr_optimization.run_step(
+                            config=self.config,
+                        )
+                    except Exception as e:
+                        self.logger.exception(f"❌ Error in Step 2.5: {e}")
+                        step2_5_success = False
+
+                    if not step2_5_success:
+                        self._log_step_completion(
+                            "Step 2.5: S/R Detection Optimization",
+                            step_start_2_5,
+                            step_times,
+                            success=False,
+                        )
+                        return False
+                    self._log_step_completion(
+                        "Step 2.5: S/R Detection Optimization",
+                        step_start_2_5,
+                        step_times,
+                        success=True,
+                    )
+
+                    pipeline_state["sr_optimization"] = {
+                        "status": "SUCCESS" if step2_5_success else "FAILED",
+                        "success": bool(step2_5_success),
+                        "completed": bool(step2_5_success),
+                    }
+                    self._save_checkpoint("step2_5_sr_optimization", pipeline_state)
+
+                if not step2_5_success:
+                    return False
+                self.logger.info("➡️ Proceeding to Step 3: HMM Regime Discovery")
 
                 # Step 3: HMM Regime Discovery (block HMMs + composite clustering) - Fatal on failure
                     from src.training.steps import step3_hmm_regime_discovery as _step3

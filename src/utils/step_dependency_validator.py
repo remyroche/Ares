@@ -25,17 +25,18 @@ class StepDependencyValidator:
         self.step_dependencies = {
             "step1_data_collection": [],
             "step1_5_data_converter": ["step1_data_collection"],
-                    "step2_data_reading": ["step1_5_data_converter"],
-    "step3_hmm_regime_discovery": ["step2_data_reading"],
-    "step4_triple_barrier_method": ["step3_hmm_regime_discovery"],
-    "step4_regime_data_splitting": ["step4_triple_barrier_method"],
-    "step5_labeling": ["step4_triple_barrier_method"],
-    "step6_feature_engineering": ["step5_labeling"],
-    "step7_enhanced_matrix_operations": ["step6_feature_engineering"],
+            "step2_data_reading": ["step1_5_data_converter"],
+            "step2_5_sr_optimization": ["step2_data_reading"],
+            "step3_hmm_regime_discovery": ["step2_5_sr_optimization"],
+            "step4_triple_barrier_method": ["step3_hmm_regime_discovery"],
+            "step4_regime_data_splitting": ["step4_triple_barrier_method"],
+            "step5_labeling": ["step4_triple_barrier_method"],
+            "step6_feature_engineering": ["step5_labeling"],
+            "step7_enhanced_matrix_operations": ["step6_feature_engineering"],
             "step8_regime_data_splitting": ["step7_enhanced_matrix_operations"],
-                "step9_hmm_based_training": ["step8_regime_data_splitting"],
-    "step9_5_multi_timeframe_hmm_ensemble": ["step9_hmm_based_training"],
-    "step9_5_hmm_lm_generalist_training": ["step9_5_multi_timeframe_hmm_ensemble"],
+            "step9_hmm_based_training": ["step8_regime_data_splitting"],
+            "step9_5_multi_timeframe_hmm_ensemble": ["step9_hmm_based_training"],
+            "step9_5_hmm_lm_generalist_training": ["step9_5_multi_timeframe_hmm_ensemble"],
             "step10_unified_regime_intelligence": ["step9_5_hmm_lm_generalist_training"],
             "step11_analyst_creation": ["step10_unified_regime_intelligence"],
             "step12_analyst_enhancement": ["step11_analyst_creation"],
@@ -63,6 +64,11 @@ class StepDependencyValidator:
                 "min_rows": 500
             },
             "step2_data_reading": {
+                "required_files": ["data_cache/unified/*/*/*/*.parquet"],
+                "required_columns": ["open", "high", "low", "close", "volume"],
+                "min_rows": 500
+            },
+            "step2_5_sr_optimization": {
                 "required_files": ["data_cache/unified/*/*/*/*.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
@@ -278,25 +284,26 @@ class StepDependencyValidator:
                         # Check if the step is marked as completed in the centralized file
                         pipeline_state = progress_data.get("pipeline_state", {})
                         
-                        # Map step names to their status keys in the centralized file
-                        step_status_mapping = {
-                            "step1_data_collection": "data_collection",
-                            "step2_feature_engineering": "feature_engineering",
-                            "step3_hmm_regime_discovery": "hmm_regime_discovery",
-                            "step4_processing_labeling": "processing_labeling",
-                            "step5_regime_data_splitting": "regime_data_splitting",
-                            "step6_hmm_based_training": "hmm_based_training",
-                            "step6_5_unified_regime_intelligence": "unified_regime_intelligence",
-                            "step7_analyst_enhancement": "analyst_enhancement",
-                            "step8_tactician_labeling": "tactician_labeling",
-                            "step9_tactician_specialist_training": "tactician_specialist_training",
-                            "step10_confidence_calibration": "confidence_calibration",
-                            "step11_final_parameters_optimization": "final_parameters_optimization",
-                            "step12_walk_forward_validation": "walk_forward_validation",
-                            "step13_monte_carlo_validation": "monte_carlo_validation",
-                            "step14_ab_testing": "ab_testing",
-                            "step15_saving": "saving",
-                        }
+                                                    # Map step names to their status keys in the centralized file
+                            step_status_mapping = {
+                                "step1_data_collection": "data_collection",
+                                "step2_feature_engineering": "feature_engineering",
+                                "step2_5_sr_optimization": "sr_optimization",
+                                "step3_hmm_regime_discovery": "hmm_regime_discovery",
+                                "step4_processing_labeling": "processing_labeling",
+                                "step5_regime_data_splitting": "regime_data_splitting",
+                                "step6_hmm_based_training": "hmm_based_training",
+                                "step6_5_unified_regime_intelligence": "unified_regime_intelligence",
+                                "step7_analyst_enhancement": "analyst_enhancement",
+                                "step8_tactician_labeling": "tactician_labeling",
+                                "step9_tactician_specialist_training": "tactician_specialist_training",
+                                "step10_confidence_calibration": "confidence_calibration",
+                                "step11_final_parameters_optimization": "final_parameters_optimization",
+                                "step12_walk_forward_validation": "walk_forward_validation",
+                                "step13_monte_carlo_validation": "monte_carlo_validation",
+                                "step14_ab_testing": "ab_testing",
+                                "step15_saving": "saving",
+                            }
                         
                         if step_name in step_status_mapping:
                             status_key = step_status_mapping[step_name]
@@ -338,6 +345,7 @@ class StepDependencyValidator:
                             step_status_mapping = {
                                 "step1_data_collection": "data_collection",
                                 "step2_feature_engineering": "feature_engineering",
+                                "step2_5_sr_optimization": "sr_optimization",
                                 "step3_hmm_regime_discovery": "hmm_regime_discovery",
                                 "step4_processing_labeling": "processing_labeling",
                                 "step5_regime_data_splitting": "regime_data_splitting",
@@ -656,6 +664,10 @@ class StepDependencyValidator:
                 "step2_feature_engineering": [
                     f"{artifact_dir}/{exchange}_{symbol}_features_train.parquet",
                     f"{artifact_dir}/{exchange}_{symbol}_features_metadata.json",
+                ],
+                "step2_5_sr_optimization": [
+                    f"data/optimization/sr_optimization_results.json",
+                    f"optimization_results.json",
                 ],
                 "step3_hmm_regime_discovery": [
                     f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",

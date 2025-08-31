@@ -119,7 +119,16 @@ class MatrixDiverseLookbackOptimizer:
                 "Volume_Price_Oscillator_Trigger": {"min": 5, "max": 30, "step": 1},
                 "Volume_Price_Oscillator_Zero_Line": {"min": 5, "max": 30, "step": 1},
                 "Volume_Price_Oscillator_Upper_Band": {"min": 5, "max": 30, "step": 1},
-                "Volume_Price_Oscillator_Lower_Band": {"min": 5, "max": 30, "step": 1}
+                "Volume_Price_Oscillator_Lower_Band": {"min": 5, "max": 30, "step": 1},
+                "VWAP_Momentum": {"min": 3, "max": 50, "step": 1},
+                "VWAP_Acceleration": {"min": 3, "max": 50, "step": 1},
+                "VWAP_Volatility": {"min": 5, "max": 50, "step": 1},
+                "VWAP_Momentum_Volatility": {"min": 5, "max": 50, "step": 1},
+                "VWAP_Returns": {"min": 5, "max": 50, "step": 1},
+                "VWAP_Log_Returns": {"min": 5, "max": 50, "step": 1},
+                "Price_VWAP_Ratio": {"min": 5, "max": 50, "step": 1},
+                "Price_VWAP_Deviation": {"min": 5, "max": 50, "step": 1},
+                "Price_VWAP_Spread": {"min": 5, "max": 50, "step": 1}
             }
         })
         
@@ -1021,6 +1030,24 @@ class MatrixDiverseLookbackOptimizer:
                 return self._calculate_volume_price_oscillator_upper_band(data, period)
             elif feature_name == "Volume_Price_Oscillator_Lower_Band":
                 return self._calculate_volume_price_oscillator_lower_band(data, period)
+            elif feature_name == "VWAP_Momentum":
+                return self._calculate_vwap_momentum(data, period)
+            elif feature_name == "VWAP_Acceleration":
+                return self._calculate_vwap_acceleration(data, period)
+            elif feature_name == "VWAP_Volatility":
+                return self._calculate_vwap_volatility(data, period)
+            elif feature_name == "VWAP_Momentum_Volatility":
+                return self._calculate_vwap_momentum_volatility(data, period)
+            elif feature_name == "VWAP_Returns":
+                return self._calculate_vwap_returns(data, period)
+            elif feature_name == "VWAP_Log_Returns":
+                return self._calculate_vwap_log_returns(data, period)
+            elif feature_name == "Price_VWAP_Ratio":
+                return self._calculate_price_vwap_ratio(data, period)
+            elif feature_name == "Price_VWAP_Deviation":
+                return self._calculate_price_vwap_deviation(data, period)
+            elif feature_name == "Price_VWAP_Spread":
+                return self._calculate_price_vwap_spread(data, period)
             else:
                 self.logger.warning(f"⚠️ Unknown feature: {feature_name}")
                 return None
@@ -1429,6 +1456,61 @@ class MatrixDiverseLookbackOptimizer:
         vpo = ((typical_price - vwap) / vwap) * 100
         lower_band = -vpo.rolling(window=period).std() * 2
         return lower_band
+    
+    # VWAP-based feature calculation methods
+    def _calculate_vwap_momentum(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP momentum with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        vwap_momentum = vwap / vwap.shift(period) - 1
+        return vwap_momentum
+    
+    def _calculate_vwap_acceleration(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP acceleration with specific period."""
+        vwap_momentum = self._calculate_vwap_momentum(data, period)
+        vwap_acceleration = vwap_momentum - vwap_momentum.shift(period)
+        return vwap_acceleration
+    
+    def _calculate_vwap_volatility(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP volatility with specific period."""
+        vwap_returns = self._calculate_vwap_returns(data, period)
+        vwap_volatility = vwap_returns.rolling(window=period).std()
+        return vwap_volatility
+    
+    def _calculate_vwap_momentum_volatility(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP momentum volatility with specific period."""
+        vwap_momentum = self._calculate_vwap_momentum(data, period)
+        vwap_momentum_volatility = vwap_momentum.rolling(window=period).std()
+        return vwap_momentum_volatility
+    
+    def _calculate_vwap_returns(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP returns with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        vwap_returns = vwap.pct_change()
+        return vwap_returns
+    
+    def _calculate_vwap_log_returns(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate VWAP log returns with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        vwap_log_returns = np.log(vwap / vwap.shift(1))
+        return vwap_log_returns
+    
+    def _calculate_price_vwap_ratio(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate price to VWAP ratio with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        price_vwap_ratio = data['close'] / vwap
+        return price_vwap_ratio
+    
+    def _calculate_price_vwap_deviation(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate price to VWAP deviation with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        price_vwap_deviation = (data['close'] - vwap) / vwap
+        return price_vwap_deviation
+    
+    def _calculate_price_vwap_spread(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate price to VWAP spread with specific period."""
+        vwap = self._calculate_vwap(data, period)
+        price_vwap_spread = data['close'] - vwap
+        return price_vwap_spread
     
     async def _analyze_matrix_optimization(
         self, 

@@ -1,5 +1,5 @@
 """
-Enhanced Training Manager with Comprehensive Decorators and Reporting
+Enhanced Training Manager with Existing Decorators Integration
 Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
 """
 
@@ -11,16 +11,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
-from src.utils.enhanced_pipeline_decorators import (
-    enhanced_pipeline_step,
-    detailed_pipeline_step,
-    comprehensive_pipeline_step,
-    get_step_reports,
-    get_latest_step_report,
-    cleanup_old_reports,
-    ReportLevel
-)
 from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors
+from src.utils.training_pipeline_decorators import (
+    monitor_pipeline_step,
+    validate_pipeline_input,
+    monitor_pipeline_performance,
+    PipelineStage,
+    PipelineValidationLevel
+)
 
 
 class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
@@ -28,7 +27,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     Enhanced Training Manager with comprehensive decorators and detailed reporting.
     
     This class extends the base EnhancedTrainingManager to provide:
-    1. Thorough decorators for each pipeline step
+    1. Thorough decorators for each pipeline step using existing decorators
     2. Detailed reports upon completion
     3. Consistent storage of all reports in a centralized location
     """
@@ -42,16 +41,25 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         # Initialize reporting configuration
         self.reporting_config = config.get("enhanced_reporting", {})
         self.enable_detailed_reporting = self.reporting_config.get("enable_detailed_reporting", True)
-        self.report_level = ReportLevel(self.reporting_config.get("report_level", "detailed"))
         self.auto_cleanup_reports = self.reporting_config.get("auto_cleanup_reports", True)
         self.reports_retention_days = self.reporting_config.get("reports_retention_days", 30)
         
         self.logger.info(f"🚀 Enhanced Training Manager with Reporting initialized")
-        self.logger.info(f"   📊 Report Level: {self.report_level.value}")
         self.logger.info(f"   📁 Reports Directory: {self.pipeline_reports_dir}")
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
     
-    @enhanced_pipeline_step("execute_enhanced_training", ReportLevel.COMPREHENSIVE)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="enhanced_training_execution"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.MODEL_TRAINING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True,
+        memory_threshold=80.0,
+        duration_threshold=3600.0  # 1 hour
+    )
     async def execute_enhanced_training(
         self,
         enhanced_training_input: dict[str, Any],
@@ -79,15 +87,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             pipeline_report["pipeline_end_time"] = datetime.now().isoformat()
             pipeline_report["overall_success"] = result
             
-            # Collect step reports
-            await self._collect_step_reports(pipeline_report)
-            
             # Generate and store pipeline report
             await self._generate_pipeline_report(pipeline_report)
-            
-            # Cleanup old reports if enabled
-            if self.auto_cleanup_reports:
-                await cleanup_old_reports(self.reports_retention_days)
             
             return result
             
@@ -100,7 +101,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             await self._generate_pipeline_report(pipeline_report)
             raise
     
-    @detailed_pipeline_step("step1_data_collection")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_data_collection"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_COLLECTION,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
+    @validate_pipeline_input(
+        required_params=["symbol", "exchange", "timeframe", "data_dir"],
+        required_directories=["data_cache"],
+        min_memory_gb=4.0,
+        min_disk_gb=2.0
+    )
     async def _execute_step1_enhanced(
         self,
         symbol: str,
@@ -122,17 +138,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 force_rerun=force_rerun,
             )
             
-            # Track data collection metrics
-            if result:
-                await self._track_data_collection_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 1 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step1_5_data_converter")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_5_data_converter"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_PREPROCESSING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
+    @validate_pipeline_input(
+        required_params=["symbol", "exchange", "timeframe", "data_dir"],
+        required_directories=["data_cache"],
+        min_memory_gb=4.0,
+        min_disk_gb=2.0
+    )
     async def _execute_step1_5_enhanced(
         self,
         symbol: str,
@@ -154,17 +181,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 force_rerun=force_rerun,
             )
             
-            # Track data conversion metrics
-            if result:
-                await self._track_data_conversion_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 1.5 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step2_feature_engineering")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step2_feature_engineering"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.FEATURE_ENGINEERING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=16.0,
+        cpu_threshold_percent=90.0
+    )
     async def _execute_step2_enhanced(
         self,
         symbol: str,
@@ -188,45 +226,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 feature_config=feature_config,
             )
             
-            # Track feature engineering metrics
-            if result:
-                await self._track_feature_engineering_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 2 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step2_5_sr_optimization")
-    async def _execute_step2_5_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
-        """Execute Step 2.5: S/R Optimization with enhanced reporting."""
-        
-        try:
-            from src.training.steps import step2_5_sr_optimization
-            
-            result = await step2_5_sr_optimization.run_step(
-                config=self.config,
-            )
-            
-            # Track S/R optimization metrics
-            if result:
-                await self._track_sr_optimization_metrics(symbol, exchange, timeframe)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"❌ Step 2.5 failed: {e}")
-            raise
-    
-    @comprehensive_pipeline_step("step3_hmm_regime_discovery")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step3_hmm_regime_discovery"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.MODEL_TRAINING,
+        validation_level=PipelineValidationLevel.STRICT,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=95.0
+    )
     async def _execute_step3_enhanced(
         self,
         symbol: str,
@@ -250,17 +271,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 force_rerun=force_rerun,
             )
             
-            # Track HMM regime discovery metrics
-            if result:
-                await self._track_hmm_regime_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 3 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step4_regime_data_splitting")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step4_regime_data_splitting"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_PREPROCESSING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step4_enhanced(
         self,
         symbol: str,
@@ -283,17 +309,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track regime data splitting metrics
-            if result:
-                await self._track_regime_splitting_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 4 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step5_triple_barrier_method")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step5_triple_barrier_method"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_PREPROCESSING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step5_enhanced(
         self,
         symbol: str,
@@ -316,17 +347,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track triple barrier metrics
-            if result:
-                await self._track_triple_barrier_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 5 failed: {e}")
             raise
     
-    @comprehensive_pipeline_step("step6_hmm_based_training")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step6_hmm_based_training"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.MODEL_TRAINING,
+        validation_level=PipelineValidationLevel.STRICT,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=95.0
+    )
     async def _execute_step6_enhanced(
         self,
         symbol: str,
@@ -349,17 +391,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track HMM training metrics
-            if result:
-                await self._track_hmm_training_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 6 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step7_analyst_enhancement")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step7_analyst_enhancement"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.MODEL_TRAINING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step7_enhanced(
         self,
         symbol: str,
@@ -382,17 +429,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track analyst enhancement metrics
-            if result:
-                await self._track_analyst_enhancement_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 7 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step8_tactician_labeling")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step8_tactician_labeling"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_PREPROCESSING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step8_enhanced(
         self,
         symbol: str,
@@ -415,17 +467,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track tactician labeling metrics
-            if result:
-                await self._track_tactician_labeling_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 8 failed: {e}")
             raise
     
-    @comprehensive_pipeline_step("step9_tactician_specialist_training")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step9_tactician_specialist_training"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.MODEL_TRAINING,
+        validation_level=PipelineValidationLevel.STRICT,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=95.0
+    )
     async def _execute_step9_enhanced(
         self,
         symbol: str,
@@ -448,17 +511,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track tactician training metrics
-            if result:
-                await self._track_tactician_training_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 9 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step10_confidence_calibration")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step10_confidence_calibration"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.VALIDATION,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step10_enhanced(
         self,
         symbol: str,
@@ -481,17 +549,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track confidence calibration metrics
-            if result:
-                await self._track_confidence_calibration_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 10 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step11_final_parameters_optimization")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step11_final_parameters_optimization"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.OPTIMIZATION,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step11_enhanced(
         self,
         symbol: str,
@@ -514,17 +587,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track optimization metrics
-            if result:
-                await self._track_optimization_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 11 failed: {e}")
             raise
     
-    @comprehensive_pipeline_step("step12_walk_forward_validation")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step12_walk_forward_validation"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.VALIDATION,
+        validation_level=PipelineValidationLevel.STRICT,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=95.0
+    )
     async def _execute_step12_enhanced(
         self,
         symbol: str,
@@ -547,17 +631,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track walk forward validation metrics
-            if result:
-                await self._track_walk_forward_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 12 failed: {e}")
             raise
     
-    @comprehensive_pipeline_step("step13_monte_carlo_validation")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step13_monte_carlo_validation"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.VALIDATION,
+        validation_level=PipelineValidationLevel.STRICT,
+        enable_data_quality=True
+    )
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=32.0,
+        cpu_threshold_percent=95.0
+    )
     async def _execute_step13_enhanced(
         self,
         symbol: str,
@@ -580,17 +675,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track Monte Carlo validation metrics
-            if result:
-                await self._track_monte_carlo_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 13 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step14_ab_testing")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step14_ab_testing"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.VALIDATION,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step14_enhanced(
         self,
         symbol: str,
@@ -613,17 +713,22 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track A/B testing metrics
-            if result:
-                await self._track_ab_testing_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 14 failed: {e}")
             raise
     
-    @detailed_pipeline_step("step15_saving")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step15_saving"
+    )
+    @monitor_pipeline_step(
+        stage=PipelineStage.DEPLOYMENT,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
+    )
     async def _execute_step15_enhanced(
         self,
         symbol: str,
@@ -646,132 +751,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 config=self.config,
             )
             
-            # Track saving metrics
-            if result:
-                await self._track_saving_metrics(symbol, exchange, timeframe)
-            
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Step 15 failed: {e}")
             raise
-    
-    # Metric tracking methods for each step
-    async def _track_data_collection_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track data collection metrics."""
-        # Implementation for data collection metrics
-        pass
-    
-    async def _track_data_conversion_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track data conversion metrics."""
-        # Implementation for data conversion metrics
-        pass
-    
-    async def _track_feature_engineering_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track feature engineering metrics."""
-        # Implementation for feature engineering metrics
-        pass
-    
-    async def _track_sr_optimization_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track S/R optimization metrics."""
-        # Implementation for S/R optimization metrics
-        pass
-    
-    async def _track_hmm_regime_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track HMM regime discovery metrics."""
-        # Implementation for HMM regime metrics
-        pass
-    
-    async def _track_regime_splitting_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track regime data splitting metrics."""
-        # Implementation for regime splitting metrics
-        pass
-    
-    async def _track_triple_barrier_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track triple barrier method metrics."""
-        # Implementation for triple barrier metrics
-        pass
-    
-    async def _track_hmm_training_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track HMM training metrics."""
-        # Implementation for HMM training metrics
-        pass
-    
-    async def _track_analyst_enhancement_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track analyst enhancement metrics."""
-        # Implementation for analyst enhancement metrics
-        pass
-    
-    async def _track_tactician_labeling_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track tactician labeling metrics."""
-        # Implementation for tactician labeling metrics
-        pass
-    
-    async def _track_tactician_training_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track tactician training metrics."""
-        # Implementation for tactician training metrics
-        pass
-    
-    async def _track_confidence_calibration_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track confidence calibration metrics."""
-        # Implementation for confidence calibration metrics
-        pass
-    
-    async def _track_optimization_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track optimization metrics."""
-        # Implementation for optimization metrics
-        pass
-    
-    async def _track_walk_forward_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track walk forward validation metrics."""
-        # Implementation for walk forward metrics
-        pass
-    
-    async def _track_monte_carlo_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track Monte Carlo validation metrics."""
-        # Implementation for Monte Carlo metrics
-        pass
-    
-    async def _track_ab_testing_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track A/B testing metrics."""
-        # Implementation for A/B testing metrics
-        pass
-    
-    async def _track_saving_metrics(self, symbol: str, exchange: str, timeframe: str):
-        """Track saving metrics."""
-        # Implementation for saving metrics
-        pass
-    
-    async def _collect_step_reports(self, pipeline_report: Dict[str, Any]):
-        """Collect reports from all executed steps."""
-        
-        step_names = [
-            "step1_data_collection",
-            "step1_5_data_converter", 
-            "step2_feature_engineering",
-            "step2_5_sr_optimization",
-            "step3_hmm_regime_discovery",
-            "step4_regime_data_splitting",
-            "step5_triple_barrier_method",
-            "step6_hmm_based_training",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
-            "step10_confidence_calibration",
-            "step11_final_parameters_optimization",
-            "step12_walk_forward_validation",
-            "step13_monte_carlo_validation",
-            "step14_ab_testing",
-            "step15_saving"
-        ]
-        
-        for step_name in step_names:
-            try:
-                latest_report = await get_latest_step_report(step_name)
-                if latest_report:
-                    pipeline_report["steps"][step_name] = latest_report
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to collect report for {step_name}: {e}")
     
     async def _generate_pipeline_report(self, pipeline_report: Dict[str, Any]):
         """Generate and store the comprehensive pipeline report."""
@@ -822,56 +806,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         summary.append(f"  Overall Success: {pipeline_report.get('overall_success', 'N/A')}")
         summary.append("")
         
-        # Step summary
-        steps = pipeline_report.get("steps", {})
-        summary.append("Step Execution Summary:")
-        summary.append("-" * 50)
-        
-        step_statuses = {
-            "success": [],
-            "failed": [],
-            "skipped": []
-        }
-        
-        for step_name, step_report in steps.items():
-            status = step_report.get("status", "unknown")
-            if status == "success":
-                step_statuses["success"].append(step_name)
-            elif status == "failed":
-                step_statuses["failed"].append(step_name)
-            else:
-                step_statuses["skipped"].append(step_name)
-        
-        summary.append(f"✅ Successful Steps ({len(step_statuses['success'])}):")
-        for step in step_statuses["success"]:
-            summary.append(f"  - {step}")
-        
-        if step_statuses["failed"]:
-            summary.append(f"❌ Failed Steps ({len(step_statuses['failed'])}):")
-            for step in step_statuses["failed"]:
-                summary.append(f"  - {step}")
-        
-        if step_statuses["skipped"]:
-            summary.append(f"⏭️ Skipped Steps ({len(step_statuses['skipped'])}):")
-            for step in step_statuses["skipped"]:
-                summary.append(f"  - {step}")
-        
-        summary.append("")
-        
-        # Performance summary
-        summary.append("Performance Summary:")
-        summary.append("-" * 50)
-        
-        total_duration = 0
-        for step_name, step_report in steps.items():
-            if step_report.get("performance_metrics"):
-                duration = step_report["performance_metrics"].get("execution_time_seconds", 0)
-                total_duration += duration
-                summary.append(f"  {step_name}: {duration:.2f}s")
-        
-        summary.append(f"  Total Pipeline Duration: {total_duration:.2f}s")
-        summary.append("")
-        
         # Errors and warnings
         if pipeline_report.get("errors"):
             summary.append("Pipeline Errors:")
@@ -900,75 +834,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         summary.append("=" * 100)
         
         return "\n".join(summary)
-    
-    async def get_pipeline_reports(self, symbol: str = None, exchange: str = None, limit: int = 50) -> List[Dict[str, Any]]:
-        """Retrieve pipeline reports with optional filtering."""
-        
-        try:
-            # Get all step reports
-            all_reports = await get_step_reports(limit=limit * 10)  # Get more to filter
-            
-            # Filter by symbol and exchange if provided
-            if symbol or exchange:
-                filtered_reports = []
-                for report in all_reports:
-                    # Extract symbol and exchange from step name or report data
-                    # This is a simplified implementation
-                    if symbol and symbol.lower() in report.get("step_name", "").lower():
-                        filtered_reports.append(report)
-                    elif exchange and exchange.lower() in report.get("step_name", "").lower():
-                        filtered_reports.append(report)
-                    else:
-                        filtered_reports.append(report)
-                
-                return filtered_reports[:limit]
-            
-            return all_reports[:limit]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to retrieve pipeline reports: {e}")
-            return []
-    
-    async def get_step_performance_summary(self, step_name: str = None) -> Dict[str, Any]:
-        """Get performance summary for a specific step or all steps."""
-        
-        try:
-            reports = await get_step_reports(step_name, limit=100)
-            
-            if not reports:
-                return {"error": "No reports found"}
-            
-            # Calculate performance statistics
-            durations = []
-            success_count = 0
-            failure_count = 0
-            
-            for report in reports:
-                if report.get("performance_metrics"):
-                    duration = report["performance_metrics"].get("execution_time_seconds", 0)
-                    durations.append(duration)
-                
-                if report.get("status") == "success":
-                    success_count += 1
-                elif report.get("status") == "failed":
-                    failure_count += 1
-            
-            summary = {
-                "total_executions": len(reports),
-                "success_count": success_count,
-                "failure_count": failure_count,
-                "success_rate": success_count / len(reports) if reports else 0,
-                "average_duration": sum(durations) / len(durations) if durations else 0,
-                "min_duration": min(durations) if durations else 0,
-                "max_duration": max(durations) if durations else 0,
-                "latest_execution": reports[0] if reports else None
-            }
-            
-            return summary
-            
-        except Exception as e:
-            self.logger.error(f"Failed to get performance summary: {e}")
-            return {"error": str(e)}
 
 
 # Convenience function to create enhanced training manager

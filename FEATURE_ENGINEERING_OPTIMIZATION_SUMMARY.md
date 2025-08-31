@@ -35,15 +35,24 @@ This document summarizes the comprehensive feature engineering optimization impl
   - Correlation analysis to identify multicollinearity
   - Regime-specific optimization for each HMM regime
 
-**Features Optimized**:
-- RSI: lookback_period, overbought_threshold, oversold_threshold
-- MACD: fast_period, slow_period, signal_period
-- Bollinger Bands: lookback_period, std_dev, squeeze_threshold
-- SMA/EMA: short_period, long_period
-- ATR: lookback_period
-- Stochastic: k_period, d_period, overbought, oversold
-- ADX: lookback_period, threshold
-- CCI: lookback_period, constant
+**Features Optimized with Lookback Periods**:
+- **RSI**: `lookback_period` [7, 14, 21, 30, 50], overbought_threshold, oversold_threshold
+- **MACD**: `fast_period` [8, 12, 16, 20], `slow_period` [20, 26, 30, 34], signal_period
+- **Bollinger Bands**: `lookback_period` [10, 20, 30, 50], std_dev, squeeze_threshold
+- **SMA**: `short_period` [5, 10, 15, 20], `long_period` [20, 30, 50, 100]
+- **EMA**: `short_period` [5, 10, 15, 20], `long_period` [20, 30, 50, 100]
+- **ATR**: `lookback_period` [7, 14, 21, 30]
+- **Stochastic**: `k_period` [7, 14, 21, 30], d_period, overbought, oversold
+- **ADX**: `lookback_period` [7, 14, 21, 30], threshold
+- **CCI**: `lookback_period` [7, 14, 21, 30], constant
+
+**Lookback Period Optimization Process**:
+1. **Generate all parameter combinations** for each feature
+2. **Calculate actual technical indicators** with each combination (real RSI, MACD, etc.)
+3. **Use Random Forest + SHAP** to calculate feature importance scores
+4. **Apply correlation penalties** for multicollinearity
+5. **Add mutual information bonuses** for high MI with target
+6. **Select top 3 parameter combinations** per feature
 
 ### 3. Top 3 Parameter Selection
 
@@ -190,6 +199,49 @@ This document summarizes the comprehensive feature engineering optimization impl
 - Reduced ensemble complexity
 - Optimized for high-frequency trading
 - Better signal-to-noise ratios
+
+## Where Lookback Period Optimization Happens
+
+### **Location**: `src/training/feature_engineering_optimizer.py`
+
+The lookback period optimization is implemented in the `FeatureEngineeringOptimizer` class with the following key methods:
+
+1. **`_generate_synthetic_feature()`** - Calculates actual technical indicators with optimized parameters
+2. **`_calculate_rsi()`** - RSI with optimized lookback_period
+3. **`_calculate_macd()`** - MACD with optimized fast_period, slow_period, signal_period
+4. **`_calculate_bollinger_position()`** - Bollinger Bands with optimized lookback_period and std_dev
+5. **`_calculate_atr()`** - ATR with optimized lookback_period
+6. **`_calculate_stochastic()`** - Stochastic with optimized k_period and d_period
+7. **`_calculate_adx()`** - ADX with optimized lookback_period
+8. **`_calculate_cci()`** - CCI with optimized lookback_period and constant
+
+### **Process Flow**:
+1. **Step 7** loads feature data and HMM regimes
+2. **FeatureEngineeringOptimizer** generates all parameter combinations
+3. **For each combination**, calculates the actual technical indicator
+4. **Random Forest + SHAP** evaluates feature importance
+5. **Top 3 parameters** are selected based on comprehensive scoring
+6. **Results saved** to `data/feature_engineering_optimization/`
+
+### **Example Output**:
+```json
+{
+  "RSI": [
+    {
+      "params": {"lookback_period": 14, "overbought_threshold": 75, "oversold_threshold": 25},
+      "importance": 0.85,
+      "comprehensive_score": 0.82
+    }
+  ],
+  "MACD": [
+    {
+      "params": {"fast_period": 12, "slow_period": 26, "signal_period": 9},
+      "importance": 0.91,
+      "comprehensive_score": 0.88
+    }
+  ]
+}
+```
 
 ## Usage
 

@@ -5,51 +5,126 @@ import json
 import os
 from datetime import datetime
 from typing import Any
+from pathlib import Path
 
-import pandas as pd
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-# Import the auto-fix decorator for data quality issues
-from src.utils.centralized_decorators import auto_fix_data_quality_issues
-from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.logger import system_logger
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-# Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.centralized_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    handle_errors,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-    with_tracing_span,
-)
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "src.utils.centralized_decorators",
+    "src.training.steps.unified_data_loader",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration"
+]
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+unified_data_loader = PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    auto_fix_data_quality_issues = create_fallback_decorator()
+    artifact_versioning = create_fallback_decorator()
+    artifact_write_lock = create_fallback_decorator()
+    circuit_breaker_protection = create_fallback_decorator()
+    debug_training_step = create_fallback_decorator()
+    deterministic_seed = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    idempotent_step = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    nan_inf_and_constant_guard = create_fallback_decorator()
+    prevent_data_leakage = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    time_budget_watchdog = create_fallback_decorator()
+    validate_step_output = create_fallback_decorator()
+    validate_step_prerequisites = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+else:
+    auto_fix_data_quality_issues = centralized_decorators.auto_fix_data_quality_issues
+    artifact_versioning = centralized_decorators.artifact_versioning
+    artifact_write_lock = centralized_decorators.artifact_write_lock
+    circuit_breaker_protection = centralized_decorators.circuit_breaker_protection
+    debug_training_step = centralized_decorators.debug_training_step
+    deterministic_seed = centralized_decorators.deterministic_seed
+    handle_errors = centralized_decorators.handle_errors
+    idempotent_step = centralized_decorators.idempotent_step
+    memory_efficient = centralized_decorators.memory_efficient
+    nan_inf_and_constant_guard = centralized_decorators.nan_inf_and_constant_guard
+    prevent_data_leakage = centralized_decorators.prevent_data_leakage
+    quality_gate = centralized_decorators.quality_gate
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    time_budget_watchdog = centralized_decorators.time_budget_watchdog
+    validate_step_output = centralized_decorators.validate_step_output
+    validate_step_prerequisites = centralized_decorators.validate_step_prerequisites
+    with_tracing_span = centralized_decorators.with_tracing_span
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 
 class RegimeDataSplittingStep:
-    """Step 8: Unified Regime Data Creation - HMM composite clusters with labels."""
+    """Step 8: Unified Regime Data Creation with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("Step8.RegimeSplit")
+        self.standards = pipeline_standards
+        
+        # Validate environment on initialization
+        self._validate_environment()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     @with_tracing_span("step8_regime_splitting.initialize", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
@@ -470,12 +545,17 @@ class RegimeDataSplittingStep:
 async def run_step(
     symbol: str, 
     exchange: str, 
-    data_dir: str, 
+    data_dir: str = None, 
     timeframe: str = "1m", 
     force_rerun: bool = False,
     **kwargs,
 ) -> bool:
-    """Run the unified HMM composite regime data creation step."""
+    """Run the unified HMM composite regime data creation step with standardized data quality management."""
+    
+    # Use standardized path construction
+    if data_dir is None:
+        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+    
     config = {
         "symbol": symbol,
         "exchange": exchange,

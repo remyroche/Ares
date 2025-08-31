@@ -18,97 +18,116 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import centralized decorators for secure data processing (exposed for tests)
-try:
-	from src.utils.centralized_decorators import (
-		handle_errors,
-		handle_file_operations,
-		secure_klines_download_operation,
-		validate_data_quality as validate_klines_data_quality,
-		secure_data_processing,
-		prevent_data_leakage,
-		resource_monitor,
-		memory_efficient,
-		quality_gate,
-		circuit_breaker_protection,
-		guard_dataframe_nulls,
-		with_tracing_span,
-	)
-	# Additional quality/format decorators
-	from src.utils.centralized_decorators import (
-		validate_klines_data,
-		format_klines_data,
-		validate_aggtrades_data,
-		format_aggtrades_data,
-		validate_futures_data,
-		format_futures_data,
-		log_step_metrics,
-	)
-	from src.utils.enhanced_data_quality_decorators import (
-		validate_datetime_index,
-		validate_data_structure,
-		validate_data_completeness,
-		comprehensive_data_validation,
-		validate_memory_optimized_data_quality,
-	)
-except Exception:
-	def _passthrough(*args, **kwargs):
-		def _decorator(func):
-			return func
-		if len(args) == 1 and callable(args[0]):
-			return args[0]
-		return _decorator
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-	handle_errors = _passthrough
-	handle_file_operations = _passthrough
-	secure_klines_download_operation = _passthrough
-	validate_klines_data_quality = _passthrough
-	secure_data_processing = _passthrough
-	prevent_data_leakage = _passthrough
-	resource_monitor = _passthrough
-	memory_efficient = _passthrough
-	quality_gate = _passthrough
-	circuit_breaker_protection = _passthrough
-	guard_dataframe_nulls = _passthrough
-	with_tracing_span = _passthrough
-	validate_klines_data = _passthrough
-	format_klines_data = _passthrough
-	validate_aggtrades_data = _passthrough
-	format_aggtrades_data = _passthrough
-	validate_futures_data = _passthrough
-	format_futures_data = _passthrough
-	log_step_metrics = _passthrough
-	validate_datetime_index = _passthrough
-	validate_data_structure = _passthrough
-	validate_data_completeness = _passthrough
-	comprehensive_data_validation = _passthrough
-	validate_memory_optimized_data_quality = _passthrough
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "src.utils.centralized_decorators",
+    "src.utils.enhanced_data_quality_decorators",
+    "src.utils.logger",
+    "src.training.steps.data_downloader",
+    "pyarrow"
+]
 
-# Logger
-try:
-	from src.utils.logger import system_logger
-except Exception:
-	import logging
-	system_logger = logging.getLogger("step1_5_data_converter")
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-# Optional pyarrow
-try:
-	import pyarrow as pa
-	import pyarrow.dataset as ds
-	import pyarrow.parquet as pq
-	PYARROW_AVAILABLE = True
-except Exception:
-	pa = None  # type: ignore
-	ds = None  # type: ignore
-	pq = None  # type: ignore
-	PYARROW_AVAILABLE = False
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+enhanced_decorators = PipelineStandards.safe_import("src.utils.enhanced_data_quality_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+download_all_data_with_consolidation = PipelineStandards.safe_import("src.training.steps.data_downloader", None)
+pyarrow = PipelineStandards.safe_import("pyarrow", None)
 
-# Expose downloader symbol for tests to patch
-try:
-	from src.training.steps.data_downloader import download_all_data_with_consolidation  # type: ignore
-except Exception:
-	def download_all_data_with_consolidation(*_args, **_kwargs):  # type: ignore
-		raise RuntimeError("download_all_data_with_consolidation not available")
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+# Initialize decorators
+if centralized_decorators is None:
+    handle_errors = create_fallback_decorator()
+    handle_file_operations = create_fallback_decorator()
+    secure_klines_download_operation = create_fallback_decorator()
+    validate_klines_data_quality = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    prevent_data_leakage = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    circuit_breaker_protection = create_fallback_decorator()
+    guard_dataframe_nulls = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    validate_klines_data = create_fallback_decorator()
+    format_klines_data = create_fallback_decorator()
+    validate_aggtrades_data = create_fallback_decorator()
+    format_aggtrades_data = create_fallback_decorator()
+    validate_futures_data = create_fallback_decorator()
+    format_futures_data = create_fallback_decorator()
+    log_step_metrics = create_fallback_decorator()
+else:
+    handle_errors = centralized_decorators.handle_errors
+    handle_file_operations = centralized_decorators.handle_file_operations
+    secure_klines_download_operation = centralized_decorators.secure_klines_download_operation
+    validate_klines_data_quality = centralized_decorators.validate_data_quality
+    secure_data_processing = centralized_decorators.secure_data_processing
+    prevent_data_leakage = centralized_decorators.prevent_data_leakage
+    resource_monitor = centralized_decorators.resource_monitor
+    memory_efficient = centralized_decorators.memory_efficient
+    quality_gate = centralized_decorators.quality_gate
+    circuit_breaker_protection = centralized_decorators.circuit_breaker_protection
+    guard_dataframe_nulls = centralized_decorators.guard_dataframe_nulls
+    with_tracing_span = centralized_decorators.with_tracing_span
+    validate_klines_data = centralized_decorators.validate_klines_data
+    format_klines_data = centralized_decorators.format_klines_data
+    validate_aggtrades_data = centralized_decorators.validate_aggtrades_data
+    format_aggtrades_data = centralized_decorators.format_aggtrades_data
+    validate_futures_data = centralized_decorators.validate_futures_data
+    format_futures_data = centralized_decorators.format_futures_data
+    log_step_metrics = centralized_decorators.log_step_metrics
+
+if enhanced_decorators is None:
+    validate_datetime_index = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    validate_data_completeness = create_fallback_decorator()
+    comprehensive_data_validation = create_fallback_decorator()
+    validate_memory_optimized_data_quality = create_fallback_decorator()
+else:
+    validate_datetime_index = enhanced_decorators.validate_datetime_index
+    validate_data_structure = enhanced_decorators.validate_data_structure
+    validate_data_completeness = enhanced_decorators.validate_data_completeness
+    comprehensive_data_validation = enhanced_decorators.comprehensive_data_validation
+    validate_memory_optimized_data_quality = enhanced_decorators.validate_memory_optimized_data_quality
+
+# PyArrow availability
+if pyarrow is None:
+    pa = None
+    ds = None
+    pq = None
+    PYARROW_AVAILABLE = False
+else:
+    pa = pyarrow
+    ds = pyarrow.dataset
+    pq = pyarrow.parquet
+    PYARROW_AVAILABLE = True
+
+# Downloader fallback
+if download_all_data_with_consolidation is None:
+    def download_all_data_with_consolidation(*_args, **_kwargs):
+        raise RuntimeError("download_all_data_with_consolidation not available")
 
 
 # ----------------------------------------------------------------------------
@@ -891,12 +910,28 @@ class UnifiedDataConverter:
 	def __init__(self, config: dict[str, Any]) -> None:
 		self.config = config
 		self.logger = system_logger.getChild("UnifiedDataConverter")
+		self.standards = pipeline_standards
+		
+		# Validate environment on initialization
+		self._validate_environment()
+		
 		# Initialize with default data_cache, will be updated in execute method
 		self.data_cache_dir = "data_cache"
 		self.unified_dir = os.path.join(self.data_cache_dir, "unified")
 		self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
 		os.makedirs(self.unified_dir, exist_ok=True)
 		os.makedirs(self.backup_dir, exist_ok=True)
+	
+	def _validate_environment(self) -> None:
+		"""Validate environment dependencies."""
+		self.logger.info("🔍 Validating environment dependencies...")
+		
+		missing_modules = [module for module, available in dependency_status.items() if not available]
+		if missing_modules:
+			self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+			self.logger.info("📝 Pipeline will continue with fallback implementations")
+		else:
+			self.logger.info("✅ All required dependencies available")
 
 	async def initialize(self) -> None:
 		self.logger.info("🚀 Initializing Unified Data Converter...")
@@ -913,10 +948,10 @@ class UnifiedDataConverter:
 		force_rerun: bool = False,
 	) -> bool:
 		try:
-			# Create structured cache directory: data_cache/exchange/asset/
-			self.data_cache_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
-			self.unified_dir = os.path.join(self.data_cache_dir, "unified")
-			self.backup_dir = os.path.join(self.data_cache_dir, "backup_pre_unified")
+			# Use standardized path construction
+			self.data_cache_dir = self.standards.build_path("raw_data", exchange, symbol)
+			self.unified_dir = self.standards.build_path("unified_data", exchange, symbol)
+			self.backup_dir = self.standards.build_path("backup", exchange, symbol)
 			os.makedirs(self.unified_dir, exist_ok=True)
 			os.makedirs(self.backup_dir, exist_ok=True)
 
@@ -1499,72 +1534,98 @@ class UnifiedDataConverter:
 	def get_unified_config_path(self, symbol: str, exchange: str, timeframe: str) -> str:
 		return os.path.join(self.unified_dir, f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
 
-	@validate_klines_data(context="loading")
-	@format_klines_data(context="loading")
-	@log_step_metrics(context="klines_loading")
-	@handle_file_operations(context="load_klines_data")
-	@handle_errors(exceptions=(Exception,), default_return=None, context="klines data loading")
 	async def _load_klines_data(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+		"""Load klines data with standardized validation."""
 		try:
 			data_cache_dir = self.data_cache_dir
-			parquet_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+			
+			# Use standardized file naming
+			parquet_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
+			parquet_path = os.path.join(data_cache_dir, parquet_file)
+			
 			if os.path.exists(parquet_path):
 				self.logger.info(f"📊 Loading klines from parquet: {parquet_path}")
 				df = pd.read_parquet(parquet_path)
-				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
+				
+				# Standardize timestamps and validate schema
+				df = self.standards.standardize_timestamp(df, "timestamp")
+				df = self.standards.enforce_schema(df, "klines")
+				
+				# Validate data quality
+				validation_result = self.standards.validate_data_quality(df, "klines")
+				if validation_result.passed:
+					self.logger.info(f"   ✅ Loaded {len(df)} klines rows (quality score: {validation_result.quality_score:.2f})")
+				else:
+					self.logger.warning(f"   ⚠️ Loaded {len(df)} klines rows but validation found issues")
+					for issue in validation_result.issues[:3]:
+						self.logger.warning(f"      - {issue.message}")
+				
 				return df
+			
+			# Try CSV fallback
 			csv_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.csv")
 			if os.path.exists(csv_path):
 				self.logger.info(f"📊 Loading klines from CSV: {csv_path}")
 				df = pd.read_csv(csv_path)
+				
+				# Standardize timestamps and validate schema
+				df = self.standards.standardize_timestamp(df, "timestamp")
+				df = self.standards.enforce_schema(df, "klines")
+				
 				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
 				return df
+			
+			# Try PKL fallback
 			pkl_path = os.path.join(data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl")
 			if os.path.exists(pkl_path):
 				self.logger.info(f"📊 Loading klines from PKL: {pkl_path}")
 				df = pd.read_pickle(pkl_path)
+				
+				# Standardize timestamps and validate schema
+				df = self.standards.standardize_timestamp(df, "timestamp")
+				df = self.standards.enforce_schema(df, "klines")
+				
 				self.logger.info(f"   ✅ Loaded {len(df)} klines rows")
 				return df
+			
 			# Attempt to download
 			self.logger.info("🔄 No klines data found, attempting to download klines directly...")
 			klines_df = await self._download_klines_data(symbol, exchange, timeframe)
 			if klines_df is not None and not klines_df.empty:
 				self.logger.info(f"✅ Successfully downloaded klines data: {len(klines_df)} rows")
 				return klines_df
+			
 			self.logger.warning(f"⚠️ No klines data found for {exchange}_{symbol}_{timeframe}")
 			return None
+			
 		except Exception as e:
 			self.logger.exception(f"❌ Failed to load klines data: {e}")
 			return None
 
-	@handle_file_operations(context="download_klines_data")
-	@secure_klines_download_operation
-	@validate_klines_data_quality
-	@secure_data_processing
-	@prevent_data_leakage
-	@resource_monitor
-	@memory_efficient
-	@quality_gate
-	@circuit_breaker_protection
-	@handle_errors(exceptions=(Exception,), default_return=None, context="klines download operation")
 	async def _download_klines_data(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+		"""Download klines data with standardized validation."""
 		try:
 			self.logger.info(f"🔄 Downloading klines data for {exchange}_{symbol}_{timeframe}")
+			
 			# Call downloader (tests patch this symbol)
 			ok: bool
 			if asyncio.iscoroutinefunction(download_all_data_with_consolidation):  # type: ignore
 				ok = await download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe)  # type: ignore
 			else:
 				ok = download_all_data_with_consolidation(symbol=symbol, exchange_name=exchange, interval=timeframe)  # type: ignore
+			
 			if not ok:
 				self.logger.error("❌ Failed to download klines data")
 				return None
+			
 			self.logger.info("🔄 Attempting to load downloaded klines data...")
 			pattern = os.path.join(self.data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_*.csv")
 			klines_files = sorted(glob.glob(pattern))
+			
 			if not klines_files:
 				self.logger.warning(f"⚠️ No klines files found after download: {pattern}")
 				return None
+			
 			frames: list[pd.DataFrame] = []
 			for fp in klines_files:
 				try:
@@ -1574,15 +1635,35 @@ class UnifiedDataConverter:
 					self.logger.debug(f"📊 Loaded {len(df)} rows from {os.path.basename(fp)}")
 				except Exception as e:
 					self.logger.warning(f"⚠️ Failed to load {fp}: {e}")
+			
 			if not frames:
 				self.logger.error("❌ No valid klines data found after download")
 				return None
+			
 			combined = pd.concat(frames, ignore_index=True)
 			combined = combined.drop_duplicates().sort_values("timestamp").reset_index(drop=True)
-			out_path = os.path.join(self.data_cache_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
+			
+			# Standardize timestamps and enforce schema
+			combined = self.standards.standardize_timestamp(combined, "timestamp")
+			combined = self.standards.enforce_schema(combined, "klines")
+			
+			# Validate downloaded data
+			validation_result = self.standards.validate_data_quality(combined, "klines")
+			if validation_result.passed:
+				self.logger.info(f"✅ Downloaded data validation passed (quality score: {validation_result.quality_score:.2f})")
+			else:
+				self.logger.warning(f"⚠️ Downloaded data validation found issues:")
+				for issue in validation_result.issues[:3]:
+					self.logger.warning(f"   - {issue.message}")
+			
+			# Save with standardized naming
+			out_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
+			out_path = os.path.join(self.data_cache_dir, out_file)
 			combined.to_parquet(out_path, index=False)
+			
 			self.logger.info(f"💾 Saved consolidated klines to: {out_path}")
 			return combined
+			
 		except Exception as e:
 			self.logger.exception(f"❌ Failed to download klines data: {e}")
 			return None

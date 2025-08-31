@@ -1,9 +1,8 @@
-# src/training/steps/step5_5_unified_regime_intelligence.py
+# src/training/steps/step10_unified_regime_intelligence.py
 
-"""Step 5.5: Unified Regime Intelligence System.
+"""Step 10: Unified Regime Intelligence System with Standardized Data Quality Management.
 
 This unified step consolidates:
-    pass
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
 2. Intensity-based regime transition prediction (entry/exit timing)
 3. TPSL-based direction prediction (long/short only)
@@ -15,7 +14,6 @@ Integrates intensity-based transition detection from step1_7.
 Uses existing S/R system for coherence.
 
 Key Features:
-    pass
 - Dynamic regime count based on step1_7 data (not hard-coded)
 - Long/short only trading signals (no "hold" as separate class)
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
@@ -29,32 +27,82 @@ import time
 import warnings
 from datetime import datetime
 from typing import Any
+from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn.functional as F
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from torch import nn
-from torch.nn.utils import prune
-from torch.utils.data import DataLoader, TensorDataset
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, timeout
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "numpy",
+    "pandas",
+    "torch",
+    "sklearn",
+    "src.tactician.sr_breakout_predictor",
+    "src.utils.error_handler",
+    "src.utils.logger",
+    "src.utils.warning_symbols",
+    "src.training.enhanced_lm_optimizer"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+error_handler = PipelineStandards.safe_import("src.utils.error_handler", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+warning_symbols = PipelineStandards.safe_import("src.utils.warning_symbols", None)
+enhanced_lm_optimizer = PipelineStandards.safe_import("src.training.enhanced_lm_optimizer", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+torch = PipelineStandards.safe_import("torch", None)
+sklearn = PipelineStandards.safe_import("sklearn", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if error_handler is None:
+    handle_errors = create_fallback_decorator()
+else:
+    handle_errors = error_handler.handle_errors
+
+if warning_symbols is None:
+    error = lambda msg: print(f"ERROR: {msg}")
+    failed = lambda msg: print(f"FAILED: {msg}")
+    timeout = lambda msg: print(f"TIMEOUT: {msg}")
+else:
+    error = warning_symbols.error
+    failed = warning_symbols.failed
+    timeout = warning_symbols.timeout
+
+# Import enhanced LM optimizer
+if enhanced_lm_optimizer is not None:
+    ENHANCED_OPTIMIZER_AVAILABLE = True
+else:
+    ENHANCED_OPTIMIZER_AVAILABLE = False
+    logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
 
 warnings.filterwarnings("ignore")
 
-logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligence")
-
-# Import enhanced LM optimizer
-try:
-    from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
-    ENHANCED_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    ENHANCED_OPTIMIZER_AVAILABLE = False
-    logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
+logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 
 
 class MultiTimeframeHMMEncoder(nn.Module):

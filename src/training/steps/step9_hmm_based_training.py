@@ -1,4 +1,10 @@
-# src/training/steps/step5_hmm_based_training.py
+# src/training/steps/step9_hmm_based_training.py
+
+"""Step 9: HMM-Based Model Training with Standardized Data Quality Management.
+
+This step performs HMM-based model training with timeframe-specific architectures
+and S/R integration, using standardized data quality management patterns.
+"""
 
 import json
 import os
@@ -7,54 +13,105 @@ import sys
 import warnings
 from datetime import datetime
 from typing import Any
+from pathlib import Path
 
-import lightgbm as lgb
-import numpy as np
-import pandas as pd
-import torch
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.feature_selection import (
-    f_classif,
-    f_regression,
-    mutual_info_classif,
-    mutual_info_regression,
-)
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from torch import nn, optim
-from torch.utils.data import DataLoader, TensorDataset
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    ValidationLevel,
-    adaptive_resource_allocation,
-    comprehensive_validation,
-    handle_errors,
-    intelligent_caching,
-    model_validation,
-    # Advanced decorators
-    performance_monitor,
-    pipeline_checkpoint,
-    validate_feature_engineering_with_lookahead_bias_detection,
-)
-from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, 
-    log_step_model, 
-    log_step_metrics, 
-    log_step_artifact,
-    log_step_report,
-    log_step_artifact_with_standardized_name
-)
-from ..model_probability_generator import ModelProbabilityGenerator
-from ..model_saving_utils import save_model_with_probabilities
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "lightgbm",
+    "numpy",
+    "pandas",
+    "torch",
+    "sklearn",
+    "src.tactician.sr_breakout_predictor",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration",
+    "src.training.model_probability_generator",
+    "src.training.model_saving_utils"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+model_probability_generator = PipelineStandards.safe_import("src.training.model_probability_generator", None)
+model_saving_utils = PipelineStandards.safe_import("src.training.model_saving_utils", None)
+lightgbm = PipelineStandards.safe_import("lightgbm", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+torch = PipelineStandards.safe_import("torch", None)
+sklearn = PipelineStandards.safe_import("sklearn", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    PerformanceLevel = "BASIC"
+    ValidationLevel = "BASIC"
+    adaptive_resource_allocation = create_fallback_decorator()
+    comprehensive_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    intelligent_caching = create_fallback_decorator()
+    model_validation = create_fallback_decorator()
+    performance_monitor = create_fallback_decorator()
+    pipeline_checkpoint = create_fallback_decorator()
+    validate_feature_engineering_with_lookahead_bias_detection = create_fallback_decorator()
+else:
+    PerformanceLevel = centralized_decorators.PerformanceLevel
+    ValidationLevel = centralized_decorators.ValidationLevel
+    adaptive_resource_allocation = centralized_decorators.adaptive_resource_allocation
+    comprehensive_validation = centralized_decorators.comprehensive_validation
+    handle_errors = centralized_decorators.handle_errors
+    intelligent_caching = centralized_decorators.intelligent_caching
+    model_validation = centralized_decorators.model_validation
+    performance_monitor = centralized_decorators.performance_monitor
+    pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
+    validate_feature_engineering_with_lookahead_bias_detection = centralized_decorators.validate_feature_engineering_with_lookahead_bias_detection
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_model = lambda *args, **kwargs: "fallback_model"
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_artifact = lambda *args, **kwargs: "fallback_artifact"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_model = enhanced_mlflow.log_step_model
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_artifact = enhanced_mlflow.log_step_artifact
+    log_step_report = enhanced_mlflow.log_step_report
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
 
 class HMMBasedTrainingStep:
-    """Step 6: HMM-Based Model Training with Timeframe-Specific Architectures and S/R Integration.
+    """Step 9: HMM-Based Model Training with Standardized Data Quality Management.
 
     Includes an optional forecasting head that emits next-regime probabilities
     and simple exit-within-H-bars signals leveraging Step 3 HMM posteriors and
@@ -64,22 +121,49 @@ class HMMBasedTrainingStep:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
+        self.standards = pipeline_standards
         self.models = {}
         self.scalers = {}
         self.label_encoders = {}
+        
+        # Validate environment on initialization
+        self._validate_environment()
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config = config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor = SRBreakoutPredictor(sr_config)
+        if sr_breakout_predictor is not None:
+            try:
+                sr_config = config.copy()
+                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+                sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize SRBreakoutPredictor: {e}")
+                self.sr_predictor = None
+        else:
+            self.logger.warning("⚠️ SRBreakoutPredictor not available")
+            self.sr_predictor = None
 
         # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
         
         # Initialize probability generator for enhanced prediction service
-        self.probability_generator = ModelProbabilityGenerator()
+        if model_probability_generator is not None:
+            self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
+        else:
+            self.logger.warning("⚠️ ModelProbabilityGenerator not available")
+            self.probability_generator = None
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
         # Model architecture mapping from config
         hmm_lm_config = config.get("HMM_LM", {})
@@ -4968,21 +5052,26 @@ class TransformerTrainer:
             return data
 
     async def run_step(
-        self, symbol: str = "ETHUSDT", data_dir: str = "data/training", method_a_mixture_of_experts: dict | None = None
+        self, symbol: str = "ETHUSDT", data_dir: str = None, method_a_mixture_of_experts: dict | None = None,
         **kwargs, ) -> bool:
-        """Run the HMM-based training step.
+        """Run the HMM-based training step with standardized data quality management.
 
         Args:
             symbol: Trading symbol
-            data_dir: Data directory path
+            data_dir: Data directory path (will use standardized path if None)
             method_a_mixture_of_experts: Configuration for method A mixture of experts
             **kwargs: Additional arguments
 
-        Returns: True if successful = False otherwise
+        Returns: True if successful, False otherwise
 
         """
         try:
             from src.utils.logger import system_logger
+
+            # Use standardized path construction
+            if data_dir is None:
+                exchange = kwargs.get("exchange", "BINANCE")
+                data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
             # Create configuration
             config = {

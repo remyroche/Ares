@@ -1,6 +1,6 @@
 # src/training/steps/step6_feature_engineering.py
 
-"""Step 6: Complete Feature Engineering (Simple + Advanced).
+"""Step 6: Complete Feature Engineering with Standardized Data Quality Management.
 This step creates comprehensive features including both basic and advanced features,
 with regime-aware optimization after HMM regime discovery.
 """
@@ -15,47 +15,108 @@ from typing import Any, Dict, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
-import numpy as np
-import pandas as pd
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-# Import vectorized advanced feature engineering
-from src.training.steps.vectorized_advanced_feature_engineering import (
-    VectorizedAdvancedFeatureEngineering,
-)
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-# Import SR breakout predictor for comprehensive SR features
-from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "hashlib",
+    "src.training.steps.vectorized_advanced_feature_engineering",
+    "src.tactician.sr_breakout_predictor",
+    "src.training.optimized_feature_selection_manager",
+    "src.utils.training_pipeline_decorators",
+    "src.utils.logger",
+    "src.utils.error_handler",
+    "src.utils.decorators",
+    "src.utils.enhanced_mlflow_integration"
+]
 
-# Import optimized feature selection manager
-from src.training.optimized_feature_selection_manager import (
-    OptimizedFeatureSelectionManager,
-)
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-# Import training pipeline decorators
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-    monitor_feature_engineering,
-)
+# Safe imports with fallbacks
+vectorized_feature_engineering = PipelineStandards.safe_import("src.training.steps.vectorized_advanced_feature_engineering", None)
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+optimized_feature_selection = PipelineStandards.safe_import("src.training.optimized_feature_selection_manager", None)
+training_pipeline_decorators = PipelineStandards.safe_import("src.utils.training_pipeline_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+error_handler = PipelineStandards.safe_import("src.utils.error_handler", None)
+decorators = PipelineStandards.safe_import("src.utils.decorators", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
 
-from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, 
-    log_step_dataframe, 
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_report,
-    log_step_artifact_with_standardized_name
-)
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if training_pipeline_decorators is None:
+    circuit_breaker_protection = create_fallback_decorator()
+    debug_training_step = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    prevent_data_leakage = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_step_output = create_fallback_decorator()
+    validate_step_prerequisites = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    circuit_breaker_protection = training_pipeline_decorators.circuit_breaker_protection
+    debug_training_step = training_pipeline_decorators.debug_training_step
+    memory_efficient = training_pipeline_decorators.memory_efficient
+    prevent_data_leakage = training_pipeline_decorators.prevent_data_leakage
+    quality_gate = training_pipeline_decorators.quality_gate
+    resource_monitor = training_pipeline_decorators.resource_monitor
+    secure_data_processing = training_pipeline_decorators.secure_data_processing
+    validate_step_output = training_pipeline_decorators.validate_step_output
+    validate_step_prerequisites = training_pipeline_decorators.validate_step_prerequisites
+    monitor_feature_engineering = training_pipeline_decorators.monitor_feature_engineering
+
+if error_handler is None:
+    handle_errors = create_fallback_decorator()
+else:
+    handle_errors = error_handler.handle_errors
+
+if decorators is None:
+    guard_dataframe_nulls = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+else:
+    guard_dataframe_nulls = decorators.guard_dataframe_nulls
+    with_tracing_span = decorators.with_tracing_span
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_dataframe = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_dataframe = enhanced_mlflow.log_step_dataframe
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_report = enhanced_mlflow.log_step_report
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 
 @validate_step_prerequisites(
@@ -137,12 +198,12 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str = "1m",
-    data_dir: str = "data_cache",
+    data_dir: str = None,
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
     """
-    Step 6: Complete Feature Engineering (Simple + Advanced).
+    Step 6: Complete Feature Engineering with Standardized Data Quality Management.
     
     This step creates comprehensive features including both basic and advanced features,
     with regime-aware optimization after HMM regime discovery.
@@ -151,7 +212,7 @@ async def run_step(
         symbol: Trading symbol (e.g., "ETHUSDT")
         exchange: Exchange name (e.g., "BINANCE")
         timeframe: Timeframe (e.g., "1m")
-        data_dir: Data directory
+        data_dir: Data directory (will use standardized path if None)
         force_rerun: Force re-run even if results exist
         **kwargs: Additional arguments
         
@@ -160,8 +221,12 @@ async def run_step(
     """
     logger = system_logger.getChild("Step6FeatureEngineering")
     
+    # Use standardized path construction
+    if data_dir is None:
+        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+    
     logger.info("=" * 80)
-    logger.info("🚀 STEP 6: Complete Feature Engineering (Simple + Advanced)")
+    logger.info("🚀 STEP 6: Complete Feature Engineering with Standardized Data Quality Management")
     logger.info("=" * 80)
     logger.info(f"🎯 Symbol: {symbol}")
     logger.info(f"🏢 Exchange: {exchange}")

@@ -6,11 +6,14 @@ This module implements regime-specific optimization for the triple barrier metho
 creating separate optimizers for each HMM regime to allow different barrier parameters
 for different market conditions.
 
+This optimizer is used by the triple barrier labeler to optimize parameters
+before ML training begins, ensuring optimal trading parameters for each regime.
+
 Key Features:
 - Separate optimization for each HMM regime (bull, bear, sideways, etc.)
 - Regime-specific barrier parameters (upper, lower, timeout, confidence)
 - Regime-aware parameter validation and constraints
-- Integration with the main step17 optimization pipeline
+- Integration with triple barrier labeler
 - MLflow tracking for regime-specific experiments
 """
 
@@ -41,6 +44,16 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
+# Import triple barrier components for integration
+try:
+    from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
+    from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+    TRIPLE_BARRIER_AVAILABLE = True
+except ImportError:
+    TRIPLE_BARRIER_AVAILABLE = False
+    RegimeAwareTripleBarrierLabeling = None
+    OptimizedTripleBarrierLabeling = None
+
 
 class RegimeSpecificTripleBarrierOptimizer:
     """
@@ -48,6 +61,9 @@ class RegimeSpecificTripleBarrierOptimizer:
     
     Creates separate optimization spaces for each HMM regime, allowing
     different barrier parameters for different market conditions.
+    
+    This optimizer is used by the triple barrier labeler to optimize
+    parameters before ML training begins.
     """
     
     def __init__(self, config: Dict[str, Any], training_manager=None):
@@ -64,6 +80,50 @@ class RegimeSpecificTripleBarrierOptimizer:
         
         # MLflow experiment tracking
         self.mlflow_experiment_name = "regime_specific_triple_barrier_optimization"
+        
+        # Triple barrier labeler integration
+        self.triple_barrier_labeler = None
+        if TRIPLE_BARRIER_AVAILABLE:
+            self.triple_barrier_labeler = self._create_triple_barrier_labeler()
+            self.logger.info("✅ Triple barrier labeler integration initialized")
+        else:
+            self.logger.warning("⚠️ Triple barrier labeler not available for integration")
+        
+    def _create_triple_barrier_labeler(self):
+        """Create triple barrier labeler for integration."""
+        
+        try:
+            # Create regime-aware labeler with default configuration
+            labeler_config = {
+                "enable_regime_specific_parameters": True,
+                "regime_parameter_optimization": True,
+                "default_barrier_settings": self._get_default_barrier_settings()
+            }
+            
+            if RegimeAwareTripleBarrierLabeling:
+                return RegimeAwareTripleBarrierLabeling(labeler_config)
+            elif OptimizedTripleBarrierLabeling:
+                return OptimizedTripleBarrierLabeling(labeler_config)
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to create triple barrier labeler: {e}")
+            return None
+    
+    def _get_default_barrier_settings(self) -> Dict[str, Any]:
+        """Get default barrier settings for initialization."""
+        
+        return {
+            "upper_barrier_multiplier": 1.0,
+            "lower_barrier_multiplier": 1.0,
+            "barrier_timeout": 30,
+            "barrier_adjustment": 1.0,
+            "dynamic_barriers": True,
+            "confidence_threshold": 0.7,
+            "position_size_multiplier": 1.0,
+            "risk_per_trade": 0.05
+        }
         
     def _create_regime_specific_configs(self) -> Dict[str, Dict[str, Any]]:
         """Create regime-specific parameter configurations for triple barrier method."""
@@ -262,6 +322,10 @@ class RegimeSpecificTripleBarrierOptimizer:
                 # Store the optimized model
                 self.regime_models[regime_name] = regime_result.get("best_model", None)
                 
+                # Update triple barrier labeler with optimized parameters
+                if self.triple_barrier_labeler:
+                    await self._update_triple_barrier_labeler(regime_name, regime_result)
+                
                 self.logger.info(f"✅ {regime_name} regime optimization completed")
                 
             except Exception as e:
@@ -276,6 +340,35 @@ class RegimeSpecificTripleBarrierOptimizer:
             await self._log_regime_optimization_to_mlflow(optimization_results)
         
         return optimization_results
+    
+    async def _update_triple_barrier_labeler(self, regime_name: str, regime_result: Dict[str, Any]):
+        """Update triple barrier labeler with optimized parameters for a regime."""
+        
+        if not self.triple_barrier_labeler or "error" in regime_result:
+            return
+        
+        try:
+            best_params = regime_result.get("best_params", {})
+            
+            # Extract barrier settings
+            barrier_settings = best_params.get("barrier_settings", {})
+            labeling_settings = best_params.get("labeling_settings", {})
+            position_settings = best_params.get("position_management", {})
+            risk_settings = best_params.get("risk_management", {})
+            
+            # Update labeler with regime-specific parameters
+            if hasattr(self.triple_barrier_labeler, 'set_regime_parameters'):
+                await self.triple_barrier_labeler.set_regime_parameters(
+                    regime_name=regime_name,
+                    barrier_settings=barrier_settings,
+                    labeling_settings=labeling_settings,
+                    position_settings=position_settings,
+                    risk_settings=risk_settings
+                )
+                self.logger.info(f"✅ Updated triple barrier labeler for {regime_name} regime")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to update triple barrier labeler for {regime_name}: {e}")
     
     async def _create_regime_study(
         self, 
@@ -637,7 +730,8 @@ class RegimeSpecificTripleBarrierOptimizer:
             "total_regimes_optimized": len(self.optimization_results),
             "regime_models_created": len(self.regime_models),
             "optimization_timestamp": datetime.now().isoformat(),
-            "regime_summary": self._create_regime_summary()
+            "regime_summary": self._create_regime_summary(),
+            "triple_barrier_integration": bool(self.triple_barrier_labeler)
         }
     
     def _create_regime_summary(self) -> Dict[str, Any]:
@@ -719,6 +813,11 @@ class RegimeSpecificTripleBarrierOptimizer:
         recommendations.append("Consider re-optimization if market conditions change significantly")
         
         return recommendations
+    
+    async def get_triple_barrier_labeler(self):
+        """Get the integrated triple barrier labeler."""
+        
+        return self.triple_barrier_labeler
 
 
 # Factory function for creating regime-specific triple barrier optimizer
@@ -743,6 +842,8 @@ if __name__ == "__main__":
     
     print("✅ Regime-Specific Triple Barrier Optimizer created successfully!")
     print(f"Total regimes supported: {len(optimizer.regime_configs)}")
+    print("This optimizer integrates with the triple barrier labeler")
+    print("and should be used BEFORE ML training begins.")
     
     # Show supported regimes
     for regime_name, regime_config in optimizer.regime_configs.items():

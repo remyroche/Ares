@@ -837,12 +837,16 @@ class TacticsOrchestrator:
             # Extract Analyst barriers
             analyst_barriers = self._extract_analyst_barriers(analyst_predictions)
             
+            # Extract analyst confidence
+            analyst_confidence = analyst_predictions.get("confidence", 0.5)
+            
             # Generate multi-output predictions
             tactician_predictions = await self.ml_tactics.generate_multi_output_predictions(
                 market_data=market_data,
                 analyst_barriers=analyst_barriers,
                 symbol="BTCUSDT",  # This would come from context
-                timeframe="1m"
+                timeframe="1m",
+                analyst_confidence=analyst_confidence
             )
             
             return tactician_predictions

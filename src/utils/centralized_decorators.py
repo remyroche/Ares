@@ -1,5 +1,5 @@
 """
-Centralized Decorators Module
+Centralized Decorators Module with Standardized Import Management
 This module centralizes all decorators used throughout the codebase for easy import and management.
 """
 
@@ -8,26 +8,45 @@ import functools
 import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from pathlib import Path
 
-# Handle optional dependencies
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-try:
-    from src.utils.logger import system_logger
-except ImportError:
-    system_logger = logging.getLogger("CentralizedDecorators")
+# Standardized import management
+REQUIRED_MODULES = [
+    "numpy",
+    "pandas",
+    "src.utils.logger",
+    "src.utils.error_handler",
+    "src.utils.training_pipeline_decorators",
+    "src.utils.decorators",
+    "src.utils.enhanced_data_quality_decorators",
+    "src.utils.advanced_decorators"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger("CentralizedDecorators")
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
 
 # Import all decorators from their respective modules
 from src.utils.error_handler import (

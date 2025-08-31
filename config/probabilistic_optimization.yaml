@@ -1,0 +1,355 @@
+# Probabilistic Bayesian Optimization Configuration
+# This file configures how to optimize your Tactician and Analyst models
+# for better probabilistic outputs and uncertainty quantification
+
+# Global optimization settings
+global:
+  # Storage for optimization studies
+  storage_url: "sqlite:///probabilistic_optimization.db"
+  
+  # Logging level
+  logging_level: "INFO"
+  
+  # Random seed for reproducibility
+  random_seed: 42
+  
+  # Enable/disable optimization
+  optimization_enabled: true
+  
+  # Optimization frequency (in days)
+  optimization_frequency_days: 7
+  
+  # Maximum optimization time per model (in hours)
+  max_optimization_time_hours: 2
+
+# Optimization algorithms
+optimization:
+  # Number of trials for each optimization run
+  n_trials: 100
+  
+  # Number of parallel jobs
+  n_jobs: 1
+  
+  # Early stopping patience
+  early_stopping_patience: 10
+  
+  # Minimum number of trials before early stopping
+  min_trials: 20
+  
+  # Timeout for optimization (in seconds)
+  timeout: 7200  # 2 hours
+  
+  # Sampling strategy: 'tpe', 'cmaes', 'random', 'nsga2'
+  sampler_type: "tpe"
+  
+  # Enable pruning for faster optimization
+  pruning_enabled: true
+  
+  # Pruning algorithm: 'median', 'sha', 'hyperband'
+  pruning_algorithm: "median"
+  
+  # Pruning percentile for median pruner
+  pruning_percentile: 25
+
+# Model-specific optimization targets
+models:
+  tactician:
+    # Model type identifier
+    model_type: "tactician"
+    
+    # Optimization objectives
+    objectives:
+      - "calibration"      # Probability calibration accuracy
+      - "sharpness"        # Prediction confidence
+      - "discrimination"   # Ability to distinguish outcomes
+    
+    # Objective weights for weighted optimization
+    objective_weights:
+      calibration: 0.4
+      sharpness: 0.3
+      discrimination: 0.3
+    
+    # Hyperparameter search spaces
+    hyperparameters:
+      base_model:
+        n_estimators: [100, 1000]
+        max_depth: [3, 15]
+        learning_rate: [0.01, 0.3]
+        subsample: [0.6, 1.0]
+        colsample_bytree: [0.6, 1.0]
+        reg_alpha: [0.0, 1.0]
+        reg_lambda: [0.0, 1.0]
+      
+      barrier_system:
+        upper_barrier_multiplier: [0.3, 0.8]
+        lower_barrier_multiplier: [0.1, 0.5]
+        confidence_threshold: [0.6, 0.9]
+        precision_threshold: [0.7, 0.95]
+        barrier_timeout_minutes: [5, 30]
+      
+      probabilistic_calibration:
+        calibration_method: ["isotonic", "sigmoid", "platt"]
+        calibration_cv_folds: [3, 10]
+        uncertainty_estimation: ["ensemble", "gaussian", "conformal"]
+        temperature_scaling: [0.5, 2.0]
+    
+    # Calibration settings
+    calibration:
+      bins: 10
+      reliability_threshold: 0.1
+      min_samples_per_bin: 50
+      
+    # Uncertainty quantification
+    uncertainty:
+      confidence_level: 0.95
+      prediction_horizon: 20
+      ensemble_size: 5
+      
+    # Performance thresholds
+    thresholds:
+      min_calibration_score: 0.8
+      min_sharpness_score: -0.5
+      min_discrimination_score: 0.7
+      max_uncertainty_coverage: 0.98
+
+  analyst:
+    # Model type identifier
+    model_type: "analyst"
+    
+    # Optimization objectives
+    objectives:
+      - "calibration"      # Probability calibration accuracy
+      - "sharpness"        # Prediction confidence
+      - "discrimination"   # Ability to distinguish outcomes
+      - "regime_accuracy" # Regime detection accuracy
+    
+    # Objective weights for weighted optimization
+    objective_weights:
+      calibration: 0.35
+      sharpness: 0.25
+      discrimination: 0.25
+      regime_accuracy: 0.15
+    
+    # Hyperparameter search spaces
+    hyperparameters:
+      base_model:
+        n_estimators: [200, 2000]
+        max_depth: [5, 20]
+        learning_rate: [0.005, 0.2]
+        subsample: [0.7, 1.0]
+        colsample_bytree: [0.7, 1.0]
+        reg_alpha: [0.0, 2.0]
+        reg_lambda: [0.0, 2.0]
+      
+      regime_detection:
+        regime_threshold: [0.5, 0.8]
+        regime_confidence_threshold: [0.6, 0.9]
+        regime_transition_smoothing: [0.1, 0.5]
+        regime_lookback_period: [10, 50]
+        regime_min_samples: [100, 500]
+      
+      probabilistic_calibration:
+        calibration_method: ["isotonic", "sigmoid", "platt", "temperature"]
+        calibration_cv_folds: [5, 15]
+        uncertainty_estimation: ["ensemble", "gaussian", "conformal", "mc_dropout"]
+        temperature_scaling: [0.3, 3.0]
+    
+    # Calibration settings
+    calibration:
+      bins: 15
+      reliability_threshold: 0.08
+      min_samples_per_bin: 30
+      
+    # Uncertainty quantification
+    uncertainty:
+      confidence_level: 0.95
+      prediction_horizon: 50
+      ensemble_size: 7
+      mc_dropout_rate: [0.1, 0.5]
+      
+    # Performance thresholds
+    thresholds:
+      min_calibration_score: 0.85
+      min_sharpness_score: -0.4
+      min_discrimination_score: 0.75
+      min_regime_accuracy: 0.8
+      max_uncertainty_coverage: 0.98
+
+# Data preparation settings
+data_preparation:
+  # Feature engineering
+  features:
+    # Price-based features
+    price_features:
+      enabled: true
+      return_lookbacks: [1, 5, 10, 20]
+      volatility_lookbacks: [20, 50, 100]
+      trend_lookbacks: [20, 50, 200]
+    
+    # Volume features
+    volume_features:
+      enabled: true
+      volume_lookbacks: [20, 50]
+      volume_volatility_lookbacks: [20, 50]
+    
+    # Technical indicators
+    technical_indicators:
+      enabled: true
+      rsi_periods: [14, 21]
+      macd_periods: [12, 26, 9]
+      bollinger_periods: [20, 50]
+    
+    # Market microstructure
+    microstructure:
+      enabled: true
+      spread_features: true
+      order_flow_features: false
+      tick_features: false
+  
+  # Target variable creation
+  targets:
+    # Binary classification targets
+    binary:
+      enabled: true
+      prediction_horizon: 20
+      threshold: 0.0  # Positive return threshold
+      
+    # Multi-class targets
+    multiclass:
+      enabled: false
+      num_classes: 3
+      class_thresholds: [-0.02, 0.02]
+      
+    # Regression targets
+    regression:
+      enabled: false
+      target_type: "return"  # 'return', 'volatility', 'momentum'
+      
+  # Data validation
+  validation:
+    min_samples: 1000
+    max_missing_ratio: 0.1
+    outlier_removal: true
+    outlier_threshold: 3.0
+
+# Evaluation metrics
+evaluation:
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+    
+  # Metrics to track
+  metrics:
+    classification:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1_score"
+      - "roc_auc"
+      - "log_loss"
+      
+    calibration:
+      - "brier_score"
+      - "reliability_score"
+      - "sharpness_score"
+      
+    uncertainty:
+      - "coverage"
+      - "width"
+      - "calibration_error"
+      
+  # Thresholds for model selection
+  thresholds:
+    min_accuracy: 0.6
+    min_calibration: 0.7
+    min_uncertainty_coverage: 0.9
+
+# Model deployment
+deployment:
+  # Model versioning
+  versioning:
+    enabled: true
+    version_format: "v{major}.{minor}.{patch}"
+    auto_increment: true
+    
+  # Model monitoring
+  monitoring:
+    enabled: true
+    performance_threshold: 0.6
+    calibration_threshold: 0.7
+    retrain_threshold: 0.5
+    
+  # A/B testing
+  ab_testing:
+    enabled: false
+    traffic_split: 0.5
+    evaluation_period_days: 30
+
+# Logging and reporting
+logging:
+  # Log file settings
+  file:
+    enabled: true
+    path: "logs/probabilistic_optimization.log"
+    max_size_mb: 100
+    backup_count: 5
+    
+  # Console logging
+  console:
+    enabled: true
+    level: "INFO"
+    
+  # Metrics logging
+  metrics:
+    enabled: true
+    backend: "mlflow"  # 'mlflow', 'wandb', 'tensorboard'
+    experiment_name: "probabilistic_optimization"
+    
+# Advanced settings
+advanced:
+  # Multi-objective optimization
+  multi_objective:
+    enabled: true
+    algorithm: "nsga2"  # 'nsga2', 'moead', 'spea2'
+    population_size: 50
+    
+  # Hyperparameter importance
+  importance_analysis:
+    enabled: true
+    method: "fanova"  # 'fanova', 'permutation', 'shap'
+    
+  # Automated feature selection
+  feature_selection:
+    enabled: false
+    method: "recursive"  # 'recursive', 'lasso', 'mutual_info'
+    max_features: 50
+    
+  # Ensemble methods
+  ensemble:
+    enabled: true
+    methods: ["bagging", "stacking"]
+    base_models: ["random_forest", "lightgbm", "xgboost"]
+    meta_learner: "logistic_regression"
+
+# Example usage
+examples:
+  # Quick optimization (for testing)
+  quick:
+    n_trials: 20
+    n_jobs: 1
+    early_stopping_patience: 5
+    
+  # Production optimization
+  production:
+    n_trials: 200
+    n_jobs: 4
+    early_stopping_patience: 20
+    
+  # Research optimization
+  research:
+    n_trials: 500
+    n_jobs: 8
+    early_stopping_patience: 50
+    sampler_type: "cmaes"

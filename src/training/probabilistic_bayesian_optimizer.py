@@ -108,51 +108,88 @@ class ProbabilisticBayesianOptimizer:
         return study
     
     def _get_model_configurations(self) -> Dict[str, Dict[str, Any]]:
-        """Get model-specific hyperparameter search spaces."""
+        """Get model-specific hyperparameter search spaces with expanded ranges."""
         
         if self.model_type == "tactician":
             return {
                 "base_model": {
-                    "n_estimators": (100, 1000),
-                    "max_depth": (3, 15),
-                    "learning_rate": (0.01, 0.3),
-                    "subsample": (0.6, 1.0),
-                    "colsample_bytree": (0.6, 1.0),
-                    "reg_alpha": (0.0, 1.0),
-                    "reg_lambda": (0.0, 1.0)
+                    "n_estimators": (50, 3000),  # Expanded from (100, 1000)
+                    "max_depth": (2, 50),  # Expanded from (3, 15)
+                    "learning_rate": (0.001, 1.0),  # Expanded from (0.01, 0.3)
+                    "subsample": (0.3, 1.0),  # Expanded from (0.6, 1.0)
+                    "colsample_bytree": (0.3, 1.0),  # Expanded from (0.6, 1.0)
+                    "reg_alpha": (0.0, 10.0),  # Expanded from (0.0, 1.0)
+                    "reg_lambda": (0.0, 10.0),  # Expanded from (0.0, 1.0)
+                    "min_child_weight": (1, 100),  # New parameter
+                    "gamma": (0.0, 5.0),  # New parameter
+                    "scale_pos_weight": (0.1, 10.0)  # New parameter
                 },
                 "probabilistic_calibration": {
-                    "calibration_method": ["isotonic", "sigmoid", "platt"],
-                    "calibration_cv_folds": (3, 10),
-                    "uncertainty_estimation": ["mc_dropout", "ensemble", "gaussian"]
+                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta"],
+                    "calibration_cv_folds": (2, 20),  # Expanded from (3, 10)
+                    "uncertainty_estimation": ["mc_dropout", "ensemble", "gaussian", "conformal", "bootstrap"]
                 },
                 "barrier_system": {
-                    "upper_barrier_multiplier": (0.3, 0.8),
-                    "lower_barrier_multiplier": (0.1, 0.5),
-                    "confidence_threshold": (0.6, 0.9),
-                    "precision_threshold": (0.7, 0.95)
+                    "upper_barrier_multiplier": (0.1, 2.0),  # Expanded from (0.3, 0.8)
+                    "lower_barrier_multiplier": (0.05, 1.0),  # Expanded from (0.1, 0.5)
+                    "confidence_threshold": (0.3, 0.99),  # Expanded from (0.6, 0.9)
+                    "precision_threshold": (0.5, 0.99),  # Expanded from (0.7, 0.95)
+                    "barrier_timeout_minutes": (1, 120),  # New parameter
+                    "dynamic_barrier_adjustment": (0.1, 2.0),  # New parameter
+                    "barrier_smoothing_factor": (0.01, 1.0)  # New parameter
+                },
+                "position_management": {
+                    "position_size_multiplier": (0.1, 5.0),  # New parameter
+                    "max_position_size": (0.1, 2.0),  # New parameter
+                    "position_scaling_factor": (0.5, 3.0),  # New parameter
+                    "stop_loss_multiplier": (0.5, 5.0),  # New parameter
+                    "take_profit_multiplier": (1.0, 10.0)  # New parameter
+                },
+                "risk_management": {
+                    "max_drawdown_threshold": (0.05, 0.5),  # New parameter
+                    "volatility_target": (0.05, 0.5),  # New parameter
+                    "correlation_threshold": (0.1, 0.9),  # New parameter
+                    "var_confidence_level": (0.8, 0.99)  # New parameter
                 }
             }
         else:  # analyst
             return {
                 "base_model": {
-                    "n_estimators": (200, 2000),
-                    "max_depth": (5, 20),
-                    "learning_rate": (0.005, 0.2),
-                    "subsample": (0.7, 1.0),
-                    "colsample_bytree": (0.7, 1.0),
-                    "reg_alpha": (0.0, 2.0),
-                    "reg_lambda": (0.0, 2.0)
+                    "n_estimators": (100, 5000),  # Expanded from (200, 2000)
+                    "max_depth": (3, 100),  # Expanded from (5, 20)
+                    "learning_rate": (0.0001, 1.0),  # Expanded from (0.005, 0.2)
+                    "subsample": (0.5, 1.0),  # Expanded from (0.7, 1.0)
+                    "colsample_bytree": (0.5, 1.0),  # Expanded from (0.7, 1.0)
+                    "reg_alpha": (0.0, 20.0),  # Expanded from (0.0, 2.0)
+                    "reg_lambda": (0.0, 20.0),  # Expanded from (0.0, 2.0)
+                    "min_child_weight": (1, 200),  # New parameter
+                    "gamma": (0.0, 10.0),  # New parameter
+                    "scale_pos_weight": (0.1, 20.0)  # New parameter
                 },
                 "probabilistic_calibration": {
-                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature"],
-                    "calibration_cv_folds": (5, 15),
-                    "uncertainty_estimation": ["mc_dropout", "ensemble", "gaussian", "conformal"]
+                    "calibration_method": ["isotonic", "sigmoid", "platt", "temperature", "beta", "dirichlet"],
+                    "calibration_cv_folds": (3, 30),  # Expanded from (5, 15)
+                    "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout", "bootstrap", "variational"]
                 },
                 "regime_detection": {
-                    "regime_threshold": (0.5, 0.8),
-                    "regime_confidence_threshold": (0.6, 0.9),
-                    "regime_transition_smoothing": (0.1, 0.5)
+                    "regime_threshold": (0.3, 0.9),  # Expanded from (0.5, 0.8)
+                    "regime_confidence_threshold": (0.4, 0.99),  # Expanded from (0.6, 0.9)
+                    "regime_transition_smoothing": (0.01, 1.0),  # Expanded from (0.1, 0.5)
+                    "regime_lookback_period": (5, 200),  # New parameter
+                    "regime_min_samples": (50, 1000),  # New parameter
+                    "regime_clustering_method": ["kmeans", "hmm", "gaussian_mixture", "dbscan"]  # New parameter
+                },
+                "ensemble_methods": {
+                    "ensemble_size": (3, 20),  # New parameter
+                    "ensemble_weighting": ["equal", "performance", "uncertainty", "regime_specific"],  # New parameter
+                    "meta_learner_type": ["logistic", "random_forest", "xgboost", "neural_network"],  # New parameter
+                    "stacking_cv_folds": (3, 15)  # New parameter
+                },
+                "feature_selection": {
+                    "feature_selection_method": ["none", "variance", "mutual_info", "lasso", "recursive"],  # New parameter
+                    "max_features": (10, 500),  # New parameter
+                    "feature_importance_threshold": (0.001, 0.1),  # New parameter
+                    "correlation_threshold": (0.5, 0.99)  # New parameter
                 }
             }
     
@@ -369,11 +406,12 @@ class ProbabilisticBayesianOptimizer:
         model_factory: Callable,
         validation_split: float = 0.2
     ) -> Dict[str, Any]:
-        """Run the Bayesian optimization."""
+        """Run the Bayesian optimization with MLflow integration."""
         
         self.logger.info(f"Starting probabilistic Bayesian optimization for {self.model_type}")
         self.logger.info(f"Objectives: {self.config.objectives}")
         self.logger.info(f"Number of trials: {self.config.n_trials}")
+        self.logger.info(f"Objective weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio")
         
         # Create objective function
         objective = self.create_objective_function(X, y, model_factory, validation_split)
@@ -399,6 +437,18 @@ class ProbabilisticBayesianOptimizer:
         
         # Extract results
         results = self._extract_optimization_results()
+        
+        # Log to MLflow
+        if results.get("best_solutions"):
+            best_trial = self.study.best_trials[0] if self.study.best_trials else None
+            if best_trial:
+                best_params = best_trial.params
+                best_values = best_trial.values
+                self._log_mlflow_experiment(
+                    study_name=self.study.study_name,
+                    best_params=best_params,
+                    best_values=best_values
+                )
         
         self.logger.info("Probabilistic Bayesian optimization completed successfully!")
         
@@ -450,8 +500,12 @@ class ProbabilisticBayesianOptimizer:
         """Get recommended hyperparameters based on objective weights."""
         
         if objective_weights is None:
-            # Default weights: equal importance
-            objective_weights = {obj: 1.0 for obj in self.config.objectives}
+            # Default weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio
+            objective_weights = {
+                'total_profit': 0.5,
+                'win_rate': 0.25, 
+                'sharpe_ratio': 0.25
+            }
         
         # Calculate weighted score for each trial
         best_trial = None
@@ -477,6 +531,38 @@ class ProbabilisticBayesianOptimizer:
             }
         else:
             return {}
+    
+    def _log_mlflow_experiment(self, study_name: str, best_params: Dict[str, Any], best_values: List[float]):
+        """Log optimization results to MLflow."""
+        
+        try:
+            import mlflow
+            
+            # Set experiment name
+            mlflow.set_experiment(f"step17_optimization_{self.model_type}")
+            
+            # Log parameters
+            mlflow.log_params(best_params)
+            
+            # Log metrics
+            for i, objective in enumerate(self.config.objectives):
+                mlflow.log_metric(f"best_{objective}", best_values[i])
+            
+            # Log optimization metadata
+            mlflow.log_param("model_type", self.model_type)
+            mlflow.log_param("n_trials", self.config.n_trials)
+            mlflow.log_param("sampler_type", self.config.sampler_type)
+            mlflow.log_param("study_name", study_name)
+            
+            # Log study object
+            mlflow.log_artifact(f"{study_name}.db", "study_database")
+            
+            self.logger.info("✅ MLflow experiment logged successfully")
+            
+        except ImportError:
+            self.logger.warning("MLflow not available for experiment logging")
+        except Exception as e:
+            self.logger.error(f"Failed to log MLflow experiment: {e}")
     
     def plot_optimization_results(self, save_path: Optional[str] = None):
         """Plot optimization results using Optuna's visualization tools."""

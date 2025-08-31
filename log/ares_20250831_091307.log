@@ -1,0 +1,17 @@
+2025-08-31 09:13:07,667 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser Initializing Position Closer... - -
+2025-08-31 09:13:08,060 WARNING AresTradingSystem.System.PositionCloser ⚠️ Could not load barrier confidence model: [Errno 2] No such file or directory: 'models/barrier_confidence_model.pkl' - -
+2025-08-31 09:13:08,060 WARNING AresTradingSystem.System.PositionCloser ⚠️ Could not load confidence factors model: [Errno 2] No such file or directory: 'models/confidence_factor_model.pkl' - -
+2025-08-31 09:13:08,060 WARNING AresTradingSystem.System.PositionCloser ⚠️ Could not load price direction model: [Errno 2] No such file or directory: 'models/price_direction_model.pkl' - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser ✅ Initialized 0 ML models for position closing - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser ✅ Position Closer initialized successfully - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser 🎯 ML Barrier Confidence Assessment: - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    Position: LONG @ 49500.0000, Current: 50000.0000 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    ML Barrier Confidence: 0.700 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    ML Price Direction Confidence: 0.800 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    ML Price Target Confidence: 0.900 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    Combined ML Confidence: 0.704 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    Step17 Threshold: 0.720 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser    ML Model Weight: 0.800 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser 🚨 ML EXIT STRATEGY: Closing position due to low ML barrier confidence: 0.704 < 0.72 - -
+2025-08-31 09:13:08,060 INFO AresTradingSystem.System.PositionCloser ✅ Position closer configuration refreshed from step17 results - -

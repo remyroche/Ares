@@ -875,6 +875,16 @@ class FinalParametersOptimizationStepNew:
                     "combined_confidence_threshold": 0.78   # Optimized from step17
                 }),
                 
+                # ML Model Parameters (step17-optimized)
+                "ml_models": tactician_results.get("ml_models", {
+                    "barrier_confidence_model_weight": 0.8,      # Optimized from step17
+                    "confidence_factor_model_weight": 0.2,       # Optimized from step17
+                    "ml_confidence_threshold": 0.6,              # Optimized from step17
+                    "barrier_confidence_model_path": "models/barrier_confidence_model.pkl",
+                    "confidence_factor_model_path": "models/confidence_factor_model.pkl",
+                    "price_direction_model_path": "models/price_direction_model.pkl"
+                }),
+                
                 # Step 17 Performance Results
                 "optimization_results": {
                     "objective": "maximize_sharpe_ratio",

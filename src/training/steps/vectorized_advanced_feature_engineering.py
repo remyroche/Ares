@@ -53,6 +53,12 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 
+# Import fractional differentiation
+from src.training.steps.fractional_differentiation import (
+    FractionalDifferentiation,
+    FractionalFeatureGenerator
+)
+
 # Feature Engineering Optimization Configuration
 FEATURE_OPTIMIZATION_CONFIG = {
     "enable_parallel_processing": True,
@@ -69,6 +75,20 @@ FEATURE_OPTIMIZATION_CONFIG = {
     "joblib_memory_verbose": 0,  # Reduce verbosity
     "joblib_memory_bytes": 1024 * 1024 * 1024,  # 1GB cache limit
     "joblib_memory_compress": 3,  # Compression level
+    # Fractional differentiation configuration
+    "enable_fractional_differentiation": True,
+    "fractional_diff_config": {
+        "default_d": 0.5,
+        "optimize_order": True,
+        "window": 100,
+        "threshold": 1e-5,
+        "price_columns": ["close", "high", "low", "open"],
+        "volume_columns": ["volume"],
+        "exclude_columns": ["timestamp", "datetime", "date"],
+        "enable_batch_processing": True,
+        "enable_parallel_processing": True,
+        "max_parallel_workers": 4
+    }
 }
 
 
@@ -1414,6 +1434,14 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Initialize optimized resampler
         self.optimized_resampler = OptimizedResampler()
+        
+        # Initialize fractional differentiation
+        self.fractional_feature_generator = None
+        self.enable_fractional_diff = FEATURE_OPTIMIZATION_CONFIG.get("enable_fractional_differentiation", True)
+        if self.enable_fractional_diff:
+            fractional_config = FEATURE_OPTIMIZATION_CONFIG.get("fractional_diff_config", {})
+            self.fractional_feature_generator = FractionalFeatureGenerator(fractional_config)
+            self.logger.info("✅ Initialized fractional differentiation feature generator")
 
         # Configure joblib memory to prevent cache flushing warnings
         try:
@@ -2721,6 +2749,39 @@ class VectorizedAdvancedFeatureEngineering:
             filtered_ohlcv_price_features, filter_coroutines(ohlcv_price_features, "ohlcv_price")
             features.update(filtered_ohlcv_price_features)
         self.logger.info(f"🔍 Total features after OHLCV price: {len(features)}")
+
+        # Fractional differentiation features
+        self.logger.info("🔍 Generating fractional differentiation features...")
+        if self.enable_fractional_diff and self.fractional_feature_generator:
+            try:
+                # Combine price and volume data for fractional differentiation
+                combined_data = price_data.copy()
+                if volume_data is not None and not volume_data.empty:
+                    # Add volume columns to combined data
+                    for col in volume_data.columns:
+                        if col not in combined_data.columns:
+                            combined_data[col] = volume_data[col]
+                
+                # Generate fractional differentiation features
+                fractional_features = self.fractional_feature_generator.generate_features(combined_data)
+                
+                # Extract only the new fractional differentiation features
+                frac_diff_features = {}
+                for col in fractional_features.columns:
+                    if 'frac_diff' in col and col not in combined_data.columns:
+                        frac_diff_features[col] = fractional_features[col].values
+                
+                self.logger.info(f"🔍 Generated {len(frac_diff_features)} fractional differentiation features")
+                if frac_diff_features:
+                    self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
+                    features.update(frac_diff_features)
+                    self.logger.info(f"🔍 Total features after fractional differentiation: {len(features)}")
+                else:
+                    self.logger.warning("⚠️ No fractional differentiation features generated")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Fractional differentiation feature generation failed: {e}")
+        else:
+            self.logger.info("🔍 Fractional differentiation disabled or not available")
 
         # S/R distance features — generate sr_levels if not provided
         self.logger.info("🔍 Generating S/R distance features...")

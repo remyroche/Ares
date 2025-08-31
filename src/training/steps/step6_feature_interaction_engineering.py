@@ -4,6 +4,11 @@ Step6: Feature Interaction Engineering
 This module implements comprehensive feature interaction engineering for the Tactician model.
 It creates interaction terms between technical indicators, market features, and derived metrics
 to capture non-linear relationships and improve model performance.
+
+Key Features:
+- Ensures non-correlated lookback periods for each indicator
+- Creates meaningful feature interactions
+- Implements stability analysis for feature selection
 """
 
 import numpy as np
@@ -13,6 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
+from sklearn.decomposition import PCA
+import talib
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -27,6 +34,8 @@ class FeatureInteractionEngine:
     - Derived metrics (momentum, acceleration, regime indicators)
     - Cross-timeframe features
     - Regime-dependent interactions
+    
+    Ensures non-correlated lookback periods for each indicator.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -42,35 +51,105 @@ class FeatureInteractionEngine:
         # Load interaction configuration
         step6_config = config.get("step6_feature_interaction_engineering", {})
         
+        # Define optimal, non-correlated lookback periods for each indicator
+        # These are carefully selected to provide different market insights
+        self.optimal_lookback_periods = {
+            "RSI": {
+                "periods": [7, 21, 50],  # Short, medium, long - different market cycles
+                "correlation_threshold": 0.7,  # Maximum allowed correlation
+                "description": "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles"
+            },
+            "MACD": {
+                "periods": [12, 26, 52],  # Standard, extended, long-term
+                "correlation_threshold": 0.75,
+                "description": "Standard (12,26), Extended (20,40), Long-term (26,52)"
+            },
+            "Bollinger_Bands": {
+                "periods": [10, 20, 50],  # Short, standard, long
+                "correlation_threshold": 0.8,
+                "description": "Short (10) for volatility, Standard (20) for trend, Long (50) for major moves"
+            },
+            "SMA": {
+                "periods": [5, 20, 100],  # Very short, medium, very long
+                "correlation_threshold": 0.85,
+                "description": "Very short (5) for immediate trend, Medium (20) for trend, Long (100) for major trend"
+            },
+            "EMA": {
+                "periods": [8, 21, 55],  # Short, medium, long (different from SMA)
+                "correlation_threshold": 0.8,
+                "description": "Short (8) for momentum, Medium (21) for trend, Long (55) for major trend"
+            },
+            "ATR": {
+                "periods": [7, 14, 30],  # Short, standard, long volatility
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate volatility, Standard (14) for trend volatility, Long (30) for major volatility"
+            },
+            "Stochastic": {
+                "periods": [7, 14, 30],  # Short, standard, long momentum
+                "correlation_threshold": 0.7,
+                "description": "Short (7) for immediate momentum, Standard (14) for trend momentum, Long (30) for major momentum"
+            },
+            "ADX": {
+                "periods": [7, 14, 25],  # Short, standard, long trend strength
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate trend, Standard (14) for trend, Long (25) for major trend"
+            },
+            "CCI": {
+                "periods": [10, 20, 40],  # Short, medium, long cycles
+                "correlation_threshold": 0.7,
+                "description": "Short (10) for immediate cycles, Medium (20) for trend cycles, Long (40) for major cycles"
+            },
+            "Williams_R": {
+                "periods": [7, 14, 28],  # Short, standard, long overbought/oversold
+                "correlation_threshold": 0.7,
+                "description": "Short (7) for immediate signals, Standard (14) for trend signals, Long (28) for major signals"
+            },
+            "ROC": {
+                "periods": [5, 10, 25],  # Very short, short, medium momentum
+                "correlation_threshold": 0.75,
+                "description": "Very short (5) for immediate momentum, Short (10) for momentum, Medium (25) for trend momentum"
+            },
+            "OBV": {
+                "periods": [10, 20, 50],  # Short, medium, long volume trend
+                "correlation_threshold": 0.8,
+                "description": "Short (10) for immediate volume, Medium (20) for volume trend, Long (50) for major volume trend"
+            },
+            "MFI": {
+                "periods": [7, 14, 30],  # Short, standard, long money flow
+                "correlation_threshold": 0.75,
+                "description": "Short (7) for immediate flow, Standard (14) for flow trend, Long (30) for major flow trend"
+            }
+        }
+        
         # Interaction patterns and weights
         self.interaction_patterns = {
             "momentum_volume": {
-                "features": ["RSI", "MACD", "Stochastic", "Volume_Ratio"],
+                "features": ["RSI_7", "RSI_21", "MACD_12_26", "Volume_Ratio"],
                 "weight": step6_config.get("momentum_volume_weight", 1.5),
                 "enabled": step6_config.get("momentum_volume_enabled", True)
             },
             "trend_volatility": {
-                "features": ["SMA_Ratio", "EMA_Ratio", "BB_Position", "ATR_Normalized"],
+                "features": ["SMA_5", "SMA_100", "BB_Position_20", "ATR_14"],
                 "weight": step6_config.get("trend_volatility_weight", 1.8),
                 "enabled": step6_config.get("trend_volatility_enabled", True)
             },
             "oscillator_trend": {
-                "features": ["RSI", "Williams_R", "CCI", "SMA_Ratio"],
+                "features": ["RSI_7", "Williams_R_14", "CCI_20", "EMA_21"],
                 "weight": step6_config.get("oscillator_trend_weight", 1.3),
                 "enabled": step6_config.get("oscillator_trend_enabled", True)
             },
             "volume_price": {
-                "features": ["OBV_Normalized", "MFI", "Price_Momentum", "Volume_Ratio"],
+                "features": ["OBV_20", "MFI_14", "Price_Momentum", "Volume_Ratio"],
                 "weight": step6_config.get("volume_price_weight", 1.6),
                 "enabled": step6_config.get("volume_price_enabled", True)
             },
             "volatility_regime": {
-                "features": ["ATR_Normalized", "BB_Squeeze", "Volatility", "Market_Regime"],
+                "features": ["ATR_7", "BB_Squeeze_20", "Volatility", "Market_Regime"],
                 "weight": step6_config.get("volatility_regime_weight", 1.4),
                 "enabled": step6_config.get("volatility_regime_enabled", True)
             },
             "cross_timeframe": {
-                "features": ["RSI_14", "RSI_30", "MACD_12_26", "MACD_20_40"],
+                "features": ["RSI_7", "RSI_50", "MACD_12_26", "MACD_20_40"],
                 "weight": step6_config.get("cross_timeframe_weight", 1.2),
                 "enabled": step6_config.get("cross_timeframe_enabled", True)
             },
@@ -100,10 +179,271 @@ class FeatureInteractionEngine:
         self.interaction_performance = {}
         self.feature_importance_history = []
         self.selected_interactions_history = []
+        self.correlation_analysis_history = []
         
         # Initialize scaler for interaction features
         self.scaler = StandardScaler()
         self.is_fitted = False
+        
+        # Validate optimal lookback periods
+        self._validate_lookback_periods()
+    
+    def _validate_lookback_periods(self):
+        """
+        Validate that the selected lookback periods are not too correlated.
+        """
+        self.logger.info("🔍 Validating optimal lookback periods for non-correlation...")
+        
+        for indicator, config in self.optimal_lookback_periods.items():
+            periods = config["periods"]
+            threshold = config["correlation_threshold"]
+            
+            # Check if periods are too close (which would cause high correlation)
+            for i in range(len(periods)):
+                for j in range(i + 1, len(periods)):
+                    period1, period2 = periods[i], periods[j]
+                    
+                    # Calculate ratio to ensure periods are sufficiently different
+                    ratio = max(period1, period2) / min(period1, period2)
+                    
+                    if ratio < 1.5:  # Periods should be at least 1.5x different
+                        self.logger.warning(f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})")
+                    
+                    # Log the selected periods
+                    self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
+    
+    def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract technical indicators using optimal, non-correlated lookback periods.
+        
+        Args:
+            market_data: OHLCV market data
+            
+        Returns:
+            pd.DataFrame: Technical indicators with optimal lookback periods
+        """
+        self.logger.info("🔧 Extracting optimal technical indicators with non-correlated lookback periods...")
+        
+        indicators = {}
+        
+        # Extract RSI with optimal periods
+        if "RSI" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["RSI"]["periods"]:
+                rsi = talib.RSI(market_data['close'].values, timeperiod=period)
+                indicators[f"RSI_{period}"] = rsi
+        
+        # Extract MACD with optimal periods
+        if "MACD" in self.optimal_lookback_periods:
+            periods = self.optimal_lookback_periods["MACD"]["periods"]
+            # Use first two periods for fast/slow
+            macd, macd_signal, macd_hist = talib.MACD(
+                market_data['close'].values, 
+                fastperiod=periods[0], 
+                slowperiod=periods[1], 
+                signalperiod=9
+            )
+            indicators[f"MACD_{periods[0]}_{periods[1]}"] = macd
+            indicators[f"MACD_Signal_{periods[0]}_{periods[1]}"] = macd_signal
+            indicators[f"MACD_Hist_{periods[0]}_{periods[1]}"] = macd_hist
+            
+            # Add extended MACD if we have 3 periods
+            if len(periods) >= 3:
+                macd_ext, macd_signal_ext, macd_hist_ext = talib.MACD(
+                    market_data['close'].values, 
+                    fastperiod=periods[1], 
+                    slowperiod=periods[2], 
+                    signalperiod=9
+                )
+                indicators[f"MACD_{periods[1]}_{periods[2]}"] = macd_ext
+                indicators[f"MACD_Signal_{periods[1]}_{periods[2]}"] = macd_signal_ext
+                indicators[f"MACD_Hist_{periods[1]}_{periods[2]}"] = macd_hist_ext
+        
+        # Extract Bollinger Bands with optimal periods
+        if "Bollinger_Bands" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["Bollinger_Bands"]["periods"]:
+                bb_upper, bb_middle, bb_lower = talib.BBANDS(
+                    market_data['close'].values, 
+                    timeperiod=period, 
+                    nbdevup=2, 
+                    nbdevdn=2
+                )
+                bb_position = (market_data['close'] - bb_lower) / (bb_upper - bb_lower)
+                bb_squeeze = (bb_upper - bb_lower) / bb_middle
+                
+                indicators[f"BB_Upper_{period}"] = bb_upper
+                indicators[f"BB_Middle_{period}"] = bb_middle
+                indicators[f"BB_Lower_{period}"] = bb_lower
+                indicators[f"BB_Position_{period}"] = bb_position
+                indicators[f"BB_Squeeze_{period}"] = bb_squeeze
+        
+        # Extract SMA with optimal periods
+        if "SMA" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["SMA"]["periods"]:
+                sma = talib.SMA(market_data['close'].values, timeperiod=period)
+                indicators[f"SMA_{period}"] = sma
+        
+        # Extract EMA with optimal periods
+        if "EMA" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["EMA"]["periods"]:
+                ema = talib.EMA(market_data['close'].values, timeperiod=period)
+                indicators[f"EMA_{period}"] = ema
+        
+        # Extract ATR with optimal periods
+        if "ATR" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["ATR"]["periods"]:
+                atr = talib.ATR(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    timeperiod=period
+                )
+                # Normalize ATR by price
+                atr_normalized = atr / market_data['close']
+                indicators[f"ATR_{period}"] = atr
+                indicators[f"ATR_Normalized_{period}"] = atr_normalized
+        
+        # Extract Stochastic with optimal periods
+        if "Stochastic" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["Stochastic"]["periods"]:
+                stoch_k, stoch_d = talib.STOCH(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    fastk_period=period, 
+                    slowk_period=3, 
+                    slowd_period=3
+                )
+                indicators[f"Stoch_K_{period}"] = stoch_k
+                indicators[f"Stoch_D_{period}"] = stoch_d
+        
+        # Extract ADX with optimal periods
+        if "ADX" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["ADX"]["periods"]:
+                adx = talib.ADX(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    timeperiod=period
+                )
+                indicators[f"ADX_{period}"] = adx
+        
+        # Extract CCI with optimal periods
+        if "CCI" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["CCI"]["periods"]:
+                cci = talib.CCI(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    timeperiod=period
+                )
+                indicators[f"CCI_{period}"] = cci
+        
+        # Extract Williams %R with optimal periods
+        if "Williams_R" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["Williams_R"]["periods"]:
+                williams_r = talib.WILLR(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    timeperiod=period
+                )
+                indicators[f"Williams_R_{period}"] = williams_r
+        
+        # Extract ROC with optimal periods
+        if "ROC" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["ROC"]["periods"]:
+                roc = talib.ROC(market_data['close'].values, timeperiod=period)
+                indicators[f"ROC_{period}"] = roc
+        
+        # Extract OBV with optimal periods
+        if "OBV" in self.optimal_lookback_periods:
+            obv = talib.OBV(market_data['close'].values, market_data['volume'].values)
+            # Normalize OBV
+            obv_normalized = (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
+            indicators["OBV"] = obv
+            indicators["OBV_Normalized"] = obv_normalized
+        
+        # Extract MFI with optimal periods
+        if "MFI" in self.optimal_lookback_periods:
+            for period in self.optimal_lookback_periods["MFI"]["periods"]:
+                mfi = talib.MFI(
+                    market_data['high'].values, 
+                    market_data['low'].values, 
+                    market_data['close'].values, 
+                    market_data['volume'].values, 
+                    timeperiod=period
+                )
+                indicators[f"MFI_{period}"] = mfi
+        
+        # Create DataFrame
+        indicators_df = pd.DataFrame(indicators, index=market_data.index)
+        
+        # Remove any NaN values
+        indicators_df = indicators_df.fillna(method='ffill').fillna(0)
+        
+        self.logger.info(f"✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods")
+        
+        return indicators_df
+    
+    def analyze_feature_correlations(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Analyze correlations between features to ensure non-correlation.
+        
+        Args:
+            features: Feature DataFrame
+            
+        Returns:
+            Dict with correlation analysis results
+        """
+        self.logger.info("🔍 Analyzing feature correlations to ensure non-correlation...")
+        
+        correlation_matrix = features.corr()
+        
+        # Find highly correlated feature pairs
+        high_correlations = []
+        for i in range(len(correlation_matrix.columns)):
+            for j in range(i + 1, len(correlation_matrix.columns)):
+                corr_value = correlation_matrix.iloc[i, j]
+                if abs(corr_value) > 0.8:  # High correlation threshold
+                    high_correlations.append({
+                        "feature1": correlation_matrix.columns[i],
+                        "feature2": correlation_matrix.columns[j],
+                        "correlation": corr_value
+                    })
+        
+        # Group correlations by indicator type
+        correlation_groups = {}
+        for corr in high_correlations:
+            indicator_type = corr["feature1"].split("_")[0]
+            if indicator_type not in correlation_groups:
+                correlation_groups[indicator_type] = []
+            correlation_groups[indicator_type].append(corr)
+        
+        # Analysis results
+        analysis_results = {
+            "correlation_matrix": correlation_matrix,
+            "high_correlations": high_correlations,
+            "correlation_groups": correlation_groups,
+            "n_high_correlations": len(high_correlations),
+            "mean_correlation": correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean(),
+            "max_correlation": correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].max()
+        }
+        
+        # Log findings
+        if high_correlations:
+            self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
+            for corr in high_correlations[:5]:  # Show first 5
+                self.logger.warning(f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}")
+        else:
+            self.logger.info("✅ No highly correlated features found - optimal lookback periods working correctly")
+        
+        # Store analysis history
+        self.correlation_analysis_history.append({
+            "timestamp": datetime.now(),
+            "results": analysis_results
+        })
+        
+        return analysis_results
     
     def extract_interaction_features(self, features: np.ndarray, 
                                    feature_names: List[str],

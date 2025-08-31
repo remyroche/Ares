@@ -10,7 +10,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -69,6 +69,11 @@ from src.utils.training_pipeline_decorators import (
     ensure_data_integrity,
     monitor_step_execution,
     secure_step_execution,
+    monitor_pipeline_step,
+    validate_pipeline_input,
+    monitor_pipeline_performance,
+    PipelineStage,
+    PipelineValidationLevel,
 )
 from src.utils.logger import system_logger
 from src.utils.step_dependency_validator import step_dependency_validator
@@ -162,35 +167,35 @@ class EnhancedTrainingManager:
         self.is_training: bool = False
         self.enhanced_training_results: dict[str, Any] = {}
         self.enhanced_training_history: list[dict[str, Any]] = []
+        
+        # Enhanced reporting configuration
+        self.reporting_config = config.get("enhanced_reporting", {})
+        self.enable_detailed_reporting = self.reporting_config.get("enable_detailed_reporting", True)
+        self.pipeline_reports_dir = Path("reports/enhanced_training_pipeline")
+        self.pipeline_reports_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Track step execution for reporting
+        self.current_pipeline_execution_id = None
+        self.step_reports = {}
 
         # Define pipeline step order as class constant
         self.STEP_ORDER = [
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
-            "step2_data_reading",              # Read and validate data quality
-            "step2_5_sr_optimization",         # S/R detection optimization
+            "step2_feature_engineering",       # Feature engineering
             "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
-            "step4_triple_barrier_method",     # Apply triple barrier method
-            "step4_regime_data_splitting",     # Regime data splitting (legacy step)
-            "step5_labeling",                  # Create labels
-            "step6_feature_engineering",       # Complete feature engineering (simple + advanced)
-            "step7_enhanced_matrix_operations", # Enhanced matrix operations for analysis
-            "step8_regime_data_splitting",     # Split data by regimes
-            "step9_hmm_based_training",        # HMM-based model training
-            "step9_5_multi_timeframe_hmm_ensemble", # Multi-timeframe HMM ensemble training
-            "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
-            "step10_unified_regime_intelligence", # Unified regime intelligence
-            "step11_analyst_creation",         # Analyst creation (NEW STEP)
-            "step12_analyst_enhancement",      # Analyst enhancement
-            "step13_analyst_ensemble_creation", # Analyst ensemble creation
-            "step14_tactician_labeling",       # Tactician labeling
-            "step15_tactician_specialist_training", # Tactician specialist training
-            "step16_confidence_calibration",   # Confidence calibration
-            "step17_final_parameters_optimization", # Final parameters optimization
-            "step18_walk_forward_validation",  # Walk forward validation
-            "step19_monte_carlo_validation",   # Monte Carlo validation
-            "step20_ab_testing",               # A/B testing
-            "step21_saving",                   # Save final models
+            "step4_regime_data_splitting",     # Regime data splitting
+            "step5_triple_barrier_method",     # Apply triple barrier method
+            "step6_feature_generation",        # Feature generation
+            "step7_matrix_feature_selection",  # Matrix feature selection
+            "step8_tactician_labeling",        # Tactician labeling
+            "step9_tactician_specialist_training", # Tactician specialist training
+            "step10_confidence_calibration",   # Confidence calibration
+            "step11_final_parameters_optimization", # Final parameters optimization
+            "step12_walk_forward_validation",  # Walk forward validation
+            "step13_monte_carlo_validation",   # Monte Carlo validation
+            "step14_ab_testing",               # A/B testing
+            "step15_saving",                   # Save final models
         ]
 
         # Define critical artifact patterns for each step
@@ -1167,10 +1172,14 @@ class EnhancedTrainingManager:
             )
             self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
             self.logger.info(f"🔧 Blank Training Mode: {self.blank_training_mode}")
-            self.logger.info(f"🔧 Max Trials: {self.max_trials}")
-            self.logger.info(f"🔧 N Trials: {self.n_trials}")
+                    self.logger.info(f"🔧 Max Trials: {self.max_trials}")
+        self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
-            self.is_training = True
+        # Initialize enhanced reporting
+        self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
+        self.step_reports = {}
+
+        self.is_training = True
 
             # Validate training input
             if not self._validate_enhanced_training_inputs(enhanced_training_input):
@@ -3543,27 +3552,21 @@ class EnhancedTrainingManager:
             self.logger.exception(f"❌ Error running validator for {step_name}: {e}")
             return {"step_name": step_name, "validation_passed": False, "error": str(e)}
 
-    @validate_pipeline_step(
-        step_name="step1_5_data_converter",
-        validation_level="WARNING",
-        enable_rollback=True,
-        max_retries=3
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_5_data_converter"
     )
-    @ensure_data_integrity(
-        check_schema=True,
-        check_constraints=True,
-        validate_relationships=True
+    @monitor_pipeline_step(
+        stage=PipelineStage.DATA_PREPROCESSING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
-    @monitor_step_execution(
-        enable_timing=True,
-        enable_memory_monitoring=True,
-        enable_progress_tracking=True
-    )
-    @secure_step_execution(
-        error_handling=True,
-        rollback_on_failure=True,
-        data_validation=True,
-        resource_cleanup=True
+    @validate_pipeline_input(
+        required_params=["symbol", "exchange", "timeframe", "data_dir"],
+        required_directories=["data_cache"],
+        min_memory_gb=4.0,
+        min_disk_gb=2.0
     )
     async def _execute_step1_5_with_qa(
         self,
@@ -3574,9 +3577,12 @@ class EnhancedTrainingManager:
         force_rerun: bool,
         step1_5_run_step: callable,
     ) -> bool:
-        """Execute step1_5_data_converter with comprehensive QA measures."""
-        self.logger.info("🔍 [QA] Executing step1_5_data_converter with enhanced security and monitoring")
-
+        """Execute step1_5_data_converter with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
         try:
             # Execute the original step function
             result = await step1_5_run_step(
@@ -3587,47 +3593,49 @@ class EnhancedTrainingManager:
                 force_rerun=force_rerun,
             )
 
-            # Track performance if step was successful
-            if result:
-                try:
-                    # Track data conversion performance
-                    await self._track_step_performance(
-                        "data_converter", 
-                        "step1_5", 
-                        {"converted": True, "symbol": symbol, "exchange": exchange}, 
-                        None
-                    )
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to track step1_5 performance: {e}")
+            # Generate step report
+            await self._generate_step_report(
+                "step1_5_data_converter",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
 
-            self.logger.info("✅ [QA] step1_5_data_converter completed with QA validation")
+            self.logger.info("✅ [QA] step1_5_data_converter completed with enhanced reporting")
             return result
 
         except Exception as e:
-            self.logger.error(f"❌ [QA] step1_5_data_converter failed with QA monitoring: {e}")
+            step_errors.append(str(e))
+            self.logger.error(f"❌ [QA] step1_5_data_converter failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step1_5_data_converter",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
             raise
 
-    @validate_pipeline_step(
-        step_name="step2_feature_engineering",
-        validation_level="WARNING",
-        enable_rollback=True,
-        max_retries=3
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step2_feature_engineering"
     )
-    @ensure_data_integrity(
-        check_schema=True,
-        check_constraints=True,
-        validate_relationships=True
+    @monitor_pipeline_step(
+        stage=PipelineStage.FEATURE_ENGINEERING,
+        validation_level=PipelineValidationLevel.WARNING,
+        enable_data_quality=True
     )
-    @monitor_step_execution(
-        enable_timing=True,
-        enable_memory_monitoring=True,
-        enable_progress_tracking=True
-    )
-    @secure_step_execution(
-        error_handling=True,
-        rollback_on_failure=True,
-        data_validation=True,
-        resource_cleanup=True
+    @monitor_pipeline_performance(
+        enable_memory_tracking=True,
+        enable_cpu_tracking=True,
+        memory_threshold_gb=16.0,
+        cpu_threshold_percent=90.0
     )
     async def _execute_step2_with_qa(
         self,
@@ -3638,9 +3646,12 @@ class EnhancedTrainingManager:
         force_rerun: bool,
         feature_config: dict,
     ) -> bool:
-        """Execute step2_feature_engineering with comprehensive QA measures."""
-        self.logger.info("🔍 [QA] Executing step2_feature_engineering with enhanced security and monitoring")
-
+        """Execute step2_feature_engineering with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
         try:
             from src.training.steps import step2_feature_engineering
 
@@ -3654,26 +3665,32 @@ class EnhancedTrainingManager:
                 feature_config=feature_config,
             )
 
-            # Track performance if step was successful
-            if result:
-                try:
-                    # Import the step module to access its data
-                    step_module = step2_feature_engineering
-                    if hasattr(step_module, 'features_data') and step_module.features_data is not None:
-                        await self._track_step_performance(
-                            "feature_engineering", 
-                            "step2", 
-                            step_module.features_data, 
-                            None
-                        )
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to track step2 performance: {e}")
+            # Generate step report
+            await self._generate_step_report(
+                "step2_feature_engineering",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
 
-            self.logger.info("✅ [QA] step2_feature_engineering completed with QA validation")
+            self.logger.info("✅ [QA] step2_feature_engineering completed with enhanced reporting")
             return result
 
         except Exception as e:
-            self.logger.error(f"❌ [QA] step2_feature_engineering failed with QA monitoring: {e}")
+            step_errors.append(str(e))
+            self.logger.error(f"❌ [QA] step2_feature_engineering failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step2_feature_engineering",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
             raise
 
     @handle_errors(
@@ -4866,6 +4883,135 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to track A/B testing performance for {ab_type}:{step_name}: {e}")
             return False
+
+    # Enhanced reporting methods
+    async def _generate_step_report(self, step_name: str, step_result: Any, step_start_time: float, step_success: bool, step_errors: List[str] = None, step_warnings: List[str] = None):
+        """Generate and append step information to shared pipeline report."""
+        
+        if not self.enable_detailed_reporting:
+            return
+        
+        try:
+            step_end_time = time.time()
+            execution_duration = step_end_time - step_start_time
+            
+            # Create step report section
+            step_report_section = {
+                "step_name": step_name,
+                "pipeline_execution_id": self.current_pipeline_execution_id,
+                "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                "execution_end_time": datetime.fromtimestamp(step_end_time).isoformat(),
+                "execution_duration_seconds": execution_duration,
+                "execution_duration_formatted": f"{execution_duration:.2f}s",
+                "success": step_success,
+                "result_type": type(step_result).__name__,
+                "result_summary": self._summarize_result(step_result),
+                "errors": step_errors or [],
+                "warnings": step_warnings or [],
+                "system_resources": await self._get_system_resources(),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Load existing shared report or create new one
+            shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
+            
+            if shared_report_path.exists():
+                with open(shared_report_path, 'r', encoding='utf-8') as f:
+                    shared_report = json.load(f)
+            else:
+                shared_report = {
+                    "pipeline_execution_id": self.current_pipeline_execution_id,
+                    "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                    "pipeline_config": self.config,
+                    "steps": {},
+                    "pipeline_summary": {
+                        "total_steps": len(self.STEP_ORDER),
+                        "completed_steps": 0,
+                        "failed_steps": 0,
+                        "total_duration": 0,
+                        "overall_success": True
+                    }
+                }
+            
+            # Append step information to shared report
+            shared_report["steps"][step_name] = step_report_section
+            shared_report["pipeline_summary"]["completed_steps"] = len(shared_report["steps"])
+            shared_report["pipeline_summary"]["failed_steps"] = sum(1 for step in shared_report["steps"].values() if not step["success"])
+            shared_report["pipeline_summary"]["overall_success"] = shared_report["pipeline_summary"]["failed_steps"] == 0
+            shared_report["pipeline_summary"]["total_duration"] = sum(step["execution_duration_seconds"] for step in shared_report["steps"].values())
+            
+            # Save updated shared report
+            with open(shared_report_path, 'w', encoding='utf-8') as f:
+                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Store in memory for pipeline summary
+            self.step_reports[step_name] = step_report_section
+            
+            # Log completion
+            status_emoji = "✅" if step_success else "❌"
+            self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} appended to shared report: {shared_report_path}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")
+    
+    def _summarize_result(self, result: Any) -> Dict[str, Any]:
+        """Create a summary of the step result."""
+        
+        try:
+            if hasattr(result, 'shape'):  # DataFrame
+                return {
+                    "type": "DataFrame",
+                    "shape": result.shape,
+                    "columns_count": len(result.columns),
+                    "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2) if hasattr(result, 'memory_usage') else None
+                }
+            elif isinstance(result, dict):
+                return {
+                    "type": "dict",
+                    "keys_count": len(result),
+                    "keys": list(result.keys())[:10]  # First 10 keys
+                }
+            elif isinstance(result, (list, tuple)):
+                return {
+                    "type": type(result).__name__,
+                    "length": len(result),
+                    "element_types": [type(item).__name__ for item in result[:5]]  # First 5 elements
+                }
+            elif isinstance(result, bool):
+                return {
+                    "type": "boolean",
+                    "value": result
+                }
+            else:
+                return {
+                    "type": type(result).__name__,
+                    "value_preview": str(result)[:100]  # First 100 characters
+                }
+        except Exception:
+            return {
+                "type": "unknown",
+                "error": "Could not summarize result"
+            }
+    
+    async def _get_system_resources(self) -> Dict[str, Any]:
+        """Get current system resource usage."""
+        
+        try:
+            memory = psutil.virtual_memory()
+            cpu = psutil.cpu_percent()
+            disk = psutil.disk_usage('/')
+            
+            return {
+                "memory_usage_percent": memory.percent,
+                "memory_available_gb": memory.available / (1024**3),
+                "cpu_usage_percent": cpu,
+                "disk_usage_percent": disk.percent,
+                "disk_available_gb": disk.free / (1024**3)
+            }
+        except Exception:
+            return {
+                "error": "Could not retrieve system resources"
+            }
 
 
 @handle_errors(

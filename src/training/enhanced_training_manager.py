@@ -218,8 +218,8 @@ class EnhancedTrainingManager:
                 "data/training/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
             ],
             "step5_regime_data_splitting": [
-                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_train.parquet",
-                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json",
             ],
             "step6_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
@@ -292,8 +292,9 @@ class EnhancedTrainingManager:
                 "data/training/{exchange}_{symbol}_{timeframe}_feature_metadata.*",
             ],
             "step7_regime_data_splitting": [
-                "data/training/{exchange}_{symbol}_{timeframe}_regime_splits_*.parquet",
-                "data/training/{exchange}_{symbol}_{timeframe}_split_metadata.*",
+                "data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_labels.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_regime_statistics.json",
             ],
             "step8_hmm_based_training": [
                 "data/training/{exchange}_{symbol}_{timeframe}_hmm_models_*.pkl",

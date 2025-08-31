@@ -333,6 +333,61 @@ tactician_triple_barrier:
     
     # Step6 Feature Interaction Engineering Configuration
     step6_feature_interaction_engineering:
+      # Optimal, non-correlated lookback periods for each indicator
+      optimal_lookback_periods:
+        RSI:
+          periods: [7, 21, 50]  # Short, medium, long - different market cycles
+          correlation_threshold: 0.7
+          description: "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles"
+        MACD:
+          periods: [12, 26, 52]  # Standard, extended, long-term
+          correlation_threshold: 0.75
+          description: "Standard (12,26), Extended (20,40), Long-term (26,52)"
+        Bollinger_Bands:
+          periods: [10, 20, 50]  # Short, standard, long
+          correlation_threshold: 0.8
+          description: "Short (10) for volatility, Standard (20) for trend, Long (50) for major moves"
+        SMA:
+          periods: [5, 20, 100]  # Very short, medium, very long
+          correlation_threshold: 0.85
+          description: "Very short (5) for immediate trend, Medium (20) for trend, Long (100) for major trend"
+        EMA:
+          periods: [8, 21, 55]  # Short, medium, long (different from SMA)
+          correlation_threshold: 0.8
+          description: "Short (8) for momentum, Medium (21) for trend, Long (55) for major trend"
+        ATR:
+          periods: [7, 14, 30]  # Short, standard, long volatility
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate volatility, Standard (14) for trend volatility, Long (30) for major volatility"
+        Stochastic:
+          periods: [7, 14, 30]  # Short, standard, long momentum
+          correlation_threshold: 0.7
+          description: "Short (7) for immediate momentum, Standard (14) for trend momentum, Long (30) for major momentum"
+        ADX:
+          periods: [7, 14, 25]  # Short, standard, long trend strength
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate trend, Standard (14) for trend, Long (25) for major trend"
+        CCI:
+          periods: [10, 20, 40]  # Short, medium, long cycles
+          correlation_threshold: 0.7
+          description: "Short (10) for immediate cycles, Medium (20) for trend cycles, Long (40) for major cycles"
+        Williams_R:
+          periods: [7, 14, 28]  # Short, standard, long overbought/oversold
+          correlation_threshold: 0.7
+          description: "Short (7) for immediate signals, Standard (14) for trend signals, Long (28) for major signals"
+        ROC:
+          periods: [5, 10, 25]  # Very short, short, medium momentum
+          correlation_threshold: 0.75
+          description: "Very short (5) for immediate momentum, Short (10) for momentum, Medium (25) for trend momentum"
+        OBV:
+          periods: [10, 20, 50]  # Short, medium, long volume trend
+          correlation_threshold: 0.8
+          description: "Short (10) for immediate volume, Medium (20) for volume trend, Long (50) for major volume trend"
+        MFI:
+          periods: [7, 14, 30]  # Short, standard, long money flow
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate flow, Standard (14) for flow trend, Long (30) for major flow trend"
+      
       # Interaction pattern weights (configurable for step17)
       momentum_volume_weight: 1.5
       momentum_volume_enabled: true
@@ -359,6 +414,11 @@ tactician_triple_barrier:
       min_importance: 0.01
       correlation_threshold: 0.8
       mutual_info_threshold: 0.05
+      
+      # Correlation analysis parameters
+      correlation_analysis_enabled: true
+      high_correlation_threshold: 0.8
+      min_period_ratio: 1.5  # Minimum ratio between lookback periods
     
     # Feature Engineering Optimization Configuration (Step7)
     feature_engineering_optimization:

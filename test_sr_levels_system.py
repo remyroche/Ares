@@ -89,6 +89,37 @@ async def test_sr_levels_system():
         print(f"   Resistance levels: {resistance_count}")
         print(f"   Total levels: {support_count + resistance_count}")
         
+        # Test 3.5: Test individual detection methods
+        print("\n🔍 Test 3.5: Testing Individual Detection Methods")
+        print("-" * 40)
+        
+        detection_methods = ["fractal", "volume", "pivot", "atr"]
+        method_results = {}
+        
+        for method in detection_methods:
+            try:
+                method_result = await sr_manager.calculate_sr_levels_with_method(
+                    sample_data, method, "both"
+                )
+                method_results[method] = method_result
+                
+                support_count = len(method_result.get("support_levels", []))
+                resistance_count = len(method_result.get("resistance_levels", []))
+                
+                print(f"   {method.upper()} method:")
+                print(f"     Support levels: {support_count}")
+                print(f"     Resistance levels: {resistance_count}")
+                print(f"     Total: {support_count + resistance_count}")
+                
+            except Exception as e:
+                print(f"   {method.upper()} method: ❌ Failed - {e}")
+        
+        # Show method comparison
+        print(f"\n   Method Comparison:")
+        for method, result in method_results.items():
+            total_levels = len(result.get("support_levels", [])) + len(result.get("resistance_levels", []))
+            print(f"     {method}: {total_levels} levels")
+        
         # Display sample levels
         if support_count > 0:
             sample_support = sr_levels_result["support_levels"][0]

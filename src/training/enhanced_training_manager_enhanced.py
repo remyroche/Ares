@@ -311,25 +311,78 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append("  Multicollinearity Analysis:")
                     summary.append(f"    High Correlation Pairs: {multicollinearity.get('high_correlation_count', 'N/A')}")
                     
+                    if "high_correlation_pairs" in multicollinearity and multicollinearity["high_correlation_pairs"]:
+                        summary.append("    High Correlation Pairs Details:")
+                        for pair in multicollinearity["high_correlation_pairs"][:5]:  # Show first 5
+                            summary.append(f"      - {pair['feature1']} ↔ {pair['feature2']} (r={pair['correlation']:.3f})")
+                        if len(multicollinearity["high_correlation_pairs"]) > 5:
+                            summary.append(f"      ... and {len(multicollinearity['high_correlation_pairs']) - 5} more pairs")
+                    
                     if "high_vif_features" in multicollinearity:
                         high_vif = multicollinearity["high_vif_features"]
-                        summary.append(f"    High VIF Features: {len(high_vif)}")
+                        summary.append(f"    High VIF Features ({len(high_vif)}):")
                         if high_vif:
-                            summary.append(f"      - {', '.join(high_vif[:5])}{'...' if len(high_vif) > 5 else ''}")
+                            for feature in high_vif[:10]:  # Show first 10
+                                vif_score = multicollinearity.get("vif_scores", {}).get(feature, "N/A")
+                                summary.append(f"      - {feature} (VIF: {vif_score})")
+                            if len(high_vif) > 10:
+                                summary.append(f"      ... and {len(high_vif) - 10} more features")
                 
                 if "feature_statistics" in quality_metrics:
                     feature_stats = quality_metrics["feature_statistics"]
                     summary.append("  Feature Statistics:")
-                    summary.append(f"    Constant Features: {len(feature_stats.get('constant_features', []))}")
-                    summary.append(f"    Low Variance Features: {len(feature_stats.get('low_variance_features', []))}")
-                    summary.append(f"    High Cardinality Features: {len(feature_stats.get('high_cardinality_features', []))}")
+                    
+                    constant_features = feature_stats.get('constant_features', [])
+                    summary.append(f"    Constant Features ({len(constant_features)}):")
+                    if constant_features:
+                        for feature in constant_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(constant_features) > 10:
+                            summary.append(f"      ... and {len(constant_features) - 10} more")
+                    
+                    low_var_features = feature_stats.get('low_variance_features', [])
+                    summary.append(f"    Low Variance Features ({len(low_var_features)}):")
+                    if low_var_features:
+                        for feature in low_var_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(low_var_features) > 10:
+                            summary.append(f"      ... and {len(low_var_features) - 10} more")
+                    
+                    high_card_features = feature_stats.get('high_cardinality_features', [])
+                    summary.append(f"    High Cardinality Features ({len(high_card_features)}):")
+                    if high_card_features:
+                        for feature in high_card_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(high_card_features) > 10:
+                            summary.append(f"      ... and {len(high_card_features) - 10} more")
                 
                 if "data_quality_issues" in quality_metrics:
                     quality_issues = quality_metrics["data_quality_issues"]
                     summary.append("  Data Quality Issues:")
-                    summary.append(f"    NaN Features: {len(quality_issues.get('nan_features', []))}")
-                    summary.append(f"    Inf Features: {len(quality_issues.get('inf_features', []))}")
-                    summary.append(f"    Zero Variance Features: {len(quality_issues.get('zero_variance_features', []))}")
+                    
+                    nan_features = quality_issues.get('nan_features', [])
+                    summary.append(f"    NaN Features ({len(nan_features)}):")
+                    if nan_features:
+                        for feature in nan_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(nan_features) > 10:
+                            summary.append(f"      ... and {len(nan_features) - 10} more")
+                    
+                    inf_features = quality_issues.get('inf_features', [])
+                    summary.append(f"    Inf Features ({len(inf_features)}):")
+                    if inf_features:
+                        for feature in inf_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(inf_features) > 10:
+                            summary.append(f"      ... and {len(inf_features) - 10} more")
+                    
+                    zero_var_features = quality_issues.get('zero_variance_features', [])
+                    summary.append(f"    Zero Variance Features ({len(zero_var_features)}):")
+                    if zero_var_features:
+                        for feature in zero_var_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(zero_var_features) > 10:
+                            summary.append(f"      ... and {len(zero_var_features) - 10} more")
             
             elif step_name == "step3_hmm_regime_discovery":
                 if "regime_analysis" in quality_metrics:
@@ -345,6 +398,115 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    AIC Score: {validation_metrics.get('aic_score', 'N/A')}")
                     summary.append(f"    BIC Score: {validation_metrics.get('bic_score', 'N/A')}")
                     summary.append(f"    Model Complexity: {validation_metrics.get('model_complexity', 'N/A')}")
+            
+            elif step_name == "step4_regime_data_splitting":
+                if "splitting_analysis" in quality_metrics:
+                    splitting = quality_metrics["splitting_analysis"]
+                    summary.append("  Splitting Analysis:")
+                    summary.append(f"    Total Regimes: {splitting.get('total_regimes', 'N/A')}")
+                    summary.append(f"    Train/Test Split: {splitting.get('train_test_split_ratio', 'N/A')}")
+                    summary.append(f"    Validation Split: {splitting.get('validation_split_ratio', 'N/A')}")
+                    summary.append(f"    Stratified Splitting: {splitting.get('stratified_splitting', 'N/A')}")
+                
+                if "data_distribution" in quality_metrics:
+                    distribution = quality_metrics["data_distribution"]
+                    summary.append("  Data Distribution:")
+                    summary.append(f"    Total Samples: {distribution.get('total_samples', 'N/A')}")
+                    summary.append(f"    Train Samples: {distribution.get('train_samples', 'N/A')}")
+                    summary.append(f"    Test Samples: {distribution.get('test_samples', 'N/A')}")
+                    summary.append(f"    Validation Samples: {distribution.get('validation_samples', 'N/A')}")
+                
+                if "quality_validation" in quality_metrics:
+                    validation = quality_metrics["quality_validation"]
+                    summary.append("  Quality Validation:")
+                    summary.append(f"    No Data Leakage: {validation.get('no_data_leakage', 'N/A')}")
+                    summary.append(f"    Temporal Consistency: {validation.get('temporal_consistency', 'N/A')}")
+                    
+                    if "regime_representation" in validation:
+                        regime_rep = validation["regime_representation"]
+                        summary.append(f"    All Regimes Represented: {regime_rep.get('all_regimes_represented', 'N/A')}")
+                        if not regime_rep.get('all_regimes_represented', True):
+                            missing = regime_rep.get('missing_regimes_in_test', [])
+                            summary.append(f"    Missing Regimes in Test: {missing}")
+            
+            elif step_name == "step5_triple_barrier_method":
+                if "barrier_analysis" in quality_metrics:
+                    barrier = quality_metrics["barrier_analysis"]
+                    summary.append("  Barrier Analysis:")
+                    summary.append(f"    Total Labels: {barrier.get('total_labels', 'N/A')}")
+                    
+                    if "barrier_parameters" in barrier:
+                        params = barrier["barrier_parameters"]
+                        summary.append(f"    Upper Barrier: {params.get('upper_barrier', 'N/A')}")
+                        summary.append(f"    Lower Barrier: {params.get('lower_barrier', 'N/A')}")
+                        summary.append(f"    Time Horizon: {params.get('time_horizon', 'N/A')}")
+                
+                if "label_quality" in quality_metrics:
+                    label_quality = quality_metrics["label_quality"]
+                    summary.append("  Label Quality:")
+                    summary.append(f"    Label Consistency: {label_quality.get('label_consistency', 'N/A')}")
+                    summary.append(f"    No Label Leakage: {label_quality.get('no_label_leakage', 'N/A')}")
+                    
+                    if "balanced_labels" in label_quality:
+                        balance = label_quality["balanced_labels"]
+                        summary.append(f"    Labels Balanced: {balance.get('is_balanced', 'N/A')}")
+                        if not balance.get('is_balanced', True):
+                            summary.append(f"    Majority Class: {balance.get('majority_class', 'N/A')}")
+                            summary.append(f"    Minority Class: {balance.get('minority_class', 'N/A')}")
+            
+            elif step_name == "step6_hmm_based_training":
+                if "training_analysis" in quality_metrics:
+                    training = quality_metrics["training_analysis"]
+                    summary.append("  Training Analysis:")
+                    summary.append(f"    Model Type: {training.get('model_type', 'N/A')}")
+                    summary.append(f"    Training Samples: {training.get('training_samples', 'N/A')}")
+                    summary.append(f"    Validation Samples: {training.get('validation_samples', 'N/A')}")
+                    summary.append(f"    Training Epochs: {training.get('training_epochs', 'N/A')}")
+                    summary.append(f"    Convergence Status: {training.get('convergence_status', 'N/A')}")
+                
+                if "model_performance" in quality_metrics:
+                    performance = quality_metrics["model_performance"]
+                    summary.append("  Model Performance:")
+                    summary.append(f"    Training Accuracy: {performance.get('training_accuracy', 'N/A'):.4f}" if isinstance(performance.get('training_accuracy'), (int, float)) else f"    Training Accuracy: {performance.get('training_accuracy', 'N/A')}")
+                    summary.append(f"    Validation Accuracy: {performance.get('validation_accuracy', 'N/A'):.4f}" if isinstance(performance.get('validation_accuracy'), (int, float)) else f"    Validation Accuracy: {performance.get('validation_accuracy', 'N/A')}")
+                    summary.append(f"    Training Loss: {performance.get('training_loss', 'N/A'):.4f}" if isinstance(performance.get('training_loss'), (int, float)) else f"    Training Loss: {performance.get('training_loss', 'N/A')}")
+                    summary.append(f"    Validation Loss: {performance.get('validation_loss', 'N/A'):.4f}" if isinstance(performance.get('validation_loss'), (int, float)) else f"    Validation Loss: {performance.get('validation_loss', 'N/A')}")
+                    
+                    if "overfitting_score" in performance:
+                        overfitting = performance["overfitting_score"]
+                        summary.append(f"    Overfitting Gap: {overfitting.get('overfitting_gap', 'N/A'):.4f}" if isinstance(overfitting.get('overfitting_gap'), (int, float)) else f"    Overfitting Gap: {overfitting.get('overfitting_gap', 'N/A')}")
+                        summary.append(f"    Overfitting Severity: {overfitting.get('overfitting_severity', 'N/A')}")
+                
+                if "model_quality" in quality_metrics:
+                    quality = quality_metrics["model_quality"]
+                    summary.append("  Model Quality:")
+                    summary.append(f"    Model Complexity: {quality.get('model_complexity', 'N/A')}")
+                    summary.append(f"    Training Time: {quality.get('training_time', 'N/A')}")
+                    summary.append(f"    Memory Usage: {quality.get('memory_usage', 'N/A')}")
+            
+            elif step_name == "step7_analyst_enhancement":
+                if "enhancement_analysis" in quality_metrics:
+                    enhancement = quality_metrics["enhancement_analysis"]
+                    summary.append("  Enhancement Analysis:")
+                    summary.append(f"    Enhancement Type: {enhancement.get('enhancement_type', 'N/A')}")
+                    summary.append(f"    Original Features: {enhancement.get('original_features', 'N/A')}")
+                    summary.append(f"    Enhanced Features: {enhancement.get('enhanced_features', 'N/A')}")
+                    summary.append(f"    Feature Increase: {enhancement.get('feature_increase', 'N/A')}")
+                
+                if "enhancement_quality" in quality_metrics:
+                    quality = quality_metrics["enhancement_quality"]
+                    summary.append("  Enhancement Quality:")
+                    summary.append(f"    Feature Relevance: {quality.get('feature_relevance', 'N/A'):.4f}" if isinstance(quality.get('feature_relevance'), (int, float)) else f"    Feature Relevance: {quality.get('feature_relevance', 'N/A')}")
+                    summary.append(f"    Information Gain: {quality.get('information_gain', 'N/A'):.4f}" if isinstance(quality.get('information_gain'), (int, float)) else f"    Information Gain: {quality.get('information_gain', 'N/A')}")
+                    summary.append(f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A'):.4f}" if isinstance(quality.get('enhancement_effectiveness'), (int, float)) else f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A')}")
+                
+                if "performance_impact" in quality_metrics:
+                    impact = quality_metrics["performance_impact"]
+                    summary.append("  Performance Impact:")
+                    summary.append(f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_enhancement_accuracy'), (int, float)) else f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A')}")
+                    summary.append(f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_enhancement_accuracy'), (int, float)) else f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A')}")
+                    summary.append(f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A'):.4f}" if isinstance(impact.get('accuracy_improvement'), (int, float)) else f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A')}")
+                    summary.append(f"    Enhancement Cost: {impact.get('enhancement_cost', 'N/A')}")
             
             # Add warnings from quality metrics
             if "warnings" in quality_metrics and quality_metrics["warnings"]:
@@ -1882,17 +2044,319 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     
     # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
     async def _get_regime_splitting_metrics(self, result: Any) -> Dict[str, Any]:
-        return {"status": "Metrics calculation not implemented yet"}
+        """Get regime data splitting quality metrics."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "splitting_analysis": {
+                        "total_regimes": result.get("n_regimes", "Unknown"),
+                        "regime_distributions": result.get("regime_counts", "Unknown"),
+                        "train_test_split_ratio": result.get("split_ratio", "Unknown"),
+                        "validation_split_ratio": result.get("val_split_ratio", "Unknown"),
+                        "stratified_splitting": result.get("stratified", "Unknown")
+                    },
+                    "data_distribution": {
+                        "total_samples": result.get("total_samples", "Unknown"),
+                        "train_samples": result.get("train_samples", "Unknown"),
+                        "test_samples": result.get("test_samples", "Unknown"),
+                        "validation_samples": result.get("val_samples", "Unknown"),
+                        "regime_balance": self._calculate_regime_balance(result)
+                    },
+                    "quality_validation": {
+                        "no_data_leakage": result.get("no_leakage", "Unknown"),
+                        "regime_representation": self._validate_regime_representation(result),
+                        "temporal_consistency": result.get("temporal_consistent", "Unknown")
+                    },
+                    "warnings": self._generate_regime_splitting_warnings(result)
+                }
+            else:
+                return {"error": "No regime splitting result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze regime splitting metrics: {str(e)}"}
     
     async def _get_triple_barrier_metrics(self, result: Any) -> Dict[str, Any]:
-        return {"status": "Metrics calculation not implemented yet"}
+        """Get triple barrier method quality metrics."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "barrier_analysis": {
+                        "total_labels": result.get("total_labels", "Unknown"),
+                        "label_distribution": result.get("label_counts", "Unknown"),
+                        "barrier_parameters": {
+                            "upper_barrier": result.get("upper_barrier", "Unknown"),
+                            "lower_barrier": result.get("lower_barrier", "Unknown"),
+                            "time_horizon": result.get("time_horizon", "Unknown")
+                        }
+                    },
+                    "label_quality": {
+                        "balanced_labels": self._check_label_balance(result),
+                        "label_consistency": result.get("label_consistent", "Unknown"),
+                        "no_label_leakage": result.get("no_label_leakage", "Unknown"),
+                        "label_validation": self._validate_triple_barrier_labels(result)
+                    },
+                    "performance_metrics": {
+                        "label_generation_time": result.get("generation_time", "Unknown"),
+                        "memory_usage": result.get("memory_usage", "Unknown"),
+                        "efficiency_score": result.get("efficiency", "Unknown")
+                    },
+                    "warnings": self._generate_triple_barrier_warnings(result)
+                }
+            else:
+                return {"error": "No triple barrier result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze triple barrier metrics: {str(e)}"}
     
     async def _get_hmm_training_metrics(self, result: Any) -> Dict[str, Any]:
-        return {"status": "Metrics calculation not implemented yet"}
+        """Get HMM-based training quality metrics."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "training_analysis": {
+                        "model_type": result.get("model_type", "Unknown"),
+                        "training_samples": result.get("train_samples", "Unknown"),
+                        "validation_samples": result.get("val_samples", "Unknown"),
+                        "training_epochs": result.get("epochs", "Unknown"),
+                        "convergence_status": result.get("converged", "Unknown")
+                    },
+                    "model_performance": {
+                        "training_accuracy": result.get("train_accuracy", "Unknown"),
+                        "validation_accuracy": result.get("val_accuracy", "Unknown"),
+                        "training_loss": result.get("train_loss", "Unknown"),
+                        "validation_loss": result.get("val_loss", "Unknown"),
+                        "overfitting_score": self._calculate_overfitting_score(result)
+                    },
+                    "regime_specific_metrics": {
+                        "regime_accuracies": result.get("regime_accuracies", "Unknown"),
+                        "regime_losses": result.get("regime_losses", "Unknown"),
+                        "regime_confusion_matrices": result.get("confusion_matrices", "Unknown")
+                    },
+                    "model_quality": {
+                        "model_complexity": result.get("model_params", "Unknown"),
+                        "training_time": result.get("training_time", "Unknown"),
+                        "memory_usage": result.get("memory_usage", "Unknown"),
+                        "model_stability": self._assess_model_stability(result)
+                    },
+                    "warnings": self._generate_hmm_training_warnings(result)
+                }
+            else:
+                return {"error": "No HMM training result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze HMM training metrics: {str(e)}"}
     
     async def _get_analyst_enhancement_metrics(self, result: Any) -> Dict[str, Any]:
-        return {"status": "Metrics calculation not implemented yet"}
+        """Get analyst enhancement quality metrics."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "enhancement_analysis": {
+                        "enhancement_type": result.get("enhancement_type", "Unknown"),
+                        "original_features": result.get("original_feature_count", "Unknown"),
+                        "enhanced_features": result.get("enhanced_feature_count", "Unknown"),
+                        "feature_increase": result.get("feature_increase", "Unknown")
+                    },
+                    "enhancement_quality": {
+                        "feature_relevance": result.get("feature_relevance_score", "Unknown"),
+                        "information_gain": result.get("information_gain", "Unknown"),
+                        "enhancement_effectiveness": result.get("effectiveness_score", "Unknown"),
+                        "domain_expertise_integration": result.get("expertise_integrated", "Unknown")
+                    },
+                    "performance_impact": {
+                        "pre_enhancement_accuracy": result.get("pre_accuracy", "Unknown"),
+                        "post_enhancement_accuracy": result.get("post_accuracy", "Unknown"),
+                        "accuracy_improvement": result.get("accuracy_improvement", "Unknown"),
+                        "enhancement_cost": result.get("computational_cost", "Unknown")
+                    },
+                    "feature_analysis": {
+                        "new_feature_types": result.get("new_feature_types", "Unknown"),
+                        "feature_importance": result.get("feature_importance", "Unknown"),
+                        "feature_correlations": result.get("feature_correlations", "Unknown"),
+                        "feature_stability": result.get("feature_stability", "Unknown")
+                    },
+                    "warnings": self._generate_analyst_enhancement_warnings(result)
+                }
+            else:
+                return {"error": "No analyst enhancement result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze analyst enhancement metrics: {str(e)}"}
     
+    # Helper methods for step-specific analysis
+    def _calculate_regime_balance(self, result: Any) -> Dict[str, Any]:
+        """Calculate regime balance in the split data."""
+        try:
+            regime_counts = result.get("regime_counts", {})
+            if regime_counts:
+                total = sum(regime_counts.values())
+                balance_scores = {regime: count/total for regime, count in regime_counts.items()}
+                return {
+                    "regime_balance_scores": balance_scores,
+                    "is_balanced": all(0.1 <= score <= 0.9 for score in balance_scores.values()),
+                    "imbalance_score": max(balance_scores.values()) - min(balance_scores.values())
+                }
+            return {"error": "No regime counts available"}
+        except Exception:
+            return {"error": "Could not calculate regime balance"}
+    
+    def _validate_regime_representation(self, result: Any) -> Dict[str, Any]:
+        """Validate regime representation across splits."""
+        try:
+            train_regimes = result.get("train_regime_counts", {})
+            test_regimes = result.get("test_regime_counts", {})
+            
+            if train_regimes and test_regimes:
+                missing_in_test = set(train_regimes.keys()) - set(test_regimes.keys())
+                return {
+                    "all_regimes_represented": len(missing_in_test) == 0,
+                    "missing_regimes_in_test": list(missing_in_test),
+                    "representation_consistency": "Good" if len(missing_in_test) == 0 else "Poor"
+                }
+            return {"error": "No regime counts available"}
+        except Exception:
+            return {"error": "Could not validate regime representation"}
+    
+    def _check_label_balance(self, result: Any) -> Dict[str, Any]:
+        """Check label balance in triple barrier method."""
+        try:
+            label_counts = result.get("label_counts", {})
+            if label_counts:
+                total = sum(label_counts.values())
+                balance_scores = {label: count/total for label, count in label_counts.items()}
+                return {
+                    "label_distribution": balance_scores,
+                    "is_balanced": all(0.2 <= score <= 0.8 for score in balance_scores.values()),
+                    "majority_class": max(label_counts, key=label_counts.get),
+                    "minority_class": min(label_counts, key=label_counts.get)
+                }
+            return {"error": "No label counts available"}
+        except Exception:
+            return {"error": "Could not check label balance"}
+    
+    def _validate_triple_barrier_labels(self, result: Any) -> Dict[str, Any]:
+        """Validate triple barrier labels."""
+        try:
+            return {
+                "no_future_leakage": result.get("no_future_leakage", "Unknown"),
+                "barrier_constraints_satisfied": result.get("constraints_satisfied", "Unknown"),
+                "label_consistency": result.get("label_consistency", "Unknown"),
+                "temporal_validity": result.get("temporal_valid", "Unknown")
+            }
+        except Exception:
+            return {"error": "Could not validate triple barrier labels"}
+    
+    def _calculate_overfitting_score(self, result: Any) -> Dict[str, Any]:
+        """Calculate overfitting score."""
+        try:
+            train_acc = result.get("train_accuracy", 0)
+            val_acc = result.get("val_accuracy", 0)
+            
+            if train_acc > 0 and val_acc > 0:
+                overfitting_gap = train_acc - val_acc
+                return {
+                    "overfitting_gap": overfitting_gap,
+                    "overfitting_severity": "High" if overfitting_gap > 0.1 else "Medium" if overfitting_gap > 0.05 else "Low",
+                    "is_overfitting": overfitting_gap > 0.05
+                }
+            return {"error": "No accuracy metrics available"}
+        except Exception:
+            return {"error": "Could not calculate overfitting score"}
+    
+    def _assess_model_stability(self, result: Any) -> Dict[str, Any]:
+        """Assess model stability."""
+        try:
+            return {
+                "convergence_stability": result.get("convergence_stable", "Unknown"),
+                "loss_stability": result.get("loss_stable", "Unknown"),
+                "parameter_stability": result.get("param_stable", "Unknown"),
+                "regime_stability": result.get("regime_stable", "Unknown")
+            }
+        except Exception:
+            return {"error": "Could not assess model stability"}
+    
+    # Warning generation methods
+    def _generate_regime_splitting_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for regime splitting."""
+        warnings = []
+        
+        try:
+            if result.get("regime_balance", {}).get("is_balanced") == False:
+                warnings.append("Regime imbalance detected in data splits")
+            
+            if result.get("quality_validation", {}).get("all_regimes_represented") == False:
+                warnings.append("Not all regimes represented in test set")
+            
+            if result.get("data_distribution", {}).get("train_samples", 0) < 1000:
+                warnings.append("Small training set size")
+                
+        except Exception:
+            warnings.append("Could not generate regime splitting warnings")
+        
+        return warnings
+    
+    def _generate_triple_barrier_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for triple barrier method."""
+        warnings = []
+        
+        try:
+            if result.get("label_quality", {}).get("balanced_labels", {}).get("is_balanced") == False:
+                warnings.append("Label imbalance detected")
+            
+            if result.get("label_quality", {}).get("no_label_leakage") == False:
+                warnings.append("Potential label leakage detected")
+            
+            if result.get("barrier_analysis", {}).get("total_labels", 0) < 1000:
+                warnings.append("Low number of generated labels")
+                
+        except Exception:
+            warnings.append("Could not generate triple barrier warnings")
+        
+        return warnings
+    
+    def _generate_hmm_training_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for HMM training."""
+        warnings = []
+        
+        try:
+            if result.get("model_performance", {}).get("overfitting_score", {}).get("is_overfitting") == True:
+                warnings.append("Model shows signs of overfitting")
+            
+            if result.get("training_analysis", {}).get("convergence_status") == False:
+                warnings.append("Model did not converge")
+            
+            if result.get("model_performance", {}).get("validation_accuracy", 0) < 0.5:
+                warnings.append("Low validation accuracy")
+                
+        except Exception:
+            warnings.append("Could not generate HMM training warnings")
+        
+        return warnings
+    
+    def _generate_analyst_enhancement_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for analyst enhancement."""
+        warnings = []
+        
+        try:
+            if result.get("performance_impact", {}).get("accuracy_improvement", 0) < 0.01:
+                warnings.append("Minimal accuracy improvement from enhancement")
+            
+            if result.get("enhancement_quality", {}).get("feature_relevance", 0) < 0.5:
+                warnings.append("Low feature relevance in enhancements")
+            
+            if result.get("enhancement_analysis", {}).get("feature_increase", 0) > 100:
+                warnings.append("Large increase in feature count may cause overfitting")
+                
+        except Exception:
+            warnings.append("Could not generate analyst enhancement warnings")
+        
+        return warnings
+    
+    # Placeholder methods for remaining steps
     async def _get_tactician_labeling_metrics(self, result: Any) -> Dict[str, Any]:
         return {"status": "Metrics calculation not implemented yet"}
     

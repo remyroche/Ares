@@ -72,3 +72,529 @@ tactician_triple_barrier:
   timeframes: ["1m", "5m"]
   primary_timeframe: "1m"      # Default primary timeframe
   secondary_timeframe: "5m"    # Default secondary timeframe
+  
+  # Enhanced Scenario Analysis Configuration (for step17 optimization)
+  enhanced_scenario_analysis:
+    # Fractal scenario definitions (configurable for step17)
+    # Profit zones (0.25% to 2.0% in 0.25% increments)
+    profit_zone_1_target: 0.0025     # 0.25% profit target
+    profit_zone_1_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_2_target: 0.005      # 0.5% profit target
+    profit_zone_2_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_3_target: 0.0075     # 0.75% profit target
+    profit_zone_3_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_4_target: 0.01       # 1.0% profit target
+    profit_zone_4_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_5_target: 0.0125     # 1.25% profit target
+    profit_zone_5_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_6_target: 0.015      # 1.5% profit target
+    profit_zone_6_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_7_target: 0.0175     # 1.75% profit target
+    profit_zone_7_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_8_target: 0.02       # 2.0% profit target
+    profit_zone_8_stop_loss: -0.005  # 0.5% stop loss
+    
+    # Risk zones (-0.25% to -2.0% in 0.25% increments)
+    risk_zone_1_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_1_stop_loss: -0.0025   # 0.25% stop loss
+    risk_zone_2_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_2_stop_loss: -0.005    # 0.5% stop loss
+    risk_zone_3_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_3_stop_loss: -0.0075   # 0.75% stop loss
+    risk_zone_4_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_4_stop_loss: -0.01     # 1.0% stop loss
+    risk_zone_5_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_5_stop_loss: -0.0125   # 1.25% stop loss
+    risk_zone_6_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_6_stop_loss: -0.015    # 1.5% stop loss
+    risk_zone_7_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_7_stop_loss: -0.0175   # 1.75% stop loss
+    risk_zone_8_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_8_stop_loss: -0.02     # 2.0% stop loss
+    
+    neutral_target: 0.0              # Neutral scenario target
+    neutral_stop_loss: 0.0           # Neutral scenario stop loss
+    
+    # Time limit for scenario evaluation (15 minutes)
+    time_limit_minutes: 15
+    
+    # Enhanced model configuration (configurable for step17)
+    n_estimators: 200
+    learning_rate: 0.05
+    max_depth: 8
+    num_leaves: 63
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    
+    # Enhanced decision thresholds (configurable for step17)
+    profit_zone_combined_threshold: 0.6    # Minimum combined profit zone probability
+    risk_zone_combined_threshold: 0.2      # Maximum combined risk zone probability
+    exit_risk_threshold: 0.5               # Risk threshold for exit signals
+    neutral_threshold: 0.3                 # Neutral scenario threshold
+    confidence_threshold: 0.7              # Minimum confidence for decisions
+    profit_risk_ratio_threshold: 2.0       # Minimum profit/risk ratio
+    scenario_dominance_threshold: 0.4      # Minimum scenario dominance
+    
+    # Step7 technical indicator parameters (configurable for step17)
+    # RSI parameters
+    rsi_lookback_period: 14
+    rsi_overbought_threshold: 70
+    rsi_oversold_threshold: 30
+    
+    # MACD parameters
+    macd_fast_period: 12
+    macd_slow_period: 26
+    macd_signal_period: 9
+    
+    # Bollinger Bands parameters
+    bb_lookback_period: 20
+    bb_std_dev: 2.0
+    bb_squeeze_threshold: 0.2
+    
+    # SMA parameters
+    sma_short_period: 10
+    sma_long_period: 30
+    
+    # EMA parameters
+    ema_short_period: 10
+    ema_long_period: 30
+    
+    # ATR parameters
+    atr_lookback_period: 14
+    
+    # Stochastic parameters
+    stoch_k_period: 14
+    stoch_d_period: 3
+    stoch_overbought: 80
+    stoch_oversold: 20
+    
+    # ADX parameters
+    adx_lookback_period: 14
+    adx_threshold: 25
+    
+    # CCI parameters
+    cci_lookback_period: 14
+    cci_constant: 0.015
+    
+         # Enhanced feature engineering parameters (configurable for step17)
+     lookback_periods: 20
+     volatility_window: 20
+     volume_ma_period: 10
+     price_momentum_periods: [5, 10, 20]  # Multiple momentum periods
+     volatility_periods: [5, 10, 20]      # Multiple volatility periods
+   
+       # Comprehensive Enhanced Scenario Analysis Configuration (for step17 optimization)
+    comprehensive_enhanced_scenario_analysis:
+      # Fractal scenario definitions (configurable for step17)
+      # Profit zones (0.25% to 2.0% in 0.25% increments)
+      profit_zone_1_target: 0.0025     # 0.25% profit target
+      profit_zone_1_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_2_target: 0.005      # 0.5% profit target
+      profit_zone_2_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_3_target: 0.0075     # 0.75% profit target
+      profit_zone_3_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_4_target: 0.01       # 1.0% profit target
+      profit_zone_4_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_5_target: 0.0125     # 1.25% profit target
+      profit_zone_5_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_6_target: 0.015      # 1.5% profit target
+      profit_zone_6_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_7_target: 0.0175     # 1.75% profit target
+      profit_zone_7_stop_loss: -0.005  # 0.5% stop loss
+      profit_zone_8_target: 0.02       # 2.0% profit target
+      profit_zone_8_stop_loss: -0.005  # 0.5% stop loss
+      
+      # Risk zones (-0.25% to -2.0% in 0.25% increments)
+      risk_zone_1_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_1_stop_loss: -0.0025   # 0.25% stop loss
+      risk_zone_2_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_2_stop_loss: -0.005    # 0.5% stop loss
+      risk_zone_3_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_3_stop_loss: -0.0075   # 0.75% stop loss
+      risk_zone_4_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_4_stop_loss: -0.01     # 1.0% stop loss
+      risk_zone_5_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_5_stop_loss: -0.0125   # 1.25% stop loss
+      risk_zone_6_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_6_stop_loss: -0.015    # 1.5% stop loss
+      risk_zone_7_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_7_stop_loss: -0.0175   # 1.75% stop loss
+      risk_zone_8_target: 0.005        # 0.5% profit target (for risk scenario)
+      risk_zone_8_stop_loss: -0.02     # 2.0% stop loss
+      
+      neutral_target: 0.0              # Neutral scenario target
+      neutral_stop_loss: 0.0           # Neutral scenario stop loss
+      
+      # Time limit for scenario evaluation (15 minutes)
+      time_limit_minutes: 15
+      
+      # Enhanced model configuration (configurable for step17)
+      n_estimators: 200
+      learning_rate: 0.05
+      max_depth: 8
+      num_leaves: 63
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
+      
+      # Enhanced decision thresholds (configurable for step17)
+      profit_zone_combined_threshold: 0.6    # Minimum combined profit zone probability
+      risk_zone_combined_threshold: 0.2      # Maximum combined risk zone probability
+      exit_risk_threshold: 0.5               # Risk threshold for exit signals
+      neutral_threshold: 0.3                 # Neutral scenario threshold
+      confidence_threshold: 0.7              # Minimum confidence for decisions
+      profit_risk_ratio_threshold: 2.0       # Minimum profit/risk ratio
+      scenario_dominance_threshold: 0.4      # Minimum scenario dominance
+      
+      # ALL Technical Indicator Parameters (configurable for step17)
+      # Momentum Indicators
+      rsi_lookback_period: 14
+      rsi_overbought_threshold: 70
+      rsi_oversold_threshold: 30
+      macd_fast_period: 12
+      macd_slow_period: 26
+      macd_signal_period: 9
+      stoch_k_period: 14
+      stoch_d_period: 3
+      stoch_overbought: 80
+      stoch_oversold: 20
+      williams_r_period: 14
+      roc_period: 10
+      mom_period: 10
+      trix_period: 30
+      ultosc_period1: 7
+      ultosc_period2: 14
+      ultosc_period3: 28
+      willr_period: 14
+      aroon_period: 14
+      cci_period: 14
+      cci_constant: 0.015
+      cmo_period: 14
+      
+      # Trend Indicators
+      sma_short_period: 10
+      sma_long_period: 30
+      ema_short_period: 10
+      ema_long_period: 30
+      dema_period: 30
+      tema_period: 30
+      ht_trendline_enabled: true
+      sar_acceleration: 0.02
+      sar_maximum: 0.2
+      adx_period: 14
+      adx_threshold: 25
+      dx_period: 14
+      minus_di_period: 14
+      plus_di_period: 14
+      minus_dm_period: 14
+      plus_dm_period: 14
+      midpoint_period: 14
+      midprice_period: 14
+      t3_period: 5
+      t3_volume_factor: 0.7
+      
+      # Volatility Indicators
+      bb_period: 20
+      bb_std_dev: 2.0
+      bb_squeeze_threshold: 0.2
+      atr_period: 14
+      trange_enabled: true
+      var_period: 5
+      stddev_period: 5
+      
+      # Volume Indicators
+      obv_enabled: true
+      ad_enabled: true
+      adosc_fast_period: 3
+      adosc_slow_period: 10
+      mfi_period: 14
+      
+      # Cycle Indicators
+      ht_dcperiod_enabled: true
+      ht_dcphase_enabled: true
+      ht_phasor_enabled: true
+      ht_sine_enabled: true
+      ht_trendmode_enabled: true
+      
+      # Math Transform
+      linearreg_period: 14
+      tsf_period: 14
+      stochrsi_period: 14
+      stochrsi_fastk_period: 5
+      stochrsi_fastd_period: 3
+      
+      # Enhanced feature engineering parameters (configurable for step17)
+      lookback_periods: 20
+      volatility_window: 20
+      volume_ma_period: 10
+      price_momentum_periods: [5, 10, 20]  # Multiple momentum periods
+      volatility_periods: [5, 10, 20]      # Multiple volatility periods
+    
+    # Step6 Feature Interaction Engineering Configuration
+    step6_feature_interaction_engineering:
+      # Optimal, non-correlated lookback periods for each indicator
+      optimal_lookback_periods:
+        RSI:
+          periods: [7, 21, 50]  # Short, medium, long - different market cycles
+          correlation_threshold: 0.7
+          description: "Short (7) for momentum, Medium (21) for trend, Long (50) for major cycles"
+        MACD:
+          periods: [12, 26, 52]  # Standard, extended, long-term
+          correlation_threshold: 0.75
+          description: "Standard (12,26), Extended (20,40), Long-term (26,52)"
+        Bollinger_Bands:
+          periods: [10, 20, 50]  # Short, standard, long
+          correlation_threshold: 0.8
+          description: "Short (10) for volatility, Standard (20) for trend, Long (50) for major moves"
+        SMA:
+          periods: [5, 20, 100]  # Very short, medium, very long
+          correlation_threshold: 0.85
+          description: "Very short (5) for immediate trend, Medium (20) for trend, Long (100) for major trend"
+        EMA:
+          periods: [8, 21, 55]  # Short, medium, long (different from SMA)
+          correlation_threshold: 0.8
+          description: "Short (8) for momentum, Medium (21) for trend, Long (55) for major trend"
+        ATR:
+          periods: [7, 14, 30]  # Short, standard, long volatility
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate volatility, Standard (14) for trend volatility, Long (30) for major volatility"
+        Stochastic:
+          periods: [7, 14, 30]  # Short, standard, long momentum
+          correlation_threshold: 0.7
+          description: "Short (7) for immediate momentum, Standard (14) for trend momentum, Long (30) for major momentum"
+        ADX:
+          periods: [7, 14, 25]  # Short, standard, long trend strength
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate trend, Standard (14) for trend, Long (25) for major trend"
+        CCI:
+          periods: [10, 20, 40]  # Short, medium, long cycles
+          correlation_threshold: 0.7
+          description: "Short (10) for immediate cycles, Medium (20) for trend cycles, Long (40) for major cycles"
+        Williams_R:
+          periods: [7, 14, 28]  # Short, standard, long overbought/oversold
+          correlation_threshold: 0.7
+          description: "Short (7) for immediate signals, Standard (14) for trend signals, Long (28) for major signals"
+        ROC:
+          periods: [5, 10, 25]  # Very short, short, medium momentum
+          correlation_threshold: 0.75
+          description: "Very short (5) for immediate momentum, Short (10) for momentum, Medium (25) for trend momentum"
+        OBV:
+          periods: [10, 20, 50]  # Short, medium, long volume trend
+          correlation_threshold: 0.8
+          description: "Short (10) for immediate volume, Medium (20) for volume trend, Long (50) for major volume trend"
+        MFI:
+          periods: [7, 14, 30]  # Short, standard, long money flow
+          correlation_threshold: 0.75
+          description: "Short (7) for immediate flow, Standard (14) for flow trend, Long (30) for major flow trend"
+      
+      # Interaction pattern weights (configurable for step17)
+      momentum_volume_weight: 1.5
+      momentum_volume_enabled: true
+      trend_volatility_weight: 1.8
+      trend_volatility_enabled: true
+      oscillator_trend_weight: 1.3
+      oscillator_trend_enabled: true
+      volume_price_weight: 1.6
+      volume_price_enabled: true
+      volatility_regime_weight: 1.4
+      volatility_regime_enabled: true
+      cross_timeframe_weight: 1.2
+      cross_timeframe_enabled: true
+      regime_dependent_weight: 1.7
+      regime_dependent_enabled: true
+      
+      # Interaction strength thresholds (configurable for step17)
+      strong_interaction_threshold: 0.7
+      medium_interaction_threshold: 0.5
+      weak_interaction_threshold: 0.3
+      
+      # Feature selection parameters (configurable for step17)
+      max_interactions: 100
+      min_importance: 0.01
+      correlation_threshold: 0.8
+      mutual_info_threshold: 0.05
+      
+      # Correlation analysis parameters
+      correlation_analysis_enabled: true
+      high_correlation_threshold: 0.8
+      min_period_ratio: 1.5  # Minimum ratio between lookback periods
+    
+    # Diverse Lookback Period Optimization Configuration
+    diverse_lookback_optimization:
+      # Target periods per feature
+      target_periods_per_feature: 3
+      min_periods_per_feature: 2
+      max_periods_per_feature: 3
+      
+      # Diversity and quality thresholds
+      diversity_threshold: 0.3  # Minimum correlation difference
+      meaningful_threshold: 0.1  # Minimum SHAP importance
+      correlation_threshold: 0.7  # Maximum correlation between periods
+      
+      # Optimization weights
+      information_diversity_weight: 0.4
+      signal_strength_weight: 0.4
+      correlation_penalty_weight: 0.2
+      
+      # Lookback period ranges for each indicator
+      lookback_ranges:
+        RSI:
+          min: 5
+          max: 50
+          step: 2
+        MACD_fast:
+          min: 5
+          max: 25
+          step: 1
+        MACD_slow:
+          min: 20
+          max: 40
+          step: 2
+        Bollinger_Bands:
+          min: 10
+          max: 50
+          step: 2
+        SMA_short:
+          min: 3
+          max: 20
+          step: 1
+        SMA_long:
+          min: 20
+          max: 100
+          step: 5
+        EMA_short:
+          min: 3
+          max: 20
+          step: 1
+        EMA_long:
+          min: 20
+          max: 100
+          step: 5
+        ATR:
+          min: 5
+          max: 30
+          step: 1
+        Stochastic_k:
+          min: 5
+          max: 30
+          step: 1
+        Stochastic_d:
+          min: 3
+          max: 10
+          step: 1
+        ADX:
+          min: 5
+          max: 30
+          step: 1
+        CCI:
+          min: 5
+          max: 30
+          step: 1
+    
+    # Feature Engineering Optimization Configuration (Step7)
+    feature_engineering_optimization:
+      # Optimization parameters
+      n_trials: 100
+      cv_folds: 5
+      random_state: 42
+      correlation_threshold: 0.8
+      mi_threshold: 0.1
+      top_k_parameters: 3
+      
+      # Feature interaction engineering parameters
+      interaction_enabled: true
+      max_interactions: 50
+      interaction_selection_threshold: 0.05
+      
+      # Feature selection and dimensionality reduction
+      feature_selection_enabled: true
+      max_features: 200
+      min_feature_importance: 0.01
+      correlation_filter_enabled: true
+      mutual_info_filter_enabled: true
+      
+      # Dimensionality reduction parameters
+      dimensionality_reduction_enabled: true
+      pca_enabled: true
+      pca_explained_variance: 0.95
+      tsne_enabled: false
+      tsne_perplexity: 30
+      umap_enabled: false
+      umap_n_neighbors: 15
+      umap_min_dist: 0.1
+    
+    # Step17 Optimized Tactician Configuration (for step17 optimization)
+    step17_optimized_tactician:
+      # Entry decision thresholds (ALL configurable)
+      entry_profit_threshold: 0.6          # Minimum profit zone probability for entry
+      entry_risk_threshold: 0.2            # Maximum risk zone probability for entry
+      entry_confidence_threshold: 0.7      # Minimum confidence for entry
+      entry_profit_risk_ratio: 2.0         # Minimum profit/risk ratio for entry
+      entry_scenario_dominance: 0.4        # Minimum scenario dominance for entry
+      entry_analyst_confidence_min: 0.5    # Minimum analyst confidence for entry
+      entry_neutral_threshold: 0.3         # Maximum neutral probability for entry
+      entry_volatility_threshold: 0.02     # Maximum volatility for entry
+      entry_volume_threshold: 1.2          # Minimum volume ratio for entry
+      
+      # Exit decision thresholds (ALL configurable)
+      exit_risk_threshold: 0.5             # Risk threshold for exit
+      exit_confidence_drop: 0.2            # Confidence drop threshold for exit
+      exit_profit_threshold: 0.8           # Profit threshold for exit
+      exit_time_threshold: 3600            # Time threshold for exit (seconds)
+      exit_drawdown_threshold: 0.05        # Drawdown threshold for exit
+      exit_volatility_spike: 0.05          # Volatility spike threshold for exit
+      
+      # Direction decision thresholds (ALL configurable)
+      direction_profit_bias: 0.1           # Profit bias for direction
+      direction_risk_bias: 0.1             # Risk bias for direction
+      direction_neutral_bias: 0.05         # Neutral bias for direction
+      direction_confidence_bias: 0.15      # Confidence bias for direction
+      
+      # Confidence calculation weights (ALL configurable)
+      confidence_base_weight: 0.4          # Base confidence weight
+      confidence_scenario_dominance_weight: 0.2  # Scenario dominance weight
+      confidence_risk_reward_weight: 0.1   # Risk-reward ratio weight
+      confidence_analyst_weight: 0.1       # Analyst confidence weight
+      confidence_volatility_weight: 0.1    # Volatility weight
+      confidence_volume_weight: 0.1        # Volume weight
+      
+      # Position sizing parameters (ALL configurable)
+      position_size_base_multiplier: 1.0   # Base position size multiplier
+      position_size_confidence_multiplier: 1.5  # Confidence multiplier
+      position_size_scenario_dominance_multiplier: 1.2  # Scenario dominance multiplier
+      position_size_risk_reward_multiplier: 1.3  # Risk-reward multiplier
+      position_size_analyst_confidence_multiplier: 1.1  # Analyst confidence multiplier
+      position_size_volatility_multiplier: 0.8   # Volatility multiplier
+      position_size_volume_multiplier: 1.1       # Volume multiplier
+      
+      # Leverage calculation parameters (ALL configurable)
+      leverage_base_multiplier: 1.0        # Base leverage multiplier
+      leverage_confidence_multiplier: 2.0  # Confidence multiplier
+      leverage_scenario_dominance_multiplier: 1.5  # Scenario dominance multiplier
+      leverage_risk_reward_multiplier: 1.8  # Risk-reward multiplier
+      leverage_analyst_confidence_multiplier: 1.2  # Analyst confidence multiplier
+      leverage_volatility_multiplier: 0.7  # Volatility multiplier
+      leverage_volume_multiplier: 1.3      # Volume multiplier
+      
+      # Stop loss and take profit multipliers (ALL configurable)
+      stop_loss_base_multiplier: 1.0       # Base stop loss multiplier
+      stop_loss_confidence_multiplier: 0.8 # Confidence multiplier
+      stop_loss_volatility_multiplier: 1.2 # Volatility multiplier
+      stop_loss_risk_multiplier: 1.1       # Risk multiplier
+      
+      take_profit_base_multiplier: 1.0     # Base take profit multiplier
+      take_profit_confidence_multiplier: 1.2  # Confidence multiplier
+      take_profit_volatility_multiplier: 0.8  # Volatility multiplier
+      take_profit_profit_multiplier: 1.3   # Profit multiplier
+      
+      # Risk management parameters (ALL configurable)
+      max_position_size: 0.1               # Maximum position size (10% of capital)
+      max_leverage: 3.0                    # Maximum leverage
+      max_drawdown: 0.05                   # Maximum drawdown (5%)
+      correlation_threshold: 0.8           # Correlation threshold for risk management
+      volatility_cap: 0.1                  # Volatility cap
+      volume_cap: 5.0                      # Volume cap
+      confidence_cap: 0.95                 # Confidence cap
+      scenario_dominance_cap: 0.9          # Scenario dominance cap
+      risk_reward_cap: 5.0                 # Risk-reward cap

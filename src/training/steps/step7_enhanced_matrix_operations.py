@@ -1,6 +1,6 @@
 # src/training/steps/step7_enhanced_matrix_operations.py
 
-"""Step 7: Enhanced Matrix Operations for Data Analysis.
+"""Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
 """
 
@@ -11,52 +11,130 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-import numpy as np
-import pandas as pd
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
-# Import feature engineering optimization
-from src.training.feature_engineering_optimizer import FeatureEngineeringOptimizer
-from src.training.timeframe_relevance_analyzer import TimeframeRelevanceAnalyzer
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-)
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "src.training.enhanced_matrix_operations",
+    "src.utils.error_handler",
+    "src.utils.logger",
+    "src.training.feature_engineering_optimizer",
+    "src.training.timeframe_relevance_analyzer",
+    "src.utils.training_pipeline_decorators",
+    "src.utils.enhanced_mlflow_integration"
+]
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+enhanced_matrix_operations = PipelineStandards.safe_import("src.training.enhanced_matrix_operations", None)
+error_handler = PipelineStandards.safe_import("src.utils.error_handler", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+feature_engineering_optimizer = PipelineStandards.safe_import("src.training.feature_engineering_optimizer", None)
+timeframe_relevance_analyzer = PipelineStandards.safe_import("src.training.timeframe_relevance_analyzer", None)
+training_pipeline_decorators = PipelineStandards.safe_import("src.utils.training_pipeline_decorators", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if training_pipeline_decorators is None:
+    circuit_breaker_protection = create_fallback_decorator()
+    debug_training_step = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    prevent_data_leakage = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_step_output = create_fallback_decorator()
+else:
+    circuit_breaker_protection = training_pipeline_decorators.circuit_breaker_protection
+    debug_training_step = training_pipeline_decorators.debug_training_step
+    memory_efficient = training_pipeline_decorators.memory_efficient
+    prevent_data_leakage = training_pipeline_decorators.prevent_data_leakage
+    quality_gate = training_pipeline_decorators.quality_gate
+    resource_monitor = training_pipeline_decorators.resource_monitor
+    secure_data_processing = training_pipeline_decorators.secure_data_processing
+    validate_step_output = training_pipeline_decorators.validate_step_output
+
+if error_handler is None:
+    handle_errors = create_fallback_decorator()
+else:
+    handle_errors = error_handler.handle_errors
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 
 class Step7EnhancedMatrixOperations:
-    """Step 7: Enhanced Matrix Operations for Data Analysis."""
+    """Step 7: Enhanced Matrix Operations with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize Step 2.5 Enhanced Matrix Operations."""
+        """Initialize Step 7 Enhanced Matrix Operations."""
         self.config = config
         self.logger = system_logger.getChild("Step7EnhancedMatrixOperations")
+        self.standards = pipeline_standards
         
-        # Initialize enhanced matrix operations
-        self.matrix_ops = EnhancedMatrixOperations(config)
+        # Validate environment on initialization
+        self._validate_environment()
+        
+        # Initialize enhanced matrix operations if available
+        if enhanced_matrix_operations is not None:
+            self.matrix_ops = enhanced_matrix_operations.EnhancedMatrixOperations(config)
+        else:
+            self.logger.warning("⚠️ EnhancedMatrixOperations not available")
+            self.matrix_ops = None
         
         # Step-specific configuration
         self.step_config = config.get("step7_enhanced_matrix_operations", {})
         self.output_dir = Path(self.step_config.get("output_dir", "data/matrix_operations"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     @secure_data_processing(encryption_level="high", data_validation=True)
     @prevent_data_leakage(validate_inputs=True, sanitize_outputs=True)
@@ -1578,18 +1656,18 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str = "1m",
-    data_dir: str = "data_cache",
+    data_dir: str = None,
     force_rerun: bool = False,
     **kwargs: Any,
 ) -> bool:
     """
-    Run Step 7: Enhanced Matrix Operations.
+    Run Step 7: Enhanced Matrix Operations with standardized data quality management.
     
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         timeframe: Timeframe
-        data_dir: Data directory
+        data_dir: Data directory (will use standardized path if None)
         force_rerun: Force rerun the step
         **kwargs: Additional arguments
         
@@ -1597,6 +1675,10 @@ async def run_step(
         True if successful, False otherwise
     """
     try:
+        # Use standardized path construction
+        if data_dir is None:
+            data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+        
         # Load configuration
         from src.config.training import get_training_config
         config = get_training_config()
@@ -1611,12 +1693,11 @@ async def run_step(
             "timeframe": timeframe,
             "data_dir": data_dir,
             "force_rerun": force_rerun,
+            "asset": symbol,  # Use symbol as asset
+            "lookback_period": config.get("lookback_days", 1095),  # Default to 3 years
+            "project_version": config.get("project_version", "1.0.0"),  # Default version
             **kwargs
-        ,
-                "asset": symbol,  # Use symbol as asset
-                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
-            }
+        }
         
         # Execute step
         pipeline_state = {}

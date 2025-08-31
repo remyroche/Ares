@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Step 3: HMM Regime Discovery with Enhanced Data Quality Management.
+"""Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
-This module performs Hidden Markov Model (HMM) regime discovery with comprehensive
+This module performs Hidden Markov Model (HMM) regime discovery with standardized
 data quality checks and automatic data preparation using step1/step1_5 components.
 """
 
@@ -11,93 +11,141 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 
-# Handle optional dependencies
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    psutil = None
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
-
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-    ensure_data_integrity,
-    monitor_step_execution,
-    secure_step_execution,
-    validate_pipeline_step
-)
-from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, 
-    log_step_artifact, 
-    log_step_dataframe,
-    log_step_dataframe_with_standardized_name,
-    log_step_report,
-    log_step_artifact_with_standardized_name
-)
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-# Import SR Breakout Predictor for enhanced regime analysis
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "psutil",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration",
+    "src.tactician.sr_breakout_predictor"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+psutil = PipelineStandards.safe_import("psutil", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+    ensure_data_integrity = create_fallback_decorator()
+    monitor_step_execution = create_fallback_decorator()
+    secure_step_execution = create_fallback_decorator()
+    validate_pipeline_step = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+    ensure_data_integrity = centralized_decorators.ensure_data_integrity
+    monitor_step_execution = centralized_decorators.monitor_step_execution
+    secure_step_execution = centralized_decorators.secure_step_execution
+    validate_pipeline_step = centralized_decorators.validate_pipeline_step
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_artifact = lambda *args, **kwargs: "fallback_artifact"
+    log_step_dataframe = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact = enhanced_mlflow.log_step_artifact
+    log_step_dataframe = enhanced_mlflow.log_step_dataframe
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_report = enhanced_mlflow.log_step_report
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
 
 class HMMRegimeDiscoveryStep:
-    """Step 3: HMM Regime Discovery with enhanced data quality management."""
+    """Step 3: HMM Regime Discovery with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("HMMRegimeDiscoveryStep")
-        self.data_quality_manager = None
+        self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        
+        # Validate environment on initialization
+        self._validate_environment()
         self._initialize_components()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     def _initialize_components(self) -> None:
         """Initialize HMM and data quality components."""
         self.logger.info("🔧 Initializing HMM regime discovery components...")
-        try:
-            from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-            self.data_quality_manager = EnhancedDataQualityManager()
-            self.logger.info("✅ Enhanced data quality manager initialized successfully")
-            
-            # Initialize SR Breakout Predictor for enhanced regime analysis
-            # Initialize SRBreakoutPredictor with optimized parameters
-        sr_config = self.config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor = SRBreakoutPredictor(sr_config)
-            self.logger.info("✅ SR Breakout Predictor initialized successfully")
-            
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
-            self.logger.info("📝 Proceeding without enhanced data quality manager")
+        
+        # Initialize SR Breakout Predictor if available
+        if sr_breakout_predictor is not None:
+            try:
+                sr_config = self.config.copy()
+                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+                sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+                self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+                self.sr_predictor = None
+        else:
+            self.logger.warning("⚠️ SR Breakout Predictor not available")
+            self.sr_predictor = None
         except Exception as e:
             self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
             self.logger.info("📝 Proceeding without SR analysis")
@@ -230,7 +278,11 @@ class HMMRegimeDiscoveryStep:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
-            data_dir = training_input.get("data_dir", "data_cache")
+            
+            # Use standardized path construction
+            data_dir = training_input.get("data_dir")
+            if data_dir is None:
+                data_dir = self.standards.build_path("processed_data", exchange, symbol)
             
             self.logger.info("=" * 60)
             self.logger.info("STEP 3: Automatic Parameter Optimization")
@@ -639,12 +691,16 @@ class HMMRegimeDiscoveryStep:
         context="load_and_prepare_data"
     )
     async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
-        """Load and prepare data for HMM regime discovery."""
+        """Load and prepare data for HMM regime discovery with standardized validation."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
-            data_dir = training_input.get("data_dir", "data_cache")
+            
+            # Use standardized path construction
+            data_dir = training_input.get("data_dir")
+            if data_dir is None:
+                data_dir = self.standards.build_path("processed_data", exchange, symbol)
 
             self.logger.info(f"📊 Loading and preparing data for HMM...")
             self.logger.info(f"   Symbol: {symbol}")
@@ -652,8 +708,9 @@ class HMMRegimeDiscoveryStep:
             self.logger.info(f"   Timeframe: {timeframe}")
             self.logger.info(f"   Data directory: {data_dir}")
 
-            # Load klines data
-            klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            # Use standardized file naming
+            klines_file = self.standards.generate_file_name("klines", exchange, symbol, timeframe)
+            klines_path = Path(data_dir) / klines_file
             self.logger.info(f"📁 Looking for klines file: {klines_path}")
             
             if not klines_path.exists():
@@ -666,6 +723,19 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("📥 Loading klines data from parquet file...")
             # Load data with memory optimization
             df = pd.read_parquet(klines_path)
+            
+            # Standardize timestamps and validate schema
+            df = self.standards.standardize_timestamp(df, "timestamp")
+            df = self.standards.enforce_schema(df, "klines")
+            
+            # Validate data quality
+            validation_result = self.standards.validate_data_quality(df, "klines")
+            if validation_result.passed:
+                self.logger.info(f"✅ Data validation passed (quality score: {validation_result.quality_score:.2f})")
+            else:
+                self.logger.warning(f"⚠️ Data validation found issues:")
+                for issue in validation_result.issues[:3]:
+                    self.logger.warning(f"   - {issue.message}")
             
             if df.empty:
                 self.logger.error("❌ Klines data is empty")
@@ -2153,17 +2223,17 @@ async def run_step(
     symbol: str, 
     exchange: str, 
     timeframe: str = "1m", 
-    data_dir: str = "data_cache", 
+    data_dir: str = None, 
     force_rerun: bool = False,
     **kwargs: Any
 ) -> bool:
-    """Run the HMM regime discovery step with enhanced data quality management.
+    """Run the HMM regime discovery step with standardized data quality management.
 
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT")
         exchange: Exchange name (e.g., "BINANCE")
         timeframe: Timeframe (e.g., "1m")
-        data_dir: Data directory
+        data_dir: Data directory (will use standardized path if None)
         force_rerun: Force re-run even if results exist
         **kwargs: Additional arguments
 
@@ -2175,8 +2245,12 @@ async def run_step(
     try:
         logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
+        # Use standardized path construction
+        if data_dir is None:
+            data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+
         logger.info("=" * 80)
-        logger.info("🚀 STEP 3: HMM Regime Discovery with Automatic Optimization")
+        logger.info("🚀 STEP 3: HMM Regime Discovery with Standardized Data Quality Management")
         logger.info("=" * 80)
         logger.info(f"🎯 Symbol: {symbol}")
         logger.info(f"🏢 Exchange: {exchange}")

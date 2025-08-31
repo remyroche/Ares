@@ -40,6 +40,7 @@ from src.utils.logger import system_logger
 from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
+from src.tactician.sr_levels_manager import create_sr_levels_manager
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -61,6 +62,7 @@ class SROptimizationStep:
         self.optimizer = None
         self.sr_predictor = None
         self.sr_data_integration = None
+        self.sr_levels_manager = None
         self._initialize_components()
 
     @secure_step_execution
@@ -83,6 +85,13 @@ class SROptimizationStep:
             # Initialize SR Data Integration
             self.sr_data_integration = create_sr_data_integration_simple(self.config)
             self.logger.info("✅ SR Data Integration initialized successfully")
+            
+            # Initialize SR Levels Manager
+            self.sr_levels_manager = await create_sr_levels_manager(self.config)
+            if self.sr_levels_manager:
+                self.logger.info("✅ SR Levels Manager initialized successfully")
+            else:
+                self.logger.warning("⚠️ SR Levels Manager initialization failed")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize S/R optimization components: {e}")
@@ -143,6 +152,24 @@ class SROptimizationStep:
             if not optimization_result:
                 self.logger.error("S/R optimization failed")
                 return False
+            
+            # Step 1.5: Calculate SR levels from backtesting data
+            sr_levels_result = None
+            if self.sr_levels_manager:
+                try:
+                    # Get market data for SR level calculation
+                    market_data = await self._get_market_data_for_sr_calculation()
+                    if market_data is not None:
+                        sr_levels_result = await self.sr_levels_manager.calculate_sr_levels_from_backtest(
+                            market_data, timeframe="1m"
+                        )
+                        self.logger.info(f"✅ Calculated SR levels: {len(sr_levels_result.get('support_levels', []))} support, {len(sr_levels_result.get('resistance_levels', []))} resistance")
+                    else:
+                        self.logger.warning("⚠️ No market data available for SR level calculation")
+                except Exception as e:
+                    self.logger.error(f"❌ Error calculating SR levels: {e}")
+            else:
+                self.logger.warning("⚠️ SR Levels Manager not available, skipping SR level calculation")
             
             # Step 2: Generate comprehensive SR analysis reports
             sr_analysis_reports = await self._generate_sr_analysis_reports(optimization_result)
@@ -580,6 +607,47 @@ class SROptimizationStep:
                 
         except Exception as e:
             self.logger.error(f"Failed to get sample market data: {e}")
+            return None
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="get_market_data_for_sr_calculation"
+    )
+    @comprehensive_data_validation
+    async def _get_market_data_for_sr_calculation(self) -> Optional[pd.DataFrame]:
+        """Get market data specifically for SR level calculation."""
+        try:
+            # Try to load sample data from data_cache
+            data_dir = self.config.get("DATA_DIR", "data_cache")
+            symbol = self.config.get("SYMBOL", "ETHUSDT")
+            exchange = self.config.get("EXCHANGE", "BINANCE")
+            timeframe = self.config.get("TIMEFRAME", "1m")
+            
+            klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            
+            if klines_path.exists():
+                self.logger.info(f"📊 Loading market data for SR calculation from {klines_path}")
+                df = pd.read_parquet(klines_path)
+                
+                # Take last 2000 rows for SR calculation (more data for better accuracy)
+                if len(df) > 2000:
+                    df = df.tail(2000)
+                
+                # Ensure we have the required columns
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                if all(col in df.columns for col in required_columns):
+                    self.logger.info(f"✅ Loaded market data for SR calculation: {len(df)} rows")
+                    return df
+                else:
+                    self.logger.warning("⚠️ Market data missing required columns for SR calculation")
+                    return None
+            else:
+                self.logger.warning(f"⚠️ Market data file not found: {klines_path}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get market data for SR calculation: {e}")
             return None
 
     @handle_errors(

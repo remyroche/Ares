@@ -312,6 +312,217 @@ class CryptoPriceAnalyzer:
             'max_length': np.max(runs)
         }
     
+    def calculate_volume_analysis(self, symbol_data):
+        """
+        Calculate comprehensive volume analysis for a single asset
+        
+        Args:
+            symbol_data (pd.DataFrame): Data for a single symbol
+            
+        Returns:
+            dict: Dictionary of volume analysis metrics
+        """
+        # Basic volume metrics
+        total_volume = symbol_data['volume'].sum()
+        avg_volume = symbol_data['volume'].mean()
+        median_volume = symbol_data['volume'].median()
+        volume_std = symbol_data['volume'].std()
+        volume_cv = volume_std / avg_volume  # Coefficient of variation
+        
+        # Volume percentiles
+        volume_percentiles = {
+            'p10': symbol_data['volume'].quantile(0.1),
+            'p25': symbol_data['volume'].quantile(0.25),
+            'p50': symbol_data['volume'].quantile(0.5),
+            'p75': symbol_data['volume'].quantile(0.75),
+            'p90': symbol_data['volume'].quantile(0.9),
+            'p95': symbol_data['volume'].quantile(0.95),
+            'p99': symbol_data['volume'].quantile(0.99)
+        }
+        
+        # Volume distribution analysis
+        volume_bins = pd.cut(symbol_data['volume'], bins=10)
+        volume_distribution = volume_bins.value_counts().sort_index()
+        
+        # High volume periods (top 10% of volume)
+        high_volume_threshold = symbol_data['volume'].quantile(0.9)
+        high_volume_periods = symbol_data[symbol_data['volume'] >= high_volume_threshold]
+        high_volume_frequency = len(high_volume_periods) / len(symbol_data)
+        
+        # Low volume periods (bottom 10% of volume)
+        low_volume_threshold = symbol_data['volume'].quantile(0.1)
+        low_volume_periods = symbol_data[symbol_data['volume'] <= low_volume_threshold]
+        low_volume_frequency = len(low_volume_periods) / len(symbol_data)
+        
+        # Volume-price relationship
+        volume_price_corr = symbol_data['volume'].corr(symbol_data['close'])
+        volume_returns_corr = symbol_data['volume'].corr(symbol_data['close'].pct_change())
+        
+        # Volume volatility
+        volume_volatility = symbol_data['volume'].pct_change().std()
+        
+        # Volume trends (using rolling average)
+        rolling_volume = symbol_data['volume'].rolling(window=96).mean()  # 24 hours (96 15-min periods)
+        volume_trend = (rolling_volume.iloc[-1] - rolling_volume.iloc[0]) / rolling_volume.iloc[0] if len(rolling_volume.dropna()) > 0 else 0
+        
+        # Volume spikes (periods with volume > 2x average)
+        volume_spikes = symbol_data[symbol_data['volume'] > 2 * avg_volume]
+        volume_spike_frequency = len(volume_spikes) / len(symbol_data)
+        
+        # Volume consistency (how often volume is within 50% of average)
+        volume_consistency = ((symbol_data['volume'] >= 0.5 * avg_volume) & 
+                            (symbol_data['volume'] <= 1.5 * avg_volume)).mean()
+        
+        return {
+            'total_volume': total_volume,
+            'avg_volume': avg_volume,
+            'median_volume': median_volume,
+            'volume_std': volume_std,
+            'volume_cv': volume_cv,
+            'volume_percentiles': volume_percentiles,
+            'high_volume_frequency': high_volume_frequency,
+            'low_volume_frequency': low_volume_frequency,
+            'volume_price_correlation': volume_price_corr,
+            'volume_returns_correlation': volume_returns_corr,
+            'volume_volatility': volume_volatility,
+            'volume_trend': volume_trend,
+            'volume_spike_frequency': volume_spike_frequency,
+            'volume_consistency': volume_consistency,
+            'max_volume': symbol_data['volume'].max(),
+            'min_volume': symbol_data['volume'].min(),
+            'volume_range': symbol_data['volume'].max() - symbol_data['volume'].min()
+        }
+    
+    def calculate_volume_comparison(self):
+        """
+        Compare volume metrics across all assets
+        
+        Returns:
+            dict: Volume comparison metrics
+        """
+        if not self.results:
+            logger.error("No analysis results. Call analyze_all_assets() first.")
+            return {}
+        
+        volume_comparison = {}
+        
+        # Collect volume metrics from all assets
+        volume_metrics = []
+        for symbol, result in self.results.items():
+            if 'volume_analysis' in result:
+                metrics = result['volume_analysis'].copy()
+                metrics['symbol'] = symbol
+                volume_metrics.append(metrics)
+        
+        if not volume_metrics:
+            return {}
+        
+        volume_df = pd.DataFrame(volume_metrics)
+        
+        # Volume ranking
+        volume_ranking = volume_df.sort_values('total_volume', ascending=False)
+        
+        # Volume categories
+        volume_categories = {
+            'high_volume': volume_df[volume_df['total_volume'] >= volume_df['total_volume'].quantile(0.75)]['symbol'].tolist(),
+            'medium_volume': volume_df[(volume_df['total_volume'] >= volume_df['total_volume'].quantile(0.25)) & 
+                                     (volume_df['total_volume'] < volume_df['total_volume'].quantile(0.75))]['symbol'].tolist(),
+            'low_volume': volume_df[volume_df['total_volume'] < volume_df['total_volume'].quantile(0.25)]['symbol'].tolist()
+        }
+        
+        # Volume consistency ranking
+        consistency_ranking = volume_df.sort_values('volume_consistency', ascending=False)
+        
+        # Volume volatility ranking
+        volatility_ranking = volume_df.sort_values('volume_volatility', ascending=False)
+        
+        # Volume-price correlation ranking
+        correlation_ranking = volume_df.sort_values('volume_price_correlation', ascending=False)
+        
+        # Volume trends ranking
+        trend_ranking = volume_df.sort_values('volume_trend', ascending=False)
+        
+        # Volume spike frequency ranking
+        spike_ranking = volume_df.sort_values('volume_spike_frequency', ascending=False)
+        
+        # Summary statistics
+        summary_stats = {
+            'total_volume_mean': volume_df['total_volume'].mean(),
+            'total_volume_median': volume_df['total_volume'].median(),
+            'total_volume_std': volume_df['total_volume'].std(),
+            'avg_volume_mean': volume_df['avg_volume'].mean(),
+            'avg_volume_median': volume_df['avg_volume'].median(),
+            'volume_consistency_mean': volume_df['volume_consistency'].mean(),
+            'volume_volatility_mean': volume_df['volume_volatility'].mean(),
+            'volume_price_correlation_mean': volume_df['volume_price_correlation'].mean(),
+            'volume_spike_frequency_mean': volume_df['volume_spike_frequency'].mean()
+        }
+        
+        return {
+            'volume_ranking': volume_ranking,
+            'volume_categories': volume_categories,
+            'consistency_ranking': consistency_ranking,
+            'volatility_ranking': volatility_ranking,
+            'correlation_ranking': correlation_ranking,
+            'trend_ranking': trend_ranking,
+            'spike_ranking': spike_ranking,
+            'summary_stats': summary_stats,
+            'volume_dataframe': volume_df
+        }
+    
+    def calculate_volume_patterns(self, symbol_data):
+        """
+        Calculate volume patterns over time
+        
+        Args:
+            symbol_data (pd.DataFrame): Data for a single symbol
+            
+        Returns:
+            dict: Volume pattern analysis
+        """
+        # Add time components
+        symbol_data = symbol_data.copy()
+        symbol_data['hour'] = symbol_data.index.hour
+        symbol_data['day_of_week'] = symbol_data.index.dayofweek
+        symbol_data['date'] = symbol_data.index.date
+        
+        # Hourly volume patterns
+        hourly_volume = symbol_data.groupby('hour')['volume'].agg(['mean', 'std', 'min', 'max'])
+        peak_hours = hourly_volume['mean'].nlargest(3).index.tolist()
+        low_hours = hourly_volume['mean'].nsmallest(3).index.tolist()
+        
+        # Daily volume patterns
+        daily_volume = symbol_data.groupby('day_of_week')['volume'].agg(['mean', 'std', 'min', 'max'])
+        peak_days = daily_volume['mean'].nlargest(3).index.tolist()
+        low_days = daily_volume['mean'].nsmallest(3).index.tolist()
+        
+        # Volume autocorrelation (lag 1)
+        volume_autocorr = symbol_data['volume'].autocorr(lag=1)
+        
+        # Volume seasonality (using rolling averages)
+        daily_rolling_volume = symbol_data.groupby('date')['volume'].mean().rolling(window=7).mean()
+        weekly_seasonality = daily_rolling_volume.std() / daily_rolling_volume.mean() if len(daily_rolling_volume.dropna()) > 0 else 0
+        
+        # Volume clustering (consecutive high/low volume periods)
+        high_volume_threshold = symbol_data['volume'].quantile(0.75)
+        low_volume_threshold = symbol_data['volume'].quantile(0.25)
+        
+        high_volume_clusters = self._calculate_consecutive_runs(symbol_data['volume'] >= high_volume_threshold)
+        low_volume_clusters = self._calculate_consecutive_runs(symbol_data['volume'] <= low_volume_threshold)
+        
+        return {
+            'hourly_volume': hourly_volume.to_dict(),
+            'daily_volume': daily_volume.to_dict(),
+            'peak_hours': peak_hours,
+            'low_hours': low_hours,
+            'peak_days': peak_days,
+            'low_days': low_days,
+            'volume_autocorrelation': volume_autocorr,
+            'weekly_seasonality': weekly_seasonality,
+            'high_volume_clusters': high_volume_clusters,
+            'low_volume_clusters': low_volume_clusters
+        }
+    
     def analyze_all_assets(self):
         """Analyze all assets in the dataset"""
         if self.df is None:
@@ -336,13 +547,21 @@ class CryptoPriceAnalyzer:
             
             # Movement statistics
             movement_stats = self.calculate_movement_statistics(symbol_data)
+
+            # Volume analysis
+            volume_analysis = self.calculate_volume_analysis(symbol_data)
+            
+            # Volume patterns
+            volume_patterns = self.calculate_volume_patterns(symbol_data)
             
             # Store results
             self.results[symbol] = {
                 'basic_metrics': basic_metrics,
                 'triple_barrier_profits': triple_barrier_profits,
                 'intraday_patterns': intraday_patterns,
-                'movement_statistics': movement_stats
+                'movement_statistics': movement_stats,
+                'volume_analysis': volume_analysis,
+                'volume_patterns': volume_patterns
             }
     
     def generate_summary_report(self):
@@ -437,9 +656,65 @@ class CryptoPriceAnalyzer:
         for symbol, trades in total_shorts.head(5).items():
             print(f"  {symbol}: {trades:.0f} short trades")
         
+        # Volume comparison summary
+        volume_comparison_summary = self.calculate_volume_comparison()
+        if volume_comparison_summary:
+            print("\nVOLUME ANALYSIS SUMMARY:")
+            print("-" * 60)
+            print(f"Total Volume Mean: {volume_comparison_summary['summary_stats']['total_volume_mean']:.2f}")
+            print(f"Total Volume Median: {volume_comparison_summary['summary_stats']['total_volume_median']:.2f}")
+            print(f"Total Volume Std Dev: {volume_comparison_summary['summary_stats']['total_volume_std']:.2f}")
+            print(f"Avg Volume Mean: {volume_comparison_summary['summary_stats']['avg_volume_mean']:.2f}")
+            print(f"Avg Volume Median: {volume_comparison_summary['summary_stats']['avg_volume_median']:.2f}")
+            print(f"Volume Consistency Mean: {volume_comparison_summary['summary_stats']['volume_consistency_mean']:.2f}")
+            print(f"Volume Volatility Mean: {volume_comparison_summary['summary_stats']['volume_volatility_mean']:.2f}")
+            print(f"Volume Price Correlation Mean: {volume_comparison_summary['summary_stats']['volume_price_correlation_mean']:.2f}")
+            print(f"Volume Spike Frequency Mean: {volume_comparison_summary['summary_stats']['volume_spike_frequency_mean']:.2f}")
+            
+            print("\nVOLUME RANKINGS:")
+            print("-" * 60)
+            
+            # Top 10 by total volume
+            print("Top 10 Assets by Total Volume:")
+            top_volume = volume_comparison_summary['volume_ranking'].head(10)
+            for _, row in top_volume.iterrows():
+                print(f"  {row['symbol']}: {row['total_volume']:.2f}")
+            
+            # Top 10 by volume consistency
+            print("\nTop 10 Assets by Volume Consistency:")
+            top_consistency = volume_comparison_summary['consistency_ranking'].head(10)
+            for _, row in top_consistency.iterrows():
+                print(f"  {row['symbol']}: {row['volume_consistency']:.4f}")
+            
+            # Top 10 by volume-price correlation
+            print("\nTop 10 Assets by Volume-Price Correlation:")
+            top_correlation = volume_comparison_summary['correlation_ranking'].head(10)
+            for _, row in top_correlation.iterrows():
+                print(f"  {row['symbol']}: {row['volume_price_correlation']:.4f}")
+            
+            # Volume categories
+            print("\nVOLUME CATEGORIES:")
+            print("-" * 60)
+            print(f"High Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['high_volume'])}")
+            print(f"Medium Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['medium_volume'])}")
+            print(f"Low Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['low_volume'])}")
+            
+            # Volume patterns summary
+            print("\nVOLUME PATTERNS SUMMARY:")
+            print("-" * 60)
+            for symbol in list(self.results.keys())[:5]:  # Show first 5 assets
+                if 'volume_patterns' in self.results[symbol]:
+                    patterns = self.results[symbol]['volume_patterns']
+                    print(f"\n{symbol}:")
+                    print(f"  Peak Hours: {patterns['peak_hours']}")
+                    print(f"  Peak Days: {patterns['peak_days']}")
+                    print(f"  Volume Autocorrelation: {patterns['volume_autocorrelation']:.4f}")
+                    print(f"  Weekly Seasonality: {patterns['weekly_seasonality']:.4f}")
+
         return {
             'basic_summary': basic_df,
-            'barrier_summary': barrier_df
+            'barrier_summary': barrier_df,
+            'volume_summary': volume_comparison_summary.get('volume_dataframe', pd.DataFrame()) if volume_comparison_summary else pd.DataFrame()
         }
     
     def create_visualizations(self, output_dir="plots"):
@@ -604,6 +879,139 @@ class CryptoPriceAnalyzer:
         plt.tight_layout()
         plt.savefig(f"{output_dir}/intraday_patterns.png", dpi=300, bbox_inches='tight')
         plt.close()
+
+        # 3. Volume Analysis
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle('Volume Analysis', fontsize=16)
+
+        # Volume ranking
+        volume_comparison = self.calculate_volume_comparison()
+        if volume_comparison:
+            volume_ranking = volume_comparison['volume_ranking']
+            symbols = volume_ranking['symbol'].values
+            total_volumes = volume_ranking['total_volume'].values
+            
+            axes[0, 0].bar(range(len(symbols)), total_volumes, alpha=0.7)
+            axes[0, 0].set_xlabel('Assets')
+            axes[0, 0].set_ylabel('Total Volume')
+            axes[0, 0].set_title('Total Volume by Asset')
+            axes[0, 0].set_xticks(range(len(symbols)))
+            axes[0, 0].set_xticklabels(symbols, rotation=45)
+            axes[0, 0].grid(True, alpha=0.3)
+
+            # Volume consistency
+            consistency_ranking = volume_comparison['consistency_ranking']
+            consistency_values = consistency_ranking['volume_consistency'].values
+            
+            axes[0, 1].bar(range(len(symbols)), consistency_values, alpha=0.7, color='green')
+            axes[0, 1].set_xlabel('Assets')
+            axes[0, 1].set_ylabel('Volume Consistency')
+            axes[0, 1].set_title('Volume Consistency by Asset')
+            axes[0, 1].set_xticks(range(len(symbols)))
+            axes[0, 1].set_xticklabels(symbols, rotation=45)
+            axes[0, 1].grid(True, alpha=0.3)
+
+            # Volume volatility
+            volatility_ranking = volume_comparison['volatility_ranking']
+            volatility_values = volatility_ranking['volume_volatility'].values
+            
+            axes[1, 0].bar(range(len(symbols)), volatility_values, alpha=0.7, color='red')
+            axes[1, 0].set_xlabel('Assets')
+            axes[1, 0].set_ylabel('Volume Volatility')
+            axes[1, 0].set_title('Volume Volatility by Asset')
+            axes[1, 0].set_xticks(range(len(symbols)))
+            axes[1, 0].set_xticklabels(symbols, rotation=45)
+            axes[1, 0].grid(True, alpha=0.3)
+
+            # Volume-price correlation
+            correlation_ranking = volume_comparison['correlation_ranking']
+            correlation_values = correlation_ranking['volume_price_correlation'].values
+            
+            axes[1, 1].bar(range(len(symbols)), correlation_values, alpha=0.7, color='purple')
+            axes[1, 1].set_xlabel('Assets')
+            axes[1, 1].set_ylabel('Volume-Price Correlation')
+            axes[1, 1].set_title('Volume-Price Correlation by Asset')
+            axes[1, 1].set_xticks(range(len(symbols)))
+            axes[1, 1].set_xticklabels(symbols, rotation=45)
+            axes[1, 1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/volume_analysis.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # 4. Volume Patterns
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle('Volume Patterns Over Time', fontsize=16)
+
+        # Hourly volume patterns
+        for symbol in sample_symbols:
+            if 'volume_patterns' in self.results[symbol]:
+                hourly_volume = self.results[symbol]['volume_patterns']['hourly_volume']
+                hours = list(hourly_volume.keys())
+                means = [hourly_volume[h]['mean'] for h in hours]
+                axes[0, 0].plot(hours, means, label=symbol, marker='o', alpha=0.7)
+        
+        axes[0, 0].set_xlabel('Hour of Day')
+        axes[0, 0].set_ylabel('Average Volume')
+        axes[0, 0].set_title('Hourly Volume Patterns')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
+
+        # Daily volume patterns
+        for symbol in sample_symbols:
+            if 'volume_patterns' in self.results[symbol]:
+                daily_volume = self.results[symbol]['volume_patterns']['daily_volume']
+                days = list(daily_volume.keys())
+                means = [daily_volume[d]['mean'] for d in days]
+                axes[0, 1].plot(days, means, label=symbol, marker='s', alpha=0.7)
+        
+        axes[0, 1].set_xlabel('Day of Week')
+        axes[0, 1].set_ylabel('Average Volume')
+        axes[0, 1].set_title('Daily Volume Patterns')
+        axes[0, 1].set_xticks(range(7))
+        axes[0, 1].set_xticklabels(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
+
+        # Volume autocorrelation
+        autocorr_values = []
+        autocorr_symbols = []
+        for symbol in sample_symbols:
+            if 'volume_patterns' in self.results[symbol]:
+                autocorr = self.results[symbol]['volume_patterns']['volume_autocorrelation']
+                if not np.isnan(autocorr):
+                    autocorr_values.append(autocorr)
+                    autocorr_symbols.append(symbol)
+        
+        if autocorr_values:
+            axes[1, 0].bar(range(len(autocorr_symbols)), autocorr_values, alpha=0.7, color='orange')
+            axes[1, 0].set_xlabel('Assets')
+            axes[1, 0].set_ylabel('Volume Autocorrelation')
+            axes[1, 0].set_title('Volume Autocorrelation (Lag 1)')
+            axes[1, 0].set_xticks(range(len(autocorr_symbols)))
+            axes[1, 0].set_xticklabels(autocorr_symbols, rotation=45)
+            axes[1, 0].grid(True, alpha=0.3)
+
+        # Volume spike frequency
+        spike_values = []
+        spike_symbols = []
+        for symbol in sample_symbols:
+            spike_freq = self.results[symbol]['volume_analysis']['volume_spike_frequency']
+            spike_values.append(spike_freq)
+            spike_symbols.append(symbol)
+        
+        if spike_values:
+            axes[1, 1].bar(range(len(spike_symbols)), spike_values, alpha=0.7, color='brown')
+            axes[1, 1].set_xlabel('Assets')
+            axes[1, 1].set_ylabel('Volume Spike Frequency')
+            axes[1, 1].set_title('Volume Spike Frequency (>2x Average)')
+            axes[1, 1].set_xticks(range(len(spike_symbols)))
+            axes[1, 1].set_xticklabels(spike_symbols, rotation=45)
+            axes[1, 1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/volume_patterns.png", dpi=300, bbox_inches='tight')
+        plt.close()
         
         logger.info(f"Visualizations saved to {output_dir}/")
 
@@ -641,6 +1049,11 @@ def main():
     
     summary['basic_summary'].to_csv(output_dir / "price_movement_metrics.csv", index=False)
     summary['barrier_summary'].to_csv(output_dir / "triple_barrier_profits.csv", index=False)
+    
+    # Save volume analysis results
+    if not summary['volume_summary'].empty:
+        summary['volume_summary'].to_csv(output_dir / "volume_analysis.csv", index=False)
+        logger.info("Volume analysis results saved to volume_analysis.csv")
     
     logger.info(f"Results saved to {output_dir}/")
 

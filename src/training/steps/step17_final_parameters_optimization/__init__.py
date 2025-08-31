@@ -46,6 +46,17 @@ from .optimized_step17_implementation import (
     SmartParameterGrouper,
     create_hierarchical_optimizer,
 )
+from .advanced_optimization_engine import (
+    MultiObjectiveParetoOptimizer,
+    CrossValidationPruner,
+    EnsembleParameterOptimizer,
+    ParameterInteractionDetector,
+    OptimizationObjective,
+    create_multi_objective_optimizer,
+    create_cv_pruner,
+    create_ensemble_optimizer,
+    create_interaction_detector,
+)
 
 __all__ = [
     "EfficiencyOptimizer",
@@ -61,4 +72,13 @@ __all__ = [
     "AdaptiveTrialAllocator",
     "SmartParameterGrouper",
     "create_hierarchical_optimizer",
+    "MultiObjectiveParetoOptimizer",
+    "CrossValidationPruner",
+    "EnsembleParameterOptimizer",
+    "ParameterInteractionDetector",
+    "OptimizationObjective",
+    "create_multi_objective_optimizer",
+    "create_cv_pruner",
+    "create_ensemble_optimizer",
+    "create_interaction_detector",
 ]

@@ -116,6 +116,42 @@ def get_multi_output_config() -> Dict[str, Any]:
             "time_horizon": 100,  # Maximum bars to hold position
         },
         
+        # Fractional labeling configuration
+        "fractional_labeling": {
+            "enable_fractional_labels": True,
+            "enable_confidence_scoring": True,
+            "enable_regime_adaptation": False,
+            "component_weights": {
+                "distance_weight": 0.4,
+                "time_weight": 0.3,
+                "volatility_weight": 0.3,
+            },
+            "confidence_thresholds": {
+                "min_confidence": 0.1,
+                "max_confidence": 0.95,
+            },
+            "regime_specific_configs": {
+                "trending": {
+                    "distance_weight": 0.5,
+                    "time_weight": 0.3,
+                    "volatility_weight": 0.2,
+                    "min_confidence": 0.15,
+                },
+                "ranging": {
+                    "distance_weight": 0.3,
+                    "time_weight": 0.4,
+                    "volatility_weight": 0.3,
+                    "min_confidence": 0.1,
+                },
+                "volatile": {
+                    "distance_weight": 0.2,
+                    "time_weight": 0.2,
+                    "volatility_weight": 0.6,
+                    "min_confidence": 0.2,
+                }
+            }
+        },
+        
         # Performance monitoring
         "performance_monitoring": {
             "enable_metrics_tracking": True,

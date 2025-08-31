@@ -17,16 +17,11 @@ import pandas as pd
 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
+# Import feature engineering optimization
+from src.training.feature_engineering_optimizer import FeatureEngineeringOptimizer
+from src.training.timeframe_relevance_analyzer import TimeframeRelevanceAnalyzer
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+from src.utils.training_pipeline_decorators import (
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,
@@ -35,6 +30,15 @@ from src.utils.enhanced_mlflow_integration import (
     resource_monitor,
     secure_data_processing,
     validate_step_output,
+)
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
 )
 
 
@@ -115,6 +119,76 @@ class Step7EnhancedMatrixOperations:
             self.logger.info(f"🔢 Features: {len(df.columns)} columns")
 
             
+            # Initialize feature engineering optimization
+            feature_optimizer = FeatureEngineeringOptimizer(self.config)
+            timeframe_analyzer = TimeframeRelevanceAnalyzer(self.config)
+            
+            # Load HMM regime data if available
+            hmm_regimes = None
+            hmm_path = f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_regimes.parquet"
+            if os.path.exists(hmm_path):
+                self.logger.info(f"🎭 Loading HMM regimes from: {hmm_path}")
+                hmm_data = pd.read_parquet(hmm_path)
+                if 'regime' in hmm_data.columns:
+                    hmm_regimes = hmm_data['regime']
+            
+            # Prepare target variable for optimization (use returns if available)
+            target = None
+            if 'returns' in df.columns:
+                target = df['returns']
+            elif 'close' in df.columns:
+                target = df['close'].pct_change().dropna()
+                df = df.loc[target.index]  # Align data
+            else:
+                self.logger.warning("⚠️ No target variable found for feature optimization")
+            
+            # 1. Optimize feature engineering parameters
+            if target is not None:
+                self.logger.info("🔧 Starting feature engineering parameter optimization...")
+                feature_optimization_results = await feature_optimizer.optimize_feature_parameters(
+                    data=df,
+                    target=target,
+                    regimes=hmm_regimes,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe
+                )
+                
+                # Store optimization results in pipeline state
+                pipeline_state["feature_engineering_optimization"] = feature_optimization_results
+                
+                self.logger.info("✅ Feature engineering parameter optimization completed")
+            else:
+                self.logger.warning("⚠️ Skipping feature engineering optimization - no target variable")
+                feature_optimization_results = {}
+            
+            # 2. Analyze timeframe relevance for high leverage trading
+            self.logger.info("⏰ Starting timeframe relevance analysis...")
+            
+            # Load multi-timeframe data if available
+            timeframe_data = {}
+            for tf in ['1m', '5m', '15m', '30m', '1h']:
+                tf_path = f"data/training/{exchange}_{symbol}_{tf}_features_train.parquet"
+                if os.path.exists(tf_path):
+                    tf_data = pd.read_parquet(tf_path)
+                    timeframe_data[tf] = tf_data
+            
+            if timeframe_data:
+                timeframe_analysis_results = await timeframe_analyzer.analyze_timeframe_relevance(
+                    data_dict=timeframe_data,
+                    symbol=symbol,
+                    exchange=exchange,
+                    leverage_range=(10, 100)  # 10x to 100x leverage
+                )
+                
+                # Store timeframe analysis results
+                pipeline_state["timeframe_relevance_analysis"] = timeframe_analysis_results
+                
+                self.logger.info("✅ Timeframe relevance analysis completed")
+            else:
+                self.logger.warning("⚠️ Skipping timeframe analysis - insufficient multi-timeframe data")
+                timeframe_analysis_results = {}
+            
             # Prepare matrix operations configuration
             matrix_config = self._prepare_matrix_operations_config(df, symbol, exchange, timeframe)
             
@@ -141,7 +215,9 @@ class Step7EnhancedMatrixOperations:
                 "data_shape": df.shape,
                 "symbol": symbol,
                 "exchange": exchange,
-                "timeframe": timeframe
+                "timeframe": timeframe,
+                "feature_engineering_optimization": feature_optimization_results,
+                "timeframe_relevance_analysis": timeframe_analysis_results
             }
             
             self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")

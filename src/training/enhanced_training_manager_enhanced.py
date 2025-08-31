@@ -113,7 +113,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             raise
     
     async def _generate_step_report(self, step_name: str, step_result: Any, step_start_time: float, step_success: bool, step_errors: List[str] = None, step_warnings: List[str] = None):
-        """Generate and save a detailed report for a specific step."""
+        """Generate and append step information to shared pipeline report."""
         
         if not self.enable_detailed_reporting:
             return
@@ -125,8 +125,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             # Get step-specific quality metrics
             step_quality_metrics = await self._get_step_quality_metrics(step_name, step_result)
             
-            # Create step report
-            step_report = {
+            # Create step report section
+            step_report_section = {
                 "step_name": step_name,
                 "pipeline_execution_id": self.current_pipeline_execution_id,
                 "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
@@ -143,28 +143,52 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Save step report
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{step_name}_{timestamp}_{self.current_pipeline_execution_id}.json"
-            report_path = self.pipeline_reports_dir / filename
+            # Load existing shared report or create new one
+            shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
             
-            with open(report_path, 'w', encoding='utf-8') as f:
-                json.dump(step_report, f, indent=2, ensure_ascii=False, default=str)
+            if shared_report_path.exists():
+                with open(shared_report_path, 'r', encoding='utf-8') as f:
+                    shared_report = json.load(f)
+            else:
+                shared_report = {
+                    "pipeline_execution_id": self.current_pipeline_execution_id,
+                    "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                    "pipeline_config": self.config,
+                    "steps": {},
+                    "pipeline_summary": {
+                        "total_steps": len(self.STEP_ORDER),
+                        "completed_steps": 0,
+                        "failed_steps": 0,
+                        "total_duration": 0,
+                        "overall_success": True
+                    }
+                }
             
-            # Generate summary report
-            summary_report = self._generate_step_summary(step_report)
-            summary_filename = f"{step_name}_{timestamp}_{self.current_pipeline_execution_id}_summary.txt"
+            # Append step information to shared report
+            shared_report["steps"][step_name] = step_report_section
+            shared_report["pipeline_summary"]["completed_steps"] = len(shared_report["steps"])
+            shared_report["pipeline_summary"]["failed_steps"] = sum(1 for step in shared_report["steps"].values() if not step["success"])
+            shared_report["pipeline_summary"]["overall_success"] = shared_report["pipeline_summary"]["failed_steps"] == 0
+            shared_report["pipeline_summary"]["total_duration"] = sum(step["execution_duration_seconds"] for step in shared_report["steps"].values())
+            
+            # Save updated shared report
+            with open(shared_report_path, 'w', encoding='utf-8') as f:
+                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Generate step summary
+            summary_report = self._generate_step_summary(step_report_section)
+            summary_filename = f"{step_name}_{self.current_pipeline_execution_id}_summary.txt"
             summary_path = self.pipeline_reports_dir / summary_filename
             
             with open(summary_path, 'w', encoding='utf-8') as f:
                 f.write(summary_report)
             
-            # Store in pipeline report
-            self.step_reports[step_name] = step_report
+            # Store in memory for pipeline summary
+            self.step_reports[step_name] = step_report_section
             
             # Log completion
             status_emoji = "✅" if step_success else "❌"
-            self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} report saved to {report_path}")
+            self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} appended to shared report: {shared_report_path}")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")
@@ -481,25 +505,66 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 if "triple_barrier_captured_changes" in quality_metrics:
                     captured_changes = quality_metrics["triple_barrier_captured_changes"]
                     summary.append("  Triple Barrier Captured Changes:")
-                    summary.append(f"    Upper Barrier Captures: {captured_changes.get('upper_barrier_captures', 'N/A')}")
-                    summary.append(f"    Lower Barrier Captures: {captured_changes.get('lower_barrier_captures', 'N/A')}")
-                    summary.append(f"    Capture Efficiency: {captured_changes.get('capture_efficiency', 'N/A'):.4f}" if isinstance(captured_changes.get('capture_efficiency'), (int, float)) else f"    Capture Efficiency: {captured_changes.get('capture_efficiency', 'N/A')}")
                     
-                    if "captured_price_changes" in captured_changes:
-                        change_stats = captured_changes["captured_price_changes"]
-                        if "upper_barrier_captured_stats" in change_stats:
-                            upper_stats = change_stats["upper_barrier_captured_stats"]
-                            summary.append("    Upper Barrier Captured Price Changes:")
-                            summary.append(f"      Mean Capture: {upper_stats.get('mean_capture', 'N/A'):.4f}" if isinstance(upper_stats.get('mean_capture'), (int, float)) else f"      Mean Capture: {upper_stats.get('mean_capture', 'N/A')}")
-                            summary.append(f"      Max Capture: {upper_stats.get('max_capture', 'N/A'):.4f}" if isinstance(upper_stats.get('max_capture'), (int, float)) else f"      Max Capture: {upper_stats.get('max_capture', 'N/A')}")
-                            summary.append(f"      Capture Count: {upper_stats.get('capture_count', 'N/A')}")
+                    if "barrier_hit_analysis" in captured_changes:
+                        hit_analysis = captured_changes["barrier_hit_analysis"]
                         
-                        if "capture_summary" in change_stats:
-                            capture_summary = change_stats["capture_summary"]
-                            summary.append("    Capture Summary:")
-                            summary.append(f"      Total Captures: {capture_summary.get('total_captures', 'N/A')}")
-                            summary.append(f"      Upper Capture Ratio: {capture_summary.get('upper_capture_ratio', 'N/A'):.4f}" if isinstance(capture_summary.get('upper_capture_ratio'), (int, float)) else f"      Upper Capture Ratio: {capture_summary.get('upper_capture_ratio', 'N/A')}")
-                            summary.append(f"      Lower Capture Ratio: {capture_summary.get('lower_capture_ratio', 'N/A'):.4f}" if isinstance(capture_summary.get('lower_capture_ratio'), (int, float)) else f"      Lower Capture Ratio: {capture_summary.get('lower_capture_ratio', 'N/A')}")
+                        # Upper barrier hits without lower barrier hits first
+                        upper_first = hit_analysis.get("upper_hits_without_lower_first", {})
+                        summary.append("    Upper Barrier Hits (Without Lower First):")
+                        summary.append(f"      Total Count: {upper_first.get('total_count', 'N/A')}")
+                        summary.append(f"      Long Positions: {upper_first.get('long_positions', 'N/A')}")
+                        summary.append(f"      Short Positions: {upper_first.get('short_positions', 'N/A')}")
+                        summary.append(f"      Average Price Deviation: {upper_first.get('average_price_deviation', 'N/A'):.4f}" if isinstance(upper_first.get('average_price_deviation'), (int, float)) else f"      Average Price Deviation: {upper_first.get('average_price_deviation', 'N/A')}")
+                        summary.append(f"      Max Price Deviation: {upper_first.get('max_price_deviation', 'N/A'):.4f}" if isinstance(upper_first.get('max_price_deviation'), (int, float)) else f"      Max Price Deviation: {upper_first.get('max_price_deviation', 'N/A')}")
+                        
+                        # Lower barrier hits without upper barrier hits first
+                        lower_first = hit_analysis.get("lower_hits_without_upper_first", {})
+                        summary.append("    Lower Barrier Hits (Without Upper First):")
+                        summary.append(f"      Total Count: {lower_first.get('total_count', 'N/A')}")
+                        summary.append(f"      Long Positions: {lower_first.get('long_positions', 'N/A')}")
+                        summary.append(f"      Short Positions: {lower_first.get('short_positions', 'N/A')}")
+                        summary.append(f"      Average Price Deviation: {lower_first.get('average_price_deviation', 'N/A'):.4f}" if isinstance(lower_first.get('average_price_deviation'), (int, float)) else f"      Average Price Deviation: {lower_first.get('average_price_deviation', 'N/A')}")
+                        summary.append(f"      Max Price Deviation: {lower_first.get('max_price_deviation', 'N/A'):.4f}" if isinstance(lower_first.get('max_price_deviation'), (int, float)) else f"      Max Price Deviation: {lower_first.get('max_price_deviation', 'N/A')}")
+                    
+                    if "price_deviation_analysis" in captured_changes:
+                        deviation_analysis = captured_changes["price_deviation_analysis"]
+                        
+                        # Upper barrier price deviations
+                        upper_deviations = deviation_analysis.get("upper_barrier_deviations", {})
+                        summary.append("    Upper Barrier Price Deviations:")
+                        summary.append(f"      Total Deviations: {upper_deviations.get('total_deviations', 'N/A')}")
+                        summary.append(f"      Mean Deviation: {upper_deviations.get('mean_deviation', 'N/A'):.4f}" if isinstance(upper_deviations.get('mean_deviation'), (int, float)) else f"      Mean Deviation: {upper_deviations.get('mean_deviation', 'N/A')}")
+                        summary.append(f"      Max Deviation: {upper_deviations.get('max_deviation', 'N/A'):.4f}" if isinstance(upper_deviations.get('max_deviation'), (int, float)) else f"      Max Deviation: {upper_deviations.get('max_deviation', 'N/A')}")
+                        
+                        deviation_dist = upper_deviations.get("deviation_distribution", {})
+                        summary.append("      Deviation Distribution:")
+                        summary.append(f"        Small (≤1%): {deviation_dist.get('small_deviations', 'N/A')}")
+                        summary.append(f"        Medium (1-5%): {deviation_dist.get('medium_deviations', 'N/A')}")
+                        summary.append(f"        Large (>5%): {deviation_dist.get('large_deviations', 'N/A')}")
+                        
+                        # Lower barrier price deviations
+                        lower_deviations = deviation_analysis.get("lower_barrier_deviations", {})
+                        summary.append("    Lower Barrier Price Deviations:")
+                        summary.append(f"      Total Deviations: {lower_deviations.get('total_deviations', 'N/A')}")
+                        summary.append(f"      Mean Deviation: {lower_deviations.get('mean_deviation', 'N/A'):.4f}" if isinstance(lower_deviations.get('mean_deviation'), (int, float)) else f"      Mean Deviation: {lower_deviations.get('mean_deviation', 'N/A')}")
+                        summary.append(f"      Max Deviation: {lower_deviations.get('max_deviation', 'N/A'):.4f}" if isinstance(lower_deviations.get('max_deviation'), (int, float)) else f"      Max Deviation: {lower_deviations.get('max_deviation', 'N/A')}")
+                        
+                        deviation_dist = lower_deviations.get("deviation_distribution", {})
+                        summary.append("      Deviation Distribution:")
+                        summary.append(f"        Small (≤1%): {deviation_dist.get('small_deviations', 'N/A')}")
+                        summary.append(f"        Medium (1-5%): {deviation_dist.get('medium_deviations', 'N/A')}")
+                        summary.append(f"        Large (>5%): {deviation_dist.get('large_deviations', 'N/A')}")
+                    
+                    if "summary_statistics" in captured_changes:
+                        summary_stats = captured_changes["summary_statistics"]
+                        summary.append("    Summary Statistics:")
+                        summary.append(f"      Total Barrier Hits: {summary_stats.get('total_barrier_hits', 'N/A')}")
+                        summary.append(f"      Upper First Hits: {summary_stats.get('upper_first_hits', 'N/A')}")
+                        summary.append(f"      Lower First Hits: {summary_stats.get('lower_first_hits', 'N/A')}")
+                        summary.append(f"      Both Barriers Hit: {summary_stats.get('both_barriers_hit', 'N/A')}")
+                        summary.append(f"      Upper First Ratio: {summary_stats.get('upper_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('upper_first_ratio'), (int, float)) else f"      Upper First Ratio: {summary_stats.get('upper_first_ratio', 'N/A')}")
+                        summary.append(f"      Lower First Ratio: {summary_stats.get('lower_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('lower_first_ratio'), (int, float)) else f"      Lower First Ratio: {summary_stats.get('lower_first_ratio', 'N/A')}")
                 
                 if "label_quality" in quality_metrics:
                     label_quality = quality_metrics["label_quality"]
@@ -2439,36 +2504,130 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     def _analyze_triple_barrier_captured_changes(self, result: Any) -> Dict[str, Any]:
         """Analyze price changes specifically captured by triple barrier method."""
         try:
-            # Get only the price changes that were actually captured by triple barriers
-            captured_changes = result.get("triple_barrier_captured_changes", {})
-            if captured_changes:
-                upper_captures = captured_changes.get("upper_barrier_captures", [])
-                lower_captures = captured_changes.get("lower_barrier_captures", [])
+            # Get the triple barrier results
+            barrier_results = result.get("triple_barrier_results", {})
+            if not barrier_results:
+                return {"error": "No triple barrier results available"}
+            
+            # Extract barrier hit information
+            barrier_hits = barrier_results.get("barrier_hits", [])
+            price_movements = barrier_results.get("price_movements", [])
+            
+            # Analyze upper barrier hits without lower barrier hits first
+            upper_hits_without_lower_first = []
+            upper_hits_with_lower_first = []
+            
+            # Analyze lower barrier hits without upper barrier hits first  
+            lower_hits_without_upper_first = []
+            lower_hits_with_upper_first = []
+            
+            # Analyze price deviation after hitting barriers
+            upper_barrier_price_deviations = []
+            lower_barrier_price_deviations = []
+            
+            for hit in barrier_hits:
+                hit_type = hit.get("hit_type")  # "upper", "lower", or "both"
+                hit_order = hit.get("hit_order")  # Which barrier was hit first
+                price_deviation = hit.get("price_deviation", 0)  # How much further price moved
+                position_type = hit.get("position_type")  # "long" or "short"
                 
-                return {
-                    "upper_barrier_captured_stats": {
-                        "mean_capture": sum(upper_captures) / len(upper_captures) if upper_captures else 0,
-                        "max_capture": max(upper_captures) if upper_captures else 0,
-                        "min_capture": min(upper_captures) if upper_captures else 0,
-                        "capture_count": len(upper_captures),
-                        "capture_percentiles": self._calculate_percentiles(upper_captures)
+                if hit_type == "upper":
+                    if hit_order == "upper_first":
+                        upper_hits_without_lower_first.append({
+                            "position_type": position_type,
+                            "price_deviation": price_deviation,
+                            "timestamp": hit.get("timestamp")
+                        })
+                        upper_barrier_price_deviations.append(price_deviation)
+                    else:
+                        upper_hits_with_lower_first.append({
+                            "position_type": position_type,
+                            "price_deviation": price_deviation,
+                            "timestamp": hit.get("timestamp")
+                        })
+                
+                elif hit_type == "lower":
+                    if hit_order == "lower_first":
+                        lower_hits_without_upper_first.append({
+                            "position_type": position_type,
+                            "price_deviation": price_deviation,
+                            "timestamp": hit.get("timestamp")
+                        })
+                        lower_barrier_price_deviations.append(price_deviation)
+                    else:
+                        lower_hits_with_upper_first.append({
+                            "position_type": position_type,
+                            "price_deviation": price_deviation,
+                            "timestamp": hit.get("timestamp")
+                        })
+            
+            return {
+                "barrier_hit_analysis": {
+                    "upper_hits_without_lower_first": {
+                        "total_count": len(upper_hits_without_lower_first),
+                        "long_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "long"]),
+                        "short_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "short"]),
+                        "average_price_deviation": sum(h["price_deviation"] for h in upper_hits_without_lower_first) / len(upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
+                        "max_price_deviation": max(h["price_deviation"] for h in upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
+                        "price_deviation_percentiles": self._calculate_percentiles([h["price_deviation"] for h in upper_hits_without_lower_first])
                     },
-                    "lower_barrier_captured_stats": {
-                        "mean_capture": sum(lower_captures) / len(lower_captures) if lower_captures else 0,
-                        "max_capture": max(lower_captures) if lower_captures else 0,
-                        "min_capture": min(lower_captures) if lower_captures else 0,
-                        "capture_count": len(lower_captures),
-                        "capture_percentiles": self._calculate_percentiles(lower_captures)
+                    "lower_hits_without_upper_first": {
+                        "total_count": len(lower_hits_without_upper_first),
+                        "long_positions": len([h for h in lower_hits_without_upper_first if h["position_type"] == "long"]),
+                        "short_positions": len([h for h in lower_hits_without_upper_first if h["position_type"] == "short"]),
+                        "average_price_deviation": sum(h["price_deviation"] for h in lower_hits_without_upper_first) / len(lower_hits_without_upper_first) if lower_hits_without_upper_first else 0,
+                        "max_price_deviation": max(h["price_deviation"] for h in lower_hits_without_upper_first) if lower_hits_without_upper_first else 0,
+                        "price_deviation_percentiles": self._calculate_percentiles([h["price_deviation"] for h in lower_hits_without_upper_first])
                     },
-                    "capture_summary": {
-                        "total_captures": len(upper_captures) + len(lower_captures),
-                        "upper_capture_ratio": len(upper_captures) / (len(upper_captures) + len(lower_captures)) if (len(upper_captures) + len(lower_captures)) > 0 else 0,
-                        "lower_capture_ratio": len(lower_captures) / (len(upper_captures) + len(lower_captures)) if (len(upper_captures) + len(lower_captures)) > 0 else 0
+                    "upper_hits_with_lower_first": {
+                        "total_count": len(upper_hits_with_lower_first),
+                        "long_positions": len([h for h in upper_hits_with_lower_first if h["position_type"] == "long"]),
+                        "short_positions": len([h for h in upper_hits_with_lower_first if h["position_type"] == "short"])
+                    },
+                    "lower_hits_with_upper_first": {
+                        "total_count": len(lower_hits_with_upper_first),
+                        "long_positions": len([h for h in lower_hits_with_upper_first if h["position_type"] == "long"]),
+                        "short_positions": len([h for h in lower_hits_with_upper_first if h["position_type"] == "short"])
                     }
+                },
+                "price_deviation_analysis": {
+                    "upper_barrier_deviations": {
+                        "total_deviations": len(upper_barrier_price_deviations),
+                        "mean_deviation": sum(upper_barrier_price_deviations) / len(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
+                        "max_deviation": max(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
+                        "min_deviation": min(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
+                        "deviation_percentiles": self._calculate_percentiles(upper_barrier_price_deviations),
+                        "deviation_distribution": {
+                            "small_deviations": len([d for d in upper_barrier_price_deviations if d <= 0.01]),  # <= 1%
+                            "medium_deviations": len([d for d in upper_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
+                            "large_deviations": len([d for d in upper_barrier_price_deviations if d > 0.05])  # > 5%
+                        }
+                    },
+                    "lower_barrier_deviations": {
+                        "total_deviations": len(lower_barrier_price_deviations),
+                        "mean_deviation": sum(lower_barrier_price_deviations) / len(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
+                        "max_deviation": max(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
+                        "min_deviation": min(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
+                        "deviation_percentiles": self._calculate_percentiles(lower_barrier_price_deviations),
+                        "deviation_distribution": {
+                            "small_deviations": len([d for d in lower_barrier_price_deviations if d <= 0.01]),  # <= 1%
+                            "medium_deviations": len([d for d in lower_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
+                            "large_deviations": len([d for d in lower_barrier_price_deviations if d > 0.05])  # > 5%
+                        }
+                    }
+                },
+                "summary_statistics": {
+                    "total_barrier_hits": len(barrier_hits),
+                    "upper_first_hits": len(upper_hits_without_lower_first),
+                    "lower_first_hits": len(lower_hits_without_upper_first),
+                    "both_barriers_hit": len(upper_hits_with_lower_first) + len(lower_hits_with_upper_first),
+                    "upper_first_ratio": len(upper_hits_without_lower_first) / len(barrier_hits) if barrier_hits else 0,
+                    "lower_first_ratio": len(lower_hits_without_upper_first) / len(barrier_hits) if barrier_hits else 0
                 }
-            return {"error": "No triple barrier captured changes data available"}
-        except Exception:
-            return {"error": "Could not analyze triple barrier captured changes"}
+            }
+            
+        except Exception as e:
+            return {"error": f"Could not analyze triple barrier captured changes: {str(e)}"}
     
     def _calculate_percentiles(self, data: List[float]) -> Dict[str, float]:
         """Calculate percentiles for price change data."""

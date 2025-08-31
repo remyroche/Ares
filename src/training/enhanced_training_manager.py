@@ -4886,7 +4886,7 @@ class EnhancedTrainingManager:
 
     # Enhanced reporting methods
     async def _generate_step_report(self, step_name: str, step_result: Any, step_start_time: float, step_success: bool, step_errors: List[str] = None, step_warnings: List[str] = None):
-        """Generate and save a detailed report for a specific step."""
+        """Generate and append step information to shared pipeline report."""
         
         if not self.enable_detailed_reporting:
             return
@@ -4895,8 +4895,8 @@ class EnhancedTrainingManager:
             step_end_time = time.time()
             execution_duration = step_end_time - step_start_time
             
-            # Create step report
-            step_report = {
+            # Create step report section
+            step_report_section = {
                 "step_name": step_name,
                 "pipeline_execution_id": self.current_pipeline_execution_id,
                 "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
@@ -4912,20 +4912,44 @@ class EnhancedTrainingManager:
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Save step report
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{step_name}_{timestamp}_{self.current_pipeline_execution_id}.json"
-            report_path = self.pipeline_reports_dir / filename
+            # Load existing shared report or create new one
+            shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
             
-            with open(report_path, 'w', encoding='utf-8') as f:
-                json.dump(step_report, f, indent=2, ensure_ascii=False, default=str)
+            if shared_report_path.exists():
+                with open(shared_report_path, 'r', encoding='utf-8') as f:
+                    shared_report = json.load(f)
+            else:
+                shared_report = {
+                    "pipeline_execution_id": self.current_pipeline_execution_id,
+                    "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                    "pipeline_config": self.config,
+                    "steps": {},
+                    "pipeline_summary": {
+                        "total_steps": len(self.STEP_ORDER),
+                        "completed_steps": 0,
+                        "failed_steps": 0,
+                        "total_duration": 0,
+                        "overall_success": True
+                    }
+                }
             
-            # Store in pipeline report
-            self.step_reports[step_name] = step_report
+            # Append step information to shared report
+            shared_report["steps"][step_name] = step_report_section
+            shared_report["pipeline_summary"]["completed_steps"] = len(shared_report["steps"])
+            shared_report["pipeline_summary"]["failed_steps"] = sum(1 for step in shared_report["steps"].values() if not step["success"])
+            shared_report["pipeline_summary"]["overall_success"] = shared_report["pipeline_summary"]["failed_steps"] == 0
+            shared_report["pipeline_summary"]["total_duration"] = sum(step["execution_duration_seconds"] for step in shared_report["steps"].values())
+            
+            # Save updated shared report
+            with open(shared_report_path, 'w', encoding='utf-8') as f:
+                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Store in memory for pipeline summary
+            self.step_reports[step_name] = step_report_section
             
             # Log completion
             status_emoji = "✅" if step_success else "❌"
-            self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} report saved to {report_path}")
+            self.logger.info(f"{status_emoji} [STEP REPORT] {step_name} appended to shared report: {shared_report_path}")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")

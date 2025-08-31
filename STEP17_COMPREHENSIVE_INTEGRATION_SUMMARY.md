@@ -89,6 +89,13 @@
 - **Artifact management** for optimization results
 - **Experiment comparison** tools
 
+### **6. Advanced Step17 Optimization Strategies**
+- **🎯 Hierarchical Optimization** - Break optimization into logical phases
+- **🔍 Intelligent Parameter Pruning** - Remove low-impact parameters automatically
+- **📊 Adaptive Trial Allocation** - Dynamically distribute trials based on performance
+- **🧠 Smart Parameter Grouping** - Group related parameters for efficient optimization
+- **Expected 3-5x faster convergence** with these strategies combined
+
 ## 📊 **Parameter Coverage by Step (Trading-Relevant Only)**
 
 ### **Step 4: Triple Barrier Method**

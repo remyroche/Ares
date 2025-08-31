@@ -7,6 +7,7 @@ This package contains comprehensive optimization tools including:
 - Probabilistic Bayesian optimization for all parameters
 - Multi-objective optimization for total profit, win rate, and Sharpe ratio
 - Uncertainty quantification and confidence intervals
+- Comprehensive parameter integration for all steps (1-16)
 """
 
 from src.utils.warning_symbols import (
@@ -34,6 +35,10 @@ from .step17_probabilistic_bayesian_optimization import (
     Step17ProbabilisticBayesianOptimization,
     create_step17_probabilistic_bayesian_optimization,
 )
+from .comprehensive_parameter_integration import (
+    ComprehensiveParameterIntegration,
+    create_comprehensive_parameter_integration,
+)
 
 __all__ = [
     "EfficiencyOptimizer",
@@ -42,4 +47,6 @@ __all__ = [
     "OptimizedOptunaOptimization",
     "Step17ProbabilisticBayesianOptimization",
     "create_step17_probabilistic_bayesian_optimization",
+    "ComprehensiveParameterIntegration",
+    "create_comprehensive_parameter_integration",
 ]

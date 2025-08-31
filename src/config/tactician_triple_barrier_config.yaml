@@ -72,3 +72,46 @@ tactician_triple_barrier:
   timeframes: ["1m", "5m"]
   primary_timeframe: "1m"      # Default primary timeframe
   secondary_timeframe: "5m"    # Default secondary timeframe
+  
+  # Scenario Analysis Configuration (for step17 optimization)
+  scenario_analysis:
+    # Scenario definitions (configurable for step17)
+    profit_zone_1_target: 0.005      # 0.5% profit target
+    profit_zone_1_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_2_target: 0.01       # 1.0% profit target
+    profit_zone_2_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_3_target: 0.015      # 1.5% profit target
+    profit_zone_3_stop_loss: -0.005  # 0.5% stop loss
+    risk_zone_1_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_1_stop_loss: -0.005    # 0.5% stop loss
+    risk_zone_2_target: 0.01         # 1.0% profit target (for risk scenario)
+    risk_zone_2_stop_loss: -0.005    # 0.5% stop loss
+    neutral_target: 0.0              # Neutral scenario target
+    neutral_stop_loss: 0.0           # Neutral scenario stop loss
+    
+    # Time limit for scenario evaluation
+    time_limit_minutes: 30
+    
+    # Model configuration (configurable for step17)
+    n_estimators: 100
+    learning_rate: 0.1
+    max_depth: 6
+    num_leaves: 31
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    
+    # Decision thresholds (configurable for step17)
+    profit_zone_combined_threshold: 0.6    # Minimum combined profit zone probability
+    risk_zone_combined_threshold: 0.2      # Maximum combined risk zone probability
+    exit_risk_threshold: 0.5               # Risk threshold for exit signals
+    neutral_threshold: 0.3                 # Neutral scenario threshold
+    confidence_threshold: 0.7              # Minimum confidence for decisions
+    
+    # Feature engineering parameters (configurable for step17)
+    lookback_periods: 20
+    volatility_window: 20
+    rsi_period: 14
+    ma_short_period: 5
+    ma_long_period: 20
+    volume_ma_period: 10

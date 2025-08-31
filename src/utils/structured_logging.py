@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import contextvars
 import logging
@@ -86,6 +87,7 @@ def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
         "%(correlation_id)s %(session_id)s"
     )
     if jsonlogger is None:
+        # Fallback implementation for jsonlogger
         return logging.Formatter(fmt=fmt, datefmt=datefmt)
 
     return jsonlogger.JsonFormatter(

@@ -1,4 +1,4 @@
-# src/training/steps/step7_analyst_ensemble_creation.py
+# src/training/steps/step13_analyst_ensemble_creation.py
 
 import json
 import os
@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
@@ -21,15 +22,35 @@ from src.utils.enhanced_mlflow_integration import (
 
 logger = system_logger
 
+# Required modules for this step
+REQUIRED_MODULES = [
+    "pandas",
+    "joblib",
+    "src.utils.logger",
+    "src.utils.error_handler"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
 
 class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation - Combines multiple models into ensemble predictions."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
+        self.standards = pipeline_standards
         self.logger = logger
         self.ensemble_models: dict[str, Any] = {}
         self.ensemble_weights: dict[str, dict[str, float]] = {}
+        self._validate_environment()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
 
     @handle_errors
     def execute(

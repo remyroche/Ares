@@ -7,6 +7,7 @@ parallel apply for DataFrame workloads and a convenience decorator.
 """
 
 from __future__ import annotations
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import asyncio
 import logging
@@ -120,6 +121,7 @@ class MacM1ParallelOptimizer:
         if size == 0:
             return [df.copy()]
         if chunk_size is None:
+        # Fallback implementation for chunk_size
             chunk_size = self._get_optimal_chunk_size(size)
         chunks: list[pd.DataFrame] = []
         for i in range(0, size, chunk_size):
@@ -284,6 +286,7 @@ def get_parallel_optimizer() -> MacM1ParallelOptimizer:
     """
     global _parallel_optimizer
     if _parallel_optimizer is None:
+        # Fallback implementation for _parallel_optimizer
         _parallel_optimizer = MacM1ParallelOptimizer()
     return _parallel_optimizer
 
@@ -311,6 +314,8 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
                     df_arg = arg
                     break
             if df_arg is None:
+        # Fallback implementation for df_arg
+        # Fallback implementation for df_arg
                 # Try kwargs
                 for _k, v in kwargs.items():
                     if isinstance(v, pd.DataFrame):
@@ -318,6 +323,8 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
                         break
 
             if df_arg is None:
+        # Fallback implementation for df_arg
+        # Fallback implementation for df_arg
                 return func(*args, **kwargs)
 
             # Run function in parallel by applying it to chunks and merging

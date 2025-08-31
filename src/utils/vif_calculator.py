@@ -13,6 +13,7 @@ from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.vif_validation_decorators import (
     comprehensive_vif_validation,
     validate_vif_inputs,
@@ -33,6 +34,9 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         Series with VIF values for each feature
     """
     if features is None:
+        # Fallback implementation for features
+        # Fallback implementation for features
+        # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
     
     vif_scores = {}
@@ -94,6 +98,9 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     logger = system_logger.getChild("VIFCalculator")
     
     if features is None:
+        # Fallback implementation for features
+        # Fallback implementation for features
+        # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
     
     # Filter to only numeric features that exist in data
@@ -201,6 +208,9 @@ def calculate_vif_iterative(
     logger = system_logger.getChild("VIFCalculator")
     
     if features is None:
+        # Fallback implementation for features
+        # Fallback implementation for features
+        # Fallback implementation for features
         features = data.select_dtypes(include=[np.number]).columns.tolist()
     
     removed_features = []

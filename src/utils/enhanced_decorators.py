@@ -1,6 +1,7 @@
 """Enhanced decorators with improved functionality and performance."""
 
 import asyncio
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import functools
 import hashlib
 import inspect
@@ -182,6 +183,7 @@ def cached_validation(
     def decorator(func: F) -> F:
         # Create a cache key generator
         if key_generator is None:
+        # Fallback implementation for key_generator
             def default_key_gen(*args, **kwargs):
                 # Create a hash of function signature and arguments
                 try:

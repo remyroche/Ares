@@ -1,4 +1,4 @@
-# src/training/steps/step17_final_parameters_optimization.py
+# src/training/steps/step17_*.py
 
 import asyncio
 import contextlib
@@ -27,7 +27,16 @@ from src.utils.warning_symbols import (
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.optuna_config = get_optuna_config()

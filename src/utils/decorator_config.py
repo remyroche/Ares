@@ -1,6 +1,7 @@
 """Centralized configuration for all decorators."""
 
 from dataclasses import dataclass
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from typing import Dict, Any, Optional
 from enum import Enum
 

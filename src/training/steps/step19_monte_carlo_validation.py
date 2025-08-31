@@ -1,4 +1,4 @@
-# src/training/steps/step14_monte_carlo_validation.py
+# src/training/steps/step19_*.py
 
 import asyncio
 import contextlib
@@ -13,7 +13,16 @@ from src.utils.logger import system_logger
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 

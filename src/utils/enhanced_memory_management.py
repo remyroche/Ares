@@ -26,6 +26,7 @@ except ImportError:
 
 try:
     from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
     system_logger = logging.getLogger("EnhancedMemoryManagement")
 
@@ -88,6 +89,7 @@ class MemoryMonitor:
     def is_memory_pressure(self, threshold: Optional[float] = None) -> bool:
         """Check if memory usage is above threshold."""
         if threshold is None:
+        # Fallback implementation for threshold
             threshold = self.config.warning_threshold
         
         current_usage = self.get_usage_mb()
@@ -225,6 +227,7 @@ def chunk_dataframe(df: pd.DataFrame, chunk_size: int, memory_monitor: Optional[
         return []
     
     if memory_monitor is None:
+        # Fallback implementation for memory_monitor
         memory_monitor = MemoryMonitor()
     
     chunks = []

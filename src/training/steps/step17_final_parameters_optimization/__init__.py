@@ -1,8 +1,12 @@
 # src/training/steps/step17_final_parameters_optimization/__init__.py
 
-"""Step 12: Final Parameters Optimization Package.
+"""Step 17: Final Parameters Optimization Package.
 
-This package contains efficiency optimizers and evaluation engines for final model optimization.
+This package contains comprehensive optimization tools including:
+- Efficiency optimizers and evaluation engines for final model optimization
+- Probabilistic Bayesian optimization for all parameters
+- Multi-objective optimization for total profit, win rate, and Sharpe ratio
+- Uncertainty quantification and confidence intervals
 """
 
 from src.utils.warning_symbols import (
@@ -26,10 +30,16 @@ from .hyperparameter_optimization_config import HyperparameterOptimizationConfig
 from .optimized_optuna_optimization import (
     AdvancedOptunaManager as OptimizedOptunaOptimization,
 )
+from .step17_probabilistic_bayesian_optimization import (
+    Step17ProbabilisticBayesianOptimization,
+    create_step17_probabilistic_bayesian_optimization,
+)
 
 __all__ = [
     "EfficiencyOptimizer",
     "EvaluationEngine",
     "HyperparameterOptimizationConfig",
     "OptimizedOptunaOptimization",
+    "Step17ProbabilisticBayesianOptimization",
+    "create_step17_probabilistic_bayesian_optimization",
 ]

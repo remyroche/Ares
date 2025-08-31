@@ -1,5 +1,5 @@
 """
-Centralized logging configuration for the Ares trading bot.
+Centralized logging configuration with Standardized Import Management.
 
 This module provides a unified logging system with JSON formatting,
 file rotation, and console output capabilities.
@@ -17,13 +17,52 @@ from contextlib import contextmanager
 import threading
 import sys as _sys
 
-from .structured_logging import CorrelationIdFilter, get_json_formatter  # added
-from .warning_symbols import (
-    critical,
-    error,
-    failed,
-    warning,
-)
+# Import pipeline standards
+from .pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "src.utils.structured_logging",
+    "src.utils.warning_symbols"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+structured_logging = PipelineStandards.safe_import("src.utils.structured_logging", None)
+warning_symbols = PipelineStandards.safe_import("src.utils.warning_symbols", None)
+
+# Fallback functions if imports fail
+def create_fallback_correlation_filter():
+    class FallbackCorrelationIdFilter:
+        def filter(self, record):
+            return True
+    return FallbackCorrelationIdFilter()
+
+def create_fallback_json_formatter():
+    def formatter(record):
+        return f"{record.levelname}: {record.getMessage()}"
+    return formatter
+
+# Initialize fallbacks
+if structured_logging is None:
+    CorrelationIdFilter = create_fallback_correlation_filter
+    get_json_formatter = create_fallback_json_formatter
+else:
+    CorrelationIdFilter = structured_logging.CorrelationIdFilter
+    get_json_formatter = structured_logging.get_json_formatter
+
+if warning_symbols is None:
+    critical = lambda msg: print(f"CRITICAL: {msg}")
+    error = lambda msg: print(f"ERROR: {msg}")
+    failed = lambda msg: print(f"FAILED: {msg}")
+    warning = lambda msg: print(f"WARNING: {msg}")
+else:
+    critical = warning_symbols.critical
+    error = warning_symbols.error
+    failed = warning_symbols.failed
+    warning = warning_symbols.warning
 
 
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):

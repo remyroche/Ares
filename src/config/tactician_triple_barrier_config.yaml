@@ -420,6 +420,78 @@ tactician_triple_barrier:
       high_correlation_threshold: 0.8
       min_period_ratio: 1.5  # Minimum ratio between lookback periods
     
+    # Diverse Lookback Period Optimization Configuration
+    diverse_lookback_optimization:
+      # Target periods per feature
+      target_periods_per_feature: 3
+      min_periods_per_feature: 2
+      max_periods_per_feature: 3
+      
+      # Diversity and quality thresholds
+      diversity_threshold: 0.3  # Minimum correlation difference
+      meaningful_threshold: 0.1  # Minimum SHAP importance
+      correlation_threshold: 0.7  # Maximum correlation between periods
+      
+      # Optimization weights
+      information_diversity_weight: 0.4
+      signal_strength_weight: 0.4
+      correlation_penalty_weight: 0.2
+      
+      # Lookback period ranges for each indicator
+      lookback_ranges:
+        RSI:
+          min: 5
+          max: 50
+          step: 2
+        MACD_fast:
+          min: 5
+          max: 25
+          step: 1
+        MACD_slow:
+          min: 20
+          max: 40
+          step: 2
+        Bollinger_Bands:
+          min: 10
+          max: 50
+          step: 2
+        SMA_short:
+          min: 3
+          max: 20
+          step: 1
+        SMA_long:
+          min: 20
+          max: 100
+          step: 5
+        EMA_short:
+          min: 3
+          max: 20
+          step: 1
+        EMA_long:
+          min: 20
+          max: 100
+          step: 5
+        ATR:
+          min: 5
+          max: 30
+          step: 1
+        Stochastic_k:
+          min: 5
+          max: 30
+          step: 1
+        Stochastic_d:
+          min: 3
+          max: 10
+          step: 1
+        ADX:
+          min: 5
+          max: 30
+          step: 1
+        CCI:
+          min: 5
+          max: 30
+          step: 1
+    
     # Feature Engineering Optimization Configuration (Step7)
     feature_engineering_optimization:
       # Optimization parameters

@@ -2042,7 +2042,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         return warnings
     
-    # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
     async def _get_regime_splitting_metrics(self, result: Any) -> Dict[str, Any]:
         """Get regime data splitting quality metrics."""
         
@@ -2062,6 +2061,12 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "test_samples": result.get("test_samples", "Unknown"),
                         "validation_samples": result.get("val_samples", "Unknown"),
                         "regime_balance": self._calculate_regime_balance(result)
+                    },
+                    "time_distribution": {
+                        "regime_time_periods": result.get("regime_time_periods", "Unknown"),
+                        "regime_duration_stats": self._calculate_regime_duration_stats(result),
+                        "regime_transition_frequency": result.get("regime_transitions", "Unknown"),
+                        "temporal_regime_distribution": self._analyze_temporal_regime_distribution(result)
                     },
                     "quality_validation": {
                         "no_data_leakage": result.get("no_leakage", "Unknown"),
@@ -2091,6 +2096,30 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             "time_horizon": result.get("time_horizon", "Unknown")
                         }
                     },
+                    "daily_statistics": {
+                        "average_barriers_per_day": result.get("avg_barriers_per_day", "Unknown"),
+                        "total_trading_days": result.get("total_trading_days", "Unknown"),
+                        "days_with_barriers": result.get("days_with_barriers", "Unknown"),
+                        "barrier_density": result.get("barrier_density", "Unknown")
+                    },
+                    "barrier_values": {
+                        "upper_barrier_value": result.get("upper_barrier_value", "Unknown"),
+                        "lower_barrier_value": result.get("lower_barrier_value", "Unknown"),
+                        "barrier_spread": result.get("barrier_spread", "Unknown"),
+                        "barrier_volatility": result.get("barrier_volatility", "Unknown")
+                    },
+                    "position_ratios": {
+                        "long_short_ratio": result.get("long_short_ratio", "Unknown"),
+                        "long_positions": result.get("long_positions", "Unknown"),
+                        "short_positions": result.get("short_positions", "Unknown"),
+                        "hold_positions": result.get("hold_positions", "Unknown")
+                    },
+                    "price_change_distribution": {
+                        "upper_barrier_captures": result.get("upper_barrier_captures", "Unknown"),
+                        "lower_barrier_captures": result.get("lower_barrier_captures", "Unknown"),
+                        "price_change_stats": self._analyze_price_change_distribution(result),
+                        "capture_efficiency": result.get("capture_efficiency", "Unknown")
+                    },
                     "label_quality": {
                         "balanced_labels": self._check_label_balance(result),
                         "label_consistency": result.get("label_consistent", "Unknown"),
@@ -2111,81 +2140,88 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             return {"error": f"Failed to analyze triple barrier metrics: {str(e)}"}
     
     async def _get_hmm_training_metrics(self, result: Any) -> Dict[str, Any]:
-        """Get HMM-based training quality metrics."""
+        """Get feature generation quality metrics (Step 6)."""
         
         try:
             if isinstance(result, dict):
                 return {
-                    "training_analysis": {
-                        "model_type": result.get("model_type", "Unknown"),
-                        "training_samples": result.get("train_samples", "Unknown"),
-                        "validation_samples": result.get("val_samples", "Unknown"),
-                        "training_epochs": result.get("epochs", "Unknown"),
-                        "convergence_status": result.get("converged", "Unknown")
-                    },
-                    "model_performance": {
-                        "training_accuracy": result.get("train_accuracy", "Unknown"),
-                        "validation_accuracy": result.get("val_accuracy", "Unknown"),
-                        "training_loss": result.get("train_loss", "Unknown"),
-                        "validation_loss": result.get("val_loss", "Unknown"),
-                        "overfitting_score": self._calculate_overfitting_score(result)
-                    },
-                    "regime_specific_metrics": {
-                        "regime_accuracies": result.get("regime_accuracies", "Unknown"),
-                        "regime_losses": result.get("regime_losses", "Unknown"),
-                        "regime_confusion_matrices": result.get("confusion_matrices", "Unknown")
-                    },
-                    "model_quality": {
-                        "model_complexity": result.get("model_params", "Unknown"),
-                        "training_time": result.get("training_time", "Unknown"),
-                        "memory_usage": result.get("memory_usage", "Unknown"),
-                        "model_stability": self._assess_model_stability(result)
-                    },
-                    "warnings": self._generate_hmm_training_warnings(result)
-                }
-            else:
-                return {"error": "No HMM training result available"}
-                
-        except Exception as e:
-            return {"error": f"Failed to analyze HMM training metrics: {str(e)}"}
-    
-    async def _get_analyst_enhancement_metrics(self, result: Any) -> Dict[str, Any]:
-        """Get analyst enhancement quality metrics."""
-        
-        try:
-            if isinstance(result, dict):
-                return {
-                    "enhancement_analysis": {
-                        "enhancement_type": result.get("enhancement_type", "Unknown"),
+                    "feature_generation_analysis": {
+                        "generation_type": result.get("generation_type", "Unknown"),
                         "original_features": result.get("original_feature_count", "Unknown"),
-                        "enhanced_features": result.get("enhanced_feature_count", "Unknown"),
-                        "feature_increase": result.get("feature_increase", "Unknown")
+                        "generated_features": result.get("generated_feature_count", "Unknown"),
+                        "feature_increase": result.get("feature_increase", "Unknown"),
+                        "generation_methods": result.get("generation_methods", "Unknown")
                     },
-                    "enhancement_quality": {
+                    "feature_quality": {
                         "feature_relevance": result.get("feature_relevance_score", "Unknown"),
                         "information_gain": result.get("information_gain", "Unknown"),
-                        "enhancement_effectiveness": result.get("effectiveness_score", "Unknown"),
-                        "domain_expertise_integration": result.get("expertise_integrated", "Unknown")
-                    },
-                    "performance_impact": {
-                        "pre_enhancement_accuracy": result.get("pre_accuracy", "Unknown"),
-                        "post_enhancement_accuracy": result.get("post_accuracy", "Unknown"),
-                        "accuracy_improvement": result.get("accuracy_improvement", "Unknown"),
-                        "enhancement_cost": result.get("computational_cost", "Unknown")
-                    },
-                    "feature_analysis": {
-                        "new_feature_types": result.get("new_feature_types", "Unknown"),
-                        "feature_importance": result.get("feature_importance", "Unknown"),
-                        "feature_correlations": result.get("feature_correlations", "Unknown"),
+                        "feature_diversity": result.get("feature_diversity", "Unknown"),
                         "feature_stability": result.get("feature_stability", "Unknown")
                     },
-                    "warnings": self._generate_analyst_enhancement_warnings(result)
+                    "generation_performance": {
+                        "generation_time": result.get("generation_time", "Unknown"),
+                        "memory_usage": result.get("memory_usage", "Unknown"),
+                        "computational_efficiency": result.get("efficiency_score", "Unknown"),
+                        "parallel_processing": result.get("parallel_processing", "Unknown")
+                    },
+                    "feature_statistics": {
+                        "feature_types": result.get("feature_types", "Unknown"),
+                        "feature_complexity": result.get("feature_complexity", "Unknown"),
+                        "feature_correlations": result.get("feature_correlations", "Unknown"),
+                        "feature_redundancy": result.get("feature_redundancy", "Unknown")
+                    },
+                    "warnings": self._generate_feature_generation_warnings(result)
                 }
             else:
-                return {"error": "No analyst enhancement result available"}
+                return {"error": "No feature generation result available"}
                 
         except Exception as e:
-            return {"error": f"Failed to analyze analyst enhancement metrics: {str(e)}"}
+            return {"error": f"Failed to analyze feature generation metrics: {str(e)}"}
+    
+    async def _get_analyst_enhancement_metrics(self, result: Any) -> Dict[str, Any]:
+        """Get matrix feature selection quality metrics (Step 7)."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "selection_analysis": {
+                        "selection_method": result.get("selection_method", "Unknown"),
+                        "original_features": result.get("original_feature_count", "Unknown"),
+                        "selected_features": result.get("selected_feature_count", "Unknown"),
+                        "reduction_ratio": result.get("reduction_ratio", "Unknown"),
+                        "selection_criteria": result.get("selection_criteria", "Unknown")
+                    },
+                    "selection_quality": {
+                        "feature_importance": result.get("feature_importance", "Unknown"),
+                        "information_preservation": result.get("information_preservation", "Unknown"),
+                        "selection_stability": result.get("selection_stability", "Unknown"),
+                        "cross_validation_score": result.get("cv_score", "Unknown")
+                    },
+                    "matrix_analysis": {
+                        "correlation_matrix": result.get("correlation_matrix_stats", "Unknown"),
+                        "variance_explained": result.get("variance_explained", "Unknown"),
+                        "eigenvalue_distribution": result.get("eigenvalue_dist", "Unknown"),
+                        "multicollinearity_reduction": result.get("multicollinearity_reduction", "Unknown")
+                    },
+                    "performance_impact": {
+                        "pre_selection_accuracy": result.get("pre_selection_accuracy", "Unknown"),
+                        "post_selection_accuracy": result.get("post_selection_accuracy", "Unknown"),
+                        "accuracy_change": result.get("accuracy_change", "Unknown"),
+                        "computational_savings": result.get("computational_savings", "Unknown")
+                    },
+                    "selected_features_analysis": {
+                        "top_features": result.get("top_features", "Unknown"),
+                        "feature_categories": result.get("feature_categories", "Unknown"),
+                        "feature_rankings": result.get("feature_rankings", "Unknown"),
+                        "selection_confidence": result.get("selection_confidence", "Unknown")
+                    },
+                    "warnings": self._generate_matrix_selection_warnings(result)
+                }
+            else:
+                return {"error": "No matrix feature selection result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze matrix feature selection metrics: {str(e)}"}
     
     # Helper methods for step-specific analysis
     def _calculate_regime_balance(self, result: Any) -> Dict[str, Any]:
@@ -2279,6 +2315,87 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         except Exception:
             return {"error": "Could not assess model stability"}
     
+    def _calculate_regime_duration_stats(self, result: Any) -> Dict[str, Any]:
+        """Calculate regime duration statistics."""
+        try:
+            regime_durations = result.get("regime_durations", {})
+            if regime_durations:
+                stats = {}
+                for regime, durations in regime_durations.items():
+                    if durations:
+                        stats[regime] = {
+                            "mean_duration": sum(durations) / len(durations),
+                            "min_duration": min(durations),
+                            "max_duration": max(durations),
+                            "std_duration": (sum((x - sum(durations)/len(durations))**2 for x in durations) / len(durations))**0.5,
+                            "total_periods": len(durations)
+                        }
+                return stats
+            return {"error": "No regime durations available"}
+        except Exception:
+            return {"error": "Could not calculate regime duration stats"}
+    
+    def _analyze_temporal_regime_distribution(self, result: Any) -> Dict[str, Any]:
+        """Analyze temporal distribution of regimes."""
+        try:
+            temporal_data = result.get("temporal_regime_data", {})
+            if temporal_data:
+                return {
+                    "regime_time_periods": temporal_data.get("time_periods", "Unknown"),
+                    "regime_seasonality": temporal_data.get("seasonality", "Unknown"),
+                    "regime_trends": temporal_data.get("trends", "Unknown"),
+                    "regime_volatility": temporal_data.get("volatility", "Unknown")
+                }
+            return {"error": "No temporal regime data available"}
+        except Exception:
+            return {"error": "Could not analyze temporal regime distribution"}
+    
+    def _analyze_price_change_distribution(self, result: Any) -> Dict[str, Any]:
+        """Analyze price change distribution for barrier captures."""
+        try:
+            price_changes = result.get("price_changes", {})
+            if price_changes:
+                upper_changes = price_changes.get("upper_barrier", [])
+                lower_changes = price_changes.get("lower_barrier", [])
+                
+                return {
+                    "upper_barrier_stats": {
+                        "mean_capture": sum(upper_changes) / len(upper_changes) if upper_changes else 0,
+                        "max_capture": max(upper_changes) if upper_changes else 0,
+                        "min_capture": min(upper_changes) if upper_changes else 0,
+                        "capture_count": len(upper_changes)
+                    },
+                    "lower_barrier_stats": {
+                        "mean_capture": sum(lower_changes) / len(lower_changes) if lower_changes else 0,
+                        "max_capture": max(lower_changes) if lower_changes else 0,
+                        "min_capture": min(lower_changes) if lower_changes else 0,
+                        "capture_count": len(lower_changes)
+                    },
+                    "capture_distribution": {
+                        "upper_percentiles": self._calculate_percentiles(upper_changes),
+                        "lower_percentiles": self._calculate_percentiles(lower_changes)
+                    }
+                }
+            return {"error": "No price change data available"}
+        except Exception:
+            return {"error": "Could not analyze price change distribution"}
+    
+    def _calculate_percentiles(self, data: List[float]) -> Dict[str, float]:
+        """Calculate percentiles for price change data."""
+        try:
+            if not data:
+                return {}
+            sorted_data = sorted(data)
+            return {
+                "p10": sorted_data[int(0.1 * len(sorted_data))],
+                "p25": sorted_data[int(0.25 * len(sorted_data))],
+                "p50": sorted_data[int(0.5 * len(sorted_data))],
+                "p75": sorted_data[int(0.75 * len(sorted_data))],
+                "p90": sorted_data[int(0.9 * len(sorted_data))]
+            }
+        except Exception:
+            return {}
+    
     # Warning generation methods
     def _generate_regime_splitting_warnings(self, result: Any) -> List[str]:
         """Generate warnings for regime splitting."""
@@ -2356,7 +2473,45 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         return warnings
     
-    # Placeholder methods for remaining steps
+    def _generate_feature_generation_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for feature generation."""
+        warnings = []
+        
+        try:
+            if result.get("feature_generation_analysis", {}).get("feature_increase", 0) > 200:
+                warnings.append("Large increase in feature count may cause overfitting")
+            
+            if result.get("feature_quality", {}).get("feature_relevance", 0) < 0.5:
+                warnings.append("Low feature relevance in generated features")
+            
+            if result.get("generation_performance", {}).get("generation_time", 0) > 300:
+                warnings.append("Feature generation took longer than expected")
+                
+        except Exception:
+            warnings.append("Could not generate feature generation warnings")
+        
+        return warnings
+    
+    def _generate_matrix_selection_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for matrix feature selection."""
+        warnings = []
+        
+        try:
+            if result.get("selection_analysis", {}).get("reduction_ratio", 0) > 0.8:
+                warnings.append("High feature reduction may lose important information")
+            
+            if result.get("performance_impact", {}).get("accuracy_change", 0) < -0.02:
+                warnings.append("Feature selection caused significant accuracy drop")
+            
+            if result.get("selection_quality", {}).get("selection_stability", 0) < 0.7:
+                warnings.append("Low selection stability across different samples")
+                
+        except Exception:
+            warnings.append("Could not generate matrix selection warnings")
+        
+        return warnings
+    
+    # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
     async def _get_tactician_labeling_metrics(self, result: Any) -> Dict[str, Any]:
         return {"status": "Metrics calculation not implemented yet"}
     

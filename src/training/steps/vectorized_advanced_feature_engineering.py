@@ -3991,56 +3991,213 @@ class VectorizedAdvancedFeatureEngineering:
     @cache_feature_engineering(max_memory_mb=2048)
     async def _engineer_multi_timeframe_features_vectorized(
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None, sr_levels: dict[str, Any] | None = None, ) -> dict[str, Any]:
-        """Engineer multi-timeframe features with timestamp regularization and optimizations."""
+        """Engineer multi-timeframe features with optimized lookback periods."""
         try:
-        # Initialize Mac M1 optimizations
+            # Initialize Mac M1 optimizations
+            optimize_for_m1_mac()
+
+            # Use enhanced multi-timeframe optimizer by default
+            from src.training.enhanced_multi_timeframe_optimizer import (
+                EnhancedMultiTimeframeOptimizer, 
+                OptimizedTimeframeConfig
+            )
+            from src.training.comprehensive_feature_optimizer import (
+                ComprehensiveFeatureOptimizer,
+                ComprehensiveFeatureConfig
+            )
+
+            # Check if matrix optimization results are available
+            matrix_results = self._get_matrix_optimization_results()
+            
+            if matrix_results and self._should_use_optimized_features():
+                self.logger.info("🚀 Using enhanced multi-timeframe optimizer with optimized lookback periods")
+                
+                # Configure enhanced optimizer
+                config = OptimizedTimeframeConfig(
+                    base_timeframes=["1m", "5m", "15m", "30m", "1h"],
+                    cross_timeframe_enabled=True,
+                    regime_specific=True,
+                    quality_thresholds={
+                        "min_correlation": 0.2,
+                        "max_correlation": 0.8,
+                        "min_information_score": 0.03,
+                        "min_diversity_score": 0.15
+                    }
+                )
+                
+                # Initialize enhanced optimizer
+                enhanced_optimizer = EnhancedMultiTimeframeOptimizer(config, matrix_results)
+                
+                # Generate optimized multi-timeframe features
+                features = await enhanced_optimizer.generate_optimized_multi_timeframe_features(
+                    data=price_data,
+                    target=self._create_target_variable(price_data),
+                    regime_labels=self._get_regime_labels()
+                )
+                
+                # Also generate comprehensive features if enabled
+                if self._should_generate_comprehensive_features():
+                    self.logger.info("🔧 Generating comprehensive optimized features")
+                    
+                    comprehensive_config = ComprehensiveFeatureConfig(
+                        interaction_features=True,
+                        difference_acceleration_features=True,
+                        cross_timeframe_features=True,
+                        microstructure_features=True,
+                        volatility_features=True,
+                        momentum_features=True,
+                        liquidity_features=True,
+                        candlestick_patterns=True,
+                        ohlcv_price_features=True,
+                        parallel_processing=True
+                    )
+                    
+                    comprehensive_optimizer = ComprehensiveFeatureOptimizer(
+                        comprehensive_config, 
+                        matrix_results
+                    )
+                    
+                    comprehensive_features = await comprehensive_optimizer.generate_comprehensive_features(
+                        data=price_data,
+                        target=self._create_target_variable(price_data),
+                        regime_labels=self._get_regime_labels()
+                    )
+                    
+                    # Merge features
+                    features.update(comprehensive_features)
+                    self.logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive features")
+                
+                # Save optimization results
+                output_path = "data/optimization_results"
+                enhanced_optimizer.save_optimization_results(output_path)
+                
+                self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features using enhanced system")
+                
+            else:
+                self.logger.info("⚠️ Using traditional multi-timeframe features (no matrix optimization results available)")
+                features = await self._generate_traditional_multi_timeframe_features(
+                    price_data, volume_data, order_flow_data
+                )
+
+            # Validate and clean features
+            features = self._validate_and_clean_features(features)
+            features = self._ensure_pickle_safe_features(features)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in enhanced multi-timeframe feature engineering: {e}")
+            # Fallback to traditional method
+            return await self._generate_traditional_multi_timeframe_features(
+                price_data, volume_data, order_flow_data
+            )
+    
+    def _get_matrix_optimization_results(self) -> Optional[Dict[str, Any]]:
+        """Get matrix optimization results if available."""
+        try:
+            # Check for matrix optimization results in pipeline state or cache
+            matrix_results_path = "data/optimization_results/matrix_diverse_lookback_optimization_results.json"
+            if Path(matrix_results_path).exists():
+                with open(matrix_results_path, 'r') as f:
+                    return json.load(f)
+            
+            # Check for comprehensive optimization results
+            comprehensive_results_path = "data/optimization_results/comprehensive_feature_optimization_results.json"
+            if Path(comprehensive_results_path).exists():
+                with open(comprehensive_results_path, 'r') as f:
+                    return json.load(f)
+            
+            return None
+        except Exception as e:
+            self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
+            return None
+    
+    def _should_use_optimized_features(self) -> bool:
+        """Determine if optimized features should be used."""
+        # Check environment variable or configuration
+        use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
+        return use_optimized
+    
+    def _should_generate_comprehensive_features(self) -> bool:
+        """Determine if comprehensive features should be generated."""
+        # Check environment variable or configuration
+        generate_comprehensive = os.getenv('GENERATE_COMPREHENSIVE_FEATURES', 'true').lower() == 'true'
+        return generate_comprehensive
+    
+    def _create_target_variable(self, data: pd.DataFrame) -> pd.Series:
+        """Create target variable for optimization."""
+        # Use future returns as target
+        target = data['close'].pct_change(5).shift(-5).fillna(0)
+        return target
+    
+    def _get_regime_labels(self) -> Optional[pd.Series]:
+        """Get regime labels if available."""
+        try:
+            # Check for HMM regime labels in pipeline state
+            regime_path = "data/hmm_regime_labels.pkl"
+            if Path(regime_path).exists():
+                return pd.read_pickle(regime_path)
+            return None
+        except Exception as e:
+            self.logger.debug(f"⚠️ Could not load regime labels: {e}")
+            return None
+    
+    async def _generate_traditional_multi_timeframe_features(
+        self, 
+        price_data: pd.DataFrame, 
+        volume_data: pd.DataFrame, 
+        order_flow_data: pd.DataFrame | None = None
+    ) -> Dict[str, Any]:
+        """Generate traditional multi-timeframe features (fallback method)."""
+        try:
+            # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
             features = {}
 
-        # Preprocess data to ensure regular timestamps
+            # Preprocess data to ensure regular timestamps
             processed_price, processed_volume, processed_order_flow = preprocess_data_for_multi_timeframe(
                 price_data, volume_data, order_flow_data,
             )
 
-        # Apply data type optimization to input data
+            # Apply data type optimization to input data
             processed_price = optimize_feature_engineering_pipeline(processed_price, stage="input")
             processed_volume = optimize_feature_engineering_pipeline(processed_volume, stage="input")
-        if processed_order_flow is not None:
+            if processed_order_flow is not None:
                 processed_order_flow = optimize_feature_engineering_pipeline(processed_order_flow, stage="input")
 
-        # Generate multi-timeframe features using resampling
+            # Generate multi-timeframe features using resampling
             timeframes = ["1m", "5m", "15m", "30m", "1h"]
 
-        for tf in timeframes:
-        try:
-        # Resample price data to different timeframes
+            for tf in timeframes:
+                try:
+                    # Resample price data to different timeframes
                     tf_price = self._resample_price_data(processed_price, tf)
                     tf_volume = self._resample_volume_data(processed_volume, tf) if processed_volume is not None else None
 
-        if tf_price is not None and not tf_price.empty:
-        # Log data quality for debugging
-        self.logger.debug(f"🔍 {tf} timeframe - Price data shape: {tf_price.shape}")
-        self.logger.debug(f"🔍 {tf} timeframe - Price data NaN count: {tf_price.isna().sum().sum()}")
-        if tf_volume is not None and not tf_volume.empty:
-        self.logger.debug(f"🔍 {tf} timeframe - Volume data shape: {tf_volume.shape}")
-        self.logger.debug(f"🔍 {tf} timeframe - Volume data NaN count: {tf_volume.isna().sum().sum()}")
+                    if tf_price is not None and not tf_price.empty:
+                        # Log data quality for debugging
+                        self.logger.debug(f"🔍 {tf} timeframe - Price data shape: {tf_price.shape}")
+                        self.logger.debug(f"🔍 {tf} timeframe - Price data NaN count: {tf_price.isna().sum().sum()}")
+                        if tf_volume is not None and not tf_volume.empty:
+                            self.logger.debug(f"🔍 {tf} timeframe - Volume data shape: {tf_volume.shape}")
+                            self.logger.debug(f"🔍 {tf} timeframe - Volume data NaN count: {tf_volume.isna().sum().sum()}")
 
-        # Check if we have sufficient data for this timeframe
+                        # Check if we have sufficient data for this timeframe
                         min_required_data = self._get_minimum_data_requirement(tf)
-        if len(tf_price) < min_required_data:
-        self.logger.info(f"ℹ️ Skipping {tf} timeframe - insufficient data: {len(tf_price)} rows (minimum required: {min_required_data})")
+                        if len(tf_price) < min_required_data:
+                            self.logger.info(f"ℹ️ Skipping {tf} timeframe - insufficient data: {len(tf_price)} rows (minimum required: {min_required_data})")
                             continue
 
-        # Generate features for this timeframe using existing comprehensive generator
+                        # Generate features for this timeframe using existing comprehensive generator
                         tf_features = self._generate_timeframe_features(tf_price, tf_volume, tf)
 
-        # For higher timeframes, we need to align the features back to the original 1-minute data
-        if tf != "1m" and tf_features:
+                        # For higher timeframes, we need to align the features back to the original 1-minute data
+                        if tf != "1m" and tf_features:
                             aligned_features = {}
-        for feature_name, feature_series in tf_features.items():
-        if isinstance(feature_series, pd.Series):
-        # Align the feature series to the original 1-minute data index
+                            for feature_name, feature_series in tf_features.items():
+                                if isinstance(feature_series, pd.Series):
+                                    # Align the feature series to the original 1-minute data index
                                     aligned_feature = feature_series.reindex(processed_price.index, method="ffill")
                                     aligned_feature = aligned_feature.fillna(method="bfill").fillna(0)
                                     aligned_features[feature_name] = aligned_feature
@@ -4048,56 +4205,53 @@ class VectorizedAdvancedFeatureEngineering:
                                     aligned_features[feature_name] = feature_series
 
                             tf_features = aligned_features
-        self.logger.debug(f"🔍 Aligned {tf} features to 1-minute data index")
+                            self.logger.debug(f"🔍 Aligned {tf} features to 1-minute data index")
 
-        # Log feature generation results
-        if tf_features:
+                        # Log feature generation results
+                        if tf_features:
                             features.update(tf_features)
-        self.logger.info(f"✅ Generated {len(tf_features)} features for {tf} timeframe")
-        self.logger.debug(f"🔍 {tf} features: {list(tf_features.keys())}")
+                            self.logger.info(f"✅ Generated {len(tf_features)} features for {tf} timeframe")
+                            self.logger.debug(f"🔍 {tf} features: {list(tf_features.keys())}")
                         else:
-        self.logger.info(f"ℹ️ No features generated for {tf} timeframe - insufficient data quality")
+                            self.logger.info(f"ℹ️ No features generated for {tf} timeframe - insufficient data quality")
                     else:
-        self.logger.info(f"ℹ️ Skipping {tf} timeframe - no data available after resampling")
+                        self.logger.info(f"ℹ️ Skipping {tf} timeframe - no data available after resampling")
 
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to generate features for {tf} timeframe: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate features for {tf} timeframe: {e}")
                     continue
 
-        # Generate additional cross-timeframe features
+            # Generate additional cross-timeframe features
             cross_timeframe_features = await self._generate_cross_timeframe_features(features, processed_price)
             features.update(cross_timeframe_features)
 
-        # Log summary of multi-timeframe feature generation
-        self._log_multi_timeframe_summary(features, timeframes)
+            # Log summary of multi-timeframe feature generation
+            self._log_multi_timeframe_summary(features, timeframes)
 
-        # Generate regime-aware features if HMM data is available
-        try:
-            regime_features = await self._generate_regime_aware_features(processed_price, processed_volume)
-        if isinstance(regime_features, dict):
+            # Generate regime-aware features if HMM data is available
+            try:
+                regime_features = await self._generate_regime_aware_features(processed_price, processed_volume)
+                if isinstance(regime_features, dict):
                     features.update(regime_features)
                 else:
-        self.logger.warning(f"⚠️ Regime features not a dict: {type(regime_features)}")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Error generating regime features: {e}")
+                    self.logger.warning(f"⚠️ Regime features not a dict: {type(regime_features)}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error generating regime features: {e}")
                 regime_features = {}
 
-        # Apply data type optimization to output
-        if features:
-        # Convert features dict to DataFrame for optimization, then back to dict
+            # Apply data type optimization to output
+            if features:
+                # Convert features dict to DataFrame for optimization, then back to dict
                 features_df = pd.DataFrame(features)
                 optimized_features_df = optimize_feature_engineering_pipeline(features_df, stage="output")
                 features = optimized_features_df.to_dict("series")
-        self.logger.info(f"✅ Generated {len(features)} multi-timeframe features total")
+                self.logger.info(f"✅ Generated {len(features)} traditional multi-timeframe features total")
 
-        # Validate features before returning
-                features = self._validate_and_clean_features(features)
+            return features
 
-        # Ensure pickle safety (remove any async objects)
-                features = self._ensure_pickle_safe_features(features)
-
-        # Final validation - ensure we have meaningful features
-        if len(features) == 0:
+        except Exception as e:
+            self.logger.error(f"❌ Error in traditional multi-timeframe feature engineering: {e}")
+            return {}
         self.logger.warning("⚠️ No valid features generated after validation")
 
             else:

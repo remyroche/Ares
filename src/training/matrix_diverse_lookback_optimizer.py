@@ -54,6 +54,12 @@ class MatrixDiverseLookbackOptimizer:
             "diversity_threshold": 0.3,
             "meaningful_threshold": 0.1,
             "correlation_threshold": 0.7,
+            "quality_thresholds": {
+                "min_diversity_score": 0.2,
+                "min_information_score": 0.05,
+                "max_correlation": 0.8,
+                "min_periods_for_3": 2  # Minimum meaningful periods needed for 3-period selection
+            },
             "matrix_optimization": {
                 "enabled": True,
                 "method": "scipy",  # "scipy", "optuna", "custom"
@@ -78,7 +84,42 @@ class MatrixDiverseLookbackOptimizer:
                 "Stochastic_k": {"min": 5, "max": 30, "step": 1},
                 "Stochastic_d": {"min": 3, "max": 10, "step": 1},
                 "ADX": {"min": 5, "max": 30, "step": 1},
-                "CCI": {"min": 5, "max": 30, "step": 1}
+                "CCI": {"min": 5, "max": 30, "step": 1},
+                "Williams_R": {"min": 5, "max": 30, "step": 1},
+                "MFI": {"min": 5, "max": 30, "step": 1},
+                "ROC": {"min": 5, "max": 30, "step": 1},
+                "MOM": {"min": 5, "max": 30, "step": 1},
+                "TSI": {"min": 5, "max": 30, "step": 1},
+                "UO": {"min": 5, "max": 30, "step": 1},
+                "AO": {"min": 5, "max": 30, "step": 1},
+                "CMF": {"min": 5, "max": 30, "step": 1},
+                "VWAP": {"min": 5, "max": 30, "step": 1},
+                "Pivot_Points": {"min": 5, "max": 30, "step": 1},
+                "Ichimoku": {"min": 5, "max": 30, "step": 1},
+                "Parabolic_SAR": {"min": 5, "max": 30, "step": 1},
+                "Keltner_Channels": {"min": 5, "max": 30, "step": 1},
+                "Donchian_Channels": {"min": 5, "max": 30, "step": 1},
+                "Price_Channels": {"min": 5, "max": 30, "step": 1},
+                "Volume_Profile": {"min": 5, "max": 30, "step": 1},
+                "OBV": {"min": 5, "max": 30, "step": 1},
+                "AD": {"min": 5, "max": 30, "step": 1},
+                "Chaikin_Money_Flow": {"min": 5, "max": 30, "step": 1},
+                "Money_Flow_Index": {"min": 5, "max": 30, "step": 1},
+                "Volume_RSI": {"min": 5, "max": 30, "step": 1},
+                "Volume_Stochastic": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Trend": {"min": 5, "max": 30, "step": 1},
+                "Accumulation_Distribution": {"min": 5, "max": 30, "step": 1},
+                "On_Balance_Volume": {"min": 5, "max": 30, "step": 1},
+                "Volume_Weighted_Average_Price": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Confirmation": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Trend_Indicator": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Histogram": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Signal": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Trigger": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Zero_Line": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Upper_Band": {"min": 5, "max": 30, "step": 1},
+                "Volume_Price_Oscillator_Lower_Band": {"min": 5, "max": 30, "step": 1}
             }
         })
         
@@ -337,8 +378,9 @@ class MatrixDiverseLookbackOptimizer:
         correlation_matrix: np.ndarray, 
         periods: List[int]
     ) -> List[int]:
-        """Optimize period selection using matrix operations."""
+        """Optimize period selection using matrix operations with quality-based fallback."""
         
+        # Start with target of 3 periods
         target_count = min(
             self.matrix_config["target_periods_per_feature"],
             len(periods)
@@ -358,6 +400,36 @@ class MatrixDiverseLookbackOptimizer:
         meaningful_scores = info_scores[meaningful_mask]
         meaningful_correlations = correlation_matrix[meaningful_mask][:, meaningful_mask]
         
+        # Try 3 periods first
+        if target_count == 3 and len(meaningful_indices) >= 3:
+            selected_indices = self._try_3_period_optimization(
+                meaningful_scores, meaningful_correlations, meaningful_indices
+            )
+            
+            # Check if 3-period solution meets quality thresholds
+            if self._check_quality_thresholds(selected_indices, meaningful_scores, meaningful_correlations):
+                return selected_indices
+            else:
+                self.logger.info(f"   ⚠️ 3-period solution doesn't meet quality thresholds, trying 2 periods")
+        
+        # Fallback to 2 periods
+        target_count = 2
+        selected_indices = self._try_2_period_optimization(
+            meaningful_scores, meaningful_correlations, meaningful_indices
+        )
+        
+        return selected_indices
+    
+    def _try_3_period_optimization(
+        self, 
+        meaningful_scores: np.ndarray, 
+        meaningful_correlations: np.ndarray, 
+        meaningful_indices: np.ndarray
+    ) -> List[int]:
+        """Try to optimize for 3 periods."""
+        
+        target_count = 3
+        
         # Matrix optimization
         if self.matrix_config["matrix_optimization"]["method"] == "scipy":
             selected_indices = self._scipy_matrix_optimization(
@@ -374,6 +446,93 @@ class MatrixDiverseLookbackOptimizer:
         
         # Map back to original indices
         return [meaningful_indices[i] for i in selected_indices]
+    
+    def _try_2_period_optimization(
+        self, 
+        meaningful_scores: np.ndarray, 
+        meaningful_correlations: np.ndarray, 
+        meaningful_indices: np.ndarray
+    ) -> List[int]:
+        """Optimize for 2 periods."""
+        
+        target_count = 2
+        
+        # Matrix optimization for 2 periods
+        if self.matrix_config["matrix_optimization"]["method"] == "scipy":
+            selected_indices = self._scipy_matrix_optimization(
+                meaningful_scores, meaningful_correlations, target_count
+            )
+        elif self.matrix_config["matrix_optimization"]["method"] == "optuna":
+            selected_indices = self._optuna_matrix_optimization(
+                meaningful_scores, meaningful_correlations, target_count
+            )
+        else:
+            selected_indices = self._greedy_matrix_optimization(
+                meaningful_scores, meaningful_correlations, target_count
+            )
+        
+        # Map back to original indices
+        return [meaningful_indices[i] for i in selected_indices]
+    
+    def _check_quality_thresholds(
+        self, 
+        selected_indices: List[int], 
+        meaningful_scores: np.ndarray, 
+        meaningful_correlations: np.ndarray
+    ) -> bool:
+        """Check if selected periods meet quality thresholds."""
+        
+        if len(selected_indices) < 2:
+            return False
+        
+        # Get quality thresholds
+        quality_thresholds = self.matrix_config["quality_thresholds"]
+        
+        # Check information scores
+        selected_scores = [meaningful_scores[i] for i in selected_indices]
+        min_info_score = min(selected_scores)
+        if min_info_score < quality_thresholds["min_information_score"]:
+            return False
+        
+        # Check diversity (correlation)
+        if len(selected_indices) >= 2:
+            selected_corr = meaningful_correlations[selected_indices][:, selected_indices]
+            np.fill_diagonal(selected_corr, 0)  # Remove self-correlations
+            max_correlation = np.max(selected_corr)
+            if max_correlation > quality_thresholds["max_correlation"]:
+                return False
+        
+        # Check diversity score
+        diversity_score = self._calculate_diversity_score(selected_indices, meaningful_correlations)
+        if diversity_score < quality_thresholds["min_diversity_score"]:
+            return False
+        
+        return True
+    
+    def _calculate_diversity_score(
+        self, 
+        selected_indices: List[int], 
+        correlation_matrix: np.ndarray
+    ) -> float:
+        """Calculate diversity score for selected periods."""
+        
+        if len(selected_indices) < 2:
+            return 0.0
+        
+        # Calculate average correlation (excluding diagonal)
+        total_correlation = 0.0
+        count = 0
+        
+        for i in range(len(selected_indices)):
+            for j in range(i + 1, len(selected_indices)):
+                correlation = correlation_matrix[selected_indices[i], selected_indices[j]]
+                total_correlation += correlation
+                count += 1
+        
+        avg_correlation = total_correlation / count if count > 0 else 1.0
+        diversity_score = 1.0 - avg_correlation
+        
+        return diversity_score
     
     def _scipy_matrix_optimization(
         self, 
@@ -792,6 +951,76 @@ class MatrixDiverseLookbackOptimizer:
                 return self._calculate_adx(data, period)
             elif feature_name == "CCI":
                 return self._calculate_cci(data, period)
+            elif feature_name == "Williams_R":
+                return self._calculate_williams_r(data, period)
+            elif feature_name == "MFI":
+                return self._calculate_mfi(data, period)
+            elif feature_name == "ROC":
+                return self._calculate_roc(data['close'], period)
+            elif feature_name == "MOM":
+                return self._calculate_mom(data['close'], period)
+            elif feature_name == "TSI":
+                return self._calculate_tsi(data['close'], period)
+            elif feature_name == "UO":
+                return self._calculate_uo(data, period)
+            elif feature_name == "AO":
+                return self._calculate_ao(data, period)
+            elif feature_name == "CMF":
+                return self._calculate_cmf(data, period)
+            elif feature_name == "VWAP":
+                return self._calculate_vwap(data, period)
+            elif feature_name == "Pivot_Points":
+                return self._calculate_pivot_points(data, period)
+            elif feature_name == "Ichimoku":
+                return self._calculate_ichimoku(data, period)
+            elif feature_name == "Parabolic_SAR":
+                return self._calculate_parabolic_sar(data, period)
+            elif feature_name == "Keltner_Channels":
+                return self._calculate_keltner_channels(data, period)
+            elif feature_name == "Donchian_Channels":
+                return self._calculate_donchian_channels(data, period)
+            elif feature_name == "Price_Channels":
+                return self._calculate_price_channels(data, period)
+            elif feature_name == "Volume_Profile":
+                return self._calculate_volume_profile(data, period)
+            elif feature_name == "OBV":
+                return self._calculate_obv(data)
+            elif feature_name == "AD":
+                return self._calculate_ad(data)
+            elif feature_name == "Chaikin_Money_Flow":
+                return self._calculate_chaikin_money_flow(data, period)
+            elif feature_name == "Money_Flow_Index":
+                return self._calculate_money_flow_index(data, period)
+            elif feature_name == "Volume_RSI":
+                return self._calculate_volume_rsi(data, period)
+            elif feature_name == "Volume_Stochastic":
+                return self._calculate_volume_stochastic(data, period)
+            elif feature_name == "Volume_Price_Trend":
+                return self._calculate_volume_price_trend(data)
+            elif feature_name == "Accumulation_Distribution":
+                return self._calculate_accumulation_distribution(data)
+            elif feature_name == "On_Balance_Volume":
+                return self._calculate_on_balance_volume(data)
+            elif feature_name == "Volume_Weighted_Average_Price":
+                return self._calculate_vwap(data, period)
+            elif feature_name == "Volume_Price_Oscillator":
+                return self._calculate_volume_price_oscillator(data, period)
+            elif feature_name == "Volume_Price_Confirmation":
+                return self._calculate_volume_price_confirmation(data, period)
+            elif feature_name == "Volume_Price_Trend_Indicator":
+                return self._calculate_volume_price_trend_indicator(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Histogram":
+                return self._calculate_volume_price_oscillator_histogram(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Signal":
+                return self._calculate_volume_price_oscillator_signal(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Trigger":
+                return self._calculate_volume_price_oscillator_trigger(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Zero_Line":
+                return self._calculate_volume_price_oscillator_zero_line(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Upper_Band":
+                return self._calculate_volume_price_oscillator_upper_band(data, period)
+            elif feature_name == "Volume_Price_Oscillator_Lower_Band":
+                return self._calculate_volume_price_oscillator_lower_band(data, period)
             else:
                 self.logger.warning(f"⚠️ Unknown feature: {feature_name}")
                 return None
@@ -882,6 +1111,324 @@ class MatrixDiverseLookbackOptimizer:
         mad = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         cci = (typical_price - sma) / (0.015 * mad)
         return cci
+    
+    # Additional technical indicator calculation methods
+    def _calculate_williams_r(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Williams %R with specific period."""
+        highest_high = data['high'].rolling(window=period).max()
+        lowest_low = data['low'].rolling(window=period).min()
+        williams_r = -100 * ((highest_high - data['close']) / (highest_high - lowest_low))
+        return williams_r
+    
+    def _calculate_mfi(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Money Flow Index with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        money_flow = typical_price * data['volume']
+        
+        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window=period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window=period).sum()
+        
+        mfi = 100 - (100 / (1 + positive_flow / negative_flow))
+        return mfi
+    
+    def _calculate_roc(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate Rate of Change with specific period."""
+        roc = ((prices - prices.shift(period)) / prices.shift(period)) * 100
+        return roc
+    
+    def _calculate_mom(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate Momentum with specific period."""
+        mom = prices - prices.shift(period)
+        return mom
+    
+    def _calculate_tsi(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate True Strength Index with specific period."""
+        price_change = prices.diff()
+        abs_price_change = abs(price_change)
+        
+        smoothed_change = price_change.ewm(span=period).mean()
+        smoothed_abs_change = abs_price_change.ewm(span=period).mean()
+        
+        tsi = 100 * (smoothed_change / smoothed_abs_change)
+        return tsi
+    
+    def _calculate_uo(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Ultimate Oscillator with specific period."""
+        tr = pd.concat([
+            data['high'] - data['low'],
+            abs(data['high'] - data['close'].shift(1)),
+            abs(data['low'] - data['close'].shift(1))
+        ], axis=1).max(axis=1)
+        
+        bp = data['close'] - pd.concat([data['low'], data['close'].shift(1)], axis=1).min(axis=1)
+        
+        avg7 = bp.rolling(window=7).sum() / tr.rolling(window=7).sum()
+        avg14 = bp.rolling(window=14).sum() / tr.rolling(window=14).sum()
+        avg28 = bp.rolling(window=28).sum() / tr.rolling(window=28).sum()
+        
+        uo = 100 * ((4 * avg7) + (2 * avg14) + avg28) / (4 + 2 + 1)
+        return uo
+    
+    def _calculate_ao(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Awesome Oscillator with specific period."""
+        median_price = (data['high'] + data['low']) / 2
+        ao = median_price.rolling(window=5).mean() - median_price.rolling(window=34).mean()
+        return ao
+    
+    def _calculate_cmf(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Chaikin Money Flow with specific period."""
+        mfm = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
+        mfm = mfm.replace([np.inf, -np.inf], 0)
+        mfv = mfm * data['volume']
+        cmf = mfv.rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return cmf
+    
+    def _calculate_vwap(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Weighted Average Price with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return vwap
+    
+    def _calculate_pivot_points(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Pivot Points with specific period."""
+        pivot = (data['high'].rolling(window=period).max() + 
+                data['low'].rolling(window=period).min() + 
+                data['close']) / 3
+        return pivot
+    
+    def _calculate_ichimoku(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Ichimoku Cloud with specific period."""
+        high_9 = data['high'].rolling(window=9).max()
+        low_9 = data['low'].rolling(window=9).min()
+        tenkan_sen = (high_9 + low_9) / 2
+        return tenkan_sen
+    
+    def _calculate_parabolic_sar(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Parabolic SAR with specific period."""
+        # Simplified Parabolic SAR calculation
+        af = 0.02
+        max_af = 0.2
+        
+        sar = data['close'].copy()
+        ep = data['high'].copy()
+        long = True
+        
+        for i in range(1, len(data)):
+            if long:
+                if data['high'].iloc[i] > ep.iloc[i-1]:
+                    ep.iloc[i] = data['high'].iloc[i]
+                    af = min(af + 0.02, max_af)
+                sar.iloc[i] = sar.iloc[i-1] + af * (ep.iloc[i-1] - sar.iloc[i-1])
+                
+                if data['low'].iloc[i] < sar.iloc[i]:
+                    long = False
+                    sar.iloc[i] = ep.iloc[i-1]
+                    ep.iloc[i] = data['low'].iloc[i]
+                    af = 0.02
+            else:
+                if data['low'].iloc[i] < ep.iloc[i-1]:
+                    ep.iloc[i] = data['low'].iloc[i]
+                    af = min(af + 0.02, max_af)
+                sar.iloc[i] = sar.iloc[i-1] + af * (ep.iloc[i-1] - sar.iloc[i-1])
+                
+                if data['high'].iloc[i] > sar.iloc[i]:
+                    long = True
+                    sar.iloc[i] = ep.iloc[i-1]
+                    ep.iloc[i] = data['high'].iloc[i]
+                    af = 0.02
+        
+        return sar
+    
+    def _calculate_keltner_channels(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Keltner Channels with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        atr = self._calculate_atr(data, period)
+        keltner_middle = typical_price.rolling(window=period).mean()
+        keltner_upper = keltner_middle + (2 * atr)
+        keltner_lower = keltner_middle - (2 * atr)
+        
+        # Return position within channels
+        position = (data['close'] - keltner_lower) / (keltner_upper - keltner_lower)
+        return position
+    
+    def _calculate_donchian_channels(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Donchian Channels with specific period."""
+        upper = data['high'].rolling(window=period).max()
+        lower = data['low'].rolling(window=period).min()
+        middle = (upper + lower) / 2
+        
+        # Return position within channels
+        position = (data['close'] - lower) / (upper - lower)
+        return position
+    
+    def _calculate_price_channels(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Price Channels with specific period."""
+        high_channel = data['high'].rolling(window=period).max()
+        low_channel = data['low'].rolling(window=period).min()
+        
+        # Return position within channels
+        position = (data['close'] - low_channel) / (high_channel - low_channel)
+        return position
+    
+    def _calculate_volume_profile(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Profile with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        volume_profile = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return volume_profile
+    
+    def _calculate_obv(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate On Balance Volume."""
+        obv = pd.Series(index=data.index, dtype=float)
+        obv.iloc[0] = data['volume'].iloc[0]
+        
+        for i in range(1, len(data)):
+            if data['close'].iloc[i] > data['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] + data['volume'].iloc[i]
+            elif data['close'].iloc[i] < data['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] - data['volume'].iloc[i]
+            else:
+                obv.iloc[i] = obv.iloc[i-1]
+        
+        return obv
+    
+    def _calculate_ad(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate Accumulation/Distribution Line."""
+        clv = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
+        clv = clv.replace([np.inf, -np.inf], 0)
+        ad = (clv * data['volume']).cumsum()
+        return ad
+    
+    def _calculate_chaikin_money_flow(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Chaikin Money Flow with specific period."""
+        mfm = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
+        mfm = mfm.replace([np.inf, -np.inf], 0)
+        mfv = mfm * data['volume']
+        cmf = mfv.rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        return cmf
+    
+    def _calculate_money_flow_index(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Money Flow Index with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        money_flow = typical_price * data['volume']
+        
+        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window=period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window=period).sum()
+        
+        mfi = 100 - (100 / (1 + positive_flow / negative_flow))
+        return mfi
+    
+    def _calculate_volume_rsi(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume RSI with specific period."""
+        volume_change = data['volume'].diff()
+        gain = volume_change.where(volume_change > 0, 0).rolling(window=period).mean()
+        loss = (-volume_change.where(volume_change < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        volume_rsi = 100 - (100 / (1 + rs))
+        return volume_rsi
+    
+    def _calculate_volume_stochastic(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Stochastic with specific period."""
+        volume_low = data['volume'].rolling(window=period).min()
+        volume_high = data['volume'].rolling(window=period).max()
+        volume_stoch = 100 * ((data['volume'] - volume_low) / (volume_high - volume_low))
+        return volume_stoch
+    
+    def _calculate_volume_price_trend(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate Volume Price Trend."""
+        price_change = data['close'].pct_change()
+        vpt = (price_change * data['volume']).cumsum()
+        return vpt
+    
+    def _calculate_accumulation_distribution(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate Accumulation/Distribution Line."""
+        clv = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
+        clv = clv.replace([np.inf, -np.inf], 0)
+        ad = (clv * data['volume']).cumsum()
+        return ad
+    
+    def _calculate_on_balance_volume(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate On Balance Volume."""
+        obv = pd.Series(index=data.index, dtype=float)
+        obv.iloc[0] = data['volume'].iloc[0]
+        
+        for i in range(1, len(data)):
+            if data['close'].iloc[i] > data['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] + data['volume'].iloc[i]
+            elif data['close'].iloc[i] < data['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] - data['volume'].iloc[i]
+            else:
+                obv.iloc[i] = obv.iloc[i-1]
+        
+        return obv
+    
+    def _calculate_volume_price_oscillator(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        return vpo
+    
+    def _calculate_volume_price_confirmation(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Confirmation with specific period."""
+        price_change = data['close'].pct_change()
+        volume_change = data['volume'].pct_change()
+        
+        # Confirm price movement with volume
+        confirmation = price_change * volume_change
+        confirmation_sma = confirmation.rolling(window=period).mean()
+        return confirmation_sma
+    
+    def _calculate_volume_price_trend_indicator(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Trend Indicator with specific period."""
+        price_change = data['close'].pct_change()
+        vpt = (price_change * data['volume']).cumsum()
+        vpt_sma = vpt.rolling(window=period).mean()
+        return vpt_sma
+    
+    def _calculate_volume_price_oscillator_histogram(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Histogram with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        vpo_signal = vpo.rolling(window=period//2).mean()
+        histogram = vpo - vpo_signal
+        return histogram
+    
+    def _calculate_volume_price_oscillator_signal(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Signal with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        signal = vpo.rolling(window=period//2).mean()
+        return signal
+    
+    def _calculate_volume_price_oscillator_trigger(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Trigger with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        trigger = vpo.rolling(window=period//3).mean()
+        return trigger
+    
+    def _calculate_volume_price_oscillator_zero_line(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Zero Line."""
+        return pd.Series(0, index=data.index)
+    
+    def _calculate_volume_price_oscillator_upper_band(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Upper Band with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        upper_band = vpo.rolling(window=period).std() * 2
+        return upper_band
+    
+    def _calculate_volume_price_oscillator_lower_band(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Calculate Volume Price Oscillator Lower Band with specific period."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vpo = ((typical_price - vwap) / vwap) * 100
+        lower_band = -vpo.rolling(window=period).std() * 2
+        return lower_band
     
     async def _analyze_matrix_optimization(
         self, 

@@ -24,6 +24,12 @@ def get_matrix_diverse_lookback_config() -> dict[str, Any]:
             "diversity_threshold": 0.3,
             "meaningful_threshold": 0.1,
             "correlation_threshold": 0.7,
+            "quality_thresholds": {
+                "min_diversity_score": 0.2,
+                "min_information_score": 0.05,
+                "max_correlation": 0.8,
+                "min_periods_for_3": 2  # Minimum meaningful periods needed for 3-period selection
+            },
             "matrix_optimization": {
                 "enabled": True,
                 "method": "scipy",  # "scipy", "optuna", "greedy"
@@ -143,6 +149,251 @@ def get_matrix_diverse_lookback_config() -> dict[str, Any]:
                     "step": 1,
                     "description": "CCI for cyclical analysis",
                     "expected_insights": ["Cyclical extremes", "Mean reversion", "Momentum cycles"]
+                },
+                "Williams_R": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Williams %R for momentum extremes",
+                    "expected_insights": ["Overbought/oversold levels", "Momentum reversal", "Divergence signals"]
+                },
+                "MFI": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Money Flow Index for volume-price analysis",
+                    "expected_insights": ["Volume-price divergence", "Money flow trends", "Market sentiment"]
+                },
+                "ROC": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Rate of Change for momentum measurement",
+                    "expected_insights": ["Momentum acceleration", "Trend strength", "Price momentum"]
+                },
+                "MOM": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Momentum indicator for price momentum",
+                    "expected_insights": ["Price momentum", "Trend continuation", "Momentum shifts"]
+                },
+                "TSI": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "True Strength Index for trend analysis",
+                    "expected_insights": ["Trend strength", "Momentum confirmation", "Signal generation"]
+                },
+                "UO": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Ultimate Oscillator for multi-timeframe analysis",
+                    "expected_insights": ["Multi-timeframe momentum", "Overbought/oversold", "Divergence detection"]
+                },
+                "AO": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Awesome Oscillator for momentum analysis",
+                    "expected_insights": ["Momentum shifts", "Trend changes", "Signal generation"]
+                },
+                "CMF": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Chaikin Money Flow for volume analysis",
+                    "expected_insights": ["Money flow trends", "Volume confirmation", "Market sentiment"]
+                },
+                "VWAP": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Weighted Average Price for price analysis",
+                    "expected_insights": ["Fair value", "Price efficiency", "Volume-weighted trends"]
+                },
+                "Pivot_Points": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Pivot Points for support/resistance",
+                    "expected_insights": ["Support/resistance levels", "Price reversals", "Trading ranges"]
+                },
+                "Ichimoku": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Ichimoku Cloud for trend analysis",
+                    "expected_insights": ["Trend direction", "Support/resistance", "Cloud analysis"]
+                },
+                "Parabolic_SAR": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Parabolic SAR for trend following",
+                    "expected_insights": ["Trend following", "Stop loss levels", "Trend reversals"]
+                },
+                "Keltner_Channels": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Keltner Channels for volatility analysis",
+                    "expected_insights": ["Volatility bands", "Price channels", "Breakout signals"]
+                },
+                "Donchian_Channels": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Donchian Channels for breakout analysis",
+                    "expected_insights": ["Breakout levels", "Trading ranges", "Trend channels"]
+                },
+                "Price_Channels": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Price Channels for range analysis",
+                    "expected_insights": ["Price ranges", "Channel breakouts", "Range trading"]
+                },
+                "Volume_Profile": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Profile for volume analysis",
+                    "expected_insights": ["Volume distribution", "Price levels", "Market structure"]
+                },
+                "OBV": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "On Balance Volume for volume analysis",
+                    "expected_insights": ["Volume trends", "Price confirmation", "Divergence detection"]
+                },
+                "AD": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Accumulation/Distribution for money flow",
+                    "expected_insights": ["Money flow", "Price-volume relationship", "Market sentiment"]
+                },
+                "Chaikin_Money_Flow": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Chaikin Money Flow for volume analysis",
+                    "expected_insights": ["Money flow trends", "Volume confirmation", "Market sentiment"]
+                },
+                "Money_Flow_Index": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Money Flow Index for volume-price analysis",
+                    "expected_insights": ["Volume-price divergence", "Money flow trends", "Market sentiment"]
+                },
+                "Volume_RSI": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume RSI for volume momentum",
+                    "expected_insights": ["Volume momentum", "Volume trends", "Volume divergence"]
+                },
+                "Volume_Stochastic": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Stochastic for volume analysis",
+                    "expected_insights": ["Volume extremes", "Volume trends", "Volume patterns"]
+                },
+                "Volume_Price_Trend": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Trend for volume-price analysis",
+                    "expected_insights": ["Volume-price relationship", "Trend confirmation", "Divergence detection"]
+                },
+                "Accumulation_Distribution": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Accumulation/Distribution for money flow",
+                    "expected_insights": ["Money flow", "Price-volume relationship", "Market sentiment"]
+                },
+                "On_Balance_Volume": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "On Balance Volume for volume analysis",
+                    "expected_insights": ["Volume trends", "Price confirmation", "Divergence detection"]
+                },
+                "Volume_Weighted_Average_Price": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Weighted Average Price for price analysis",
+                    "expected_insights": ["Fair value", "Price efficiency", "Volume-weighted trends"]
+                },
+                "Volume_Price_Oscillator": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator for volume-price analysis",
+                    "expected_insights": ["Volume-price divergence", "Trend confirmation", "Signal generation"]
+                },
+                "Volume_Price_Confirmation": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Confirmation for trend validation",
+                    "expected_insights": ["Trend validation", "Volume confirmation", "Signal strength"]
+                },
+                "Volume_Price_Trend_Indicator": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Trend Indicator for trend analysis",
+                    "expected_insights": ["Trend analysis", "Volume confirmation", "Trend strength"]
+                },
+                "Volume_Price_Oscillator_Histogram": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Histogram for signal analysis",
+                    "expected_insights": ["Signal analysis", "Histogram patterns", "Trend changes"]
+                },
+                "Volume_Price_Oscillator_Signal": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Signal for signal generation",
+                    "expected_insights": ["Signal generation", "Trend confirmation", "Entry/exit signals"]
+                },
+                "Volume_Price_Oscillator_Trigger": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Trigger for trigger signals",
+                    "expected_insights": ["Trigger signals", "Signal timing", "Entry/exit points"]
+                },
+                "Volume_Price_Oscillator_Zero_Line": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Zero Line for baseline",
+                    "expected_insights": ["Baseline reference", "Zero crossing", "Trend neutrality"]
+                },
+                "Volume_Price_Oscillator_Upper_Band": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Upper Band for overbought",
+                    "expected_insights": ["Overbought levels", "Upper resistance", "Sell signals"]
+                },
+                "Volume_Price_Oscillator_Lower_Band": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Volume Price Oscillator Lower Band for oversold",
+                    "expected_insights": ["Oversold levels", "Lower support", "Buy signals"]
                 }
             }
         },

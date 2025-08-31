@@ -331,6 +331,35 @@ tactician_triple_barrier:
       price_momentum_periods: [5, 10, 20]  # Multiple momentum periods
       volatility_periods: [5, 10, 20]      # Multiple volatility periods
     
+    # Step6 Feature Interaction Engineering Configuration
+    step6_feature_interaction_engineering:
+      # Interaction pattern weights (configurable for step17)
+      momentum_volume_weight: 1.5
+      momentum_volume_enabled: true
+      trend_volatility_weight: 1.8
+      trend_volatility_enabled: true
+      oscillator_trend_weight: 1.3
+      oscillator_trend_enabled: true
+      volume_price_weight: 1.6
+      volume_price_enabled: true
+      volatility_regime_weight: 1.4
+      volatility_regime_enabled: true
+      cross_timeframe_weight: 1.2
+      cross_timeframe_enabled: true
+      regime_dependent_weight: 1.7
+      regime_dependent_enabled: true
+      
+      # Interaction strength thresholds (configurable for step17)
+      strong_interaction_threshold: 0.7
+      medium_interaction_threshold: 0.5
+      weak_interaction_threshold: 0.3
+      
+      # Feature selection parameters (configurable for step17)
+      max_interactions: 100
+      min_importance: 0.01
+      correlation_threshold: 0.8
+      mutual_info_threshold: 0.05
+    
     # Step17 Optimized Tactician Configuration (for step17 optimization)
     step17_optimized_tactician:
       # Entry decision thresholds (ALL configurable)

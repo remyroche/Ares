@@ -67,6 +67,16 @@ class MLTacticsManager:
                 "profit_target_multiplier": 0.25,
                 "stop_loss_multiplier": 0.25,
                 "timeframe": "1m"  # Shorter timeframe than Analyst
+            },
+            "fifty_percent_5m": {
+                "profit_target_multiplier": 0.5,
+                "stop_loss_multiplier": 0.5,
+                "timeframe": "5m"  # 5-minute timeframe
+            },
+            "twenty_five_percent_5m": {
+                "profit_target_multiplier": 0.25,
+                "stop_loss_multiplier": 0.25,
+                "timeframe": "5m"  # 5-minute timeframe
             }
         }
         
@@ -74,6 +84,8 @@ class MLTacticsManager:
         self.green_light_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
             "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
+            "fifty_percent_5m": ml_tactics_optimization.get("fifty_percent_5m_threshold", 0.75),
+            "twenty_five_percent_5m": ml_tactics_optimization.get("twenty_five_percent_5m_threshold", 0.8),
             "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
         }
         
@@ -81,7 +93,18 @@ class MLTacticsManager:
         self.exit_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
             "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
+            "fifty_percent_5m": ml_tactics_optimization.get("exit_fifty_percent_5m_threshold", 0.4),
+            "twenty_five_percent_5m": ml_tactics_optimization.get("exit_twenty_five_percent_5m_threshold", 0.35),
             "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
+        }
+        
+        # NEW: Combined confidence weights (Analyst + Tactician confidences)
+        self.confidence_weights = {
+            "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
+            "fifty_percent_1m_weight": ml_tactics_optimization.get("fifty_percent_1m_weight", 0.25),
+            "twenty_five_percent_1m_weight": ml_tactics_optimization.get("twenty_five_percent_1m_weight", 0.15),
+            "fifty_percent_5m_weight": ml_tactics_optimization.get("fifty_percent_5m_weight", 0.2),
+            "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
         }
 
     @handle_specific_errors(
@@ -164,6 +187,17 @@ class MLTacticsManager:
                 if threshold <= 0 or threshold > 1:
                     self.logger.error(invalid(f"Invalid exit threshold for {threshold_type}"))
                     return False
+            
+            # Validate confidence weights
+            total_weight = sum(self.confidence_weights.values())
+            if abs(total_weight - 1.0) > 0.01:  # Allow small floating point errors
+                self.logger.error(invalid(f"Confidence weights must sum to 1.0, got {total_weight}"))
+                return False
+            
+            for weight_name, weight in self.confidence_weights.items():
+                if weight < 0 or weight > 1:
+                    self.logger.error(invalid(f"Invalid confidence weight for {weight_name}: {weight}"))
+                    return False
 
             return True
 
@@ -205,17 +239,38 @@ class MLTacticsManager:
                         "profit_target_multiplier": ml_tactics_optimization.get("twenty_five_percent_profit_target_multiplier", 0.25),
                         "stop_loss_multiplier": ml_tactics_optimization.get("twenty_five_percent_stop_loss_multiplier", 0.25),
                         "timeframe": ml_tactics_optimization.get("twenty_five_percent_timeframe", "1m")
+                    },
+                    "fifty_percent_5m": {
+                        "profit_target_multiplier": ml_tactics_optimization.get("fifty_percent_5m_profit_target_multiplier", 0.5),
+                        "stop_loss_multiplier": ml_tactics_optimization.get("fifty_percent_5m_stop_loss_multiplier", 0.5),
+                        "timeframe": ml_tactics_optimization.get("fifty_percent_5m_timeframe", "5m")
+                    },
+                    "twenty_five_percent_5m": {
+                        "profit_target_multiplier": ml_tactics_optimization.get("twenty_five_percent_5m_profit_target_multiplier", 0.25),
+                        "stop_loss_multiplier": ml_tactics_optimization.get("twenty_five_percent_5m_stop_loss_multiplier", 0.25),
+                        "timeframe": ml_tactics_optimization.get("twenty_five_percent_5m_timeframe", "5m")
                     }
                 }
                 self.green_light_thresholds = {
                     "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
                     "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
+                    "fifty_percent_5m": ml_tactics_optimization.get("fifty_percent_5m_threshold", 0.75),
+                    "twenty_five_percent_5m": ml_tactics_optimization.get("twenty_five_percent_5m_threshold", 0.8),
                     "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
                 }
                 self.exit_thresholds = {
                     "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
                     "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
+                    "fifty_percent_5m": ml_tactics_optimization.get("exit_fifty_percent_5m_threshold", 0.4),
+                    "twenty_five_percent_5m": ml_tactics_optimization.get("exit_twenty_five_percent_5m_threshold", 0.35),
                     "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
+                }
+                self.confidence_weights = {
+                    "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
+                    "fifty_percent_1m_weight": ml_tactics_optimization.get("fifty_percent_1m_weight", 0.25),
+                    "twenty_five_percent_1m_weight": ml_tactics_optimization.get("twenty_five_percent_1m_weight", 0.15),
+                    "fifty_percent_5m_weight": ml_tactics_optimization.get("fifty_percent_5m_weight", 0.2),
+                    "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
                 }
                 
                 self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
@@ -239,7 +294,7 @@ class MLTacticsManager:
             self.logger.info("Initializing multi-output prediction models...")
 
             # Initialize models for each barrier type
-            for barrier_type in ["fifty_percent", "twenty_five_percent"]:
+            for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
                 self.multi_output_models[barrier_type] = {
                     "model": None,
                     "calibrator": None,
@@ -301,7 +356,7 @@ class MLTacticsManager:
             self.logger.info("Initializing fallback models...")
 
             # Create simple fallback models for each barrier type
-            for barrier_type in ["fifty_percent", "twenty_five_percent"]:
+            for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
                 self.multi_output_models[barrier_type]["is_trained"] = True
                 self.multi_output_models[barrier_type]["model"] = "fallback"
 
@@ -971,7 +1026,8 @@ class MLTacticsManager:
         market_data: pd.DataFrame,
         analyst_barriers: dict[str, float],
         symbol: str,
-        timeframe: str
+        timeframe: str,
+        analyst_confidence: float = 0.5
     ) -> dict[str, Any]:
         """
         Generate multi-output predictions for 50% and 25% barriers.
@@ -996,7 +1052,7 @@ class MLTacticsManager:
             # Generate predictions for each barrier type
             predictions = {}
             
-            for barrier_type in ["fifty_percent", "twenty_five_percent"]:
+            for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
                 barrier_prediction = await self._generate_barrier_prediction(
                     barrier_type=barrier_type,
                     market_data=market_data,
@@ -1009,7 +1065,7 @@ class MLTacticsManager:
                     predictions[barrier_type] = barrier_prediction
 
             # Calculate combined confidence and green light signal
-            combined_confidence = self._calculate_combined_confidence(predictions)
+            combined_confidence = self._calculate_combined_confidence(predictions, analyst_confidence)
             green_light_signal = self._evaluate_green_light_signal(predictions, combined_confidence)
             
             # Add metadata
@@ -1067,13 +1123,29 @@ class MLTacticsManager:
                 "timeframe": self.barrier_config["twenty_five_percent"]["timeframe"]
             }
             
+            # Calculate 50% barriers (5m)
+            tactician_barriers["fifty_percent_5m"] = {
+                "upper_barrier": analyst_upper * self.barrier_config["fifty_percent_5m"]["profit_target_multiplier"],
+                "lower_barrier": analyst_lower * self.barrier_config["fifty_percent_5m"]["stop_loss_multiplier"],
+                "timeframe": self.barrier_config["fifty_percent_5m"]["timeframe"]
+            }
+            
+            # Calculate 25% barriers (5m)
+            tactician_barriers["twenty_five_percent_5m"] = {
+                "upper_barrier": analyst_upper * self.barrier_config["twenty_five_percent_5m"]["profit_target_multiplier"],
+                "lower_barrier": analyst_lower * self.barrier_config["twenty_five_percent_5m"]["stop_loss_multiplier"],
+                "timeframe": self.barrier_config["twenty_five_percent_5m"]["timeframe"]
+            }
+            
             return tactician_barriers
             
         except Exception as e:
             self.logger.error(failed(f"❌ Barrier calculation failed: {e}"))
             return {
                 "fifty_percent": {"upper_barrier": 0.01, "lower_barrier": -0.005, "timeframe": "1m"},
-                "twenty_five_percent": {"upper_barrier": 0.005, "lower_barrier": -0.0025, "timeframe": "1m"}
+                "twenty_five_percent": {"upper_barrier": 0.005, "lower_barrier": -0.0025, "timeframe": "1m"},
+                "fifty_percent_5m": {"upper_barrier": 0.01, "lower_barrier": -0.005, "timeframe": "5m"},
+                "twenty_five_percent_5m": {"upper_barrier": 0.005, "lower_barrier": -0.0025, "timeframe": "5m"}
             }
 
     async def _generate_barrier_prediction(
@@ -1314,38 +1386,43 @@ class MLTacticsManager:
             self.logger.error(failed(f"❌ Prediction calibration failed: {e}"))
             return confidence
 
-    def _calculate_combined_confidence(self, predictions: dict[str, Any]) -> float:
+    def _calculate_combined_confidence(
+        self, 
+        predictions: dict[str, Any], 
+        analyst_confidence: float = 0.5
+    ) -> float:
         """
-        Calculate combined confidence from all predictions.
+        Calculate combined confidence from Analyst and Tactician predictions.
         
         Args:
-            predictions: Predictions dictionary
+            predictions: Tactician predictions dictionary
+            analyst_confidence: Analyst confidence score
             
         Returns:
             float: Combined confidence score
         """
         try:
-            confidences = []
-            weights = []
+            # Start with Analyst confidence
+            combined_confidence = analyst_confidence * self.confidence_weights["analyst_weight"]
             
+            # Add Tactician confidences with their respective weights
             for barrier_type, prediction in predictions.items():
                 if prediction and "confidence" in prediction:
-                    confidences.append(prediction["confidence"])
-                    # Weight 50% barriers more heavily
+                    confidence = prediction["confidence"]
+                    
+                    # Get weight for this barrier type
                     if barrier_type == "fifty_percent":
-                        weights.append(0.6)
+                        weight = self.confidence_weights["fifty_percent_1m_weight"]
+                    elif barrier_type == "twenty_five_percent":
+                        weight = self.confidence_weights["twenty_five_percent_1m_weight"]
+                    elif barrier_type == "fifty_percent_5m":
+                        weight = self.confidence_weights["fifty_percent_5m_weight"]
+                    elif barrier_type == "twenty_five_percent_5m":
+                        weight = self.confidence_weights["twenty_five_percent_5m_weight"]
                     else:
-                        weights.append(0.4)
-            
-            if not confidences:
-                return 0.5
-            
-            # Calculate weighted average
-            total_weight = sum(weights)
-            if total_weight > 0:
-                combined_confidence = sum(c * w for c, w in zip(confidences, weights)) / total_weight
-            else:
-                combined_confidence = np.mean(confidences)
+                        weight = 0.0
+                    
+                    combined_confidence += confidence * weight
             
             return np.clip(combined_confidence, 0.0, 1.0)
             
@@ -1370,22 +1447,33 @@ class MLTacticsManager:
         """
         try:
             # Check individual barrier thresholds
-            fifty_percent_ok = False
-            twenty_five_percent_ok = False
+            fifty_percent_1m_ok = False
+            twenty_five_percent_1m_ok = False
+            fifty_percent_5m_ok = False
+            twenty_five_percent_5m_ok = False
             
             if "fifty_percent" in predictions and predictions["fifty_percent"]:
-                fifty_confidence = predictions["fifty_percent"]["confidence"]
-                fifty_percent_ok = fifty_confidence >= self.green_light_thresholds["fifty_percent"]
+                fifty_1m_confidence = predictions["fifty_percent"]["confidence"]
+                fifty_percent_1m_ok = fifty_1m_confidence >= self.green_light_thresholds["fifty_percent"]
             
             if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
-                twenty_five_confidence = predictions["twenty_five_percent"]["confidence"]
-                twenty_five_percent_ok = twenty_five_confidence >= self.green_light_thresholds["twenty_five_percent"]
+                twenty_five_1m_confidence = predictions["twenty_five_percent"]["confidence"]
+                twenty_five_percent_1m_ok = twenty_five_1m_confidence >= self.green_light_thresholds["twenty_five_percent"]
+            
+            if "fifty_percent_5m" in predictions and predictions["fifty_percent_5m"]:
+                fifty_5m_confidence = predictions["fifty_percent_5m"]["confidence"]
+                fifty_percent_5m_ok = fifty_5m_confidence >= self.green_light_thresholds["fifty_percent_5m"]
+            
+            if "twenty_five_percent_5m" in predictions and predictions["twenty_five_percent_5m"]:
+                twenty_five_5m_confidence = predictions["twenty_five_percent_5m"]["confidence"]
+                twenty_five_percent_5m_ok = twenty_five_5m_confidence >= self.green_light_thresholds["twenty_five_percent_5m"]
             
             # Check combined threshold
             combined_ok = combined_confidence >= self.green_light_thresholds["combined_threshold"]
             
             # Determine signal
-            if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
+            if (fifty_percent_1m_ok and twenty_five_percent_1m_ok and 
+                fifty_percent_5m_ok and twenty_five_percent_5m_ok and combined_ok):
                 signal = "GREEN_LIGHT"
                 reason = "All thresholds met"
             elif combined_ok:
@@ -1398,8 +1486,10 @@ class MLTacticsManager:
             return {
                 "signal": signal,
                 "reason": reason,
-                "fifty_percent_ok": fifty_percent_ok,
-                "twenty_five_percent_ok": twenty_five_percent_ok,
+                "fifty_percent_1m_ok": fifty_percent_1m_ok,
+                "twenty_five_percent_1m_ok": twenty_five_percent_1m_ok,
+                "fifty_percent_5m_ok": fifty_percent_5m_ok,
+                "twenty_five_percent_5m_ok": twenty_five_percent_5m_ok,
                 "combined_ok": combined_ok,
                 "combined_confidence": combined_confidence,
                 "thresholds": self.green_light_thresholds
@@ -1441,12 +1531,30 @@ class MLTacticsManager:
                 "timeframe": "1m",
                 "barrier_type": "twenty_five_percent"
             },
+            "fifty_percent_5m": {
+                "confidence": 0.5,
+                "direction": "UP",
+                "upper_barrier": 0.01,
+                "lower_barrier": -0.005,
+                "timeframe": "5m",
+                "barrier_type": "fifty_percent_5m"
+            },
+            "twenty_five_percent_5m": {
+                "confidence": 0.5,
+                "direction": "UP",
+                "upper_barrier": 0.005,
+                "lower_barrier": -0.0025,
+                "timeframe": "5m",
+                "barrier_type": "twenty_five_percent_5m"
+            },
             "combined_confidence": 0.5,
             "green_light_signal": {
                 "signal": "RED_LIGHT",
                 "reason": "Fallback mode",
-                "fifty_percent_ok": False,
-                "twenty_five_percent_ok": False,
+                "fifty_percent_1m_ok": False,
+                "twenty_five_percent_1m_ok": False,
+                "fifty_percent_5m_ok": False,
+                "twenty_five_percent_5m_ok": False,
                 "combined_ok": False,
                 "combined_confidence": 0.5,
                 "thresholds": self.green_light_thresholds

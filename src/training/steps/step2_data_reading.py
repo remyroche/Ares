@@ -12,77 +12,111 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 
-# Handle optional dependencies
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    psutil = None
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
-
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-)
-from src.utils.logger import system_logger
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "psutil",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+psutil = PipelineStandards.safe_import("psutil", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 logger = system_logger.getChild("Step2DataReading")
 
 
 class DataReadingStep:
-    """Step 2: Data Reading and Validation with enhanced data quality management."""
+    """Step 2: Data Reading and Validation with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("DataReadingStep")
-        self.data_quality_manager = None
+        self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
-        self._initialize_components()
+        
+        # Validate environment on initialization
+        self._validate_environment()
 
-    def _initialize_components(self) -> None:
-        """Initialize data reading and quality components."""
-        self.logger.info("🔧 Initializing data reading components...")
-        try:
-            from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-            self.data_quality_manager = EnhancedDataQualityManager()
-            self.logger.info("✅ Enhanced data quality manager initialized successfully")
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
-            self.logger.info("📝 Proceeding without enhanced data quality manager")
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     async def initialize(self) -> None:
         """Initialize the data reading step."""
@@ -110,20 +144,20 @@ class DataReadingStep:
     @comprehensive_data_validation
     @memory_efficient
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
-        """Read unified data from step1_5 output."""
+        """Read unified data from step1_5 output with standardized validation."""
         step_start = time.time()
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
         
         try:
-            # Construct path to unified data in structured directory
-            unified_data_path = Path(data_dir) / "unified" / exchange.lower() / symbol / timeframe
+            # Use standardized path construction
+            unified_data_path = Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
             
             if not unified_data_path.exists():
                 self.logger.error(f"❌ Unified data path does not exist: {unified_data_path}")
                 return None
             
             # Find all parquet files in the directory
-            parquet_files = list(unified_data_path.glob("*.parquet"))
+            parquet_files = list(unified_data_path.glob("**/*.parquet"))
             
             if not parquet_files:
                 self.logger.error(f"❌ No parquet files found in {unified_data_path}")
@@ -136,6 +170,11 @@ class DataReadingStep:
             for file_path in sorted(parquet_files):
                 self.logger.info(f"📖 Reading {file_path.name}")
                 df = pd.read_parquet(file_path)
+                
+                # Standardize timestamps and validate schema
+                df = self.standards.standardize_timestamp(df, "timestamp")
+                df = self.standards.enforce_schema(df, "unified")
+                
                 dataframes.append(df)
             
             # Concatenate all dataframes
@@ -143,7 +182,15 @@ class DataReadingStep:
                 unified_data = pd.concat(dataframes, ignore_index=True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop=True)
                 
-                self.logger.info(f"✅ Successfully read unified data: {len(unified_data)} rows")
+                # Validate unified data quality
+                validation_result = self.standards.validate_data_quality(unified_data, "unified")
+                if validation_result.passed:
+                    self.logger.info(f"✅ Successfully read unified data: {len(unified_data)} rows (quality score: {validation_result.quality_score:.2f})")
+                else:
+                    self.logger.warning(f"⚠️ Read unified data: {len(unified_data)} rows but validation found issues")
+                    for issue in validation_result.issues[:3]:
+                        self.logger.warning(f"   - {issue.message}")
+                
                 self._log_step_timing("read_unified_data", step_start)
                 
                 return unified_data
@@ -158,91 +205,35 @@ class DataReadingStep:
     @with_tracing_span("validate_data_quality")
     @comprehensive_data_validation
     async def validate_data_quality(self, data: pd.DataFrame, symbol: str, exchange: str) -> Dict[str, Any]:
-        """Validate data quality and structure."""
+        """Validate data quality and structure using standardized validation."""
         step_start = time.time()
         self.logger.info("🔍 Validating data quality...")
         
-        validation_results = {
-            "passed": True,
-            "issues": [],
-            "warnings": [],
-            "data_info": {}
-        }
-        
         try:
-            # Basic data structure validation
-            if data is None or data.empty:
-                validation_results["passed"] = False
-                validation_results["issues"].append("Data is None or empty")
-                return validation_results
+            # Use standardized validation
+            validation_result = self.standards.validate_data_quality(data, "unified")
             
-            # Check required columns
-            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            
-            if missing_columns:
-                validation_results["passed"] = False
-                validation_results["issues"].append(f"Missing required columns: {missing_columns}")
-            
-            # Check for null values
-            null_counts = data[required_columns].isnull().sum()
-            if null_counts.sum() > 0:
-                validation_results["warnings"].append(f"Found null values: {null_counts.to_dict()}")
-            
-            # Check data types
-            expected_types = {
-                'timestamp': 'datetime64[ns]',
-                'open': 'float64',
-                'high': 'float64', 
-                'low': 'float64',
-                'close': 'float64',
-                'volume': 'float64'
-            }
-            
-            for col, expected_type in expected_types.items():
-                if col in data.columns:
-                    actual_type = str(data[col].dtype)
-                    if actual_type != expected_type:
-                        validation_results["warnings"].append(f"Column {col} has type {actual_type}, expected {expected_type}")
-            
-            # Check for duplicate timestamps
-            if 'timestamp' in data.columns:
-                duplicates = data['timestamp'].duplicated().sum()
-                if duplicates > 0:
-                    validation_results["warnings"].append(f"Found {duplicates} duplicate timestamps")
-            
-            # Check for price anomalies
-            if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
-                # Check for negative prices
-                price_columns = ['open', 'high', 'low', 'close']
-                negative_prices = (data[price_columns] < 0).any(axis=1).sum()
-                if negative_prices > 0:
-                    validation_results["issues"].append(f"Found {negative_prices} rows with negative prices")
-                
-                # Check for high-low consistency
-                invalid_hl = ((data['high'] < data['low']) | 
-                             (data['open'] > data['high']) | 
-                             (data['close'] > data['high']) |
-                             (data['open'] < data['low']) | 
-                             (data['close'] < data['low'])).sum()
-                
-                if invalid_hl > 0:
-                    validation_results["issues"].append(f"Found {invalid_hl} rows with invalid OHLC relationships")
-            
-            # Store data information
-            validation_results["data_info"] = {
-                "rows": len(data),
-                "columns": list(data.columns),
-                "date_range": {
-                    "start": data['timestamp'].min() if 'timestamp' in data.columns else None,
-                    "end": data['timestamp'].max() if 'timestamp' in data.columns else None
+            # Convert to legacy format for compatibility
+            validation_results = {
+                "passed": validation_result.passed,
+                "issues": [issue.message for issue in validation_result.issues],
+                "warnings": [warning.message for warning in validation_result.warnings],
+                "data_info": {
+                    "rows": len(data) if data is not None else 0,
+                    "columns": list(data.columns) if data is not None else [],
+                    "date_range": {
+                        "start": data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None,
+                        "end": data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None
+                    },
+                    "memory_usage": data.memory_usage(deep=True).sum() / 1024 / 1024 if data is not None else 0  # MB
                 },
-                "memory_usage": data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
+                "quality_score": validation_result.quality_score
             }
             
             self.logger.info(f"✅ Data quality validation completed")
             self.logger.info(f"   - Rows: {validation_results['data_info']['rows']}")
             self.logger.info(f"   - Memory usage: {validation_results['data_info']['memory_usage']:.2f} MB")
+            self.logger.info(f"   - Quality score: {validation_result.quality_score:.2f}")
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
             
@@ -250,8 +241,13 @@ class DataReadingStep:
             
         except Exception as e:
             self.logger.exception(f"❌ Error during data quality validation: {e}")
-            validation_results["passed"] = False
-            validation_results["issues"].append(f"Validation error: {str(e)}")
+            validation_results = {
+                "passed": False,
+                "issues": [f"Validation error: {str(e)}"],
+                "warnings": [],
+                "data_info": {},
+                "quality_score": 0.0
+            }
         
         return validation_results
 
@@ -329,9 +325,15 @@ class DataReadingStep:
                     "validation_results": validation_results
                 }
             
-            # Save processed data for next step
-            output_path = Path(data_dir) / "processed" / f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save processed data for next step using standardized paths
+            processed_dir = self.standards.build_path("processed_data", exchange, symbol)
+            os.makedirs(processed_dir, exist_ok=True)
+            
+            output_file = f"{exchange}_{symbol}_{timeframe}_validated_data.parquet"
+            output_path = Path(processed_dir) / output_file
+            
+            # Standardize timestamps before saving
+            unified_data = self.standards.standardize_timestamp(unified_data, "timestamp")
             unified_data.to_parquet(output_path, index=False)
             
             self.logger.info(f"✅ Step 2 completed successfully")
@@ -507,9 +509,9 @@ async def run_step_enhanced(
 ) -> Dict[str, Any]:
     """Enhanced entry point for Step 2: Data Reading and Validation."""
     
-    # Construct structured data directory
+    # Use standardized path construction
     if data_dir is None:
-        data_dir = os.path.join("data_cache", exchange.lower(), symbol.lower())
+        data_dir = pipeline_standards.build_path("raw_data", exchange, symbol)
     
     logger.info("🚀 Starting Step 2: Data Reading and Validation (Enhanced)")
     

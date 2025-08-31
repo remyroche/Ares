@@ -110,7 +110,7 @@ class FractionalDifferentiationIntegrationTester:
         
         return price_df, volume_df
     
-    def test_baseline_feature_engineering(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
+    async def test_baseline_feature_engineering(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
         """Test baseline feature engineering without fractional differentiation.
         
         Args:
@@ -157,7 +157,7 @@ class FractionalDifferentiationIntegrationTester:
                 'total_features': 0
             }
     
-    def test_fractional_differentiation_integration(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
+    async def test_fractional_differentiation_integration(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
         """Test feature engineering with fractional differentiation.
         
         Args:
@@ -451,10 +451,10 @@ class FractionalDifferentiationIntegrationTester:
         price_data, volume_data = test_data
         
         # Test baseline feature engineering
-        baseline_results = self.test_baseline_feature_engineering(price_data, volume_data)
+        baseline_results = await self.test_baseline_feature_engineering(price_data, volume_data)
         
         # Test fractional differentiation integration
-        fractional_results = self.test_fractional_differentiation_integration(price_data, volume_data)
+        fractional_results = await self.test_fractional_differentiation_integration(price_data, volume_data)
         
         # Test standalone fractional differentiation
         standalone_results = self.test_fractional_differentiation_standalone(price_data, volume_data)

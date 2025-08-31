@@ -1,4 +1,10 @@
-# src/training/steps/step9_tactician_specialist_training.py
+# src/training/steps/step15_tactician_specialist_training.py
+
+"""Step 15: Tactician Specialist Training with Standardized Data Quality Management.
+
+This step performs tactician specialist model training with S/R level integration
+using standardized data quality management patterns.
+"""
 
 import asyncio
 import contextlib
@@ -7,68 +13,148 @@ import os
 import pickle
 from datetime import datetime
 from typing import Any
+from pathlib import Path
 
-import numpy as np
-import pandas as pd
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    ValidationLevel,
-    adaptive_resource_allocation,
-    comprehensive_validation,
-    guard_dataframe_nulls,
-    handle_errors,
-    intelligent_caching,
-    model_validation,
-    # Advanced decorators
-    performance_monitor,
-    pipeline_checkpoint,
-)
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-)
-from ..model_probability_generator import ModelProbabilityGenerator
-from ..model_saving_utils import save_model_with_probabilities
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "numpy",
+    "pandas",
+    "src.tactician.sr_breakout_predictor",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.warning_symbols",
+    "src.training.model_probability_generator",
+    "src.training.model_saving_utils",
+    "src.training.enhanced_lm_optimizer",
+    "src.training.optimized_feature_selection_manager"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+warning_symbols = PipelineStandards.safe_import("src.utils.warning_symbols", None)
+model_probability_generator = PipelineStandards.safe_import("src.training.model_probability_generator", None)
+model_saving_utils = PipelineStandards.safe_import("src.training.model_saving_utils", None)
+enhanced_lm_optimizer = PipelineStandards.safe_import("src.training.enhanced_lm_optimizer", None)
+optimized_feature_selection = PipelineStandards.safe_import("src.training.optimized_feature_selection_manager", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    PerformanceLevel = "BASIC"
+    ValidationLevel = "BASIC"
+    adaptive_resource_allocation = create_fallback_decorator()
+    comprehensive_validation = create_fallback_decorator()
+    guard_dataframe_nulls = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    intelligent_caching = create_fallback_decorator()
+    model_validation = create_fallback_decorator()
+    performance_monitor = create_fallback_decorator()
+    pipeline_checkpoint = create_fallback_decorator()
+else:
+    PerformanceLevel = centralized_decorators.PerformanceLevel
+    ValidationLevel = centralized_decorators.ValidationLevel
+    adaptive_resource_allocation = centralized_decorators.adaptive_resource_allocation
+    comprehensive_validation = centralized_decorators.comprehensive_validation
+    guard_dataframe_nulls = centralized_decorators.guard_dataframe_nulls
+    handle_errors = centralized_decorators.handle_errors
+    intelligent_caching = centralized_decorators.intelligent_caching
+    model_validation = centralized_decorators.model_validation
+    performance_monitor = centralized_decorators.performance_monitor
+    pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
+
+if warning_symbols is None:
+    error = lambda msg: print(f"ERROR: {msg}")
+else:
+    error = warning_symbols.error
 
 
 class TacticianSpecialistTrainingStep:
-    """Step 9: Tactician Specialist Models Training with S/R Level Integration."""
+    """Step 15: Tactician Specialist Models Training with Standardized Data Quality Management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
+        self.standards = pipeline_standards
         self.models: dict[str, Any] = {}
+        
+        # Validate environment on initialization
+        self._validate_environment()
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config = config.copy()
-        sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-        sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor = SRBreakoutPredictor(sr_config)
+        if sr_breakout_predictor is not None:
+            try:
+                sr_config = config.copy()
+                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+                sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
+                self.sr_predictor = None
+        else:
+            self.logger.warning("⚠️ SRBreakoutPredictor not available")
+            self.sr_predictor = None
 
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
-        try:
-            from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
-
-            self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
-        except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+        if enhanced_lm_optimizer is not None:
+            try:
+                self.enhanced_lm_optimizer = enhanced_lm_optimizer.EnhancedLMOptimizer(config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
 
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
-        try:
-            from src.training.optimized_feature_selection_manager import (
-                OptimizedFeatureSelectionManager,
-            )
-
-            self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
-        except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
+        if optimized_feature_selection is not None:
+            try:
+                self.optimized_feature_selection = optimized_feature_selection.OptimizedFeatureSelectionManager(config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
         
         # Initialize probability generator for enhanced prediction service
-        self.probability_generator = ModelProbabilityGenerator()
+        if model_probability_generator is not None:
+            self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
+        else:
+            self.logger.warning("⚠️ ModelProbabilityGenerator not available")
+            self.probability_generator = None
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     @handle_errors(
         exceptions=(Exception,),

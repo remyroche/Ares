@@ -1,4 +1,10 @@
-# src/training/steps/step16_saving.py
+# src/training/steps/step21_saving.py
+
+"""Step 21: Saving with Standardized Data Quality Management.
+
+This step handles saving of all training results using standardized
+data quality management patterns.
+"""
 
 import asyncio
 import json
@@ -6,18 +12,61 @@ import os
 import pickle
 from datetime import datetime
 from typing import Any
+from pathlib import Path
 
-import pandas as pd
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+import sys
+sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "src.utils.logger"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
 
 
 class SavingStep:
-    """Step 16: Saving using existing step9_save_results."""
+    """Step 21: Saving with Standardized Data Quality Management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
+        self.standards = pipeline_standards
+        
+        # Validate environment on initialization
+        self._validate_environment()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     async def initialize(self) -> None:
         """Initialize the saving step."""

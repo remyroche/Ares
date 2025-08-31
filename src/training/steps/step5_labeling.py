@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 5: Labeling.
+"""Step 5: Labeling with Standardized Data Quality Management.
 
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
@@ -12,78 +12,129 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
-# Handle optional dependencies
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    psutil = None
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
-
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-)
-from src.utils.logger import system_logger
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "psutil",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration",
+    "src.analyst.meta_labeling_system"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+meta_labeling_system = PipelineStandards.safe_import("src.analyst.meta_labeling_system", None)
+psutil = PipelineStandards.safe_import("psutil", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 logger = system_logger.getChild("Step5Labeling")
 
 
 class LabelingStep:
-    """Step 5: Labeling with enhanced data quality management."""
+    """Step 5: Labeling with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("LabelingStep")
+        self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        
+        # Validate environment on initialization
+        self._validate_environment()
         self._initialize_components()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     def _initialize_components(self) -> None:
         """Initialize labeling components."""
         self.logger.info("🔧 Initializing labeling components...")
-        try:
-            # Import meta-labeling system if available
-            from src.analyst.meta_labeling_system import MetaLabelingSystem
-            self.meta_labeling_system = MetaLabelingSystem(self.config)
-            self.logger.info("✅ Meta-labeling system initialized successfully")
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Could not import MetaLabelingSystem: {e}")
-            self.logger.info("📝 Proceeding without meta-labeling system")
+        
+        # Initialize meta-labeling system if available
+        if meta_labeling_system is not None:
+            try:
+                self.meta_labeling_system = meta_labeling_system.MetaLabelingSystem(self.config)
+                self.logger.info("✅ Meta-labeling system initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize MetaLabelingSystem: {e}")
+                self.meta_labeling_system = None
+        else:
+            self.logger.warning("⚠️ Meta-labeling system not available")
             self.meta_labeling_system = None
 
     async def initialize(self) -> None:
@@ -465,17 +516,17 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str,
-    data_dir: str = "data_cache",
+    data_dir: str = None,
     force_rerun: bool = False,
     config: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Run the labeling step.
+    """Run the labeling step with standardized data quality management.
 
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         timeframe: Timeframe for data
-        data_dir: Data directory
+        data_dir: Data directory (will use standardized path if None)
         force_rerun: Force rerun the step
         config: Configuration dictionary
 
@@ -484,6 +535,10 @@ async def run_step(
     """
     if config is None:
         config = {}
+
+    # Use standardized path construction
+    if data_dir is None:
+        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
     # Add step-specific configuration
     step_config = {

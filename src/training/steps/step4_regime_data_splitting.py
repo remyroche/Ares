@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step 4: Regime Data Splitting.
+"""Step 4: Regime Data Splitting with Standardized Data Quality Management.
 
 This module creates a unified dataset with regime labels for regime-aware processing.
 Uses labels to differentiate regimes instead of creating separate files per regime.
@@ -17,43 +17,105 @@ from typing import Any, Dict, List, Optional, Tuple
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-import pandas as pd
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
+# Import pipeline standards
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-from src.utils.logger import system_logger
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-)
+# Standardized import management
+REQUIRED_MODULES = [
+    "pandas",
+    "numpy",
+    "src.utils.centralized_decorators",
+    "src.utils.logger",
+    "src.utils.enhanced_mlflow_integration"
+]
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+
+# Safe imports with fallbacks
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+
+# Fallback functions if imports fail
+def create_fallback_logger():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger(__name__)
+
+def create_fallback_decorator():
+    def decorator(func):
+        return func
+    return decorator
+
+# Initialize fallbacks
+if system_logger is None:
+    system_logger = create_fallback_logger()
+
+if centralized_decorators is None:
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+else:
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+
+if enhanced_mlflow is None:
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    create_detailed_step_report = lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
+else:
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_report = enhanced_mlflow.log_step_report
+    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
+    log_step_metrics = enhanced_mlflow.log_step_metrics
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 logger = system_logger.getChild("Step4RegimeDataSplitting")
 
 
 class RegimeDataSplittingStep:
-    """Step 4: Regime Data Splitting with unified dataset and regime labels."""
+    """Step 4: Regime Data Splitting with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("RegimeDataSplittingStep")
+        self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        
+        # Validate environment on initialization
+        self._validate_environment()
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies."""
+        self.logger.info("🔍 Validating environment dependencies...")
+        
+        missing_modules = [module for module, available in dependency_status.items() if not available]
+        if missing_modules:
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
+        else:
+            self.logger.info("✅ All required dependencies available")
 
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
@@ -139,22 +201,22 @@ class RegimeDataSplittingStep:
         timeframe: str, 
         data_dir: str
     ) -> Optional[pd.DataFrame]:
-        """Load HMM regime data."""
+        """Load HMM regime data with standardized validation."""
         try:
-            # Load unified data
-            unified_data_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
+            # Use standardized path construction
+            unified_data_path = Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
             if not unified_data_path.exists():
                 self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
                 return None
             
-            # Load regime clusters
+            # Load regime clusters using standardized naming
             regime_file = Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
             if not regime_file.exists():
                 self.logger.error(f"❌ Regime file not found: {regime_file}")
                 return None
             
             # Load data
-            unified_files = list(unified_data_path.glob("*.parquet"))
+            unified_files = list(unified_data_path.glob("**/*.parquet"))
             if not unified_files:
                 self.logger.error(f"❌ No unified data files found in {unified_data_path}")
                 return None
@@ -163,10 +225,18 @@ class RegimeDataSplittingStep:
             unified_data = []
             for file_path in sorted(unified_files):
                 df = pd.read_parquet(file_path)
+                
+                # Standardize timestamps and validate schema
+                df = self.standards.standardize_timestamp(df, "timestamp")
+                df = self.standards.enforce_schema(df, "unified")
+                
                 unified_data.append(df)
             
             unified_df = pd.concat(unified_data, ignore_index=True)
             regime_df = pd.read_parquet(regime_file)
+            
+            # Standardize timestamps in regime data
+            regime_df = self.standards.standardize_timestamp(regime_df, "timestamp")
             
             # Merge unified data with regime information
             merged_data = pd.merge(
@@ -352,24 +422,28 @@ async def run_step(
     symbol: str,
     exchange: str,
     timeframe: str,
-    data_dir: str = "data_cache",
+    data_dir: str = None,
     force_rerun: bool = False,
     config: dict[str, Any] = None,
 ) -> bool:
-    """Run Step 4: Regime Data Splitting.
+    """Run Step 4: Regime Data Splitting with standardized data quality management.
     
     Args:
         symbol: Trading symbol
         exchange: Exchange name
         timeframe: Timeframe
-        data_dir: Data directory
+        data_dir: Data directory (will use standardized path if None)
         force_rerun: Force rerun flag
         config: Configuration dictionary
         
     Returns:
         bool: Success status
     """
-    logger.info("🚀 Starting Step 4: Regime Data Splitting")
+    logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
+    
+    # Use standardized path construction
+    if data_dir is None:
+        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
     
     try:
         # Initialize step

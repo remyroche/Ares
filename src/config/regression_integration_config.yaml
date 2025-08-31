@@ -1,0 +1,228 @@
+# Regression Integration Configuration
+# This file configures the integration of regression-based profit prediction
+# with the existing Analyst and Tactician classification systems.
+
+regression_integration:
+  # Enable regression prediction for each component
+  enable_analyst_regression: true
+  enable_tactician_regression: true
+  
+  # Hybrid decision threshold (combines regression + classification)
+  hybrid_threshold: 0.5
+  
+  # Model persistence settings
+  model_save_path: "models/regression/"
+  auto_save_models: true
+  auto_load_models: true
+  
+  # Performance monitoring
+  enable_performance_tracking: true
+  prediction_history_size: 1000
+  analytics_update_interval: 300  # seconds
+
+# Analyst Regression Configuration
+# Multi-timeframe regression model for IF decisions
+analyst_regression:
+  # Model configuration
+  model_type: "LightGBM"  # Options: LightGBM, XGBoost, RandomForest, GradientBoosting
+  min_profit_threshold: 0.005  # 0.5% minimum profit threshold
+  max_profit_threshold: 0.03   # 3% maximum profit threshold for full position
+  
+  # Position sizing configuration
+  position_sizing_enabled: true
+  base_position_size: 1.0
+  min_position_size: 0.0
+  max_position_size: 1.0
+  
+  # Model hyperparameters
+  model_params:
+    n_estimators: 1000
+    learning_rate: 0.01
+    max_depth: 6
+    num_leaves: 31
+    random_state: 42
+    verbose: -1
+  
+  # Training configuration
+  training:
+    validation_split: 0.2
+    n_splits: 5
+    early_stopping_rounds: 50
+    feature_selection_enabled: true
+    max_features: 50
+  
+  # Risk management
+  risk_management:
+    max_drawdown_threshold: 0.02  # 2% max drawdown
+    correlation_threshold: 0.7    # Max feature correlation
+    outlier_detection_enabled: true
+
+# Tactician Regression Configuration
+# 1-minute timeframe regression model for WHEN decisions
+tactician_regression:
+  # Model configuration
+  model_type: "LightGBM"
+  min_profit_threshold: 0.003  # 0.3% minimum profit threshold (lower for tactician)
+  max_profit_threshold: 0.02   # 2% maximum profit threshold
+  
+  # Position sizing configuration
+  position_sizing_enabled: true
+  base_position_size: 1.0
+  min_position_size: 0.0
+  max_position_size: 1.0
+  
+  # Model hyperparameters
+  model_params:
+    n_estimators: 1000
+    learning_rate: 0.01
+    max_depth: 6
+    num_leaves: 31
+    random_state: 42
+    verbose: -1
+  
+  # Training configuration
+  training:
+    validation_split: 0.2
+    n_splits: 5
+    early_stopping_rounds: 50
+    feature_selection_enabled: true
+    max_features: 30  # Fewer features for tactician (faster prediction)
+  
+  # Risk management
+  risk_management:
+    max_drawdown_threshold: 0.015  # 1.5% max drawdown (tighter for tactician)
+    correlation_threshold: 0.7
+    outlier_detection_enabled: true
+
+# Feature Engineering for Regression
+regression_features:
+  # Technical indicators to include
+  technical_indicators:
+    - "rsi"
+    - "macd"
+    - "bollinger_bands"
+    - "moving_averages"
+    - "momentum"
+    - "volatility"
+    - "volume_indicators"
+  
+  # Support/Resistance features
+  sr_features:
+    enabled: true
+    include_distance_to_sr: true
+    include_sr_strength: true
+    include_breakout_probability: true
+  
+  # Market regime features
+  regime_features:
+    enabled: true
+    include_regime_probability: true
+    include_regime_transition: true
+  
+  # Profit-specific features
+  profit_features:
+    enabled: true
+    include_historical_profit_patterns: true
+    include_profit_momentum: true
+    include_profit_volatility: true
+
+# Hybrid Decision Making
+hybrid_decisions:
+  # Decision combination method
+  combination_method: "weighted_average"  # Options: weighted_average, geometric_mean, min_max
+  
+  # Weights for combining regression and classification
+  weights:
+    regression_weight: 0.6
+    classification_weight: 0.4
+  
+  # Decision thresholds
+  thresholds:
+    enter_threshold: 0.6
+    skip_threshold: 0.4
+    high_confidence_threshold: 0.8
+  
+  # Position sizing based on hybrid confidence
+  position_sizing:
+    enabled: true
+    confidence_scaling: true
+    risk_adjustment: true
+    max_position_multiplier: 1.5
+
+# Performance Monitoring
+performance_monitoring:
+  # Metrics to track
+  metrics:
+    - "prediction_accuracy"
+    - "profit_accuracy"
+    - "position_sizing_effectiveness"
+    - "risk_adjusted_returns"
+    - "drawdown_metrics"
+  
+  # Alerting thresholds
+  alerts:
+    accuracy_drop_threshold: 0.1  # 10% drop in accuracy
+    profit_drop_threshold: 0.05   # 5% drop in profit
+    max_drawdown_alert: 0.03      # 3% drawdown alert
+  
+  # Reporting
+  reporting:
+    enable_daily_reports: true
+    enable_weekly_reports: true
+    enable_monthly_reports: true
+    report_path: "reports/regression/"
+
+# Integration with Existing Systems
+system_integration:
+  # Analyst integration
+  analyst:
+    enable_regression_filtering: true
+    regression_confidence_weight: 0.7
+    classification_fallback: true
+    
+  # Tactician integration
+  tactician:
+    enable_regression_timing: true
+    regression_confidence_weight: 0.8
+    classification_fallback: true
+    
+  # Supervisor integration
+  supervisor:
+    enable_regression_oversight: true
+    regression_override_threshold: 0.9
+    enable_risk_monitoring: true
+
+# Model Validation and Testing
+validation:
+  # Backtesting configuration
+  backtesting:
+    enabled: true
+    test_period_days: 30
+    walk_forward_enabled: true
+    walk_forward_window: 7  # days
+    
+  # Cross-validation
+  cross_validation:
+    enabled: true
+    n_splits: 5
+    time_series_split: true
+    
+  # Out-of-sample testing
+  out_of_sample:
+    enabled: true
+    holdout_percentage: 0.2
+    rolling_window: true
+
+# Logging and Debugging
+logging:
+  level: "INFO"
+  enable_prediction_logging: true
+  enable_training_logging: true
+  enable_performance_logging: true
+  log_path: "logs/regression/"
+  
+  # Debug settings
+  debug:
+    enable_feature_importance_logging: true
+    enable_prediction_details: true
+    enable_model_performance_details: true

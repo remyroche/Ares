@@ -39,6 +39,10 @@ from .comprehensive_parameter_integration import (
     ComprehensiveParameterIntegration,
     create_comprehensive_parameter_integration,
 )
+from .regime_specific_triple_barrier_optimizer import (
+    RegimeSpecificTripleBarrierOptimizer,
+    create_regime_specific_triple_barrier_optimizer,
+)
 
 __all__ = [
     "EfficiencyOptimizer",
@@ -49,4 +53,6 @@ __all__ = [
     "create_step17_probabilistic_bayesian_optimization",
     "ComprehensiveParameterIntegration",
     "create_comprehensive_parameter_integration",
+    "RegimeSpecificTripleBarrierOptimizer",
+    "create_regime_specific_triple_barrier_optimizer",
 ]

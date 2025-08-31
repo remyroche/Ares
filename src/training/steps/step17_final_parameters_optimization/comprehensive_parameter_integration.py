@@ -31,6 +31,18 @@ try:
 except ImportError:
     MLFLOW_AVAILABLE = False
 
+# Import regime-specific triple barrier optimizer
+try:
+    from .regime_specific_triple_barrier_optimizer import (
+        RegimeSpecificTripleBarrierOptimizer,
+        create_regime_specific_triple_barrier_optimizer
+    )
+    REGIME_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    REGIME_OPTIMIZER_AVAILABLE = False
+    RegimeSpecificTripleBarrierOptimizer = None
+    create_regime_specific_triple_barrier_optimizer = None
+
 
 class ComprehensiveParameterIntegration:
     """
@@ -50,6 +62,14 @@ class ComprehensiveParameterIntegration:
         self.integration_status = {}
         self.parameter_validation = {}
         
+        # Initialize regime-specific triple barrier optimizer if available
+        self.regime_optimizer = None
+        if REGIME_OPTIMIZER_AVAILABLE:
+            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config, training_manager)
+            self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
+        else:
+            self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
+    
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
         """Create comprehensive mapping of ML model trading parameters from all steps.
         
@@ -670,6 +690,70 @@ class ComprehensiveParameterIntegration:
         recommendations.append("Update documentation with new parameter values")
         
         return recommendations
+    
+    async def run_regime_specific_triple_barrier_optimization(
+        self, 
+        regime_data: Dict[str, pd.DataFrame],
+        optimization_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run regime-specific optimization for triple barrier method."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
+            
+            # Run optimization for all regimes
+            optimization_results = await self.regime_optimizer.optimize_regime_specific_parameters(
+                regime_data, 
+                optimization_config
+            )
+            
+            # Store regime optimization results
+            self.integration_status["regime_specific_optimization"] = optimization_results
+            
+            self.logger.info("✅ Regime-specific triple barrier optimization completed")
+            
+            return optimization_results
+            
+        except Exception as e:
+            error_msg = f"Regime-specific optimization failed: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            return {"error": error_msg}
+    
+    async def get_regime_optimization_status(self) -> Dict[str, Any]:
+        """Get status of regime-specific triple barrier optimization."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            return await self.regime_optimizer.get_regime_optimization_status()
+        except Exception as e:
+            return {"error": f"Failed to get regime optimization status: {e}"}
+    
+    async def apply_regime_specific_parameters(self, regime_name: str) -> Dict[str, Any]:
+        """Apply optimized parameters for a specific regime."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            return await self.regime_optimizer.apply_regime_parameters(regime_name)
+        except Exception as e:
+            return {"error": f"Failed to apply regime parameters: {e}"}
+    
+    async def get_regime_optimization_recommendations(self) -> List[str]:
+        """Get recommendations based on regime-specific optimization results."""
+        
+        if not self.regime_optimizer:
+            return ["Regime-specific triple barrier optimizer not available"]
+        
+        try:
+            return await self.regime_optimizer.get_optimization_recommendations()
+        except Exception as e:
+            return [f"Failed to get regime optimization recommendations: {e}"]
     
     async def run_comprehensive_integration(self, optimized_parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Run comprehensive parameter integration process."""

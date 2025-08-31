@@ -53,24 +53,24 @@ def get_multi_timeframe_hmm_ensemble_config() -> dict[str, Any]:
     """
     return {
         "MULTI_TIMEFRAME_HMM_ENSEMBLE": {
-            "enabled": True, "timeframes": {
+            "enabled": True,             "timeframes": {
+                "1m": {
+                    "weight": 0.20,  # High frequency signals for quick reactions
+                    "min_samples": 50,
+                    "enable_hazard_model": True, "enable_price_prediction": False,
+                },
                 "5m": {
-                    "weight": 0.25,  # Good balance of signal and noise
+                    "weight": 0.30,  # Primary timeframe for high leverage trading
                     "min_samples": 50,
                     "enable_hazard_model": True, "enable_price_prediction": False,
                 },
                 "15m": {
-                    "weight": 0.30,  # Higher weight for medium-term trends
+                    "weight": 0.35,  # Higher weight for medium-term trends and stability
                     "min_samples": 50,
                     "enable_hazard_model": True, "enable_price_prediction": False,
                 },
-                "30m": {
-                    "weight": 0.25,  # Good for longer-term regime changes
-                    "min_samples": 50,
-                    "enable_hazard_model": True, "enable_price_prediction": False,
-                },
-                "1h": {  # Replaced 1m with 1h for better signal quality
-                    "weight": 0.20,  # Lower weight but higher quality signals
+                "1h": {
+                    "weight": 0.15,  # Lower weight but higher quality signals for trend confirmation
                     "min_samples": 50,
                     "enable_hazard_model": True, "enable_price_prediction": False,  # Hazard models are for regime transitions only
                 },
@@ -125,25 +125,25 @@ def get_default_timeframe_configs() -> list[TimeframeConfig]:
     return [
         TimeframeConfig(
             timeframe="1m",
-            weight=0.25,
+            weight=0.20,
             min_samples=50,
             enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="5m",
-            weight=0.25,
+            weight=0.30,
             min_samples=50,
             enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
             timeframe="15m",
-            weight=0.25,
+            weight=0.35,
             min_samples=50,
             enable_hazard_model=True, enable_price_prediction=False,
         ),
         TimeframeConfig(
-            timeframe="30m",
-            weight=0.25,
+            timeframe="1h",
+            weight=0.15,
             min_samples=50,
             enable_hazard_model=True, enable_price_prediction=False,
         ),

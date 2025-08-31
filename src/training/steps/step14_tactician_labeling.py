@@ -1,4 +1,4 @@
-# src/training/steps/step8_tactician_labeling.py
+# src/training/steps/step14_*.py
 
 import asyncio
 import contextlib
@@ -397,7 +397,16 @@ class TacticianTripleBarrierLabeler:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 

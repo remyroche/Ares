@@ -1,4 +1,4 @@
-# src/training/steps/step13_walk_forward_validation.py
+# src/training/steps/step18_*.py
 
 import asyncio
 import contextlib
@@ -16,7 +16,16 @@ from src.utils.warning_symbols import (
 class WalkForwardValidationStep:
     """Step 13: Walk-Forward Validation using existing step6_walk_forward_validation."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 

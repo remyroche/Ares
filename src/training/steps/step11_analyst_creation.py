@@ -47,7 +47,13 @@ from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
+    error,
+    failed,
+    timeout,
+    warning,
+)
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
@@ -57,14 +63,26 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-    error,
-    failed,
-    timeout,
-    warning,
-)
 
 # Suppress Optuna's verbose logging to keep the output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+# Required modules for this step
+REQUIRED_MODULES = [
+    "numpy",
+    "pandas", 
+    "torch",
+    "sklearn",
+    "lightgbm",
+    "xgboost",
+    "optuna",
+    "joblib",
+    "src.utils.logger",
+    "src.utils.error_handler"
+]
+
+# Validate environment dependencies
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 
 class AnalystCreationStep:
@@ -82,7 +100,10 @@ class AnalystCreationStep:
             config (Dict[str, Any]): Configuration dictionary for the step.
         """
         self.config = config
+        self.standards = pipeline_standards
         self.logger = system_logger
+        self._validate_environment()
+        
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
@@ -111,6 +132,13 @@ class AnalystCreationStep:
             "signal",
             "prediction",
         }
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
 
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""

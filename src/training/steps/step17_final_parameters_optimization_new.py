@@ -1,4 +1,4 @@
-# src/training/steps/step17_final_parameters_optimization_new.py
+# src/training/steps/step17_*.py
 
 import asyncio
 import contextlib

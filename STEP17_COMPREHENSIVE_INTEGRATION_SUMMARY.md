@@ -143,7 +143,8 @@
 - **Regimes**: bull, bear, sideways, volatile, trending
 - **Parameters**: barrier multipliers, timeouts, position sizing, risk management
 - **Timing**: Before ML trading begins
-- **Location**: `src/training/early_stage_optimization.py`
+- **Location**: `src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py`
+- **Integration**: **Directly integrated with triple barrier labeler** for seamless parameter application
 
 ## ⚠️ **Important Notes**
 

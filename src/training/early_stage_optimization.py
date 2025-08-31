@@ -39,6 +39,18 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
+# Import regime-specific triple barrier optimizer from step4 components
+try:
+    from .steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+        RegimeSpecificTripleBarrierOptimizer,
+        create_regime_specific_triple_barrier_optimizer
+    )
+    REGIME_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    REGIME_OPTIMIZER_AVAILABLE = False
+    RegimeSpecificTripleBarrierOptimizer = None
+    create_regime_specific_triple_barrier_optimizer = None
+
 
 class EarlyStageOptimizer:
     """
@@ -61,6 +73,14 @@ class EarlyStageOptimizer:
         # MLflow experiment names
         self.sr_experiment_name = "early_stage_sr_optimization"
         self.regime_experiment_name = "early_stage_regime_barrier_optimization"
+        
+        # Initialize regime-specific triple barrier optimizer if available
+        self.regime_optimizer = None
+        if REGIME_OPTIMIZER_AVAILABLE:
+            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config, training_manager)
+            self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
+        else:
+            self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
     
     async def optimize_sr_parameters(
         self, 
@@ -136,6 +156,82 @@ class EarlyStageOptimizer:
             error_msg = f"SR optimization failed: {e}"
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
+    
+    async def run_regime_specific_triple_barrier_optimization(
+        self, 
+        regime_data: Dict[str, pd.DataFrame],
+        optimization_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Run regime-specific triple barrier optimization through the early-stage optimizer."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
+            
+            # Run optimization for all regimes
+            optimization_results = await self.regime_optimizer.optimize_regime_specific_parameters(
+                regime_data, 
+                optimization_config
+            )
+            
+            # Store regime optimization results
+            self.regime_barrier_optimization_results = optimization_results
+            
+            self.logger.info("✅ Regime-specific triple barrier optimization completed")
+            
+            return optimization_results
+            
+        except Exception as e:
+            error_msg = f"Regime-specific optimization failed: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            return {"error": error_msg}
+    
+    async def get_regime_optimization_status(self) -> Dict[str, Any]:
+        """Get status of regime-specific triple barrier optimization."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            return await self.regime_optimizer.get_regime_optimization_status()
+        except Exception as e:
+            return {"error": f"Failed to get regime optimization status: {e}"}
+    
+    async def apply_regime_specific_parameters(self, regime_name: str) -> Dict[str, Any]:
+        """Apply optimized parameters for a specific regime."""
+        
+        if not self.regime_optimizer:
+            return {"error": "Regime-specific triple barrier optimizer not available"}
+        
+        try:
+            return await self.regime_optimizer.apply_regime_parameters(regime_name)
+        except Exception as e:
+            return {"error": f"Failed to apply regime parameters: {e}"}
+    
+    async def get_regime_optimization_recommendations(self) -> List[str]:
+        """Get recommendations based on regime-specific optimization results."""
+        
+        if not self.regime_optimizer:
+            return ["Regime-specific triple barrier optimizer not available"]
+        
+        try:
+            return await self.regime_optimizer.get_optimization_recommendations()
+        except Exception as e:
+            return [f"Failed to get regime optimization recommendations: {e}"]
+    
+    async def get_triple_barrier_labeler(self):
+        """Get the integrated triple barrier labeler from the regime optimizer."""
+        
+        if not self.regime_optimizer:
+            return None
+        
+        try:
+            return await self.regime_optimizer.get_triple_barrier_labeler()
+        except Exception as e:
+            self.logger.error(f"Failed to get triple barrier labeler: {e}")
+            return None
     
     def _create_sr_objective(self, data: pd.DataFrame):
         """Create objective function for SR optimization."""

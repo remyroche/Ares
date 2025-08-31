@@ -1206,14 +1206,75 @@ class HMMBasedTrainingStep:
     async def _load_hmm_composite_regime_data(
         self, timeframe: str,
     ) -> dict[str, pd.DataFrame]:
-        """Load HMM composite regime-specific data splits."""
+        """Load unified HMM composite regime dataset with labels."""
         try:
             data_dir = self.config.get("data_dir", "data/training")
+            symbol = self.config.get("symbol", "ETHUSDT")
+            exchange = self.config.get("exchange", "BINANCE")
+            
+            # Try to load unified regime dataset first (new approach)
+            unified_regime_file = os.path.join(
+                data_dir, 
+                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
+            )
+            
+            if os.path.exists(unified_regime_file):
+                self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
+                unified_data = pd.read_parquet(unified_regime_file)
+                
+                # Load regime labels mapping
+                labels_file = os.path.join(
+                    data_dir, 
+                    f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
+                )
+                
+                if os.path.exists(labels_file):
+                    with open(labels_file) as f:
+                        regime_labels = json.load(f)
+                    
+                    regime_ids = regime_labels.get("regime_ids", [])
+                    self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
+                    
+                    # Create regime splits from unified dataset
+                    regime_splits = {}
+                    for regime_id in regime_ids:
+                        regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+                        
+                        if len(regime_data) > 0:
+                            # Split into train/validation/test (80/10/10)
+                            total_len = len(regime_data)
+                            train_end = int(total_len * 0.8)
+                            val_end = int(total_len * 0.9)
+                            
+                            regime_splits[f"regime_{regime_id}"] = {
+                                "data": {
+                                    "train": regime_data.iloc[:train_end],
+                                    "validation": regime_data.iloc[train_end:val_end],
+                                    "test": regime_data.iloc[val_end:]
+                                },
+                                "description": f"Regime {regime_id} from unified dataset",
+                                "total_samples": total_len
+                            }
+                            
+                            self.logger.info(
+                                f"✅ Created splits for regime {regime_id}: "
+                                f"train={len(regime_data.iloc[:train_end])}, "
+                                f"val={len(regime_data.iloc[train_end:val_end])}, "
+                                f"test={len(regime_data.iloc[val_end:])}"
+                            )
+                    
+                    self.logger.info(f"📊 Created {len(regime_splits)} regime splits from unified dataset")
+                    return regime_splits
+                else:
+                    self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
+            
+            # Fallback to legacy approach for backward compatibility
+            self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_data_dir = os.path.join(data_dir, "regime_data")
 
             if not os.path.exists(regime_data_dir):
                 self.logger.warning(
-                    f"⚠️ Regime data directory not found: {regime_data_dir}",
+                    f"⚠️ Legacy regime data directory not found: {regime_data_dir}",
                 )
                 return {}
 
@@ -1224,7 +1285,7 @@ class HMMBasedTrainingStep:
             )
             if not os.path.exists(summary_file):
                 self.logger.warning(
-                    f"⚠️ Regime splitting summary not found: {summary_file}",
+                    f"⚠️ Legacy regime splitting summary not found: {summary_file}",
                 )
                 return {}
 
@@ -1261,7 +1322,7 @@ class HMMBasedTrainingStep:
                     }
 
             self.logger.info(
-                f"📊 Loaded {len(regime_splits)} HMM composite regime splits",
+                f"📊 Loaded {len(regime_splits)} HMM composite regime splits from legacy approach",
             )
             return regime_splits
 

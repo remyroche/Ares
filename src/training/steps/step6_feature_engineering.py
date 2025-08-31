@@ -336,16 +336,31 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
 
 
 async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-    """Load regime data from step3."""
+    """Load unified regime data with labels from step4/step8."""
     try:
+        # Try to load unified regime dataset first (new approach)
+        unified_regime_file = Path(f"data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
+        
+        if unified_regime_file.exists():
+            regime_data = pd.read_parquet(unified_regime_file)
+            system_logger.info(f"✅ Loaded unified regime dataset: {regime_data.shape}")
+            system_logger.info(f"   Regime column: composite_cluster_id")
+            system_logger.info(f"   Unique regimes: {regime_data['composite_cluster_id'].nunique()}")
+            return regime_data
+        
+        # Fallback to old approach for backward compatibility
         regime_file = Path(f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet")
         
         if regime_file.exists():
             regime_data = pd.read_parquet(regime_file)
-            system_logger.info(f"Loaded regime data: {regime_data.shape}")
+            system_logger.info(f"⚠️ Loaded legacy regime data: {regime_data.shape}")
+            system_logger.info(f"   Note: Consider running step4/step8 for unified approach")
             return regime_data
         else:
-            system_logger.warning(f"Regime file not found: {regime_file}")
+            system_logger.warning(f"⚠️ No regime data found (neither unified nor legacy)")
+            system_logger.warning(f"   Expected files:")
+            system_logger.warning(f"     - {unified_regime_file}")
+            system_logger.warning(f"     - {regime_file}")
             return None
             
     except Exception as e:
@@ -406,13 +421,38 @@ async def _create_comprehensive_features(
         merged_data = unified_data.copy()
         
         if regime_data is not None:
-            # Merge regime information
-            merged_data = merged_data.merge(
-                regime_data[["timestamp", "regime"]], 
-                on="timestamp", 
-                how="left"
-            )
-            system_logger.info("✅ Merged regime data")
+            # Check if this is unified regime data or legacy regime data
+            if "composite_cluster_id" in regime_data.columns:
+                # Unified regime dataset - regime info is already included
+                if "composite_cluster_id" not in merged_data.columns:
+                    # Merge regime information from unified dataset
+                    regime_columns = ["composite_cluster_id"]
+                    if "timestamp" in regime_data.columns:
+                        regime_columns.insert(0, "timestamp")
+                    
+                    merged_data = merged_data.merge(
+                        regime_data[regime_columns], 
+                        on="timestamp" if "timestamp" in regime_columns else merged_data.index,
+                        how="left"
+                    )
+                    system_logger.info("✅ Merged regime data from unified dataset")
+                else:
+                    system_logger.info("✅ Regime data already present in unified dataset")
+            else:
+                # Legacy regime data - merge regime information
+                regime_columns = ["regime"] if "regime" in regime_data.columns else []
+                if "timestamp" in regime_data.columns:
+                    regime_columns.insert(0, "timestamp")
+                
+                if regime_columns:
+                    merged_data = merged_data.merge(
+                        regime_data[regime_columns], 
+                        on="timestamp", 
+                        how="left"
+                    )
+                    system_logger.info("✅ Merged legacy regime data")
+                else:
+                    system_logger.warning("⚠️ No valid regime columns found in regime data")
         
         if labeled_data is not None:
             # Merge labeled data

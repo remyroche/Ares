@@ -412,36 +412,192 @@ class FeatureEngineeringOptimizer:
         feature_name: str, 
         params: dict[str, Any]
     ) -> Optional[pd.Series]:
-        """Generate synthetic feature based on parameters."""
+        """Generate actual technical indicator feature based on optimized parameters."""
         
         try:
-            # This is a simplified version - in practice, you'd implement
-            # actual technical indicator calculations here
+            if 'close' not in data.columns:
+                self.logger.warning(f"⚠️ No 'close' column found for {feature_name}")
+                return None
+            
+            close_prices = data['close']
+            
             if feature_name == "RSI":
                 lookback = params["lookback_period"]
-                # Simulate RSI calculation
-                return pd.Series(np.random.uniform(0, 100, len(data)), index=data.index)
+                return self._calculate_rsi(close_prices, lookback)
             
             elif feature_name == "MACD":
                 fast = params["fast_period"]
                 slow = params["slow_period"]
                 signal = params["signal_period"]
-                # Simulate MACD calculation
-                return pd.Series(np.random.randn(len(data)), index=data.index)
+                return self._calculate_macd(close_prices, fast, slow, signal)
             
             elif feature_name == "Bollinger_Bands":
                 lookback = params["lookback_period"]
                 std_dev = params["std_dev"]
-                # Simulate Bollinger Bands position
-                return pd.Series(np.random.uniform(0, 1, len(data)), index=data.index)
+                return self._calculate_bollinger_position(close_prices, lookback, std_dev)
             
-            # Add more feature types as needed
+            elif feature_name == "SMA":
+                short_period = params["short_period"]
+                long_period = params["long_period"]
+                return self._calculate_sma_crossover(close_prices, short_period, long_period)
+            
+            elif feature_name == "EMA":
+                short_period = params["short_period"]
+                long_period = params["long_period"]
+                return self._calculate_ema_crossover(close_prices, short_period, long_period)
+            
+            elif feature_name == "ATR":
+                lookback = params["lookback_period"]
+                return self._calculate_atr(data, lookback)
+            
+            elif feature_name == "Stochastic":
+                k_period = params["k_period"]
+                d_period = params["d_period"]
+                return self._calculate_stochastic(data, k_period, d_period)
+            
+            elif feature_name == "ADX":
+                lookback = params["lookback_period"]
+                return self._calculate_adx(data, lookback)
+            
+            elif feature_name == "CCI":
+                lookback = params["lookback_period"]
+                constant = params["constant"]
+                return self._calculate_cci(data, lookback, constant)
             
             return None
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error generating synthetic feature for {feature_name}: {e}")
+            self.logger.warning(f"⚠️ Error generating feature for {feature_name}: {e}")
             return None
+    
+    def _calculate_rsi(self, prices: pd.Series, lookback: int) -> pd.Series:
+        """Calculate RSI with optimized lookback period."""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=lookback).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=lookback).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _calculate_macd(self, prices: pd.Series, fast: int, slow: int, signal: int) -> pd.Series:
+        """Calculate MACD with optimized periods."""
+        ema_fast = prices.ewm(span=fast).mean()
+        ema_slow = prices.ewm(span=slow).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal).mean()
+        histogram = macd_line - signal_line
+        return histogram
+    
+    def _calculate_bollinger_position(self, prices: pd.Series, lookback: int, std_dev: float) -> pd.Series:
+        """Calculate Bollinger Bands position with optimized parameters."""
+        sma = prices.rolling(window=lookback).mean()
+        std = prices.rolling(window=lookback).std()
+        upper_band = sma + (std * std_dev)
+        lower_band = sma - (std * std_dev)
+        # Return position within bands (0 = at lower band, 1 = at upper band)
+        position = (prices - lower_band) / (upper_band - lower_band)
+        return position
+    
+    def _calculate_sma_crossover(self, prices: pd.Series, short_period: int, long_period: int) -> pd.Series:
+        """Calculate SMA crossover signal."""
+        sma_short = prices.rolling(window=short_period).mean()
+        sma_long = prices.rolling(window=long_period).mean()
+        crossover = (sma_short - sma_long) / sma_long
+        return crossover
+    
+    def _calculate_ema_crossover(self, prices: pd.Series, short_period: int, long_period: int) -> pd.Series:
+        """Calculate EMA crossover signal."""
+        ema_short = prices.ewm(span=short_period).mean()
+        ema_long = prices.ewm(span=long_period).mean()
+        crossover = (ema_short - ema_long) / ema_long
+        return crossover
+    
+    def _calculate_atr(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate ATR with optimized lookback period."""
+        if not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=lookback).mean()
+        return atr
+    
+    def _calculate_stochastic(self, data: pd.DataFrame, k_period: int, d_period: int) -> pd.Series:
+        """Calculate Stochastic oscillator with optimized periods."""
+        if not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        lowest_low = low.rolling(window=k_period).min()
+        highest_high = high.rolling(window=k_period).max()
+        k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+        d_percent = k_percent.rolling(window=d_period).mean()
+        return d_percent
+    
+    def _calculate_adx(self, data: pd.DataFrame, lookback: int) -> pd.Series:
+        """Calculate ADX with optimized lookback period."""
+        if not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Calculate +DM and -DM
+        high_diff = high.diff()
+        low_diff = low.diff()
+        
+        plus_dm = pd.Series(0, index=high.index)
+        minus_dm = pd.Series(0, index=high.index)
+        
+        plus_dm[high_diff > low_diff] = high_diff[high_diff > low_diff]
+        minus_dm[low_diff > high_diff] = -low_diff[low_diff > high_diff]
+        
+        # Calculate TR
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate smoothed values
+        tr_smooth = tr.rolling(window=lookback).mean()
+        plus_dm_smooth = plus_dm.rolling(window=lookback).mean()
+        minus_dm_smooth = minus_dm.rolling(window=lookback).mean()
+        
+        # Calculate +DI and -DI
+        plus_di = 100 * (plus_dm_smooth / tr_smooth)
+        minus_di = 100 * (minus_dm_smooth / tr_smooth)
+        
+        # Calculate DX and ADX
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(window=lookback).mean()
+        
+        return adx
+    
+    def _calculate_cci(self, data: pd.DataFrame, lookback: int, constant: float) -> pd.Series:
+        """Calculate CCI with optimized lookback period and constant."""
+        if not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        typical_price = (high + low + close) / 3
+        sma_tp = typical_price.rolling(window=lookback).mean()
+        mad = typical_price.rolling(window=lookback).apply(lambda x: np.mean(np.abs(x - x.mean())))
+        cci = (typical_price - sma_tp) / (constant * mad)
+        
+        return cci
     
     async def _save_optimization_results(
         self, 

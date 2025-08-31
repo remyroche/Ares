@@ -39,6 +39,13 @@ from .comprehensive_parameter_integration import (
     ComprehensiveParameterIntegration,
     create_comprehensive_parameter_integration,
 )
+from .optimized_step17_implementation import (
+    HierarchicalOptimizer,
+    IntelligentParameterPruner,
+    AdaptiveTrialAllocator,
+    SmartParameterGrouper,
+    create_hierarchical_optimizer,
+)
 
 __all__ = [
     "EfficiencyOptimizer",
@@ -49,4 +56,9 @@ __all__ = [
     "create_step17_probabilistic_bayesian_optimization",
     "ComprehensiveParameterIntegration",
     "create_comprehensive_parameter_integration",
+    "HierarchicalOptimizer",
+    "IntelligentParameterPruner",
+    "AdaptiveTrialAllocator",
+    "SmartParameterGrouper",
+    "create_hierarchical_optimizer",
 ]

@@ -1,0 +1,406 @@
+# src/config/matrix_diverse_lookback_config.py
+
+"""
+Matrix-Based Diverse Lookback Period Configuration
+
+Configuration settings for matrix/vector-based optimization of diverse lookback periods.
+"""
+
+from typing import Any, Dict, List
+
+
+def get_matrix_diverse_lookback_config() -> dict[str, Any]:
+    """
+    Get matrix-based diverse lookback period optimization configuration.
+    
+    Returns:
+        dict: Configuration dictionary
+    """
+    return {
+        "matrix_diverse_lookback_optimization": {
+            "target_periods_per_feature": 3,
+            "min_periods_per_feature": 2,
+            "max_periods_per_feature": 3,
+            "diversity_threshold": 0.3,
+            "meaningful_threshold": 0.1,
+            "correlation_threshold": 0.7,
+            "matrix_optimization": {
+                "enabled": True,
+                "method": "scipy",  # "scipy", "optuna", "greedy"
+                "max_iterations": 1000,
+                "tolerance": 1e-6,
+                "optimization_objectives": {
+                    "information_weight": 0.6,
+                    "diversity_weight": 0.4,
+                    "correlation_penalty": 0.5
+                }
+            },
+            "vector_operations": {
+                "enabled": True,
+                "batch_size": 1000,
+                "parallel_processing": True,
+                "memory_efficient": True,
+                "chunk_size": 500
+            },
+            "file_output": {
+                "output_directory": "data/matrix_diverse_lookback_optimization",
+                "step_parameters_directory": "data/optimized_feature_parameters",
+                "save_detailed_results": True,
+                "save_summary": True,
+                "save_matrix_details": True,
+                "save_optimized_parameters": True,
+                "compression": "gzip",
+                "file_format": "json"
+            },
+            "lookback_ranges": {
+                "RSI": {
+                    "min": 5,
+                    "max": 50,
+                    "step": 2,
+                    "description": "RSI lookback periods for momentum analysis",
+                    "expected_insights": ["Short-term momentum", "Medium-term trend", "Long-term trend"]
+                },
+                "MACD_fast": {
+                    "min": 5,
+                    "max": 25,
+                    "step": 1,
+                    "description": "MACD fast period for quick signal generation",
+                    "expected_insights": ["Quick momentum", "Fast trend changes", "Short-term signals"]
+                },
+                "MACD_slow": {
+                    "min": 20,
+                    "max": 40,
+                    "step": 2,
+                    "description": "MACD slow period for trend confirmation",
+                    "expected_insights": ["Trend confirmation", "Medium-term trend", "Signal filtering"]
+                },
+                "Bollinger_Bands": {
+                    "min": 10,
+                    "max": 50,
+                    "step": 2,
+                    "description": "Bollinger Bands lookback for volatility analysis",
+                    "expected_insights": ["Volatility regime", "Price extremes", "Mean reversion"]
+                },
+                "SMA_short": {
+                    "min": 3,
+                    "max": 20,
+                    "step": 1,
+                    "description": "Short SMA for immediate trend detection",
+                    "expected_insights": ["Immediate trend", "Quick reversals", "Short-term support/resistance"]
+                },
+                "SMA_long": {
+                    "min": 20,
+                    "max": 100,
+                    "step": 5,
+                    "description": "Long SMA for major trend identification",
+                    "expected_insights": ["Major trend", "Long-term support/resistance", "Trend strength"]
+                },
+                "EMA_short": {
+                    "min": 3,
+                    "max": 20,
+                    "step": 1,
+                    "description": "Short EMA for responsive trend detection",
+                    "expected_insights": ["Responsive trend", "Quick signals", "Short-term momentum"]
+                },
+                "EMA_long": {
+                    "min": 20,
+                    "max": 100,
+                    "step": 5,
+                    "description": "Long EMA for major trend confirmation",
+                    "expected_insights": ["Major trend confirmation", "Long-term momentum", "Trend persistence"]
+                },
+                "ATR": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "ATR for volatility measurement",
+                    "expected_insights": ["Volatility regime", "Risk assessment", "Position sizing"]
+                },
+                "Stochastic_k": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "Stochastic %K for momentum analysis",
+                    "expected_insights": ["Momentum extremes", "Overbought/oversold", "Divergence detection"]
+                },
+                "Stochastic_d": {
+                    "min": 3,
+                    "max": 10,
+                    "step": 1,
+                    "description": "Stochastic %D for signal confirmation",
+                    "expected_insights": ["Signal confirmation", "Momentum smoothing", "Trend confirmation"]
+                },
+                "ADX": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "ADX for trend strength measurement",
+                    "expected_insights": ["Trend strength", "Market regime", "Directional movement"]
+                },
+                "CCI": {
+                    "min": 5,
+                    "max": 30,
+                    "step": 1,
+                    "description": "CCI for cyclical analysis",
+                    "expected_insights": ["Cyclical extremes", "Mean reversion", "Momentum cycles"]
+                }
+            }
+        },
+        "matrix_optimization_methods": {
+            "scipy": {
+                "method": "SLSQP",
+                "constraints": {
+                    "type": "eq",
+                    "fun": "period_count_constraint"
+                },
+                "bounds": [(0, 1)],
+                "options": {
+                    "maxiter": 1000,
+                    "ftol": 1e-6,
+                    "eps": 1e-8
+                }
+            },
+            "optuna": {
+                "n_trials": 100,
+                "sampler": "TPESampler",
+                "pruner": "MedianPruner",
+                "storage": "sqlite:///matrix_optimization.db"
+            },
+            "greedy": {
+                "start_with_best": True,
+                "diversity_threshold": 0.3,
+                "max_iterations": 100
+            }
+        },
+        "vector_optimization_settings": {
+            "feature_calculation": {
+                "vectorized": True,
+                "parallel": True,
+                "chunk_size": 1000,
+                "memory_limit": "2GB"
+            },
+            "correlation_analysis": {
+                "method": "pearson",
+                "vectorized": True,
+                "handle_nan": "drop",
+                "min_periods": 100
+            },
+            "information_scoring": {
+                "method": "shap",
+                "n_estimators": 100,
+                "random_state": 42,
+                "vectorized": True
+            }
+        },
+        "file_naming_convention": {
+            "main_results": "{exchange}_{symbol}_{timeframe}_matrix_diverse_lookback_periods.json",
+            "summary": "{exchange}_{symbol}_{timeframe}_diverse_periods_summary.json",
+            "matrix_details": "{exchange}_{symbol}_{timeframe}_matrix_optimization_details.json",
+            "optimized_parameters": "{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json",
+            "regime_specific": "{exchange}_{symbol}_{timeframe}_regime_specific_periods.json"
+        },
+        "logging_settings": {
+            "log_file_paths": True,
+            "log_optimization_progress": True,
+            "log_matrix_operations": True,
+            "log_performance_metrics": True,
+            "log_file_sizes": True
+        }
+    }
+
+
+def get_matrix_optimization_objectives() -> dict[str, Any]:
+    """
+    Get matrix optimization objective definitions.
+    
+    Returns:
+        dict: Objective definitions
+    """
+    return {
+        "objectives": {
+            "information_maximization": {
+                "description": "Maximize information content of selected periods",
+                "weight": 0.6,
+                "method": "shap_importance",
+                "normalization": "min_max"
+            },
+            "diversity_maximization": {
+                "description": "Maximize diversity between selected periods",
+                "weight": 0.4,
+                "method": "correlation_diversity",
+                "normalization": "min_max"
+            },
+            "correlation_penalization": {
+                "description": "Penalize high correlations between periods",
+                "weight": 0.5,
+                "method": "correlation_penalty",
+                "normalization": "linear"
+            }
+        },
+        "constraints": {
+            "period_count": {
+                "type": "equality",
+                "value": 3,
+                "description": "Exactly 3 periods per feature"
+            },
+            "meaningful_threshold": {
+                "type": "inequality",
+                "value": 0.1,
+                "description": "Minimum information score"
+            },
+            "correlation_threshold": {
+                "type": "inequality",
+                "value": 0.7,
+                "description": "Maximum correlation between periods"
+            }
+        }
+    }
+
+
+def get_vector_operation_settings() -> dict[str, Any]:
+    """
+    Get vector operation settings for efficient computation.
+    
+    Returns:
+        dict: Vector operation settings
+    """
+    return {
+        "vector_operations": {
+            "feature_calculation": {
+                "batch_processing": True,
+                "batch_size": 1000,
+                "parallel_workers": 4,
+                "memory_efficient": True,
+                "chunk_size": 500
+            },
+            "correlation_analysis": {
+                "vectorized_correlation": True,
+                "numpy_corrcoef": True,
+                "handle_nan": "drop",
+                "min_periods": 100,
+                "efficient_memory": True
+            },
+            "information_scoring": {
+                "vectorized_shap": True,
+                "batch_shap": True,
+                "shap_batch_size": 1000,
+                "parallel_shap": True,
+                "memory_optimized": True
+            },
+            "matrix_operations": {
+                "numpy_operations": True,
+                "scipy_optimization": True,
+                "efficient_matrix": True,
+                "sparse_matrices": False,
+                "memory_mapping": False
+            }
+        },
+        "performance_optimization": {
+            "memory_management": {
+                "max_memory_usage": "4GB",
+                "garbage_collection": True,
+                "memory_monitoring": True,
+                "chunk_processing": True
+            },
+            "parallel_processing": {
+                "enabled": True,
+                "n_jobs": -1,
+                "backend": "multiprocessing",
+                "batch_size": 1000,
+                "memory_efficient": True
+            },
+            "caching": {
+                "enable_caching": True,
+                "cache_directory": "cache/matrix_optimization",
+                "cache_size": "1GB",
+                "cache_ttl": 3600
+            }
+        }
+    }
+
+
+def get_file_output_settings() -> dict[str, Any]:
+    """
+    Get file output settings for saving optimization results.
+    
+    Returns:
+        dict: File output settings
+    """
+    return {
+        "output_directories": {
+            "main_output": "data/matrix_diverse_lookback_optimization",
+            "step_parameters": "data/optimized_feature_parameters",
+            "cache": "cache/matrix_optimization",
+            "logs": "logs/matrix_optimization"
+        },
+        "file_formats": {
+            "main_results": "json",
+            "summary": "json",
+            "matrix_details": "json",
+            "optimized_parameters": "json",
+            "logs": "txt"
+        },
+        "compression": {
+            "enabled": True,
+            "method": "gzip",
+            "level": 6,
+            "extensions": [".json", ".txt"]
+        },
+        "file_organization": {
+            "create_date_folders": True,
+            "create_symbol_folders": True,
+            "backup_previous_results": True,
+            "max_backup_count": 5
+        },
+        "logging": {
+            "log_file_paths": True,
+            "log_file_sizes": True,
+            "log_optimization_progress": True,
+            "log_performance_metrics": True,
+            "log_memory_usage": True
+        }
+    }
+
+
+def get_integration_settings() -> dict[str, Any]:
+    """
+    Get integration settings for subsequent steps.
+    
+    Returns:
+        dict: Integration settings
+    """
+    return {
+        "subsequent_steps": {
+            "step7": {
+                "load_optimized_parameters": True,
+                "parameter_file_path": "data/optimized_feature_parameters/{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json",
+                "fallback_parameters": "default_feature_parameters",
+                "validate_parameters": True
+            },
+            "step8": {
+                "load_optimized_parameters": True,
+                "use_optimized_periods": True,
+                "feature_generation": "optimized",
+                "parameter_validation": True
+            },
+            "step9": {
+                "load_optimized_parameters": True,
+                "feature_engineering": "optimized",
+                "period_optimization": True
+            }
+        },
+        "parameter_validation": {
+            "validate_periods": True,
+            "validate_diversity": True,
+            "validate_information_scores": True,
+            "validate_file_integrity": True,
+            "fallback_strategy": "use_defaults"
+        },
+        "feature_generation": {
+            "use_optimized_periods": True,
+            "generate_all_periods": False,
+            "period_combination": "individual",
+            "feature_naming": "include_period",
+            "validation": True
+        }
+    }

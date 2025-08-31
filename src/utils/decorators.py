@@ -225,12 +225,6 @@ def _log_performance_metrics(metrics: Dict[str, Any], level: str):
 # Enhanced Type/schema validation
 # --------------------------
 
-@_register_decorator_if_available(
-    name="validate_call_or_runtime_types",
-    version="2.0",
-    description="Enhanced type validation with caching and performance monitoring",
-    tags=["validation", "type-checking", "enhanced"]
-)
 def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F], F]:
     """Enhanced decorator factory that prefers pydantic.validate_call if available.
 
@@ -264,12 +258,6 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
     return decorator
 
 
-@_register_decorator_if_available(
-    name="pa_check_input",
-    version="2.0",
-    description="Enhanced pandera input validation with caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
-)
 def pa_check_input(
     schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True
 ) -> Callable[[F], F]:
@@ -304,12 +292,6 @@ def pa_check_input(
     return decorator
 
 
-@_register_decorator_if_available(
-    name="pa_check_output",
-    version="2.0",
-    description="Enhanced pandera output validation with caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
-)
 def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
     """Enhanced compatibility wrapper for pandera.check_output.
 
@@ -337,12 +319,6 @@ def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
     return decorator
 
 
-@_register_decorator_if_available(
-    name="pa_check_io",
-    version="2.0",
-    description="Enhanced pandera I/O validation with intelligent caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
-)
 def pa_check_io(
     *,
     input_schema: Any | None = None,
@@ -457,12 +433,6 @@ def pa_check_io(
 # Enhanced Vectorization guarantees
 # --------------------------
 
-@_register_decorator_if_available(
-    name="enforce_ndarray",
-    version="2.0",
-    description="Enhanced ndarray enforcement with performance monitoring",
-    tags=["vectorization", "numpy", "enhanced"]
-)
 def enforce_ndarray(
     *,
     arg_index: int = 0,
@@ -527,12 +497,6 @@ def enforce_ndarray(
     return decorator
 
 
-@_register_decorator_if_available(
-    name="auto_vectorize",
-    version="2.0",
-    description="Enhanced auto-vectorization with intelligent caching",
-    tags=["vectorization", "numpy", "enhanced"]
-)
 def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
     """Enhanced wrap a scalar function so that it transparently handles numpy arrays.
 
@@ -569,12 +533,6 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
 # Enhanced NaN/Inf/null guards
 # --------------------------
 
-@_register_decorator_if_available(
-    name="guard_array_nan_inf",
-    version="2.0",
-    description="Enhanced NaN/Inf guards with intelligent caching",
-    tags=["data-quality", "validation", "enhanced"]
-)
 def guard_array_nan_inf(
     *,
     mode: str = "raise",  # "raise" | "warn" | "coerce"
@@ -682,12 +640,6 @@ def guard_array_nan_inf(
     return decorator
 
 
-@_register_decorator_if_available(
-    name="guard_dataframe_nulls",
-    version="2.0",
-    description="Enhanced DataFrame null guards with intelligent caching",
-    tags=["data-quality", "validation", "dataframe", "enhanced"]
-)
 def guard_dataframe_nulls(
     *,
     columns: list[str] | None = None,
@@ -830,12 +782,6 @@ except Exception:  # pragma: no cover
     pass
 
 
-@_register_decorator_if_available(
-    name="normalize_errors",
-    version="2.0",
-    description="Enhanced error normalization with intelligent recovery",
-    tags=["error-handling", "recovery", "enhanced"]
-)
 def normalize_errors(
     *,
     map_exceptions: dict[type[BaseException], type[DomainError]] | None = None,
@@ -955,12 +901,6 @@ def _sanitize(value: Any) -> Any:
         return value
 
 
-@_register_decorator_if_available(
-    name="with_tracing_span",
-    version="2.0",
-    description="Enhanced tracing with performance monitoring and caching",
-    tags=["tracing", "logging", "performance", "enhanced"]
-)
 def with_tracing_span(
     span_name: str | None = None,
     *,

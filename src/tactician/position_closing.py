@@ -50,6 +50,11 @@ class PositionCloser:
         self.trailing_stop_distance = tpsl_optimization.get("trailing_stop_distance", 0.02)
         self.max_hold_time = tpsl_optimization.get("max_hold_time", 3600)  # 1 hour
 
+        # Load step17 barrier confidence threshold for exit strategy
+        step12_config = config.get("step12_confidence_optimization", {})
+        position_opening_config = step12_config.get("position_opening", {})
+        self.barrier_confidence_threshold = position_opening_config.get("min_barrier_confidence", 0.72)
+
         # State tracking
         self.closed_positions = []
         self.position_history = []
@@ -146,21 +151,28 @@ class PositionCloser:
         position_data: Dict[str, Any],
         model_confidence: float,
         atr_value: float,
-        current_price: float
+        current_price: float,
+        barrier_confidence: Optional[float] = None
     ) -> bool:
         """
-        Determine if a position should be closed based on model confidence and ATR.
+        Determine if a position should be closed based on model confidence, ATR, and barrier confidence.
 
         Args:
             position_data: Position information
             model_confidence: Model confidence score (0-1)
             atr_value: Average True Range value
             current_price: Current market price
+            barrier_confidence: Confidence for meeting the two barriers (optional)
 
         Returns:
             bool: True if position should be closed
         """
         try:
+            # Check barrier confidence threshold (NEW EXIT STRATEGY)
+            if barrier_confidence is not None and barrier_confidence < self.barrier_confidence_threshold:
+                self.logger.info(f"🚨 EXIT STRATEGY: Closing position due to low barrier confidence: {barrier_confidence:.3f} < {self.barrier_confidence_threshold}")
+                return True
+
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
                 self.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
@@ -181,6 +193,74 @@ class PositionCloser:
         except Exception as e:
             self.logger.error(failed(f"❌ Position closure evaluation failed: {e}"))
             return False
+
+    def assess_barrier_confidence(
+        self,
+        tactician_predictions: Dict[str, Any],
+        current_price: float,
+        position_data: Dict[str, Any]
+    ) -> float:
+        """
+        Assess confidence for meeting the two barriers based on tactician predictions.
+        
+        This method evaluates the tactician's confidence in reaching the profit take
+        and stop loss barriers for the current position.
+        
+        Args:
+            tactician_predictions: Tactician's predictions including barrier probabilities
+            current_price: Current market price
+            position_data: Position information including entry price and side
+            
+        Returns:
+            float: Combined confidence for meeting the two barriers (0-1)
+        """
+        try:
+            entry_price = position_data.get("entry_price", 0)
+            side = position_data.get("side", "LONG").upper()
+            
+            if entry_price <= 0:
+                self.logger.warning("Invalid entry price for barrier confidence assessment")
+                return 0.0
+            
+            # Get barrier probabilities from tactician predictions
+            barrier_probs = tactician_predictions.get("barrier_probabilities", {})
+            
+            # Extract probabilities for the two barriers
+            profit_take_prob = barrier_probs.get("profit_take_probability", 0.5)
+            stop_loss_prob = barrier_probs.get("stop_loss_probability", 0.5)
+            
+            # For long positions: we want high profit take probability and low stop loss probability
+            # For short positions: we want high profit take probability and low stop loss probability
+            if side == "LONG":
+                # For long positions, profit take is above entry, stop loss is below
+                barrier_confidence = (profit_take_prob * (1 - stop_loss_prob)) ** 0.5
+            else:  # SHORT
+                # For short positions, profit take is below entry, stop loss is above
+                barrier_confidence = (profit_take_prob * (1 - stop_loss_prob)) ** 0.5
+            
+            # Apply additional confidence factors if available
+            confidence_factors = tactician_predictions.get("confidence_factors", {})
+            price_direction_confidence = confidence_factors.get("price_direction_prediction", 1.0)
+            price_target_confidence = confidence_factors.get("price_target_confidence", 1.0)
+            
+            # Combine all confidence factors
+            combined_confidence = barrier_confidence * price_direction_confidence * price_target_confidence
+            
+            # Ensure confidence is within valid range
+            combined_confidence = max(0.0, min(1.0, combined_confidence))
+            
+            self.logger.info(f"🎯 Barrier Confidence Assessment:")
+            self.logger.info(f"   Position: {side} @ {entry_price:.4f}, Current: {current_price:.4f}")
+            self.logger.info(f"   Profit Take Prob: {profit_take_prob:.3f}, Stop Loss Prob: {stop_loss_prob:.3f}")
+            self.logger.info(f"   Barrier Confidence: {barrier_confidence:.3f}")
+            self.logger.info(f"   Combined Confidence: {combined_confidence:.3f}")
+            self.logger.info(f"   Threshold: {self.barrier_confidence_threshold:.3f}")
+            
+            return combined_confidence
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error assessing barrier confidence: {e}"))
+            return 0.0
 
     def _should_close_by_atr(
         self,

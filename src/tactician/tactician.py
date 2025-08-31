@@ -347,6 +347,140 @@ class Tactician:
             "leverage_sizer": self.leverage_sizer is not None, "position_division_strategy": self.position_division_strategy is not None,
         }
 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="tactician position creation",
+    )
+    async def create_position_with_barrier_assessment(
+        self,
+        position_data: dict[str, Any],
+        tactician_predictions: dict[str, Any]
+    ) -> bool:
+        """
+        Create a position with barrier confidence assessment for exit strategy.
+        
+        This method creates a position and immediately starts monitoring it for
+        barrier confidence drops below the step17 threshold, which will trigger
+        position closure.
+        
+        Args:
+            position_data: Position data including entry price, side, quantity, etc.
+            tactician_predictions: Tactician predictions including barrier probabilities
+            
+        Returns:
+            bool: True if position created successfully with barrier monitoring
+        """
+        try:
+            self.logger.info("🎯 Creating position with barrier confidence assessment...")
+            
+            # Validate position data
+            if not self._validate_position_data(position_data):
+                self.logger.error("Invalid position data")
+                return False
+                
+            # Validate tactician predictions
+            if not self._validate_tactician_predictions(tactician_predictions):
+                self.logger.error("Invalid tactician predictions")
+                return False
+            
+            # Add position to tactics orchestrator with predictions
+            if self.tactics_orchestrator:
+                self.tactics_orchestrator.add_position_with_predictions(
+                    position_data, tactician_predictions
+                )
+                
+                self.logger.info(f"✅ Position {position_data.get('position_id')} created with barrier confidence monitoring")
+                self.logger.info(f"   Exit strategy: Will close if barrier confidence drops below step17 threshold")
+                return True
+            else:
+                self.logger.error("Tactics orchestrator not initialized")
+                return False
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Failed to create position with barrier assessment: {e}"))
+            return False
+
+    def _validate_position_data(self, position_data: dict[str, Any]) -> bool:
+        """
+        Validate position data for barrier confidence assessment.
+        
+        Args:
+            position_data: Position data to validate
+            
+        Returns:
+            bool: True if valid
+        """
+        try:
+            required_fields = ["position_id", "symbol", "side", "entry_price", "quantity"]
+            
+            for field in required_fields:
+                if field not in position_data:
+                    self.logger.error(f"Missing required position field: {field}")
+                    return False
+            
+            # Validate entry price
+            if position_data.get("entry_price", 0) <= 0:
+                self.logger.error("Invalid entry price")
+                return False
+                
+            # Validate side
+            side = position_data.get("side", "").upper()
+            if side not in ["LONG", "SHORT"]:
+                self.logger.error("Invalid position side")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating position data: {e}")
+            return False
+
+    def _validate_tactician_predictions(self, tactician_predictions: dict[str, Any]) -> bool:
+        """
+        Validate tactician predictions for barrier confidence assessment.
+        
+        Args:
+            tactician_predictions: Tactician predictions to validate
+            
+        Returns:
+            bool: True if valid
+        """
+        try:
+            # Check for barrier probabilities
+            barrier_probs = tactician_predictions.get("barrier_probabilities", {})
+            
+            if not barrier_probs:
+                self.logger.error("Missing barrier probabilities in tactician predictions")
+                return False
+                
+            # Check for required barrier probabilities
+            required_probs = ["profit_take_probability", "stop_loss_probability"]
+            
+            for prob in required_probs:
+                if prob not in barrier_probs:
+                    self.logger.error(f"Missing required barrier probability: {prob}")
+                    return False
+                    
+                # Validate probability range
+                prob_value = barrier_probs[prob]
+                if not 0 <= prob_value <= 1:
+                    self.logger.error(f"Invalid probability value for {prob}: {prob_value}")
+                    return False
+            
+            # Check for confidence factors (optional but recommended)
+            confidence_factors = tactician_predictions.get("confidence_factors", {})
+            if confidence_factors:
+                for factor_name, factor_value in confidence_factors.items():
+                    if not 0 <= factor_value <= 2:  # Allow some boost factors
+                        self.logger.warning(f"Confidence factor {factor_name} has unusual value: {factor_value}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating tactician predictions: {e}")
+            return False
+
     # Enhanced predictions are now handled by the supervisor
     # No local methods needed
 

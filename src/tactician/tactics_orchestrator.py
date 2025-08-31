@@ -807,6 +807,57 @@ class TacticsOrchestrator:
         """
         return self.active_positions.copy()
 
+    def add_position_with_predictions(
+        self, 
+        position_data: Dict[str, Any], 
+        tactician_predictions: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Add a position with tactician predictions for barrier confidence assessment.
+
+        Args:
+            position_data: Position data
+            tactician_predictions: Tactician predictions for barrier confidence assessment
+        """
+        try:
+            position_id = position_data.get("position_id")
+            if not position_id:
+                self.logger.error("Position ID is required")
+                return
+
+            # Add to active positions
+            self.active_positions[position_id] = position_data
+
+            # Add to position monitor with tactician predictions
+            if self.position_monitor:
+                self.position_monitor.add_position(position_data, tactician_predictions)
+
+            self.logger.info(f"Added position {position_id} with tactician predictions for barrier confidence assessment")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error adding position with predictions: {e}"))
+
+    def remove_position(self, position_id: str) -> None:
+        """
+        Remove a position from tracking.
+
+        Args:
+            position_id: Position ID to remove
+        """
+        try:
+            # Remove from active positions
+            if position_id in self.active_positions:
+                del self.active_positions[position_id]
+
+            # Remove from position monitor
+            if self.position_monitor:
+                self.position_monitor.remove_position(position_id)
+
+            self.logger.info(f"Removed position {position_id} from tracking")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error removing position: {e}"))
+
     def get_decision_history(self, limit: Optional[int] = None) -> List[TradeDecision]:
         """
         Get decision history.

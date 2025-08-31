@@ -1,0 +1,31 @@
+2025-08-31 09:05:10,928 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-31 09:05:11,325 INFO AresTradingSystem.System.Tactician Initializing Refactored Tactician... - -
+2025-08-31 09:05:11,347 INFO AresTradingSystem.System.TacticsOrchestrator Initializing Tactics Orchestrator... - -
+2025-08-31 09:05:11,347 INFO AresTradingSystem.System.DecisionPolicy Initializing Decision Policy... - -
+2025-08-31 09:05:11,347 INFO AresTradingSystem.System.PositionSizer Initializing position sizer... - -
+2025-08-31 09:05:11,347 ERROR AresTradingSystem.System.PositionSizer [93m[1m⚠️[0m [93m[1mMissing required configuration key: kelly_multiplier[0m - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.LeverageSizer Initializing leverage sizer... - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.LeverageSizer ✅ Leverage sizer initialized successfully - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.SRBreakoutPredictor Initializing SR breakout predictor... - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.SRBreakoutPredictor No optimization results file found, using default parameters - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor components initialized - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.SRBreakoutPredictor ✅ SR breakout predictor initialized successfully - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.SRBreakoutPredictor 📊 Reporting system initialized: reports/sr_analysis - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.MLTacticsManager Initializing ML Tactics Manager... - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.MLTacticsManager ✅ ML prediction models initialized - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.MLTacticsManager ✅ ML Tactics Manager initialized successfully - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.DecisionPolicy ✅ Decision Policy initialized successfully - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.PositionMonitor Initializing Position Monitor... - -
+2025-08-31 09:05:11,348 ERROR AresTradingSystem.System.PositionMonitor [91m[1m🚫[0m [91m[1m❌ Position Monitor initialization failed: name 'metrics' is not defined[0m - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.PositionCloser Initializing Position Closer... - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.PositionCloser ✅ Position Closer initialized successfully - -
+2025-08-31 09:05:11,348 ERROR AresTradingSystem.System.TacticsOrchestrator [91m[1m🚫[0m [91m[1m❌ Tactics Orchestrator initialization failed: name 'metrics' is not defined[0m - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.PositionSizer Initializing position sizer... - -
+2025-08-31 09:05:11,348 ERROR AresTradingSystem.System.PositionSizer [93m[1m⚠️[0m [93m[1mMissing required configuration key: kelly_multiplier[0m - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.LeverageSizer Initializing leverage sizer... - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.LeverageSizer ✅ Leverage sizer initialized successfully - -
+2025-08-31 09:05:11,348 INFO AresTradingSystem.System.PositionDivisionStrategy Initializing Position Division Strategy... - -
+2025-08-31 09:05:11,349 INFO AresTradingSystem.System.PositionDivisionStrategy ✅ Position Division Strategy initialized successfully - -
+2025-08-31 09:05:11,349 INFO AresTradingSystem.System.Tactician ✅ All component managers initialized - -
+2025-08-31 09:05:11,349 ERROR AresTradingSystem.System.Tactician Missing required configuration section: tactics_orchestrator - -
+2025-08-31 09:05:11,349 ERROR AresTradingSystem.System.Tactician [91m[1m🚫[0m [91m[1mInvalid configuration for tactician[0m - -

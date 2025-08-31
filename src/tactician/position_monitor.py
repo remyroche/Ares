@@ -13,10 +13,11 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
+from src.tactician.position_closing import PositionCloser
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -113,6 +114,7 @@ class PositionMonitor:
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
         self.position_strategy: Optional[PositionDivisionStrategy] = None
+        self.position_closer: Optional[PositionCloser] = None
 
         # Monitoring state
         self.active_positions: Dict[str, Dict[str, Any]] = {}
@@ -143,6 +145,10 @@ class PositionMonitor:
             # Initialize position strategy
             self.position_strategy = PositionDivisionStrategy(self.config)
             await self.position_strategy.initialize()
+
+            # Initialize position closer
+            self.position_closer = PositionCloser(self.config)
+            await self.position_closer.initialize()
 
             # Validate configuration
             if not self._validate_configuration():
@@ -313,12 +319,15 @@ class PositionMonitor:
             analyst_confidence = position_data.get("analyst_confidence", 0.5)
             tactician_confidence = position_data.get("tactician_confidence", 0.5)
 
+            # Get tactician predictions for barrier confidence assessment
+            tactician_predictions = position_data.get("tactician_predictions", {})
+
             # Normalize combined confidence
             combined_confidence = normalize_dual_confidence(analyst_confidence, tactician_confidence)
 
-            # Determine position action
+            # Determine position action with barrier confidence assessment
             position_action, action_reason = self._determine_position_action(
-                position_data, combined_confidence
+                position_data, combined_confidence, tactician_predictions
             )
 
             return PositionAssessment(
@@ -341,16 +350,18 @@ class PositionMonitor:
             return None
 
     def _determine_position_action(
-        self,
-        position_data: Dict[str, Any],
-        combined_confidence: float
-    ) -> tuple[PositionAction, str]:
+        self, 
+        position_data: Dict[str, Any], 
+        combined_confidence: float,
+        tactician_predictions: Optional[Dict[str, Any]] = None
+    ) -> Tuple[PositionAction, str]:
         """
-        Determine recommended position action based on current conditions.
+        Determine position action based on confidence and other factors.
 
         Args:
             position_data: Position data
             combined_confidence: Combined confidence score
+            tactician_predictions: Tactician predictions for barrier confidence assessment
 
         Returns:
             tuple: (PositionAction, reason)
@@ -371,6 +382,17 @@ class PositionMonitor:
                 position_age = (current_time - entry_time).total_seconds()
                 if position_age > self.max_position_age:
                     return PositionAction.FULL_CLOSE, f"Position age exceeded: {position_age:.0f}s"
+
+            # NEW: Check barrier confidence threshold (EXIT STRATEGY)
+            if tactician_predictions and self.position_closer:
+                barrier_confidence = self.position_closer.assess_barrier_confidence(
+                    tactician_predictions=tactician_predictions,
+                    current_price=position_data.get("current_price", 0),
+                    position_data=position_data
+                )
+                
+                if barrier_confidence < self.position_closer.barrier_confidence_threshold:
+                    return PositionAction.FULL_CLOSE, f"Low barrier confidence: {barrier_confidence:.3f} < {self.position_closer.barrier_confidence_threshold}"
 
             # Check confidence-based actions using step12 optimized thresholds
             if combined_confidence < self.very_low_confidence_threshold:
@@ -608,18 +630,24 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None
 
-    def add_position(self, position_data: Dict[str, Any]) -> None:
+    def add_position(self, position_data: Dict[str, Any], tactician_predictions: Optional[Dict[str, Any]] = None) -> None:
         """
         Add a position to monitoring.
 
         Args:
             position_data: Position data
+            tactician_predictions: Tactician predictions for barrier confidence assessment
         """
         try:
             position_id = position_data.get("position_id")
             if not position_id:
                 self.logger.error(missing("Position ID is required"))
                 return
+
+            # Store tactician predictions with position data for barrier confidence assessment
+            if tactician_predictions:
+                position_data["tactician_predictions"] = tactician_predictions
+                self.logger.info(f"Added tactician predictions for barrier confidence assessment to position {position_id}")
 
             self.active_positions[position_id] = position_data
             self.logger.info(f"Added position to monitoring: {position_id}")
@@ -721,6 +749,9 @@ class PositionMonitor:
 
             if self.position_strategy:
                 await self.position_strategy.cleanup()
+
+            if self.position_closer:
+                await self.position_closer.cleanup()
 
             self.logger.info("✅ Position Monitor cleanup completed")
 

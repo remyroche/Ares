@@ -1,0 +1,20 @@
+2025-08-31 09:06:01,842 INFO AresTradingSystem ✅ Enhanced Logger initialization completed successfully - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser 🎯 Barrier Confidence Assessment: - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Position: LONG @ 50000.0000, Current: 50000.0000 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Profit Take Prob: 0.850, Stop Loss Prob: 0.150 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Barrier Confidence: 0.850 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Combined Confidence: 1.000 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Threshold: 0.720 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser 🎯 Barrier Confidence Assessment: - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Position: LONG @ 50000.0000, Current: 50000.0000 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Profit Take Prob: 0.300, Stop Loss Prob: 0.700 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Barrier Confidence: 0.300 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Combined Confidence: 0.216 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser    Threshold: 0.720 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser 🚨 EXIT STRATEGY: Closing position due to low barrier confidence: 0.216 < 0.72 - -
+2025-08-31 09:06:02,171 INFO AresTradingSystem.System.PositionCloser 🎯 Barrier Confidence Assessment: - -
+2025-08-31 09:06:02,172 INFO AresTradingSystem.System.PositionCloser    Position: SHORT @ 50000.0000, Current: 50000.0000 - -
+2025-08-31 09:06:02,172 INFO AresTradingSystem.System.PositionCloser    Profit Take Prob: 0.850, Stop Loss Prob: 0.150 - -
+2025-08-31 09:06:02,172 INFO AresTradingSystem.System.PositionCloser    Barrier Confidence: 0.850 - -
+2025-08-31 09:06:02,172 INFO AresTradingSystem.System.PositionCloser    Combined Confidence: 1.000 - -
+2025-08-31 09:06:02,172 INFO AresTradingSystem.System.PositionCloser    Threshold: 0.720 - -

@@ -360,6 +360,38 @@ tactician_triple_barrier:
       correlation_threshold: 0.8
       mutual_info_threshold: 0.05
     
+    # Feature Engineering Optimization Configuration (Step7)
+    feature_engineering_optimization:
+      # Optimization parameters
+      n_trials: 100
+      cv_folds: 5
+      random_state: 42
+      correlation_threshold: 0.8
+      mi_threshold: 0.1
+      top_k_parameters: 3
+      
+      # Feature interaction engineering parameters
+      interaction_enabled: true
+      max_interactions: 50
+      interaction_selection_threshold: 0.05
+      
+      # Feature selection and dimensionality reduction
+      feature_selection_enabled: true
+      max_features: 200
+      min_feature_importance: 0.01
+      correlation_filter_enabled: true
+      mutual_info_filter_enabled: true
+      
+      # Dimensionality reduction parameters
+      dimensionality_reduction_enabled: true
+      pca_enabled: true
+      pca_explained_variance: 0.95
+      tsne_enabled: false
+      tsne_perplexity: 30
+      umap_enabled: false
+      umap_n_neighbors: 15
+      umap_min_dist: 0.1
+    
     # Step17 Optimized Tactician Configuration (for step17 optimization)
     step17_optimized_tactician:
       # Entry decision thresholds (ALL configurable)

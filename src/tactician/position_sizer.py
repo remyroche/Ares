@@ -38,29 +38,28 @@ class PositionSizer:
 
             self.print = _shim_print  # type: ignore[attr-defined]
 
-        # Load configuration
-
+        # Load configuration from step17 optimization results
         self.sizing_config: dict[str, Any] = self.config.get("position_sizing", {})
-        self.kelly_multiplier: float = get_parameter_value(
-            "position_sizing_parameters.kelly_multiplier",
-            0.25,
-        )
-        self.max_position_size: float = get_parameter_value(
-            "position_sizing_parameters.max_position_size",
-            0.5,
-        )
-        self.min_position_size: float = get_parameter_value(
-            "position_sizing_parameters.min_position_size",
-            0.01,
-        )
-        self.confidence_threshold: float = get_parameter_value(
-            "confidence_thresholds.base_entry_threshold",
-            0.6,
-        )
-
-        # Component weights
-        self.ml_weight: float = self.sizing_config.get("ml_weight", 0.7)
-        self.kelly_weight: float = self.sizing_config.get("kelly_weight", 0.3)
+        
+        # Load step17 optimized parameters
+        step17_config = self.config.get("step17_optimization", {})
+        position_sizing_optimization = step17_config.get("position_sizing", {})
+        
+        # Load optimized position sizing parameters
+        self.kelly_multiplier: float = position_sizing_optimization.get("kelly_multiplier", 0.25)
+        self.max_position_size: float = position_sizing_optimization.get("max_position_size", 0.5)
+        self.min_position_size: float = position_sizing_optimization.get("min_position_size", 0.01)
+        self.confidence_threshold: float = position_sizing_optimization.get("confidence_threshold", 0.6)
+        
+        # Load optimized component weights
+        self.ml_weight: float = position_sizing_optimization.get("ml_weight", 0.7)
+        self.kelly_weight: float = position_sizing_optimization.get("kelly_weight", 0.3)
+        
+        # Load additional optimized parameters
+        self.risk_adjustment_factor: float = position_sizing_optimization.get("risk_adjustment_factor", 1.0)
+        self.confidence_boost_threshold: float = position_sizing_optimization.get("confidence_boost_threshold", 0.8)
+        self.volatility_adjustment: float = position_sizing_optimization.get("volatility_adjustment", 1.0)
+        self.market_regime_multiplier: float = position_sizing_optimization.get("market_regime_multiplier", 1.0)
 
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
@@ -125,6 +124,39 @@ class PositionSizer:
         except Exception as e:
             self.print(error(f"Error validating configuration: {e}"))
             return False
+
+    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+        
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            if "position_sizing" in step17_results:
+                position_sizing_optimization = step17_results["position_sizing"]
+                
+                # Update position sizing parameters
+                self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
+                self.max_position_size = position_sizing_optimization.get("max_position_size", self.max_position_size)
+                self.min_position_size = position_sizing_optimization.get("min_position_size", self.min_position_size)
+                self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
+                
+                # Update component weights
+                self.ml_weight = position_sizing_optimization.get("ml_weight", self.ml_weight)
+                self.kelly_weight = position_sizing_optimization.get("kelly_weight", self.kelly_weight)
+                
+                # Update additional parameters
+                self.risk_adjustment_factor = position_sizing_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+                self.confidence_boost_threshold = position_sizing_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
+                self.volatility_adjustment = position_sizing_optimization.get("volatility_adjustment", self.volatility_adjustment)
+                self.market_regime_multiplier = position_sizing_optimization.get("market_regime_multiplier", self.market_regime_multiplier)
+                
+                self.logger.info("✅ Position sizer configuration refreshed from step17 results")
+                
+        except Exception as e:
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     @validate_data_quality(
         required_columns=None,  # This method validates dict input, not DataFrame

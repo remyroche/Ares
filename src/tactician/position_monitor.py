@@ -8,9 +8,11 @@ PositionDivisionStrategy for consistency.
 """
 
 import asyncio
+import yaml
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
@@ -94,9 +96,19 @@ class PositionMonitor:
         # Configuration
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
-        self.confidence_threshold = self.monitor_config.get("confidence_threshold", 0.6)
-        self.pnl_threshold = self.monitor_config.get("pnl_threshold", -0.05)  # -5%
-        self.max_position_age = self.monitor_config.get("max_position_age", 3600)  # 1 hour
+        
+        # Load step12 confidence optimization config
+        step12_config = config.get("step12_confidence_optimization", {})
+        position_monitor_config = step12_config.get("position_monitor", {})
+        
+        # Confidence thresholds for step12 optimization
+        self.confidence_threshold = position_monitor_config.get("confidence_threshold", 0.6)
+        self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", 0.6)
+        self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", 0.3)
+        self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", 0.3)
+        
+        self.pnl_threshold = position_monitor_config.get("pnl_threshold", -0.05)  # -5%
+        self.max_position_age = position_monitor_config.get("max_position_age", 3600)  # 1 hour
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -239,6 +251,9 @@ class PositionMonitor:
                 # Monitor all active positions
                 await self._monitor_positions()
 
+                # Auto-refresh step12 configuration if enabled
+                await self._auto_refresh_step12_config()
+
                 # Wait for next monitoring cycle
                 await asyncio.sleep(self.monitoring_interval)
 
@@ -357,19 +372,20 @@ class PositionMonitor:
                 if position_age > self.max_position_age:
                     return PositionAction.FULL_CLOSE, f"Position age exceeded: {position_age:.0f}s"
 
-            # Check confidence-based actions
-            if combined_confidence < self.confidence_threshold:
-                if combined_confidence < 0.3:
-                    return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f}"
+            # Check confidence-based actions using step12 optimized thresholds
+            if combined_confidence < self.very_low_confidence_threshold:
+                return PositionAction.FULL_CLOSE, f"Very low confidence: {combined_confidence:.3f} < {self.very_low_confidence_threshold}"
+            elif combined_confidence < self.low_confidence_threshold:
+                return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f} < {self.low_confidence_threshold}"
+            elif combined_confidence >= self.high_confidence_threshold:
+                # Check for take profit (high confidence and positive PnL)
+                if unrealized_pnl > 0.02:  # 2% profit
+                    return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
                 else:
-                    return PositionAction.SCALE_DOWN, f"Low confidence: {combined_confidence:.3f}"
+                    return PositionAction.STAY, f"High confidence: {combined_confidence:.3f} >= {self.high_confidence_threshold}"
 
-            # Check for take profit (high confidence and positive PnL)
-            if combined_confidence > 0.8 and unrealized_pnl > 0.02:  # 2% profit
-                return PositionAction.TAKE_PROFIT, f"High confidence and profit: {combined_confidence:.3f}, {unrealized_pnl:.4f}"
-
-            # Default action
-            return PositionAction.STAY, "No action required"
+            # Default action for medium confidence
+            return PositionAction.STAY, f"Medium confidence: {combined_confidence:.3f} (within thresholds)"
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error determining position action: {e}"))
@@ -514,6 +530,83 @@ class PositionMonitor:
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error cleaning up old positions: {e}"))
+
+    async def _auto_refresh_step12_config(self) -> None:
+        """
+        Automatically refresh step12 configuration and confidence thresholds.
+        This method is called periodically to check for new step12 results.
+        """
+        try:
+            # Check if auto-refresh is enabled
+            step12_config = self.config.get("step12_confidence_optimization", {})
+            auto_refresh = step12_config.get("auto_refresh", True)
+            
+            if not auto_refresh:
+                return
+            
+            # Check if we need to refresh (based on interval)
+            current_time = datetime.now()
+            if hasattr(self, '_last_step12_refresh'):
+                time_since_refresh = (current_time - self._last_step12_refresh).total_seconds()
+                refresh_interval = step12_config.get("refresh_interval", 300)  # 5 minutes default
+                
+                if time_since_refresh < refresh_interval:
+                    return
+            
+            # Try to load updated step12 configuration
+            updated_config = self._load_updated_step12_config()
+            if updated_config:
+                # Update confidence thresholds
+                position_monitor_config = updated_config.get("position_monitor", {})
+                
+                self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", self.high_confidence_threshold)
+                self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", self.low_confidence_threshold)
+                self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", self.very_low_confidence_threshold)
+                
+                self._last_step12_refresh = current_time
+                self.logger.info("✅ Refreshed step12 confidence thresholds automatically")
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
+
+    def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Load updated step12 configuration from results files.
+        
+        Returns:
+            Dict: Updated configuration or None if no updates found
+        """
+        try:
+            step12_config = self.config.get("step12_confidence_optimization", {})
+            result_paths = step12_config.get("step12_results_paths", [])
+            
+            for path in result_paths:
+                if Path(path).exists():
+                    try:
+                        with open(path, 'r') as f:
+                            import yaml
+                            updated_config = yaml.safe_load(f)
+                            
+                        # Check if this is newer than our current config
+                        if "timestamp" in updated_config:
+                            config_time = datetime.fromisoformat(updated_config["timestamp"])
+                            if hasattr(self, '_last_step12_refresh'):
+                                if config_time > self._last_step12_refresh:
+                                    return updated_config
+                            else:
+                                return updated_config
+                        else:
+                            return updated_config
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Could not load step12 config from {path}: {e}")
+                        continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
+            return None
 
     def add_position(self, position_data: Dict[str, Any]) -> None:
         """

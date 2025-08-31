@@ -28,14 +28,23 @@ class MLTacticsManager:
         self.ml_predictions: dict[str, Any] = {}
         self.ml_decisions: dict[str, Any] = {}
 
-        # Configuration
+        # Configuration from step17 optimization results
         self.ml_config: dict[str, Any] = self.config.get("ml_tactics_manager", {})
-        self.enable_ml_tactics: bool = self.ml_config.get("enable_ml_tactics", True)
-        self.confidence_threshold: float = self.ml_config.get(
-            "confidence_threshold",
-            0.7,
-        )
-        self.regime_threshold: float = self.ml_config.get("regime_threshold", 0.6)
+        
+        # Load step17 optimized parameters
+        step17_config = self.config.get("step17_optimization", {})
+        ml_tactics_optimization = step17_config.get("ml_tactics", {})
+        
+        # Load optimized ML tactics parameters
+        self.enable_ml_tactics: bool = ml_tactics_optimization.get("enable_ml_tactics", True)
+        self.confidence_threshold: float = ml_tactics_optimization.get("confidence_threshold", 0.7)
+        self.regime_threshold: float = ml_tactics_optimization.get("regime_threshold", 0.6)
+        
+        # Load additional optimized parameters
+        self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
+        self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
+        self.confidence_boost_factor: float = ml_tactics_optimization.get("confidence_boost_factor", 1.2)
+        self.risk_adjustment_factor: float = ml_tactics_optimization.get("risk_adjustment_factor", 1.0)
 
     @handle_specific_errors(
         error_handlers={
@@ -98,6 +107,34 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
+
+    def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+        """
+        Refresh configuration from step17 optimization results.
+        This method is called automatically when step17 completes.
+        
+        Args:
+            step17_results: Step17 optimization results
+        """
+        try:
+            if "ml_tactics" in step17_results:
+                ml_tactics_optimization = step17_results["ml_tactics"]
+                
+                # Update ML tactics parameters
+                self.enable_ml_tactics = ml_tactics_optimization.get("enable_ml_tactics", self.enable_ml_tactics)
+                self.confidence_threshold = ml_tactics_optimization.get("confidence_threshold", self.confidence_threshold)
+                self.regime_threshold = ml_tactics_optimization.get("regime_threshold", self.regime_threshold)
+                
+                # Update additional parameters
+                self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
+                self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
+                self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
+                self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
+                
+                self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
+                
+        except Exception as e:
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

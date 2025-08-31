@@ -56,6 +56,9 @@ class MLTacticsManager:
         self.is_trained: bool = False
         self.last_training_time: datetime | None = None
         
+        # NEW: Scenario-based predictor
+        self.scenario_predictor = None
+        
         # NEW: Barrier configuration (50% and 25% of Analyst barriers)
         self.barrier_config = {
             "fifty_percent": {
@@ -129,6 +132,9 @@ class MLTacticsManager:
 
             # Initialize ML models
             await self._initialize_ml_models()
+            
+            # Initialize scenario-based predictor
+            await self._initialize_scenario_predictor()
 
             self.is_initialized = True
             self.logger.info("✅ ML Tactics Manager initialized successfully")
@@ -269,6 +275,17 @@ class MLTacticsManager:
                 
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
+
+    async def _initialize_scenario_predictor(self) -> None:
+        """Initialize scenario-based predictor."""
+        try:
+            from .scenario_based_predictor import ScenarioBasedPredictor
+            self.scenario_predictor = ScenarioBasedPredictor(self.config)
+            await self.scenario_predictor.initialize()
+            self.logger.info("✅ Scenario-based predictor initialized")
+        except Exception as e:
+            self.logger.error(f"❌ Scenario predictor initialization failed: {e}")
+            self.scenario_predictor = None
 
     @handle_errors(
         exceptions=(Exception,),
@@ -1080,6 +1097,199 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.error(failed(f"❌ Multi-output predictions generation failed: {e}"))
             return self._generate_fallback_predictions()
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="enhanced predictions generation",
+    )
+    async def generate_enhanced_predictions(
+        self,
+        market_data: pd.DataFrame,
+        analyst_barriers: dict[str, float],
+        symbol: str,
+        timeframe: str,
+        analyst_confidence: float = 0.5
+    ) -> dict[str, Any]:
+        """
+        Generate enhanced predictions combining multi-output and scenario analysis.
+        
+        Args:
+            market_data: Market data with OHLCV
+            analyst_barriers: Analyst's barrier values
+            symbol: Trading symbol
+            timeframe: Current timeframe
+            analyst_confidence: Analyst's confidence score
+            
+        Returns:
+            dict: Enhanced predictions with both systems
+        """
+        try:
+            # Generate existing multi-output predictions
+            multi_output_predictions = await self.generate_multi_output_predictions(
+                market_data, analyst_barriers, symbol, timeframe, analyst_confidence
+            )
+            
+            # Generate scenario-based predictions
+            scenario_predictions = None
+            if self.scenario_predictor:
+                # Extract features for scenario prediction
+                scenario_features = self.scenario_predictor.extract_features(market_data)
+                scenario_features = scenario_features.reshape(1, -1)  # Reshape for single prediction
+                
+                scenario_predictions = await self.scenario_predictor.predict_scenarios(
+                    scenario_features, market_data
+                )
+            
+            # Combine predictions and make enhanced decisions
+            enhanced_decisions = self._make_enhanced_decisions(
+                multi_output_predictions, scenario_predictions, analyst_confidence
+            )
+            
+            result = {
+                "multi_output": multi_output_predictions,
+                "scenario_analysis": scenario_predictions,
+                "enhanced_decisions": enhanced_decisions,
+                "metadata": {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "generation_timestamp": datetime.now().isoformat(),
+                    "model_type": "enhanced_tactician",
+                    "has_scenario_predictor": self.scenario_predictor is not None
+                }
+            }
+            
+            self.logger.info(f"Generated enhanced predictions for {symbol}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Enhanced predictions generation failed: {e}"))
+            return {
+                "multi_output": await self.generate_multi_output_predictions(
+                    market_data, analyst_barriers, symbol, timeframe, analyst_confidence
+                ),
+                "scenario_analysis": None,
+                "enhanced_decisions": {"entry_signal": False, "reasoning": "Error in enhanced predictions"},
+                "metadata": {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "generation_timestamp": datetime.now().isoformat(),
+                    "model_type": "enhanced_tactician_fallback",
+                    "has_scenario_predictor": False
+                }
+            }
+
+    def _make_enhanced_decisions(
+        self,
+        multi_output_predictions: dict[str, Any],
+        scenario_predictions: dict[str, Any] | None,
+        analyst_confidence: float
+    ) -> dict[str, Any]:
+        """
+        Make enhanced entry/exit decisions using both prediction systems.
+        
+        Args:
+            multi_output_predictions: Multi-output predictions
+            scenario_predictions: Scenario-based predictions
+            analyst_confidence: Analyst's confidence score
+            
+        Returns:
+            dict: Enhanced decisions
+        """
+        try:
+            # Base decision from multi-output system
+            base_green_light = multi_output_predictions.get("green_light_signal", {}).get("signal", "RED")
+            base_confidence = multi_output_predictions.get("combined_confidence", 0.0)
+            
+            # Enhanced decision with scenario analysis
+            enhanced_entry_signal = False
+            enhanced_confidence = base_confidence
+            reasoning = []
+            
+            # Multi-output system requirements
+            if base_green_light == "GREEN":
+                reasoning.append("Multi-output system: GREEN")
+            else:
+                reasoning.append(f"Multi-output system: {base_green_light}")
+                return {
+                    "entry_signal": False,
+                    "confidence": base_confidence,
+                    "reasoning": "Multi-output system not green",
+                    "scenario_analysis": None
+                }
+            
+            # Scenario analysis enhancement
+            if scenario_predictions:
+                scenario_analysis = scenario_predictions.get("scenario_analysis", {})
+                profit_zone_prob = scenario_analysis.get("profit_zone_probability", 0.0)
+                risk_zone_prob = scenario_analysis.get("risk_zone_probability", 0.0)
+                scenario_confidence = scenario_predictions.get("confidence", 0.0)
+                
+                # Get thresholds from scenario predictor
+                if self.scenario_predictor:
+                    thresholds = self.scenario_predictor.decision_thresholds
+                    profit_threshold = thresholds.get("profit_zone_combined", 0.6)
+                    risk_threshold = thresholds.get("risk_zone_combined", 0.2)
+                    confidence_threshold = thresholds.get("confidence_threshold", 0.7)
+                else:
+                    profit_threshold = 0.6
+                    risk_threshold = 0.2
+                    confidence_threshold = 0.7
+                
+                # Enhanced entry logic
+                scenario_conditions_met = (
+                    profit_zone_prob > profit_threshold and
+                    risk_zone_prob < risk_threshold and
+                    scenario_confidence > confidence_threshold
+                )
+                
+                if scenario_conditions_met:
+                    reasoning.append(f"Scenario analysis: FAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
+                    enhanced_entry_signal = True
+                    # Boost confidence with scenario analysis
+                    enhanced_confidence = min(1.0, base_confidence * 1.2)
+                else:
+                    reasoning.append(f"Scenario analysis: UNFAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
+                    enhanced_entry_signal = False
+                
+                # Add scenario details
+                scenario_details = {
+                    "profit_zone_probability": profit_zone_prob,
+                    "risk_zone_probability": risk_zone_prob,
+                    "scenario_confidence": scenario_confidence,
+                    "predicted_scenario": scenario_predictions.get("predicted_scenario", 5),
+                    "scenario_name": scenario_predictions.get("scenario_name", "Neutral"),
+                    "dominant_zone": scenario_analysis.get("dominant_zone", "neutral"),
+                    "risk_reward_ratio": scenario_analysis.get("risk_reward_ratio", 0.0)
+                }
+            else:
+                scenario_details = None
+                reasoning.append("Scenario analysis: NOT AVAILABLE")
+            
+            # Final decision
+            final_entry_signal = enhanced_entry_signal and base_green_light == "GREEN"
+            
+            return {
+                "entry_signal": final_entry_signal,
+                "confidence": enhanced_confidence,
+                "reasoning": " | ".join(reasoning),
+                "scenario_analysis": scenario_details,
+                "multi_output_analysis": {
+                    "green_light_signal": base_green_light,
+                    "base_confidence": base_confidence,
+                    "combined_confidence": multi_output_predictions.get("combined_confidence", 0.0)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Enhanced decision making failed: {e}"))
+            return {
+                "entry_signal": False,
+                "confidence": 0.0,
+                "reasoning": f"Error in enhanced decision making: {e}",
+                "scenario_analysis": None,
+                "multi_output_analysis": None
+            }
 
     def _calculate_tactician_barriers(
         self,

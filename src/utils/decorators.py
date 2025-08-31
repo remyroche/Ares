@@ -41,7 +41,6 @@ except ImportError:
     pd = None
 
 from src.utils.domain_errors import (
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     DataValidationError,
     DomainError,
     ExternalServiceError,
@@ -50,6 +49,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     SchemaValidationError,
     VectorizationError,
 )
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.structured_logging import ensure_correlation_id, get_correlation_id
 
 # Import enhanced system components (optional to avoid circular imports)

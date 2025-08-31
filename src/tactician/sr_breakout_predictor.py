@@ -1198,6 +1198,268 @@ class SRBreakoutPredictor:
 
             return context
 
+    def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
+        """
+        Extract comprehensive SR features for ML model training.
+        
+        This method provides a standardized interface for extracting all SR features
+        that should be used in ML model training, ensuring consistency across
+        all components (Analyst, Tactician, etc.).
+        
+        Args:
+            market_data: Market data DataFrame
+            current_price: Current market price
+            
+        Returns:
+            dict[str, float]: Comprehensive SR features for ML training
+        """
+        try:
+            self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
+            
+            # Get comprehensive SR context
+            sr_context = await self.get_sr_context(market_data, current_price)
+            
+            # Extract features from SR context
+            features = {}
+            
+            # Basic proximity features
+            features.update({
+                "sr_proximity": sr_context.get("support_proximity", 1.0),
+                "support_proximity": sr_context.get("support_proximity", 1.0),
+                "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
+                "sr_nearest_support": sr_context.get("nearest_support", current_price),
+                "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
+            })
+            
+            # Strength features
+            features.update({
+                "sr_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
+                "support_strength": sr_context.get("support_strength", 0.5),
+                "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                "sr_enhanced_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
+            })
+            
+            # Level count features
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
+            features.update({
+                "sr_total_support_levels": len(support_levels),
+                "sr_total_resistance_levels": len(resistance_levels),
+                "sr_total_levels": len(support_levels) + len(resistance_levels),
+            })
+            
+            # Distance features
+            if support_levels:
+                support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
+                features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
+            else:
+                features["sr_nearest_support_distance"] = 1.0
+                
+            if resistance_levels:
+                resistance_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in resistance_levels]
+                features["sr_nearest_resistance_distance"] = min(resistance_distances) if resistance_distances else 1.0
+            else:
+                features["sr_nearest_resistance_distance"] = 1.0
+            
+            # Zone features
+            if support_levels and resistance_levels:
+                support_prices = [level.get("price", current_price) for level in support_levels]
+                resistance_prices = [level.get("price", current_price) for level in resistance_levels]
+                
+                min_support = min(support_prices) if support_prices else current_price
+                max_resistance = max(resistance_prices) if resistance_prices else current_price
+                
+                zone_width = (max_resistance - min_support) / current_price
+                zone_position = (current_price - min_support) / (max_resistance - min_support) if (max_resistance - min_support) > 0 else 0.5
+                
+                features.update({
+                    "sr_zone_width": zone_width,
+                    "sr_zone_position_pct": zone_position,
+                })
+            else:
+                features.update({
+                    "sr_zone_width": 0.1,  # Default zone width
+                    "sr_zone_position_pct": 0.5,  # Default position
+                })
+            
+            # Enhanced strength features
+            if support_levels:
+                support_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in support_levels]
+                features.update({
+                    "sr_enhanced_support_strength": np.mean(support_strengths) if support_strengths else 0.5,
+                    "sr_support_strength_variance": np.var(support_strengths) if support_strengths else 0.0,
+                })
+            else:
+                features.update({
+                    "sr_enhanced_support_strength": 0.5,
+                    "sr_support_strength_variance": 0.0,
+                })
+                
+            if resistance_levels:
+                resistance_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in resistance_levels]
+                features.update({
+                    "sr_enhanced_resistance_strength": np.mean(resistance_strengths) if resistance_strengths else 0.5,
+                    "sr_resistance_strength_variance": np.var(resistance_strengths) if resistance_strengths else 0.0,
+                })
+            else:
+                features.update({
+                    "sr_enhanced_resistance_strength": 0.5,
+                    "sr_resistance_strength_variance": 0.0,
+                })
+            
+            # Clustering features
+            clustering_result = sr_context.get("clustering_result", {})
+            features.update({
+                "sr_clusters_detected": clustering_result.get("n_clusters", 0),
+                "sr_noise_points": clustering_result.get("n_noise", 0),
+                "sr_clustering_quality": clustering_result.get("silhouette_score", 0.0),
+            })
+            
+            # Fibonacci features
+            fibonacci_levels = sr_context.get("fibonacci_levels", {})
+            features.update({
+                "sr_fibonacci_levels": len(fibonacci_levels.get("levels", [])),
+                "sr_fibonacci_proximity": fibonacci_levels.get("nearest_level_proximity", 1.0),
+            })
+            
+            # Elliott Wave features
+            elliott_wave_levels = sr_context.get("elliott_wave_levels", {})
+            features.update({
+                "sr_elliott_waves": len(elliott_wave_levels.get("wave_levels", [])),
+                "sr_elliott_wave_confidence": elliott_wave_levels.get("confidence", 0.5),
+            })
+            
+            # Order Flow features
+            order_flow_analysis = sr_context.get("order_flow_analysis", {})
+            features.update({
+                "sr_order_flow_poc": order_flow_analysis.get("poc_price", current_price),
+                "sr_order_flow_hvns": len(order_flow_analysis.get("high_volume_nodes", [])),
+                "sr_order_flow_imbalances": len(order_flow_analysis.get("imbalances", [])),
+            })
+            
+            # Pivot level features
+            pivot_levels = sr_context.get("pivot_levels", {})
+            features.update({
+                "sr_pivot_level_pct": pivot_levels.get("pivot", current_price) / current_price,
+                "sr_support_1_pct": pivot_levels.get("support_1", current_price) / current_price,
+                "sr_support_2_pct": pivot_levels.get("support_2", current_price) / current_price,
+                "sr_resistance_1_pct": pivot_levels.get("resistance_1", current_price) / current_price,
+                "sr_resistance_2_pct": pivot_levels.get("resistance_2", current_price) / current_price,
+            })
+            
+            # Historical features (if available)
+            features.update({
+                "sr_touch_count": np.mean([level.get("touches", 1) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 1,
+                "sr_bounce_rate": np.mean([level.get("bounce_rate", 0.5) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 0.5,
+                "sr_isolation_score": np.mean([level.get("isolation_score", 0.5) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 0.5,
+            })
+            
+            # Momentum and trend features (calculated from market data)
+            if len(market_data) >= 20:
+                returns = market_data['close'].pct_change().dropna()
+                features.update({
+                    "sr_momentum_pct": returns.tail(10).mean() * 100,
+                    "sr_volatility_pct": returns.tail(20).std() * 100,
+                    "sr_trend_pct": (market_data['close'].iloc[-1] / market_data['close'].iloc[-20] - 1) * 100,
+                })
+            else:
+                features.update({
+                    "sr_momentum_pct": 0.0,
+                    "sr_volatility_pct": 1.0,
+                    "sr_trend_pct": 0.0,
+                })
+            
+            # Normalized features
+            features.update({
+                "sr_distance": min(features.get("sr_nearest_support_distance", 1.0), features.get("sr_nearest_resistance_distance", 1.0)),
+                "normalized_distance": features.get("sr_distance", 1.0) / (features.get("sr_zone_width", 0.1) + 1e-8),
+                "sr_proximity_score": 1.0 - min(features.get("sr_proximity", 1.0), 1.0),
+            })
+            
+            # Strength score features
+            features.update({
+                "strength_score": features.get("sr_strength", 0.5),
+                "clarity_factor": features.get("sr_clustering_quality", 0.0),
+                "directional_pressure": features.get("sr_trend_pct", 0.0) / 100.0,
+                "sr_score": features.get("sr_strength", 0.5) * features.get("sr_proximity_score", 0.0),
+                "delta_sr_score": features.get("sr_score", 0.0) - 0.5,  # Deviation from neutral
+            })
+            
+            # Level features
+            features.update({
+                "sr_level": features.get("sr_total_levels", 0),
+                "sr_multi_timeframe": features.get("sr_clusters_detected", 0),  # Proxy for multi-timeframe analysis
+            })
+            
+            # Optimization features (default values, will be updated by step2_5)
+            features.update({
+                "sr_optimized_method_weights": 0.5,
+                "sr_optimized_strength_weights": 0.5,
+                "sr_optimized_dbscan_eps": 0.02,
+                "sr_optimized_dbscan_min_samples": 3,
+                "sr_optimized_fibonacci_sensitivity": 0.5,
+                "sr_optimized_elliott_confidence": 0.5,
+                "sr_optimized_order_flow_threshold": 0.5,
+                "sr_optimization_score": 0.5,
+            })
+            
+            self.logger.info(f"✅ Extracted {len(features)} SR features for ML training")
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error extracting SR features for ML training: {e}")
+            return self._get_default_sr_features()
+
+    def _get_default_sr_features(self) -> dict[str, float]:
+        """Return default SR features when extraction fails."""
+        return {
+            # Proximity features
+            "sr_proximity": 1.0, "support_proximity": 1.0, "resistance_proximity": 1.0,
+            "sr_nearest_support": 0.0, "sr_nearest_resistance": 0.0, "sr_distance": 1.0,
+            "normalized_distance": 1.0, "sr_proximity_score": 0.0,
+            
+            # Strength features
+            "sr_strength": 0.5, "support_strength": 0.5, "resistance_strength": 0.5,
+            "sr_enhanced_strength": 0.5, "sr_enhanced_support_strength": 0.5, "sr_enhanced_resistance_strength": 0.5,
+            "sr_support_strength_variance": 0.0, "sr_resistance_strength_variance": 0.0,
+            
+            # Level features
+            "sr_total_support_levels": 0, "sr_total_resistance_levels": 0, "sr_total_levels": 0,
+            "sr_nearest_support_distance": 1.0, "sr_nearest_resistance_distance": 1.0,
+            "sr_level": 0, "sr_multi_timeframe": 0,
+            
+            # Zone features
+            "sr_zone_width": 0.1, "sr_zone_position_pct": 0.5,
+            
+            # Clustering features
+            "sr_clusters_detected": 0, "sr_noise_points": 0, "sr_clustering_quality": 0.0,
+            
+            # Advanced features
+            "sr_fibonacci_levels": 0, "sr_fibonacci_proximity": 1.0,
+            "sr_elliott_waves": 0, "sr_elliott_wave_confidence": 0.5,
+            "sr_order_flow_poc": 0.0, "sr_order_flow_hvns": 0, "sr_order_flow_imbalances": 0,
+            
+            # Pivot features
+            "sr_pivot_level_pct": 1.0, "sr_support_1_pct": 1.0, "sr_support_2_pct": 1.0,
+            "sr_resistance_1_pct": 1.0, "sr_resistance_2_pct": 1.0,
+            
+            # Historical features
+            "sr_touch_count": 1, "sr_bounce_rate": 0.5, "sr_isolation_score": 0.5,
+            
+            # Momentum features
+            "sr_momentum_pct": 0.0, "sr_volatility_pct": 1.0, "sr_trend_pct": 0.0,
+            
+            # Score features
+            "strength_score": 0.5, "clarity_factor": 0.0, "directional_pressure": 0.0,
+            "sr_score": 0.0, "delta_sr_score": 0.0,
+            
+            # Optimization features
+            "sr_optimized_method_weights": 0.5, "sr_optimized_strength_weights": 0.5,
+            "sr_optimized_dbscan_eps": 0.02, "sr_optimized_dbscan_min_samples": 3,
+            "sr_optimized_fibonacci_sensitivity": 0.5, "sr_optimized_elliott_confidence": 0.5,
+            "sr_optimized_order_flow_threshold": 0.5, "sr_optimization_score": 0.5,
+        }
+
         except Exception as e:
             self.logger.error(f"Error getting S/R context: {e}")
             return {}

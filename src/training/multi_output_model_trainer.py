@@ -202,7 +202,7 @@ class MultiOutputNeuralNetwork(nn.Module):
 
 
 class MultiOutputModelTrainer:
-    """Multi-output model trainer for direction and profit prediction."""
+    """Multi-output model trainer for direction and profit prediction with comprehensive SR features."""
     
     def __init__(self, config: MultiOutputModelConfig):
         self.config = config
@@ -214,6 +214,12 @@ class MultiOutputModelTrainer:
             use_numba=True,
             memory_efficient=True
         )
+        
+        # NEW: SR Feature Integration
+        self.step7_features = []  # Features from step7
+        self.step2_5_sr_levels = {}  # SR levels from step2_5
+        self.sr_feature_columns = []  # All SR feature column names
+        self.comprehensive_sr_features = {}  # Combined SR features
         
         # Model storage
         self.models = {}
@@ -227,7 +233,8 @@ class MultiOutputModelTrainer:
             "profit_metrics": [],
             "combined_metrics": [],
             "feature_importance": {},
-            "training_time": 0.0
+            "training_time": 0.0,
+            "sr_feature_analysis": {}  # NEW: SR feature analysis
         }
         
         # NEW: Probability training components
@@ -236,14 +243,424 @@ class MultiOutputModelTrainer:
             self.probability_target_generator = ProbabilityTargetGenerator(self.config.probability_config)
             self.logger.info("🔧 Probability target generator initialized")
         
-        self.logger.info("🔧 Multi-output model trainer initialized")
+        self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
+
+    @handle_errors(
+        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
+        default_return=False,
+        context="step7_features_loading"
+    )
+    async def load_step7_features(self, step7_output_path: str) -> bool:
+        """
+        Load comprehensive SR features from step7 enhanced matrix operations.
+        
+        Args:
+            step7_output_path: Path to step7 output directory
+            
+        Returns:
+            bool: True if features loaded successfully
+        """
+        try:
+            self.logger.info(f"📊 Loading step7 SR features from: {step7_output_path}")
+            
+            # Load step7 matrix operations results
+            step7_results_path = Path(step7_output_path) / "matrix_operations_results.json"
+            if not step7_results_path.exists():
+                self.logger.warning(f"⚠️ Step7 results not found at: {step7_results_path}")
+                return False
+            
+            with open(step7_results_path, 'r') as f:
+                step7_results = json.load(f)
+            
+            # Extract SR features from step7 results
+            sr_analysis = step7_results.get("sr_analysis", {})
+            sr_enhanced_analysis = step7_results.get("sr_enhanced_analysis", {})
+            sr_optimization_analysis = step7_results.get("sr_optimization_analysis", {})
+            
+            # Collect all SR features
+            self.step7_features = []
+            
+            # Basic SR features
+            basic_sr_features = sr_analysis.get("sr_features", [])
+            self.step7_features.extend(basic_sr_features)
+            
+            # Enhanced SR features
+            enhanced_sr_features = sr_enhanced_analysis.get("enhanced_sr_features", [])
+            self.step7_features.extend(enhanced_sr_features)
+            
+            # Optimization SR features
+            optimization_sr_features = sr_optimization_analysis.get("optimization_features", [])
+            self.step7_features.extend(optimization_sr_features)
+            
+            # Remove duplicates and sort
+            self.step7_features = sorted(list(set(self.step7_features)))
+            
+            self.logger.info(f"✅ Loaded {len(self.step7_features)} SR features from step7")
+            self.logger.info(f"   - Basic SR features: {len(basic_sr_features)}")
+            self.logger.info(f"   - Enhanced SR features: {len(enhanced_sr_features)}")
+            self.logger.info(f"   - Optimization SR features: {len(optimization_sr_features)}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading step7 features: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
+        default_return=False,
+        context="step2_5_sr_levels_loading"
+    )
+    async def load_step2_5_sr_levels(self, step2_5_output_path: str) -> bool:
+        """
+        Load SR levels from step2_5 SR optimization.
+        
+        Args:
+            step2_5_output_path: Path to step2_5 output directory
+            
+        Returns:
+            bool: True if SR levels loaded successfully
+        """
+        try:
+            self.logger.info(f"📊 Loading step2_5 SR levels from: {step2_5_output_path}")
+            
+            # Load step2_5 SR optimization results
+            step2_5_results_path = Path(step2_5_output_path) / "sr_optimization_results.json"
+            if not step2_5_results_path.exists():
+                self.logger.warning(f"⚠️ Step2_5 results not found at: {step2_5_results_path}")
+                return False
+            
+            with open(step2_5_results_path, 'r') as f:
+                step2_5_results = json.load(f)
+            
+            # Extract SR levels
+            self.step2_5_sr_levels = step2_5_results.get("sr_levels_result", {})
+            
+            support_levels = self.step2_5_sr_levels.get("support_levels", [])
+            resistance_levels = self.step2_5_sr_levels.get("resistance_levels", [])
+            
+            self.logger.info(f"✅ Loaded SR levels from step2_5:")
+            self.logger.info(f"   - Support levels: {len(support_levels)}")
+            self.logger.info(f"   - Resistance levels: {len(resistance_levels)}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading step2_5 SR levels: {e}")
+            return False
+
+    def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
+        """
+        Convert SR levels from step2_5 to ML features.
+        
+        Args:
+            current_price: Current market price
+            
+        Returns:
+            dict: SR level features
+        """
+        try:
+            features = {}
+            
+            # Support level features
+            support_levels = self.step2_5_sr_levels.get("support_levels", [])
+            features.update({
+                "sr_support_level_count": len(support_levels),
+                "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels, current_price),
+                "sr_support_level_strength_avg": np.mean([level.get("strength", 0.5) for level in support_levels]) if support_levels else 0.5,
+                "sr_support_level_volume_avg": np.mean([level.get("volume", 0) for level in support_levels]) if support_levels else 0.0,
+                "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]) if support_levels else 0.0,
+                "sr_support_level_touches_avg": np.mean([level.get("touches", 0) for level in support_levels]) if support_levels else 0.0,
+            })
+            
+            # Resistance level features
+            resistance_levels = self.step2_5_sr_levels.get("resistance_levels", [])
+            features.update({
+                "sr_resistance_level_count": len(resistance_levels),
+                "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels, current_price),
+                "sr_resistance_level_strength_avg": np.mean([level.get("strength", 0.5) for level in resistance_levels]) if resistance_levels else 0.5,
+                "sr_resistance_level_volume_avg": np.mean([level.get("volume", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                "sr_resistance_level_touches_avg": np.mean([level.get("touches", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+            })
+            
+            # Combined level features
+            all_levels = support_levels + resistance_levels
+            if all_levels:
+                price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
+                price_range = max(price_range, current_price * 0.01)  # Minimum range
+                
+                features.update({
+                    "sr_total_levels": len(all_levels),
+                    "sr_level_density": len(all_levels) / price_range if price_range > 0 else 0.0,
+                    "sr_level_strength_variance": np.var([level.get("strength", 0.5) for level in all_levels]),
+                    "sr_level_volume_variance": np.var([level.get("volume", 0) for level in all_levels]),
+                    "sr_level_age_variance": np.var([level.get("age", 0) for level in all_levels]),
+                })
+            else:
+                features.update({
+                    "sr_total_levels": 0,
+                    "sr_level_density": 0.0,
+                    "sr_level_strength_variance": 0.0,
+                    "sr_level_volume_variance": 0.0,
+                    "sr_level_age_variance": 0.0,
+                })
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error converting SR levels to features: {e}")
+            return self._get_default_sr_level_features()
+
+    def _calculate_nearest_distance(self, levels: list, current_price: float) -> float:
+        """Calculate distance to nearest level."""
+        if not levels:
+            return 1.0  # Far away if no levels
+        
+        distances = [abs(level.get("price", current_price) - current_price) / current_price for level in levels]
+        return min(distances) if distances else 1.0
+
+    def _get_default_sr_level_features(self) -> dict[str, float]:
+        """Return default SR level features when conversion fails."""
+        return {
+            "sr_support_level_count": 0, "sr_nearest_support_distance": 1.0, "sr_support_level_strength_avg": 0.5,
+            "sr_support_level_volume_avg": 0.0, "sr_support_level_age_avg": 0.0, "sr_support_level_touches_avg": 0.0,
+            "sr_resistance_level_count": 0, "sr_nearest_resistance_distance": 1.0, "sr_resistance_level_strength_avg": 0.5,
+            "sr_resistance_level_volume_avg": 0.0, "sr_resistance_level_age_avg": 0.0, "sr_resistance_level_touches_avg": 0.0,
+            "sr_total_levels": 0, "sr_level_density": 0.0, "sr_level_strength_variance": 0.0,
+            "sr_level_volume_variance": 0.0, "sr_level_age_variance": 0.0
+        }
+
+    def validate_feature_completeness(self, features_df: pd.DataFrame) -> dict[str, list[str]]:
+        """
+        Validate that all required SR features are present.
+        
+        Args:
+            features_df: DataFrame with features
+            
+        Returns:
+            dict: Missing features by category
+        """
+        try:
+            required_features = {
+                # Step7 SR features (42 features)
+                "step7_sr_features": [
+                    "sr_proximity", "support_proximity", "resistance_proximity", "sr_zone_width",
+                    "sr_strength", "support_strength", "resistance_strength", "sr_enhanced_strength",
+                    "sr_total_support_levels", "sr_total_resistance_levels", "sr_clusters_detected",
+                    "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_imbalances",
+                    "sr_distance", "normalized_distance", "sr_proximity_score", "sr_zone_position_pct",
+                    "strength_score", "sr_enhanced_support_strength", "sr_enhanced_resistance_strength",
+                    "sr_optimized_strength_weights", "sr_noise_points", "sr_clustering_quality",
+                    "sr_level", "sr_order_flow_poc", "sr_order_flow_hvns", "sr_optimized_fibonacci_sensitivity",
+                    "sr_optimized_elliott_confidence", "sr_optimized_order_flow_threshold",
+                    "sr_touch_count", "sr_bounce_rate", "sr_isolation_score", "sr_momentum_pct",
+                    "sr_volatility_pct", "sr_trend_pct", "sr_optimization_score", "sr_optimized_method_weights",
+                    "sr_optimized_dbscan_eps", "sr_optimized_dbscan_min_samples", "delta_sr_score", "clarity_factor"
+                ],
+                
+                # Step2_5 SR level features (15 features)
+                "step2_5_sr_level_features": [
+                    "sr_support_level_count", "sr_nearest_support_distance", "sr_support_level_strength_avg",
+                    "sr_resistance_level_count", "sr_nearest_resistance_distance", "sr_resistance_level_strength_avg",
+                    "sr_total_levels", "sr_level_density", "sr_level_strength_variance",
+                    "sr_support_level_volume_avg", "sr_support_level_age_avg", "sr_support_level_touches_avg",
+                    "sr_resistance_level_volume_avg", "sr_resistance_level_age_avg", "sr_resistance_level_touches_avg",
+                    "sr_level_volume_variance", "sr_level_age_variance"
+                ]
+            }
+            
+            missing_features = {}
+            for category, features in required_features.items():
+                missing = [f for f in features if f not in features_df.columns]
+                if missing:
+                    missing_features[category] = missing
+                    
+            if missing_features:
+                self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+            else:
+                self.logger.info("✅ All required SR features are present")
+                
+            return missing_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating feature completeness: {e}")
+            return {}
+
+    async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add comprehensive SR features from step7 and step2_5 to the dataset.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            pd.DataFrame: DataFrame with comprehensive SR features added
+        """
+        try:
+            self.logger.info("🔧 Adding comprehensive SR features...")
+            
+            # Create a copy to avoid modifying original data
+            data_with_sr = data.copy()
+            
+            # Add step7 SR features if available
+            if self.step7_features:
+                self.logger.info(f"📊 Adding {len(self.step7_features)} step7 SR features...")
+                
+                # Initialize step7 features with default values
+                for feature in self.step7_features:
+                    if feature not in data_with_sr.columns:
+                        data_with_sr[feature] = 0.5  # Default neutral value
+                
+                self.logger.info(f"✅ Added step7 SR features: {len(self.step7_features)} features")
+            
+            # Add step2_5 SR level features
+            if self.step2_5_sr_levels:
+                self.logger.info("📊 Adding step2_5 SR level features...")
+                
+                # Get current prices for SR level feature calculation
+                if 'close' in data_with_sr.columns:
+                    current_prices = data_with_sr['close'].values
+                else:
+                    # Use a default price if close column not available
+                    current_prices = [100.0] * len(data_with_sr)
+                
+                # Calculate SR level features for each row
+                sr_level_features_list = []
+                for i, current_price in enumerate(current_prices):
+                    sr_level_features = self.convert_sr_levels_to_features(current_price)
+                    sr_level_features_list.append(sr_level_features)
+                
+                # Convert to DataFrame and add to main data
+                sr_level_df = pd.DataFrame(sr_level_features_list, index=data_with_sr.index)
+                data_with_sr = pd.concat([data_with_sr, sr_level_df], axis=1)
+                
+                self.logger.info(f"✅ Added step2_5 SR level features: {len(sr_level_df.columns)} features")
+            
+            # Create combined SR features
+            data_with_sr = self._create_combined_sr_features(data_with_sr)
+            
+            # Validate feature completeness
+            missing_features = self.validate_feature_completeness(data_with_sr)
+            if missing_features:
+                self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
+            
+            # Store SR feature columns for later use
+            self.sr_feature_columns = [col for col in data_with_sr.columns if 'sr_' in col.lower()]
+            self.logger.info(f"📊 Total SR features available: {len(self.sr_feature_columns)}")
+            
+            return data_with_sr
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error adding comprehensive SR features: {e}")
+            return data
+
+    def _create_combined_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create combined SR features from individual SR features.
+        
+        Args:
+            data: DataFrame with individual SR features
+            
+        Returns:
+            pd.DataFrame: DataFrame with combined SR features added
+        """
+        try:
+            # Combined proximity features
+            if 'sr_proximity' in data.columns and 'sr_zone_width' in data.columns:
+                data['sr_proximity_zone_ratio'] = data['sr_proximity'] / (data['sr_zone_width'] + 1e-8)
+            
+            # Combined strength features
+            if 'sr_strength' in data.columns and 'sr_enhanced_strength' in data.columns:
+                data['sr_strength_enhanced_ratio'] = data['sr_strength'] / (data['sr_enhanced_strength'] + 1e-8)
+            
+            # Combined level features
+            if 'sr_support_level_count' in data.columns and 'sr_resistance_level_count' in data.columns:
+                data['sr_support_resistance_ratio'] = data['sr_support_level_count'] / (data['sr_resistance_level_count'] + 1e-8)
+                data['sr_total_levels'] = data['sr_support_level_count'] + data['sr_resistance_level_count']
+            
+            # Combined distance features
+            if 'sr_nearest_support_distance' in data.columns and 'sr_nearest_resistance_distance' in data.columns:
+                data['sr_nearest_level_distance'] = np.minimum(
+                    data['sr_nearest_support_distance'], 
+                    data['sr_nearest_resistance_distance']
+                )
+                data['sr_distance_ratio'] = data['sr_nearest_support_distance'] / (data['sr_nearest_resistance_distance'] + 1e-8)
+            
+            # SR momentum features
+            if 'sr_momentum_pct' in data.columns and 'sr_volatility_pct' in data.columns:
+                data['sr_momentum_volatility_ratio'] = data['sr_momentum_pct'] / (data['sr_volatility_pct'] + 1e-8)
+            
+            # SR trend features
+            if 'sr_trend_pct' in data.columns and 'sr_momentum_pct' in data.columns:
+                data['sr_trend_momentum_alignment'] = np.sign(data['sr_trend_pct']) * np.sign(data['sr_momentum_pct'])
+            
+            self.logger.info("✅ Created combined SR features")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating combined SR features: {e}")
+            return data
+
+    def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
+        """
+        Analyze SR features in the dataset.
+        
+        Args:
+            features_df: DataFrame with features
+            
+        Returns:
+            dict: SR feature analysis statistics
+        """
+        try:
+            # Get SR feature columns
+            sr_columns = [col for col in features_df.columns if 'sr_' in col.lower()]
+            
+            if not sr_columns:
+                return {"sr_feature_count": 0, "sr_feature_categories": {}}
+            
+            # Analyze SR features by category
+            categories = {
+                "proximity": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['proximity', 'distance', 'nearest'])],
+                "strength": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['strength', 'enhanced'])],
+                "levels": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['level', 'support', 'resistance'])],
+                "momentum": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['momentum', 'trend', 'volatility'])],
+                "advanced": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['fibonacci', 'elliott', 'order_flow', 'clustering'])],
+                "optimization": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['optimized', 'optimization'])],
+                "combined": [col for col in sr_columns if any(keyword in col.lower() for keyword in ['ratio', 'alignment', 'combined'])]
+            }
+            
+            # Calculate statistics for each category
+            category_stats = {}
+            for category, cols in categories.items():
+                if cols:
+                    category_stats[category] = {
+                        "count": len(cols),
+                        "features": cols,
+                        "mean_values": features_df[cols].mean().to_dict(),
+                        "std_values": features_df[cols].std().to_dict()
+                    }
+            
+            # Overall statistics
+            overall_stats = {
+                "sr_feature_count": len(sr_columns),
+                "sr_feature_categories": category_stats,
+                "total_features": len(features_df.columns),
+                "sr_feature_percentage": len(sr_columns) / len(features_df.columns) * 100
+            }
+            
+            return overall_stats
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error analyzing SR features: {e}")
+            return {"sr_feature_count": 0, "error": str(e)}
     
     @handle_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=None,
         context="multi_output_data_preparation"
     )
-    def prepare_multi_output_data(
+    async def prepare_multi_output_data(
         self,
         data: pd.DataFrame,
         direction_column: str = "direction",
@@ -251,7 +668,7 @@ class MultiOutputModelTrainer:
         feature_columns: Optional[List[str]] = None,
         use_enhanced_feature_selection: bool = True
     ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-        """Prepare data for multi-output training with ALL available features.
+        """Prepare data for multi-output training with comprehensive SR features.
         
         Args:
             data: Input DataFrame with features and targets
@@ -263,7 +680,7 @@ class MultiOutputModelTrainer:
         Returns:
             Tuple of (features, direction_target, profit_target)
         """
-        self.logger.info("📊 Preparing multi-output training data with ALL available features...")
+        self.logger.info("📊 Preparing multi-output training data with comprehensive SR features...")
         
         # Validate input data
         if data.empty:
@@ -273,6 +690,9 @@ class MultiOutputModelTrainer:
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
+        
+        # NEW: Add comprehensive SR features
+        data_with_sr_features = await self._add_comprehensive_sr_features(data)
         
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
@@ -287,13 +707,13 @@ class MultiOutputModelTrainer:
                 
                 # Use the enhanced pre-filtering method
                 selected_features = await step6_instance._pre_filter_features(
-                    X=data,
-                    feature_columns=[col for col in data.columns if col not in [direction_column, profit_column]]
+                    X=data_with_sr_features,
+                    feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column, profit_column]]
                 )
                 
                 # Add back target columns
                 selected_features.extend([direction_column, profit_column])
-                selected_features = [col for col in selected_features if col in data.columns]
+                selected_features = [col for col in selected_features if col in data_with_sr_features.columns]
                 
                 self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
                 
@@ -543,14 +963,14 @@ class MultiOutputModelTrainer:
     )
     @performance_monitor
     @memory_efficient
-    def train_multi_output_model(
+    async def train_multi_output_model(
         self,
         features: pd.DataFrame,
         direction_target: pd.Series,
         profit_target: pd.Series,
         model_name: str = "multi_output_model"
     ) -> Dict[str, Any]:
-        """Train a multi-output model for direction and profit prediction.
+        """Train a multi-output model for direction and profit prediction with comprehensive SR features.
         
         Args:
             features: Feature DataFrame
@@ -562,7 +982,16 @@ class MultiOutputModelTrainer:
             Dictionary containing training results and model artifacts
         """
         start_time = time.time()
-        self.logger.info(f"🚀 Training multi-output model: {model_name}")
+        self.logger.info(f"🚀 Training multi-output model with comprehensive SR features: {model_name}")
+        
+        # NEW: Validate SR feature completeness
+        missing_features = self.validate_feature_completeness(features)
+        if missing_features:
+            self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+        
+        # NEW: Log SR feature statistics
+        sr_feature_stats = self._analyze_sr_features(features)
+        self.logger.info(f"📊 SR Feature Statistics: {sr_feature_stats}")
         
         # Prepare data
         X = features.values
@@ -639,6 +1068,9 @@ class MultiOutputModelTrainer:
             final_model = self._train_final_model(
                 X, y_direction, y_profit, features.columns
             )
+            
+            # NEW: Store SR feature analysis in training history
+            self.training_history["sr_feature_analysis"] = sr_feature_stats
             
             # Calculate average metrics
             avg_direction_metrics = self._aggregate_metrics(direction_metrics)

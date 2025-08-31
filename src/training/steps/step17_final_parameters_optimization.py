@@ -1821,7 +1821,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
     ) -> Optional[Dict[str, Any]]:
         """Load exit strategy training results if available."""
         try:
-            exit_strategy_path = Path(data_dir) / f"{symbol}_{exchange}_step18_exit_strategy_results.json"
+            exit_strategy_path = Path(data_dir) / f"{symbol}_{exchange}_step17_5_exit_strategy_results.json"
             if exit_strategy_path.exists():
                 with open(exit_strategy_path, 'r') as f:
                     import json

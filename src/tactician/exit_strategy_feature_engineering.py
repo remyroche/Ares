@@ -38,7 +38,7 @@ class ExitStrategyFeatureEngineering:
         self.feature_config = self.exit_config.get("feature_engineering", {})
         
         # Timeframe configurations
-        self.timeframes = self.feature_config.get("timeframes", ["1m", "5m", "15m"])
+        self.timeframes = self.feature_config.get("timeframes", ["1m", "5m"])
         self.lookback_periods = self.feature_config.get("lookback_periods", [10, 20, 50, 100])
         
         # Feature categories

@@ -1,10 +1,11 @@
 # src/training/steps/step18_exit_strategy_training.py
 
 """
-Step 18: Exit Strategy Training.
+Step 17.5: Exit Strategy Training.
 Trains ensemble ML models for trend reversal detection and exit timing optimization.
 This step creates models that continuously calculate price action and determine
 the likelihood of upcoming trend reversals for position closure decisions.
+Uses all features from step6-7 and focuses on 1m and 5m timeframes.
 """
 
 import asyncio
@@ -106,8 +107,8 @@ from src.utils.enhanced_mlflow_integration import (
     monitor_feature_stability=True,
     validate_feature_distributions=True,
 )
-@with_enhanced_mlflow_logging("step18_exit_strategy_training")
-async def step18_exit_strategy_training(
+@with_enhanced_mlflow_logging("step17_5_exit_strategy_training")
+async def step17_5_exit_strategy_training(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -128,8 +129,8 @@ async def step18_exit_strategy_training(
         Dict containing training results and model artifacts
     """
     try:
-        logger = system_logger.getChild("Step18ExitStrategyTraining")
-        logger.info("🚀 Starting Step 18: Exit Strategy Training")
+        logger = system_logger.getChild("Step17_5ExitStrategyTraining")
+        logger.info("🚀 Starting Step 17.5: Exit Strategy Training")
         
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
@@ -140,12 +141,15 @@ async def step18_exit_strategy_training(
         # Create output directories
         Path(models_dir).mkdir(parents=True, exist_ok=True)
         
-        # Load data from previous steps
-        data_loader = await _load_training_data(data_dir, symbol, exchange, logger)
+        # Load data from step6-7 (all features)
+        data_loader = await _load_step6_7_data(data_dir, symbol, exchange, logger)
         if not data_loader["success"]:
-            raise ValueError(f"Failed to load training data: {data_loader['error']}")
+            raise ValueError(f"Failed to load step6-7 data: {data_loader['error']}")
         
-        # Initialize exit strategy components
+        # Use all features from step6-7 (no need to create new features)
+        logger.info("📊 Using comprehensive features from step6-7 for ML training")
+        
+        # Initialize exit strategy components with existing features
         exit_strategy_components = await _initialize_exit_strategy_components(
             training_input, logger
         )
@@ -169,7 +173,7 @@ async def step18_exit_strategy_training(
         
         # Prepare output
         output = {
-            "step_name": "step18_exit_strategy_training",
+            "step_name": "step17_5_exit_strategy_training",
             "status": "COMPLETED",
             "timestamp": datetime.now(UTC).isoformat(),
             "training_results": training_results,
@@ -190,27 +194,27 @@ async def step18_exit_strategy_training(
         # Log results to MLflow
         await _log_training_results(output, logger)
         
-        logger.info("✅ Step 18: Exit Strategy Training completed successfully")
+        logger.info("✅ Step 17.5: Exit Strategy Training completed successfully")
         return output
         
     except Exception as e:
-        logger.error(f"❌ Step 18: Exit Strategy Training failed: {e}")
+        logger.error(f"❌ Step 17.5: Exit Strategy Training failed: {e}")
         return {
-            "step_name": "step18_exit_strategy_training",
+            "step_name": "step17_5_exit_strategy_training",
             "status": "FAILED",
             "error": str(e),
             "timestamp": datetime.now(UTC).isoformat()
         }
 
 
-async def _load_training_data(
+async def _load_step6_7_data(
     data_dir: str, 
     symbol: str, 
     exchange: str, 
     logger: Any
 ) -> Dict[str, Any]:
     """
-    Load training data from previous steps.
+    Load comprehensive data from step6-7 with all features.
     
     Args:
         data_dir: Data directory path
@@ -219,12 +223,12 @@ async def _load_training_data(
         logger: Logger instance
         
     Returns:
-        Dict containing loaded data
+        Dict containing loaded data with all step6-7 features
     """
     try:
-        logger.info("📊 Loading training data...")
+        logger.info("📊 Loading step6-7 data with all features...")
         
-        # Load processed data from step6
+        # Load step6 processed data (basic features)
         step6_data_path = Path(data_dir) / f"{symbol}_{exchange}_step6_processed.parquet"
         if not step6_data_path.exists():
             return {
@@ -232,9 +236,26 @@ async def _load_training_data(
                 "error": f"Step6 processed data not found: {step6_data_path}"
             }
         
-        # Load data
+        # Load step7 enhanced data (advanced features)
+        step7_data_path = Path(data_dir) / f"{symbol}_{exchange}_step7_enhanced.parquet"
+        
+        # Start with step6 data
         df = pd.read_parquet(step6_data_path)
-        logger.info(f"   Loaded {len(df)} rows from step6 data")
+        logger.info(f"   Loaded {len(df)} rows from step6 data with {len(df.columns)} features")
+        
+        # Merge step7 features if available
+        if step7_data_path.exists():
+            step7_df = pd.read_parquet(step7_data_path)
+            logger.info(f"   Loaded step7 data with {len(step7_df.columns)} features")
+            
+            # Merge on timestamp/index
+            if 'timestamp' in df.columns and 'timestamp' in step7_df.columns:
+                df = df.merge(step7_df, on='timestamp', how='left', suffixes=('', '_step7'))
+            else:
+                # Merge on index
+                df = df.join(step7_df, how='left')
+            
+            logger.info(f"   Combined data has {len(df.columns)} total features")
         
         # Load HMM regime data if available
         hmm_data_path = Path(data_dir) / f"{symbol}_{exchange}_hmm_regimes.parquet"
@@ -243,7 +264,7 @@ async def _load_training_data(
             hmm_regimes = pd.read_parquet(hmm_data_path)
             logger.info(f"   Loaded HMM regime data: {len(hmm_regimes)} rows")
         
-        # Create multi-timeframe data
+        # Create multi-timeframe data (1m and 5m only)
         timeframe_data = await _create_multi_timeframe_data(df, logger)
         
         return {
@@ -256,7 +277,7 @@ async def _load_training_data(
         }
         
     except Exception as e:
-        logger.error(f"Data loading failed: {e}")
+        logger.error(f"Step6-7 data loading failed: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -295,16 +316,7 @@ async def _create_multi_timeframe_data(df: pd.DataFrame, logger: Any) -> Dict[st
         timeframe_data["5m"] = df_5m
         logger.info(f"   5m data: {len(timeframe_data['5m'])} rows")
         
-        # 15-minute data (resampled)
-        df_15m = df.resample('15T').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-        timeframe_data["15m"] = df_15m
-        logger.info(f"   15m data: {len(timeframe_data['15m'])} rows")
+
         
         return timeframe_data
         
@@ -330,11 +342,11 @@ async def _initialize_exit_strategy_components(
     try:
         logger.info("🔧 Initializing exit strategy components...")
         
-        # Create configuration
+        # Create configuration (1m and 5m only)
         config = {
             "exit_strategy": {
                 "feature_engineering": {
-                    "timeframes": ["1m", "5m", "15m"],
+                    "timeframes": ["1m", "5m"],
                     "lookback_periods": [10, 20, 50, 100],
                     "enable_profit_decay": True,
                     "enable_time_decay": True,
@@ -348,20 +360,16 @@ async def _initialize_exit_strategy_components(
                 }
             },
             "entry_models": {
-                "timeframes": ["1m", "5m", "15m"],
+                "timeframes": ["1m", "5m"],
                 "models_dir": "models/entry_models",
                 "min_accuracy": 0.75,
                 "ensemble_size": 5
             }
         }
         
-        # Initialize feature engineering
-        feature_engineering = ExitStrategyFeatureEngineering(config)
-        if not await feature_engineering.initialize():
-            return {
-                "success": False,
-                "error": "Feature engineering initialization failed"
-            }
+        # Note: Feature engineering is now handled in step6, so we skip it here
+        # All features are already available from step6-7 data
+        logger.info("📊 Skipping feature engineering - using step6-7 features")
         
         # Initialize multi-timeframe entry models
         entry_models = MultiTimeframeEntryModels(config)
@@ -376,7 +384,6 @@ async def _initialize_exit_strategy_components(
         return {
             "success": True,
             "components": {
-                "feature_engineering": feature_engineering,
                 "entry_models": entry_models
             },
             "feature_config": config["exit_strategy"]["feature_engineering"],
@@ -418,31 +425,28 @@ async def _train_exit_strategy_models(
         )
         training_results["entry_models"] = entry_training_results
         
-        # Train trend reversal detection models
+        # Train trend reversal detection models using step6-7 features
         logger.info("   Training trend reversal detection models...")
         reversal_training_results = await _train_reversal_detection_models(
             data["main_data"],
-            components["feature_engineering"],
             models_dir,
             logger
         )
         training_results["reversal_models"] = reversal_training_results
         
-        # Train exit timing models
+        # Train exit timing models using step6-7 features
         logger.info("   Training exit timing models...")
         exit_timing_results = await _train_exit_timing_models(
             data["main_data"],
-            components["feature_engineering"],
             models_dir,
             logger
         )
         training_results["exit_timing_models"] = exit_timing_results
         
-        # Train ensemble exit decision model
+        # Train ensemble exit decision model using step6-7 features
         logger.info("   Training ensemble exit decision model...")
         ensemble_results = await _train_ensemble_exit_model(
             data["main_data"],
-            components["feature_engineering"],
             models_dir,
             logger
         )
@@ -458,16 +462,14 @@ async def _train_exit_strategy_models(
 
 async def _train_reversal_detection_models(
     df: pd.DataFrame,
-    feature_engineering: ExitStrategyFeatureEngineering,
     models_dir: str,
     logger: Any
 ) -> Dict[str, Any]:
     """
-    Train trend reversal detection models.
+    Train trend reversal detection models using step6-7 features.
     
     Args:
-        df: Training dataframe
-        feature_engineering: Feature engineering component
+        df: Training dataframe with step6-7 features
         models_dir: Models directory
         logger: Logger instance
         
@@ -477,8 +479,8 @@ async def _train_reversal_detection_models(
     try:
         logger.info("      Training reversal detection models...")
         
-        # Apply feature engineering
-        features_df = await feature_engineering.apply_all(df)
+        # Use existing features from step6-7 (no additional feature engineering needed)
+        features_df = df.copy()
         
         # Create reversal labels
         reversal_labels = await _create_reversal_labels(df)
@@ -531,16 +533,14 @@ async def _train_reversal_detection_models(
 
 async def _train_exit_timing_models(
     df: pd.DataFrame,
-    feature_engineering: ExitStrategyFeatureEngineering,
     models_dir: str,
     logger: Any
 ) -> Dict[str, Any]:
     """
-    Train exit timing models.
+    Train exit timing models using step6-7 features.
     
     Args:
-        df: Training dataframe
-        feature_engineering: Feature engineering component
+        df: Training dataframe with step6-7 features
         models_dir: Models directory
         logger: Logger instance
         
@@ -550,8 +550,8 @@ async def _train_exit_timing_models(
     try:
         logger.info("      Training exit timing models...")
         
-        # Apply feature engineering
-        features_df = await feature_engineering.apply_all(df)
+        # Use existing features from step6-7 (no additional feature engineering needed)
+        features_df = df.copy()
         
         # Create exit timing labels
         exit_timing_labels = await _create_exit_timing_labels(df)
@@ -604,16 +604,14 @@ async def _train_exit_timing_models(
 
 async def _train_ensemble_exit_model(
     df: pd.DataFrame,
-    feature_engineering: ExitStrategyFeatureEngineering,
     models_dir: str,
     logger: Any
 ) -> Dict[str, Any]:
     """
-    Train ensemble exit decision model.
+    Train ensemble exit decision model using step6-7 features.
     
     Args:
-        df: Training dataframe
-        feature_engineering: Feature engineering component
+        df: Training dataframe with step6-7 features
         models_dir: Models directory
         logger: Logger instance
         
@@ -623,8 +621,8 @@ async def _train_ensemble_exit_model(
     try:
         logger.info("      Training ensemble exit decision model...")
         
-        # Apply feature engineering
-        features_df = await feature_engineering.apply_all(df)
+        # Use existing features from step6-7 (no additional feature engineering needed)
+        features_df = df.copy()
         
         # Create ensemble labels (combine reversal and timing)
         ensemble_labels = await _create_ensemble_exit_labels(df)
@@ -1025,7 +1023,7 @@ async def _log_training_results(output: Dict[str, Any], logger: Any) -> None:
         logger.info("📊 Logging training results to MLflow...")
         
         # Log metrics
-        await log_step_metrics("step18_exit_strategy_training", {
+        await log_step_metrics("step17_5_exit_strategy_training", {
             "overall_accuracy": output["performance_metrics"]["overall_accuracy"],
             "reversal_detection_accuracy": output["performance_metrics"]["reversal_detection_accuracy"],
             "exit_timing_accuracy": output["performance_metrics"]["exit_timing_accuracy"],
@@ -1034,14 +1032,14 @@ async def _log_training_results(output: Dict[str, Any], logger: Any) -> None:
         
         # Log model artifacts
         await log_step_artifact_with_standardized_name(
-            "step18_exit_strategy_training",
+            "step17_5_exit_strategy_training",
             "training_results.json",
             json.dumps(output["training_results"], indent=2)
         )
         
         # Log validation results
         await log_step_artifact_with_standardized_name(
-            "step18_exit_strategy_training",
+            "step17_5_exit_strategy_training",
             "validation_results.json",
             json.dumps(output["validation_results"], indent=2)
         )
@@ -1053,4 +1051,4 @@ async def _log_training_results(output: Dict[str, Any], logger: Any) -> None:
 
 
 # Export the main function
-__all__ = ["step18_exit_strategy_training"]
+__all__ = ["step17_5_exit_strategy_training"]

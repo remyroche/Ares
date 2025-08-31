@@ -50,7 +50,7 @@ class MultiTimeframeEntryModels:
         
         # Load configuration
         self.entry_config = config.get("entry_models", {})
-        self.timeframes = self.entry_config.get("timeframes", ["1m", "5m", "15m"])
+        self.timeframes = self.entry_config.get("timeframes", ["1m", "5m"])
         self.models_dir = self.entry_config.get("models_dir", "models/entry_models")
         
         # Model configurations
@@ -67,12 +67,7 @@ class MultiTimeframeEntryModels:
                 "min_accuracy": 0.78,
                 "ensemble_size": 7
             },
-            "15m": {
-                "lookback_periods": [20, 50, 100, 200],
-                "prediction_horizon": 15,  # 15 minutes ahead
-                "min_accuracy": 0.80,
-                "ensemble_size": 9
-            }
+
         }
         
         # Initialize models storage

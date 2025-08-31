@@ -506,6 +506,9 @@ async def _create_comprehensive_features(
         # Better integration with vectorized advanced features
         features_df = await _enhanced_integration_with_vectorized_features(features_df, feature_engineer, symbol, exchange, timeframe)
         
+        # Add exit strategy features
+        features_df = await _add_exit_strategy_features(features_df, merged_data, symbol, exchange, timeframe)
+        
         # Validate and clean features
         features_df = _validate_and_clean_features(features_df)
         
@@ -1261,6 +1264,228 @@ def _check_feature_artifacts_exist(symbol: str, exchange: str, data_dir: str) ->
         
     except Exception:
         return False
+
+
+async def _add_exit_strategy_features(
+    features_df: pd.DataFrame,
+    merged_data: pd.DataFrame,
+    symbol: str,
+    exchange: str,
+    timeframe: str
+) -> pd.DataFrame:
+    """
+    Add exit strategy features to the feature set.
+    These features are specifically designed for trend reversal detection and exit timing.
+    """
+    try:
+        system_logger.info("🔧 Adding exit strategy features...")
+        
+        # Create a copy to avoid modifying the original
+        features = features_df.copy()
+        
+        # 1. Trend Strength Features
+        features = _add_trend_strength_features(features, merged_data)
+        
+        # 2. Profit Decay Features
+        features = _add_profit_decay_features(features, merged_data)
+        
+        # 3. Time Decay Features
+        features = _add_time_decay_features(features, merged_data)
+        
+        # 4. Reversal Detection Features
+        features = _add_reversal_detection_features(features, merged_data)
+        
+        # 5. Exit Timing Features
+        features = _add_exit_timing_features(features, merged_data)
+        
+        # 6. Market Regime Features (if available)
+        if "composite_cluster_id" in merged_data.columns:
+            features = _add_market_regime_features(features, merged_data)
+        
+        system_logger.info(f"✅ Added {len([col for col in features.columns if col not in features_df.columns])} exit strategy features")
+        return features
+        
+    except Exception as e:
+        system_logger.error(f"Failed to add exit strategy features: {e}")
+        return features_df
+
+
+def _add_trend_strength_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add trend strength features for exit strategy."""
+    
+    # Trend strength indicators
+    features["trend_strength_sma"] = abs(data["close"] - data["close"].rolling(window=20).mean()) / data["close"].rolling(window=20).std()
+    features["trend_strength_ema"] = abs(data["close"] - data["close"].ewm(span=20).mean()) / data["close"].ewm(span=20).std()
+    
+    # ADX-based trend strength
+    high_low = data["high"] - data["low"]
+    high_close = abs(data["high"] - data["close"].shift(1))
+    low_close = abs(data["low"] - data["close"].shift(1))
+    
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = tr.rolling(window=14).mean()
+    
+    # Directional movement
+    up_move = data["high"] - data["high"].shift(1)
+    down_move = data["low"].shift(1) - data["low"]
+    
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+    
+    plus_di = 100 * pd.Series(plus_dm).rolling(window=14).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm).rolling(window=14).mean() / atr
+    
+    features["adx"] = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    features["trend_strength_adx"] = features["adx"] / 100.0
+    
+    # Momentum-based trend strength
+    features["momentum_trend_strength"] = abs(features["returns"].rolling(window=10).mean()) / features["returns"].rolling(window=10).std()
+    
+    return features
+
+
+def _add_profit_decay_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add profit decay features for exit strategy."""
+    
+    # Profit decay rate calculation
+    features["profit_decay_rate"] = features["returns"].rolling(window=20).apply(
+        lambda x: np.sum(x[x > 0]) / (np.sum(x[x > 0]) + abs(np.sum(x[x < 0]))) if np.sum(x[x > 0]) + abs(np.sum(x[x < 0])) > 0 else 0.5
+    )
+    
+    # Profit preservation indicator
+    features["profit_preservation"] = features["returns"].rolling(window=10).apply(
+        lambda x: np.sum(x[x > 0]) / len(x) if len(x) > 0 else 0.5
+    )
+    
+    # Maximum profit tracking
+    features["max_profit_20"] = features["returns"].rolling(window=20).max()
+    features["current_profit_vs_max"] = features["returns"] / features["max_profit_20"].shift(1)
+    
+    # Profit volatility
+    features["profit_volatility"] = features["returns"].rolling(window=20).apply(
+        lambda x: np.std(x[x > 0]) if len(x[x > 0]) > 0 else 0
+    )
+    
+    return features
+
+
+def _add_time_decay_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add time decay features for exit strategy."""
+    
+    # Time since significant move
+    features["time_since_significant_move"] = features["returns"].rolling(window=50).apply(
+        lambda x: len(x) - np.argmax(abs(x)) if len(x) > 0 else 0
+    )
+    
+    # Session progress (assuming 24h market)
+    if "timestamp" in data.columns:
+        features["session_progress"] = pd.to_datetime(data["timestamp"]).dt.hour / 24.0
+    else:
+        features["session_progress"] = np.arange(len(data)) / len(data)
+    
+    # Time decay factor
+    features["time_decay_factor"] = 1.0 / (1.0 + features["time_since_significant_move"] * 0.1)
+    
+    # Maximum hold time indicator
+    features["max_hold_time_minutes"] = features["time_since_significant_move"] * 5  # Assuming 5-minute intervals
+    
+    return features
+
+
+def _add_reversal_detection_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add reversal detection features for exit strategy."""
+    
+    # RSI divergence
+    rsi = features.get("rsi", 50)  # Default to 50 if RSI not available
+    features["rsi_divergence"] = np.where(
+        (data["close"] > data["close"].shift(1)) & (rsi < rsi.shift(1)),
+        1,  # Bearish divergence
+        np.where(
+            (data["close"] < data["close"].shift(1)) & (rsi > rsi.shift(1)),
+            -1,  # Bullish divergence
+            0  # No divergence
+        )
+    )
+    
+    # MACD reversal signals
+    if "macd" in features.columns and "macd_signal" in features.columns:
+        features["macd_reversal"] = np.where(
+            (features["macd"] > features["macd_signal"]) & (features["macd"].shift(1) <= features["macd_signal"].shift(1)),
+            1,  # Bullish crossover
+            np.where(
+                (features["macd"] < features["macd_signal"]) & (features["macd"].shift(1) >= features["macd_signal"].shift(1)),
+                -1,  # Bearish crossover
+                0  # No crossover
+            )
+        )
+    
+    # Stochastic reversal
+    if "stoch_k" in features.columns:
+        features["stoch_reversal"] = np.where(
+            features["stoch_k"] > 80,
+            -1,  # Overbought reversal
+            np.where(
+                features["stoch_k"] < 20,
+                1,  # Oversold reversal
+                0  # Neutral
+            )
+        )
+    
+    # Volume-based reversal
+    features["volume_reversal"] = np.where(
+        (features["volume_ratio"] > 1.5) & (features["returns"] < 0),
+        1,  # High volume decline
+        np.where(
+            (features["volume_ratio"] > 1.5) & (features["returns"] > 0),
+            -1,  # High volume rise
+            0  # Normal volume
+        )
+    )
+    
+    return features
+
+
+def _add_exit_timing_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add exit timing features for exit strategy."""
+    
+    # Exit urgency indicator
+    features["exit_urgency"] = (
+        features["trend_strength_adx"] * 0.3 +
+        features["profit_decay_rate"] * 0.3 +
+        features["time_decay_factor"] * 0.2 +
+        abs(features["rsi_divergence"]) * 0.2
+    )
+    
+    # Exit timing confidence
+    features["exit_timing_confidence"] = (
+        features["profit_preservation"] * 0.4 +
+        (1 - features["time_decay_factor"]) * 0.3 +
+        (1 - abs(features["rsi_divergence"])) * 0.3
+    )
+    
+    # Risk-adjusted exit signal
+    features["risk_adjusted_exit"] = features["exit_urgency"] * features["exit_timing_confidence"]
+    
+    return features
+
+
+def _add_market_regime_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
+    """Add market regime features for exit strategy."""
+    
+    # Regime stability
+    features["regime_stability"] = data["composite_cluster_id"].rolling(window=20).apply(
+        lambda x: len(x.unique()) / len(x) if len(x) > 0 else 1
+    )
+    
+    # Regime transition probability
+    features["regime_transition_prob"] = data["composite_cluster_id"].rolling(window=10).apply(
+        lambda x: np.sum(x != x.shift(1)) / len(x) if len(x) > 1 else 0
+    )
+    
+    # Regime-based exit adjustment
+    features["regime_exit_adjustment"] = features["regime_stability"] * features["exit_urgency"]
+    
+    return features
 
 
 # Export the main function for external use

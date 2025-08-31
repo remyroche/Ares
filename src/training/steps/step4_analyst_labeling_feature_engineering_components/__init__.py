@@ -1,20 +1,17 @@
 # src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py
 
-"""
-Step 4 Analyst Labeling Feature Engineering Components
+"""Step 4 Analyst Labeling and Feature Engineering Components.
 
-This module contains optimized components for triple barrier labeling and feature engineering
-used in step 4 of the training pipeline.
+This module contains the components for triple barrier labeling and feature engineering
+used in the analyst training pipeline.
 """
 
-from .optimized_triple_barrier_labeling import (
-    OptimizedTripleBarrierLabeling,
-    benchmark_triple_barrier_methods,
-)
+from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
 
 __all__ = [
     "OptimizedTripleBarrierLabeling",
-    "benchmark_triple_barrier_methods",
+    "FractionalTripleBarrierLabeling",
 ]
 
 # Version information

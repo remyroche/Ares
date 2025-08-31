@@ -51,6 +51,9 @@ class PositionSizer:
         self.min_position_size: float = position_sizing_optimization.get("min_position_size", 0.01)
         self.confidence_threshold: float = position_sizing_optimization.get("confidence_threshold", 0.6)
         
+        # NEW: Combined confidence threshold for position sizing (optimizable in step17)
+        self.positionsize_combined_threshold: float = position_sizing_optimization.get("positionsize_combined_threshold", 0.7)
+        
         # Load optimized component weights
         self.ml_weight: float = position_sizing_optimization.get("ml_weight", 0.7)
         self.kelly_weight: float = position_sizing_optimization.get("kelly_weight", 0.3)
@@ -204,7 +207,10 @@ class PositionSizer:
         self.logger.info("Calculating position size using ML intelligence...")
 
         try:
-            # Extract ML confidence scores
+            # NEW: Extract combined confidence from Tactician multi-output predictions
+            combined_confidence = ml_predictions.get("combined_confidence", 0.5)
+            
+            # Extract ML confidence scores (for backward compatibility)
             price_target_confidences = ml_predictions.get(
                 "price_target_confidences",
                 {},
@@ -212,29 +218,36 @@ class PositionSizer:
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
             directional_confidence = ml_predictions.get("directional_confidence", {})
 
-            # Calculate base Kelly criterion position size
-            kelly_position_size = self._calculate_kelly_position_size(
-                price_target_confidences, adversarial_confidences,
-            )
+            # NEW: Use combined confidence for position sizing if available
+            if combined_confidence >= self.positionsize_combined_threshold:
+                # Calculate base Kelly criterion position size
+                kelly_position_size = self._calculate_kelly_position_size(
+                    price_target_confidences, adversarial_confidences,
+                )
 
-            # Calculate ML-based position size
-            ml_position_size = self._calculate_ml_position_size(
-                price_target_confidences, adversarial_confidences,
-            )
+                # Calculate ML-based position size
+                ml_position_size = self._calculate_ml_position_size(
+                    price_target_confidences, adversarial_confidences,
+                )
 
-            # Calculate weighted position size
-            final_position_size = self._calculate_weighted_position_size(
-                kelly_position_size, ml_position_size,
-            )
+                # Calculate weighted position size
+                final_position_size = self._calculate_weighted_position_size(
+                    kelly_position_size, ml_position_size,
+                )
 
-            # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
-            final_position_size = self._apply_position_size_modifiers(
-                final_position_size,
-                market_health_analysis=market_health_analysis,
-                strategist_risk_parameters=strategist_risk_parameters,
-                analyst_confidence=analyst_confidence,
-                tactician_confidence=tactician_confidence,
-            )
+                # Apply market-health and strategist risk modifiers (volatility/liquidity/stress aware)
+                final_position_size = self._apply_position_size_modifiers(
+                    final_position_size,
+                    market_health_analysis=market_health_analysis,
+                    strategist_risk_parameters=strategist_risk_parameters,
+                    analyst_confidence=analyst_confidence,
+                    tactician_confidence=tactician_confidence,
+                )
+            else:
+                # If combined confidence is below threshold, use minimum position size
+                final_position_size = self.min_position_size
+                kelly_position_size = self.min_position_size
+                ml_position_size = self.min_position_size
 
             # Create position sizing analysis
             sizing_analysis = {
@@ -244,6 +257,8 @@ class PositionSizer:
                 "kelly_position_size": kelly_position_size,
                 "ml_position_size": ml_position_size,
                 "final_position_size": final_position_size,
+                "combined_confidence": combined_confidence,
+                "positionsize_combined_threshold": self.positionsize_combined_threshold,
                 "price_target_confidences": price_target_confidences,
                 "adversarial_confidences": adversarial_confidences,
                 "directional_confidence": directional_confidence,
@@ -255,6 +270,7 @@ class PositionSizer:
                     ml_position_size,
                     price_target_confidences,
                     adversarial_confidences,
+                    combined_confidence,
                 ),
             }
 
@@ -496,6 +512,7 @@ class PositionSizer:
         ml_position_size: float,
         price_target_confidences: dict[str, float],
         adversarial_confidences: dict[str, float],
+        combined_confidence: float = 0.5,
     ) -> str:
         """Generate reason for position sizing decision."""
         try:
@@ -521,12 +538,15 @@ class PositionSizer:
             avg_confidence = sum(confidences) / len(confidences)
             avg_risk = sum(risks) / len(risks)
 
+            # NEW: Include combined confidence in sizing reason
             if final_position_size >= self.max_position_size * 0.8:
-                return f"Maximum position size due to high confidence ({avg_confidence:.2f}) and low risk ({avg_risk:.2f})"
+                return f"Maximum position size due to high combined confidence ({combined_confidence:.2f}) and low risk ({avg_risk:.2f})"
             if final_position_size >= self.max_position_size * 0.5:
-                return f"Large position size based on Kelly criterion ({kelly_position_size:.3f}) and ML confidence ({ml_position_size:.3f})"
+                return f"Large position size based on combined confidence ({combined_confidence:.2f}) and Kelly criterion ({kelly_position_size:.3f})"
             if final_position_size >= self.min_position_size * 2:
-                return "Moderate position size with balanced risk-reward profile"
+                return f"Moderate position size with combined confidence ({combined_confidence:.2f}) and balanced risk-reward profile"
+            if combined_confidence < self.positionsize_combined_threshold:
+                return f"Minimum position size due to low combined confidence ({combined_confidence:.2f}) below threshold ({self.positionsize_combined_threshold:.2f})"
             return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
         except Exception as e:

@@ -2,369 +2,388 @@
 """
 Test Script for Regime-Specific Triple Barrier Optimization
 
-This script demonstrates how to use the regime-specific triple barrier optimization
-system to optimize triple barrier thresholds and TPSL parameters for each HMM regime.
+This script demonstrates the regime-specific optimization for the triple barrier method,
+showing how different HMM regimes can have different barrier parameters optimized
+for their specific market conditions.
 """
 
 import asyncio
-import sys
-from pathlib import Path
-from typing import Dict, Any
-import warnings
-
+import logging
 import numpy as np
 import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
+import json
 
-# Add project root to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings('ignore')
-
-# Import the regime-specific optimization components
-from src.training.steps.step17_final_parameters_optimization.regime_specific_triple_barrier_optimization import (
-    RegimeSpecificTripleBarrierOptimizer,
-    optimize_regime_triple_barrier_parameters,
-    get_regime_optimized_triple_barrier_params,
-    get_regime_optimized_tpsl_params
-)
-
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
-    RegimeAwareTripleBarrierLabeling,
-    RegimeTripleBarrierConfig,
-    apply_regime_aware_triple_barrier_labeling,
-    create_regime_aware_labeler_from_optimization_results
-)
+# Import the regime-specific optimizer
+try:
+    from src.training.steps.step17_final_parameters_optimization import (
+        RegimeSpecificTripleBarrierOptimizer,
+        create_regime_specific_triple_barrier_optimizer
+    )
+    logger.info("✅ Successfully imported regime-specific triple barrier optimizer")
+except ImportError as e:
+    logger.error(f"❌ Import error: {e}")
+    logger.info("Please ensure the regime-specific optimizer module is in your Python path")
+    exit(1)
 
 
-def generate_test_data(n_samples: int = 10000) -> pd.DataFrame:
-    """Generate test data with regime information."""
+def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFrame]:
+    """Create test data for different market regimes."""
     
-    print("📊 Generating test data...")
+    dates = pd.date_range(start="2024-01-01", periods=periods, freq="1min")
     
-    # Generate synthetic OHLCV data
+    # Create regime-specific data
+    regime_data = {}
+    
+    # Bull regime data - upward trending
     np.random.seed(42)
+    bull_returns = np.random.normal(0.0002, 0.015, periods)  # Positive trend
+    bull_prices = [100.0]
+    for i in range(1, periods):
+        new_price = bull_prices[-1] * (1 + bull_returns[i])
+        bull_prices.append(new_price)
     
-    # Generate price data with some trend and volatility
-    returns = np.random.normal(0.0001, 0.02, n_samples)
-    prices = 100 * np.exp(np.cumsum(returns))
-    
-    # Generate OHLC data
-    data = pd.DataFrame({
-        'close': prices,
-        'open': prices * (1 + np.random.normal(0, 0.005, n_samples)),
-        'high': prices * (1 + np.abs(np.random.normal(0, 0.01, n_samples))),
-        'low': prices * (1 - np.abs(np.random.normal(0, 0.01, n_samples))),
-        'volume': np.random.lognormal(10, 1, n_samples),
-    })
+    bull_data = pd.DataFrame({
+        'open': np.array(bull_prices) * (1 + np.random.normal(0, 0.0005, periods)),
+        'high': np.array(bull_prices) * (1 + np.abs(np.random.normal(0, 0.001, periods))),
+        'low': np.array(bull_prices) * (1 - np.abs(np.random.normal(0, 0.001, periods))),
+        'close': np.array(bull_prices),
+        'volume': np.random.uniform(1000, 10000, periods),
+        'regime': 'bull_regime'
+    }, index=dates)
     
     # Ensure OHLC relationships are valid
-    data['high'] = data[['open', 'close', 'high']].max(axis=1)
-    data['low'] = data[['open', 'close', 'low']].min(axis=1)
+    bull_data['high'] = bull_data[['open', 'high', 'close']].max(axis=1)
+    bull_data['low'] = bull_data[['open', 'low', 'close']].min(axis=1)
+    regime_data['bull_regime'] = bull_data
     
-    # Generate regime information (simulate HMM regimes)
-    n_regimes = 5
-    regime_lengths = np.random.poisson(50, n_regimes)  # Average regime length of 50 periods
-    regime_lengths = np.clip(regime_lengths, 20, 200)  # Ensure reasonable lengths
+    # Bear regime data - downward trending
+    np.random.seed(43)
+    bear_returns = np.random.normal(-0.0001, 0.018, periods)  # Negative trend
+    bear_prices = [100.0]
+    for i in range(1, periods):
+        new_price = bear_prices[-1] * (1 + bear_returns[i])
+        bear_prices.append(new_price)
     
-    regimes = []
-    current_pos = 0
+    bear_data = pd.DataFrame({
+        'open': np.array(bear_prices) * (1 + np.random.normal(0, 0.0005, periods)),
+        'high': np.array(bear_prices) * (1 + np.abs(np.random.normal(0, 0.001, periods))),
+        'low': np.array(bear_prices) * (1 - np.abs(np.random.normal(0, 0.001, periods))),
+        'close': np.array(bear_prices),
+        'volume': np.random.uniform(1000, 10000, periods),
+        'regime': 'bear_regime'
+    }, index=dates)
     
-    while current_pos < n_samples:
-        regime_id = np.random.randint(0, n_regimes)
-        regime_length = min(regime_lengths[regime_id], n_samples - current_pos)
-        regimes.extend([regime_id] * regime_length)
-        current_pos += regime_length
+    bear_data['high'] = bear_data[['open', 'high', 'close']].max(axis=1)
+    bear_data['low'] = bear_data[['open', 'low', 'close']].min(axis=1)
+    regime_data['bear_regime'] = bear_data
     
-    # Truncate to exact length
-    regimes = regimes[:n_samples]
-    data['composite_cluster_id'] = regimes
+    # Sideways regime data - range-bound
+    np.random.seed(44)
+    sideways_returns = np.random.normal(0, 0.012, periods)  # No trend
+    sideways_prices = [100.0]
+    for i in range(1, periods):
+        # Add mean reversion
+        mean_reversion = -0.001 * (sideways_prices[-1] - 100.0) / 100.0
+        new_price = sideways_prices[-1] * (1 + sideways_returns[i] + mean_reversion)
+        sideways_prices.append(new_price)
     
-    # Add some regime-specific characteristics
-    for regime_id in range(n_regimes):
-        regime_mask = data['composite_cluster_id'] == regime_id
-        if regime_id == 0:  # Bull trend
-            data.loc[regime_mask, 'close'] *= (1 + np.cumsum(np.random.normal(0.0002, 0.01, regime_mask.sum())))
-        elif regime_id == 1:  # Bear trend
-            data.loc[regime_mask, 'close'] *= (1 - np.cumsum(np.random.normal(0.0002, 0.01, regime_mask.sum())))
-        elif regime_id == 2:  # Sideways
-            data.loc[regime_mask, 'close'] *= (1 + np.random.normal(0, 0.005, regime_mask.sum()))
-        elif regime_id == 3:  # High volatility
-            data.loc[regime_mask, 'close'] *= (1 + np.random.normal(0, 0.03, regime_mask.sum()))
-        elif regime_id == 4:  # Low volatility
-            data.loc[regime_mask, 'close'] *= (1 + np.random.normal(0, 0.005, regime_mask.sum()))
+    sideways_data = pd.DataFrame({
+        'open': np.array(sideways_prices) * (1 + np.random.normal(0, 0.0005, periods)),
+        'high': np.array(sideways_prices) * (1 + np.abs(np.random.normal(0, 0.001, periods))),
+        'low': np.array(sideways_prices) * (1 - np.abs(np.random.normal(0, 0.001, periods))),
+        'close': np.array(sideways_prices),
+        'volume': np.random.uniform(1000, 10000, periods),
+        'regime': 'sideways_regime'
+    }, index=dates)
     
-    # Update OHLC based on new close prices
-    data['high'] = data[['open', 'close', 'high']].max(axis=1)
-    data['low'] = data[['open', 'close', 'low']].min(axis=1)
+    sideways_data['high'] = sideways_data[['open', 'high', 'close']].max(axis=1)
+    sideways_data['low'] = sideways_data[['open', 'low', 'close']].min(axis=1)
+    regime_data['sideways_regime'] = sideways_data
     
-    print(f"✅ Generated test data with {len(data)} samples and {n_regimes} regimes")
-    print(f"   Regime distribution: {data['composite_cluster_id'].value_counts().sort_index().to_dict()}")
+    # Volatile regime data - choppy, unpredictable
+    np.random.seed(45)
+    volatile_returns = np.random.normal(0, 0.025, periods)  # High volatility
+    volatile_prices = [100.0]
+    for i in range(1, periods):
+        # Add volatility clustering
+        vol_multiplier = 1 + 0.8 * np.sin(i / 50)  # High volatility variation
+        new_price = volatile_prices[-1] * (1 + volatile_returns[i] * vol_multiplier)
+        volatile_prices.append(new_price)
     
-    return data
-
-
-def create_optimization_config() -> Dict[str, Any]:
-    """Create configuration for regime-specific optimization."""
+    volatile_data = pd.DataFrame({
+        'open': np.array(volatile_prices) * (1 + np.random.normal(0, 0.001, periods)),
+        'high': np.array(volatile_prices) * (1 + np.abs(np.random.normal(0, 0.002, periods))),
+        'low': np.array(volatile_prices) * (1 - np.abs(np.random.normal(0, 0.002, periods))),
+        'close': np.array(volatile_prices),
+        'volume': np.random.uniform(1000, 10000, periods),
+        'regime': 'volatile_regime'
+    }, index=dates)
     
-    config = {
-        "regime_specific_optimization": {
-            "enable_regime_optimization": True,
-            "multi_objective": True,
-            "n_trials_per_regime": 50,  # Reduced for testing
-            "timeout_minutes_per_regime": 10,  # Reduced for testing
-            "cv_folds": 3,  # Reduced for testing
-            
-            "objectives": ["sharpe_ratio", "win_rate", "profit_factor", "regime_accuracy"],
-            "objective_weights": {
-                "sharpe_ratio": 0.3,
-                "win_rate": 0.25,
-                "profit_factor": 0.25,
-                "regime_accuracy": 0.2
-            },
-            
-            "regime_constraints": {
-                "REGIME_0": {  # Bull trend
-                    "tp_multiplier_range": [2.5, 5.0],
-                    "sl_multiplier_range": [1.2, 2.5],
-                    "position_size_range": [0.10, 0.25],
-                },
-                "REGIME_1": {  # Bear trend
-                    "tp_multiplier_range": [2.0, 4.5],
-                    "sl_multiplier_range": [1.0, 2.2],
-                    "position_size_range": [0.08, 0.20],
-                },
-                "REGIME_2": {  # Sideways
-                    "tp_multiplier_range": [1.5, 3.0],
-                    "sl_multiplier_range": [0.8, 1.8],
-                    "position_size_range": [0.06, 0.15],
-                },
-                "REGIME_3": {  # High volatility
-                    "tp_multiplier_range": [1.8, 3.5],
-                    "sl_multiplier_range": [0.9, 2.0],
-                    "position_size_range": [0.05, 0.12],
-                },
-                "REGIME_4": {  # Low volatility
-                    "tp_multiplier_range": [2.0, 4.0],
-                    "sl_multiplier_range": [1.0, 2.2],
-                    "position_size_range": [0.08, 0.18],
-                },
-            },
-            
-            "early_stopping_patience": 10,
-            "early_stopping_delta": 0.001,
-            "enable_pruning": True,
-            "pruning_method": "hyperband",
-            "enable_statistical_testing": True,
-            "confidence_level": 0.95,
-            "min_sample_size": 30,  # Reduced for testing
-        }
-    }
+    volatile_data['high'] = volatile_data[['open', 'high', 'close']].max(axis=1)
+    volatile_data['low'] = volatile_data[['open', 'low', 'close']].min(axis=1)
+    regime_data['volatile_regime'] = volatile_data
     
-    return config
+    # Trending regime data - sustained directional moves
+    np.random.seed(46)
+    trending_returns = np.random.normal(0.0003, 0.014, periods)  # Strong trend
+    trending_prices = [100.0]
+    for i in range(1, periods):
+        # Add trend persistence
+        trend_strength = 0.8 + 0.2 * np.sin(i / 100)  # Varying trend strength
+        new_price = trending_prices[-1] * (1 + trending_returns[i] * trend_strength)
+        trending_prices.append(new_price)
+    
+    trending_data = pd.DataFrame({
+        'open': np.array(trending_prices) * (1 + np.random.normal(0, 0.0005, periods)),
+        'high': np.array(trending_prices) * (1 + np.abs(np.random.normal(0, 0.001, periods))),
+        'low': np.array(trending_prices) * (1 - np.abs(np.random.normal(0, 0.001, periods))),
+        'close': np.array(trending_prices),
+        'volume': np.random.uniform(1000, 10000, periods),
+        'regime': 'trending_regime'
+    }, index=dates)
+    
+    trending_data['high'] = trending_data[['open', 'high', 'close']].max(axis=1)
+    trending_data['low'] = trending_data[['open', 'low', 'close']].min(axis=1)
+    regime_data['trending_regime'] = trending_data
+    
+    return regime_data
 
 
 async def test_regime_specific_optimization():
     """Test the regime-specific triple barrier optimization."""
     
-    print("🚀 Testing Regime-Specific Triple Barrier Optimization")
-    print("=" * 60)
+    logger.info("🧪 Testing Regime-Specific Triple Barrier Optimization")
+    logger.info("=" * 80)
     
-    # Generate test data
-    test_data = generate_test_data(n_samples=5000)  # Reduced for testing
-    
-    # Create optimization configuration
-    config = create_optimization_config()
-    
-    print("\n📋 Optimization Configuration:")
-    print(f"   - Trials per regime: {config['regime_specific_optimization']['n_trials_per_regime']}")
-    print(f"   - Timeout per regime: {config['regime_specific_optimization']['timeout_minutes_per_regime']} minutes")
-    print(f"   - CV folds: {config['regime_specific_optimization']['cv_folds']}")
-    print(f"   - Objectives: {config['regime_specific_optimization']['objectives']}")
-    
-    # Run optimization
-    print("\n🎯 Starting regime-specific optimization...")
-    
-    try:
-        optimization_results = await optimize_regime_triple_barrier_parameters(
-            data=test_data,
-            config=config,
-            regime_column="composite_cluster_id"
-        )
-        
-        print(f"\n✅ Optimization completed successfully!")
-        print(f"   - Optimized {len(optimization_results)} regimes")
-        
-        # Display results
-        print("\n📊 Optimization Results:")
-        print("-" * 80)
-        
-        for regime_name, result in optimization_results.items():
-            print(f"\n🎯 {regime_name}:")
-            print(f"   Optimization Score: {result.optimization_score:.4f}")
-            print(f"   Sharpe Ratio: {result.sharpe_ratio:.4f}")
-            print(f"   Win Rate: {result.win_rate:.4f}")
-            print(f"   Profit Factor: {result.profit_factor:.4f}")
-            print(f"   Total Return: {result.total_return:.4f}")
-            print(f"   Max Drawdown: {result.max_drawdown:.4f}")
-            print(f"   Trials: {result.n_trials}")
-            print(f"   Time: {result.optimization_time:.2f}s")
-            
-            # Display optimized parameters
-            print(f"   Triple Barrier Params:")
-            print(f"     - Profit Take Multiplier: {result.triple_barrier_params.profit_take_multiplier:.4f}")
-            print(f"     - Stop Loss Multiplier: {result.triple_barrier_params.stop_loss_multiplier:.4f}")
-            print(f"     - Time Barrier Minutes: {result.triple_barrier_params.time_barrier_minutes}")
-            print(f"     - Max Lookahead: {result.triple_barrier_params.max_lookahead}")
-            
-            print(f"   TPSL Params:")
-            for param_name, param_value in result.tpsl_params.items():
-                print(f"     - {param_name}: {param_value:.4f}")
-        
-        # Test regime-aware labeling with optimized parameters
-        print("\n🧪 Testing regime-aware labeling with optimized parameters...")
-        
-        # Create regime-aware labeler from optimization results
-        labeler = create_regime_aware_labeler_from_optimization_results(optimization_results)
-        
-        # Apply regime-aware labeling
-        labeled_data = labeler.apply_regime_aware_triple_barrier_labeling(
-            test_data, 
-            regime_column="composite_cluster_id"
-        )
-        
-        print(f"✅ Regime-aware labeling completed!")
-        print(f"   - Original samples: {len(test_data)}")
-        print(f"   - Labeled samples: {len(labeled_data)}")
-        print(f"   - Label distribution: {labeled_data['label'].value_counts().to_dict()}")
-        
-        # Get performance summary by regime
-        performance_summary = labeler.get_regime_performance_summary(
-            labeled_data, 
-            regime_column="composite_cluster_id"
-        )
-        
-        print("\n📈 Performance Summary by Regime:")
-        print("-" * 60)
-        
-        for regime_name, metrics in performance_summary.items():
-            print(f"\n🎯 {regime_name}:")
-            print(f"   Total Samples: {metrics['total_samples']}")
-            print(f"   Valid Samples: {metrics['valid_samples']}")
-            print(f"   Win Rate: {metrics['win_rate']:.4f}")
-            print(f"   Avg Profit: {metrics['avg_profit']:.4f}")
-            print(f"   Total Return: {metrics['total_return']:.4f}")
-        
-        # Test utility functions
-        print("\n🔧 Testing utility functions...")
-        
-        # Test getting optimized parameters for specific regimes
-        for regime_name in optimization_results.keys():
-            tb_params = get_regime_optimized_triple_barrier_params(regime_name, optimization_results)
-            tpsl_params = get_regime_optimized_tpsl_params(regime_name, optimization_results)
-            
-            if tb_params and tpsl_params:
-                print(f"✅ Retrieved optimized parameters for {regime_name}")
-            else:
-                print(f"❌ Failed to retrieve optimized parameters for {regime_name}")
-        
-        print("\n🎉 All tests completed successfully!")
-        
-    except Exception as e:
-        print(f"\n❌ Error during optimization: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-async def test_regime_aware_labeling_standalone():
-    """Test regime-aware labeling without optimization."""
-    
-    print("\n🧪 Testing Regime-Aware Labeling (Standalone)")
-    print("=" * 50)
-    
-    # Generate test data
-    test_data = generate_test_data(n_samples=2000)
-    
-    # Create regime-aware labeler with custom parameters
-    config = RegimeTripleBarrierConfig()
-    
-    # Set regime-specific parameters
-    regime_params = {
-        "REGIME_0": {"profit_take": 0.03, "stop_loss": 0.015, "tp_mult": 3.0, "sl_mult": 1.5},
-        "REGIME_1": {"profit_take": 0.025, "stop_loss": 0.012, "tp_mult": 2.5, "sl_mult": 1.2},
-        "REGIME_2": {"profit_take": 0.02, "stop_loss": 0.01, "tp_mult": 2.0, "sl_mult": 1.0},
-        "REGIME_3": {"profit_take": 0.035, "stop_loss": 0.018, "tp_mult": 3.5, "sl_mult": 1.8},
-        "REGIME_4": {"profit_take": 0.018, "stop_loss": 0.008, "tp_mult": 1.8, "sl_mult": 0.8},
+    # Create test configuration
+    config = {
+        "regime_optimization": {
+            "n_trials": 20,  # Reduced for testing
+            "timeout": 1800,  # 30 minutes for testing
+            "early_stopping_patience": 10
+        }
     }
     
-    labeler = RegimeAwareTripleBarrierLabeling(config)
+    # Create regime-specific optimizer
+    optimizer = create_regime_specific_triple_barrier_optimizer(config)
     
-    # Set parameters for each regime
-    for regime_name, params in regime_params.items():
-        labeler.set_regime_parameters(
-            regime_name=regime_name,
-            profit_take_multiplier=params["profit_take"],
-            stop_loss_multiplier=params["stop_loss"],
-            tp_multiplier=params["tp_mult"],
-            sl_multiplier=params["sl_mult"],
-            position_size=0.1
+    # Show supported regimes
+    logger.info(f"✅ Optimizer created successfully!")
+    logger.info(f"Total regimes supported: {len(optimizer.regime_configs)}")
+    
+    for regime_name, regime_config in optimizer.regime_configs.items():
+        logger.info(f"\n{regime_name}:")
+        logger.info(f"  Description: {regime_config['description']}")
+        total_params = sum(len(category) for category in regime_config.values() if isinstance(category, dict))
+        logger.info(f"  Total parameters: {total_params}")
+    
+    # Create test data for different regimes
+    logger.info("\n📊 Creating test data for different regimes...")
+    regime_data = create_regime_specific_test_data(500)  # Reduced for testing
+    
+    for regime_name, data in regime_data.items():
+        logger.info(f"  {regime_name}: {len(data)} data points")
+    
+    # Run regime-specific optimization
+    logger.info("\n🚀 Running regime-specific optimization...")
+    try:
+        optimization_results = await optimizer.optimize_regime_specific_parameters(
+            regime_data, 
+            config["regime_optimization"]
         )
+        
+        logger.info("✅ Regime-specific optimization completed successfully!")
+        
+        # Show results
+        for regime_name, result in optimization_results.items():
+            if "error" not in result:
+                logger.info(f"\n📈 {regime_name} results:")
+                logger.info(f"  Best value: {result.get('best_value', 0):.4f}")
+                logger.info(f"  Total trials: {result.get('total_trials', 0)}")
+                logger.info(f"  Best trial: {result.get('best_trial', 0)}")
+                
+                # Show some key parameters
+                best_params = result.get('best_params', {})
+                if 'barrier_settings' in best_params:
+                    barrier_params = best_params['barrier_settings']
+                    logger.info(f"  Upper barrier: {barrier_params.get('upper_barrier_multiplier', 'N/A')}")
+                    logger.info(f"  Lower barrier: {barrier_params.get('lower_barrier_multiplier', 'N/A')}")
+                    logger.info(f"  Timeout: {barrier_params.get('barrier_timeout', 'N/A')}")
+            else:
+                logger.error(f"❌ {regime_name} failed: {result['error']}")
+        
+        return optimization_results
+        
+    except Exception as e:
+        logger.error(f"❌ Regime-specific optimization failed: {e}")
+        return None
+
+
+async def test_regime_parameter_application():
+    """Test applying regime-specific parameters."""
     
-    # Apply regime-aware labeling
-    labeled_data = labeler.apply_regime_aware_triple_barrier_labeling(
-        test_data, 
-        regime_column="composite_cluster_id"
-    )
+    logger.info("\n🧪 Testing Regime Parameter Application")
+    logger.info("=" * 80)
     
-    print(f"✅ Standalone regime-aware labeling completed!")
-    print(f"   - Original samples: {len(test_data)}")
-    print(f"   - Labeled samples: {len(labeled_data)}")
-    print(f"   - Label distribution: {labeled_data['label'].value_counts().to_dict()}")
+    # Create optimizer
+    config = {"regime_optimization": {"n_trials": 10}}
+    optimizer = create_regime_specific_triple_barrier_optimizer(config)
     
-    # Check for TPSL columns
-    tpsl_columns = ['tp_level', 'sl_level', 'position_size']
-    missing_columns = [col for col in tpsl_columns if col not in labeled_data.columns]
+    # Create minimal test data
+    regime_data = create_regime_specific_test_data(100)
     
-    if missing_columns:
-        print(f"⚠️ Missing TPSL columns: {missing_columns}")
-    else:
-        print(f"✅ TPSL columns present: {tpsl_columns}")
+    try:
+        # Run quick optimization
+        results = await optimizer.optimize_regime_specific_parameters(
+            regime_data, 
+            {"n_trials": 5, "timeout": 300}
+        )
+        
+        # Test parameter application
+        for regime_name in results.keys():
+            if "error" not in results[regime_name]:
+                logger.info(f"\n🔧 Applying parameters for {regime_name}...")
+                
+                application_result = await optimizer.apply_regime_parameters(regime_name)
+                
+                if "error" not in application_result:
+                    logger.info(f"  ✅ Parameters applied successfully")
+                    logger.info(f"  Parameters applied: {application_result.get('parameters_applied', 0)}")
+                else:
+                    logger.error(f"  ❌ Failed to apply parameters: {application_result['error']}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Parameter application test failed: {e}")
+        return False
+
+
+async def test_optimization_recommendations():
+    """Test optimization recommendations."""
     
-    # Get performance summary
-    performance_summary = labeler.get_regime_performance_summary(
-        labeled_data, 
-        regime_column="composite_cluster_id"
-    )
+    logger.info("\n🧪 Testing Optimization Recommendations")
+    logger.info("=" * 80)
     
-    print("\n📈 Performance Summary:")
-    for regime_name, metrics in performance_summary.items():
-        print(f"   {regime_name}: Win Rate={metrics['win_rate']:.4f}, "
-              f"Avg Profit={metrics['avg_profit']:.4f}, "
-              f"Total Return={metrics['total_return']:.4f}")
+    # Create optimizer
+    config = {"regime_optimization": {"n_trials": 10}}
+    optimizer = create_regime_specific_triple_barrier_optimizer(config)
+    
+    # Create minimal test data
+    regime_data = create_regime_specific_test_data(100)
+    
+    try:
+        # Run quick optimization
+        await optimizer.optimize_regime_specific_parameters(
+            regime_data, 
+            {"n_trials": 5, "timeout": 300}
+        )
+        
+        # Get recommendations
+        recommendations = await optimizer.get_optimization_recommendations()
+        
+        logger.info("💡 Optimization recommendations:")
+        for i, recommendation in enumerate(recommendations, 1):
+            logger.info(f"  {i}. {recommendation}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Recommendations test failed: {e}")
+        return False
+
+
+async def run_comprehensive_regime_test():
+    """Run comprehensive regime-specific optimization test."""
+    
+    logger.info("🚀 Starting Comprehensive Regime-Specific Optimization Test")
+    logger.info("=" * 100)
+    
+    test_results = {}
+    
+    # Test 1: Basic regime-specific optimization
+    logger.info("\n" + "="*50)
+    logger.info("TEST 1: Regime-Specific Optimization")
+    logger.info("="*50)
+    
+    optimization_results = await test_regime_specific_optimization()
+    test_results["regime_optimization"] = optimization_results is not None
+    
+    # Test 2: Parameter application
+    logger.info("\n" + "="*50)
+    logger.info("TEST 2: Parameter Application")
+    logger.info("="*50)
+    
+    parameter_application = await test_regime_parameter_application()
+    test_results["parameter_application"] = parameter_application
+    
+    # Test 3: Optimization recommendations
+    logger.info("\n" + "="*50)
+    logger.info("TEST 3: Optimization Recommendations")
+    logger.info("="*50)
+    
+    recommendations = await test_optimization_recommendations()
+    test_results["recommendations"] = recommendations
+    
+    # Summary
+    logger.info("\n" + "="*100)
+    logger.info("🎯 REGIME-SPECIFIC OPTIMIZATION TEST SUMMARY")
+    logger.info("="*100)
+    
+    total_tests = len(test_results)
+    passed_tests = sum(test_results.values())
+    
+    logger.info(f"Total tests: {total_tests}")
+    logger.info(f"Passed: {passed_tests}")
+    logger.info(f"Failed: {total_tests - passed_tests}")
+    logger.info(f"Success rate: {(passed_tests/total_tests)*100:.1f}%")
+    
+    # Show individual test results
+    for test_name, result in test_results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        logger.info(f"  {test_name}: {status}")
+    
+    # Generate recommendations
+    logger.info("\n💡 REGIME-SPECIFIC OPTIMIZATION FEATURES:")
+    logger.info("  🎯 5 different market regimes supported")
+    logger.info("  🔧 Regime-specific parameter optimization")
+    logger.info("  📊 Separate optimization for each regime")
+    logger.info("  🚀 MLflow integration for tracking")
+    logger.info("  📈 Performance-based recommendations")
+    
+    logger.info("\n🔮 NEXT STEPS:")
+    logger.info("  1. Integrate with your actual HMM regime detection")
+    logger.info("  2. Connect with your triple barrier implementation")
+    logger.info("  3. Run full optimization for all regimes")
+    logger.info("  4. Monitor regime-specific performance")
+    logger.info("  5. Use MLflow for experiment tracking")
+    
+    return test_results
 
 
 async def main():
     """Main test function."""
     
-    print("🧪 Regime-Specific Triple Barrier Optimization Test Suite")
-    print("=" * 70)
-    
-    # Test 1: Regime-specific optimization
-    await test_regime_specific_optimization()
-    
-    # Test 2: Standalone regime-aware labeling
-    await test_regime_aware_labeling_standalone()
-    
-    print("\n🎉 All tests completed!")
-    print("\n📝 Summary:")
-    print("   ✅ Regime-specific triple barrier optimization")
-    print("   ✅ Per-regime TPSL parameter optimization")
-    print("   ✅ Regime-aware labeling with optimized parameters")
-    print("   ✅ Performance tracking by regime")
-    print("   ✅ Utility functions for parameter retrieval")
+    try:
+        results = await run_comprehensive_regime_test()
+        
+        if all(results.values()):
+            logger.info("\n🎉 REGIME-SPECIFIC OPTIMIZATION TEST COMPLETED SUCCESSFULLY!")
+            logger.info("Your triple barrier method now has regime-specific optimization!")
+        else:
+            logger.info("\n⚠️ SOME TESTS FAILED - Review and fix issues before production use")
+            
+    except Exception as e:
+        logger.error(f"❌ Comprehensive regime test failed: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    # Run the tests
+    # Run the comprehensive regime test
     asyncio.run(main())

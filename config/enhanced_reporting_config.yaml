@@ -1,0 +1,159 @@
+# Enhanced Training Manager with Comprehensive Reporting Configuration
+# This configuration enables thorough decorators, detailed reports, and consistent storage
+
+enhanced_training_manager:
+  # Basic training configuration
+  enhanced_training_interval: 3600  # 1 hour
+  max_enhanced_training_history: 100
+  enable_model_training: true
+  blank_training_mode: false
+  max_trials: 200
+  n_trials: 100
+  lookback_days: 30
+  enable_validators: true
+  enable_computational_optimization: true
+  force_rerun: false
+
+# Enhanced reporting configuration
+enhanced_reporting:
+  # Enable detailed reporting for all steps
+  enable_detailed_reporting: true
+  
+  # Report detail level: basic, detailed, comprehensive, debug
+  report_level: "detailed"
+  
+  # Automatic cleanup of old reports
+  auto_cleanup_reports: true
+  reports_retention_days: 30
+  
+  # Report storage configuration
+  reports_directory: "reports/enhanced_training_pipeline"
+  
+  # Step-specific reporting configuration
+  step_reporting:
+    # Critical steps that require comprehensive reporting
+    comprehensive_steps:
+      - "step3_hmm_regime_discovery"
+      - "step6_hmm_based_training"
+      - "step9_tactician_specialist_training"
+      - "step12_walk_forward_validation"
+      - "step13_monte_carlo_validation"
+    
+    # Steps that require detailed reporting
+    detailed_steps:
+      - "step1_data_collection"
+      - "step1_5_data_converter"
+      - "step2_feature_engineering"
+      - "step2_5_sr_optimization"
+      - "step4_regime_data_splitting"
+      - "step5_triple_barrier_method"
+      - "step7_analyst_enhancement"
+      - "step8_tactician_labeling"
+      - "step10_confidence_calibration"
+      - "step11_final_parameters_optimization"
+      - "step14_ab_testing"
+      - "step15_saving"
+    
+    # Steps that can use basic reporting
+    basic_steps: []
+  
+  # Performance monitoring configuration
+  performance_monitoring:
+    enable_memory_monitoring: true
+    enable_cpu_monitoring: true
+    enable_disk_monitoring: true
+    memory_warning_threshold: 80  # percentage
+    cpu_warning_threshold: 90     # percentage
+    disk_warning_threshold: 85    # percentage
+    
+  # Data quality monitoring
+  data_quality_monitoring:
+    enable_null_checks: true
+    enable_type_validation: true
+    enable_shape_validation: true
+    enable_memory_usage_tracking: true
+    
+  # Error handling and recovery
+  error_handling:
+    enable_automatic_retry: true
+    max_retry_attempts: 3
+    retry_delay_seconds: 30
+    enable_error_recovery: true
+    enable_rollback_on_failure: true
+    
+  # Report formatting and export
+  report_formatting:
+    enable_json_reports: true
+    enable_summary_reports: true
+    enable_html_reports: false
+    enable_csv_exports: false
+    
+    # Report content configuration
+    include_system_resources: true
+    include_performance_metrics: true
+    include_data_quality_metrics: true
+    include_error_details: true
+    include_warnings: true
+    include_recommendations: true
+    
+  # Notification and alerting
+  notifications:
+    enable_email_notifications: false
+    enable_slack_notifications: false
+    enable_console_notifications: true
+    
+    # Notification triggers
+    notify_on_pipeline_start: true
+    notify_on_pipeline_completion: true
+    notify_on_step_failure: true
+    notify_on_performance_issues: true
+    
+  # Report analysis and insights
+  report_analysis:
+    enable_trend_analysis: true
+    enable_performance_comparison: true
+    enable_anomaly_detection: true
+    enable_optimization_suggestions: true
+    
+  # Security and access control
+  security:
+    enable_report_encryption: false
+    enable_access_logging: true
+    restrict_report_access: false
+    
+  # Integration with external systems
+  integrations:
+    enable_mlflow_integration: true
+    enable_wandb_integration: false
+    enable_tensorboard_integration: false
+    
+  # Advanced features
+  advanced:
+    enable_distributed_reporting: false
+    enable_real_time_monitoring: true
+    enable_predictive_analytics: false
+    enable_automated_optimization: false
+
+# Example usage configuration
+example_usage:
+  # Training input example
+  training_input:
+    symbol: "BTCUSDT"
+    exchange: "binance"
+    timeframe: "1m"
+    lookback_days: 30
+    training_mode: "full"
+    
+  # Pipeline execution example
+  pipeline_execution:
+    start_step: "step1_data_collection"
+    end_step: "step15_saving"
+    parallel_execution: false
+    checkpoint_frequency: 5  # Save checkpoint every 5 steps
+    
+  # Report generation example
+  report_generation:
+    generate_step_reports: true
+    generate_pipeline_summary: true
+    generate_performance_analysis: true
+    generate_recommendations: true

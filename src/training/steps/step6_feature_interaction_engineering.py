@@ -6,6 +6,7 @@ It creates interaction terms between technical indicators, market features, and 
 to capture non-linear relationships and improve model performance.
 
 Key Features:
+- Integrates with DiverseLookbackOptimizer for optimal period selection
 - Ensures non-correlated lookback periods for each indicator
 - Creates meaningful feature interactions
 - Implements stability analysis for feature selection
@@ -35,7 +36,7 @@ class FeatureInteractionEngine:
     - Cross-timeframe features
     - Regime-dependent interactions
     
-    Ensures non-correlated lookback periods for each indicator.
+    Integrates with DiverseLookbackOptimizer to ensure optimal, non-correlated lookback periods.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -51,9 +52,19 @@ class FeatureInteractionEngine:
         # Load interaction configuration
         step6_config = config.get("step6_feature_interaction_engineering", {})
         
-        # Define optimal, non-correlated lookback periods for each indicator
-        # These are carefully selected to provide different market insights
-        self.optimal_lookback_periods = {
+        # Initialize DiverseLookbackOptimizer for dynamic period selection
+        try:
+            from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+            self.diverse_optimizer = DiverseLookbackOptimizer(config)
+            self.use_dynamic_periods = True
+            self.logger.info("✅ Integrated with DiverseLookbackOptimizer for dynamic period selection")
+        except ImportError:
+            self.diverse_optimizer = None
+            self.use_dynamic_periods = False
+            self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
+        
+        # Fallback optimal lookback periods (used if dynamic optimization fails)
+        self.fallback_lookback_periods = {
             "RSI": {
                 "periods": [7, 21, 50],  # Short, medium, long - different market cycles
                 "correlation_threshold": 0.7,  # Maximum allowed correlation
@@ -121,6 +132,10 @@ class FeatureInteractionEngine:
             }
         }
         
+        # Store dynamically selected periods
+        self.dynamic_lookback_periods = {}
+        self.period_optimization_results = {}
+        
         # Interaction patterns and weights
         self.interaction_patterns = {
             "momentum_volume": {
@@ -185,18 +200,113 @@ class FeatureInteractionEngine:
         self.scaler = StandardScaler()
         self.is_fitted = False
         
-        # Validate optimal lookback periods
+        # Validate lookback periods
         self._validate_lookback_periods()
+    
+    async def optimize_lookback_periods(self, market_data: pd.DataFrame, target: pd.Series, regimes: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Optimize lookback periods using DiverseLookbackOptimizer.
+        
+        Args:
+            market_data: OHLCV market data
+            target: Target variable for optimization
+            regimes: Market regime labels (optional)
+            
+        Returns:
+            Dictionary with optimized lookback periods
+        """
+        if not self.use_dynamic_periods:
+            self.logger.warning("⚠️ Dynamic period optimization not available, using fallback periods")
+            return {"status": "fallback", "periods": self.fallback_lookback_periods}
+        
+        try:
+            self.logger.info("🎯 Starting dynamic lookback period optimization...")
+            
+            # Run diverse lookback optimization
+            optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
+                market_data, target, regimes
+            )
+            
+            # Extract optimized periods
+            self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
+            self.period_optimization_results = optimization_results
+            
+            # Update interaction patterns with optimized periods
+            self._update_interaction_patterns_with_optimized_periods()
+            
+            self.logger.info(f"✅ Dynamic period optimization completed. Selected {len(self.dynamic_lookback_periods)} indicators with optimized periods")
+            
+            return {
+                "status": "optimized",
+                "periods": self.dynamic_lookback_periods,
+                "optimization_results": optimization_results
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Dynamic period optimization failed: {e}")
+            self.logger.info("🔄 Falling back to predefined periods")
+            return {"status": "fallback", "periods": self.fallback_lookback_periods}
+    
+    def _extract_optimized_periods(self, optimization_results: Dict[str, Any]) -> Dict[str, List[int]]:
+        """
+        Extract optimized periods from DiverseLookbackOptimizer results.
+        """
+        optimized_periods = {}
+        
+        diverse_periods = optimization_results.get("diverse_lookback_periods", {})
+        
+        for indicator, results in diverse_periods.items():
+            if "selected_periods" in results:
+                optimized_periods[indicator] = results["selected_periods"]
+        
+        return optimized_periods
+    
+    def _update_interaction_patterns_with_optimized_periods(self):
+        """
+        Update interaction patterns to use optimized periods.
+        """
+        if not self.dynamic_lookback_periods:
+            return
+        
+        # Update interaction patterns with optimized periods
+        for pattern_name, pattern_config in self.interaction_patterns.items():
+            updated_features = []
+            
+            for feature in pattern_config["features"]:
+                # Check if this feature has an optimized period
+                base_indicator = feature.split("_")[0]
+                
+                if base_indicator in self.dynamic_lookback_periods:
+                    # Use the first optimized period for this pattern
+                    optimized_period = self.dynamic_lookback_periods[base_indicator][0]
+                    updated_feature = f"{base_indicator}_{optimized_period}"
+                    updated_features.append(updated_feature)
+                else:
+                    # Keep original feature if no optimization available
+                    updated_features.append(feature)
+            
+            pattern_config["features"] = updated_features
+        
+        self.logger.info("🔄 Updated interaction patterns with optimized periods")
     
     def _validate_lookback_periods(self):
         """
         Validate that the selected lookback periods are not too correlated.
         """
-        self.logger.info("🔍 Validating optimal lookback periods for non-correlation...")
+        self.logger.info("🔍 Validating lookback periods for non-correlation...")
         
-        for indicator, config in self.optimal_lookback_periods.items():
-            periods = config["periods"]
-            threshold = config["correlation_threshold"]
+        # Use dynamic periods if available, otherwise fallback
+        periods_to_validate = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        
+        for indicator, config in periods_to_validate.items():
+            if isinstance(config, dict) and "periods" in config:
+                periods = config["periods"]
+                threshold = config.get("correlation_threshold", 0.8)
+            elif isinstance(config, list):
+                periods = config
+                threshold = 0.8
+            else:
+                continue
             
             # Check if periods are too close (which would cause high correlation)
             for i in range(len(periods)):
@@ -210,7 +320,10 @@ class FeatureInteractionEngine:
                         self.logger.warning(f"⚠️ {indicator}: Periods {period1} and {period2} may be too similar (ratio: {ratio:.2f})")
                     
                     # Log the selected periods
-                    self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
+                    if isinstance(config, dict) and "description" in config:
+                        self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
+                    else:
+                        self.logger.info(f"✅ {indicator}: Selected periods {periods}")
     
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -224,43 +337,58 @@ class FeatureInteractionEngine:
         """
         self.logger.info("🔧 Extracting optimal technical indicators with non-correlated lookback periods...")
         
+        # Use dynamic periods if available, otherwise fallback
+        periods_to_use = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        
         indicators = {}
         
         # Extract RSI with optimal periods
-        if "RSI" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["RSI"]["periods"]:
+        if "RSI" in periods_to_use:
+            rsi_periods = periods_to_use["RSI"]
+            if isinstance(rsi_periods, dict):
+                rsi_periods = rsi_periods["periods"]
+            
+            for period in rsi_periods:
                 rsi = talib.RSI(market_data['close'].values, timeperiod=period)
                 indicators[f"RSI_{period}"] = rsi
         
         # Extract MACD with optimal periods
-        if "MACD" in self.optimal_lookback_periods:
-            periods = self.optimal_lookback_periods["MACD"]["periods"]
-            # Use first two periods for fast/slow
-            macd, macd_signal, macd_hist = talib.MACD(
-                market_data['close'].values, 
-                fastperiod=periods[0], 
-                slowperiod=periods[1], 
-                signalperiod=9
-            )
-            indicators[f"MACD_{periods[0]}_{periods[1]}"] = macd
-            indicators[f"MACD_Signal_{periods[0]}_{periods[1]}"] = macd_signal
-            indicators[f"MACD_Hist_{periods[0]}_{periods[1]}"] = macd_hist
+        if "MACD" in periods_to_use:
+            macd_periods = periods_to_use["MACD"]
+            if isinstance(macd_periods, dict):
+                macd_periods = macd_periods["periods"]
             
-            # Add extended MACD if we have 3 periods
-            if len(periods) >= 3:
-                macd_ext, macd_signal_ext, macd_hist_ext = talib.MACD(
+            # Use first two periods for fast/slow
+            if len(macd_periods) >= 2:
+                macd, macd_signal, macd_hist = talib.MACD(
                     market_data['close'].values, 
-                    fastperiod=periods[1], 
-                    slowperiod=periods[2], 
+                    fastperiod=macd_periods[0], 
+                    slowperiod=macd_periods[1], 
                     signalperiod=9
                 )
-                indicators[f"MACD_{periods[1]}_{periods[2]}"] = macd_ext
-                indicators[f"MACD_Signal_{periods[1]}_{periods[2]}"] = macd_signal_ext
-                indicators[f"MACD_Hist_{periods[1]}_{periods[2]}"] = macd_hist_ext
+                indicators[f"MACD_{macd_periods[0]}_{macd_periods[1]}"] = macd
+                indicators[f"MACD_Signal_{macd_periods[0]}_{macd_periods[1]}"] = macd_signal
+                indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"] = macd_hist
+                
+                # Add extended MACD if we have 3 periods
+                if len(macd_periods) >= 3:
+                    macd_ext, macd_signal_ext, macd_hist_ext = talib.MACD(
+                        market_data['close'].values, 
+                        fastperiod=macd_periods[1], 
+                        slowperiod=macd_periods[2], 
+                        signalperiod=9
+                    )
+                    indicators[f"MACD_{macd_periods[1]}_{macd_periods[2]}"] = macd_ext
+                    indicators[f"MACD_Signal_{macd_periods[1]}_{macd_periods[2]}"] = macd_signal_ext
+                    indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = macd_hist_ext
         
         # Extract Bollinger Bands with optimal periods
-        if "Bollinger_Bands" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["Bollinger_Bands"]["periods"]:
+        if "Bollinger_Bands" in periods_to_use:
+            bb_periods = periods_to_use["Bollinger_Bands"]
+            if isinstance(bb_periods, dict):
+                bb_periods = bb_periods["periods"]
+            
+            for period in bb_periods:
                 bb_upper, bb_middle, bb_lower = talib.BBANDS(
                     market_data['close'].values, 
                     timeperiod=period, 
@@ -277,20 +405,32 @@ class FeatureInteractionEngine:
                 indicators[f"BB_Squeeze_{period}"] = bb_squeeze
         
         # Extract SMA with optimal periods
-        if "SMA" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["SMA"]["periods"]:
+        if "SMA" in periods_to_use:
+            sma_periods = periods_to_use["SMA"]
+            if isinstance(sma_periods, dict):
+                sma_periods = sma_periods["periods"]
+            
+            for period in sma_periods:
                 sma = talib.SMA(market_data['close'].values, timeperiod=period)
                 indicators[f"SMA_{period}"] = sma
         
         # Extract EMA with optimal periods
-        if "EMA" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["EMA"]["periods"]:
+        if "EMA" in periods_to_use:
+            ema_periods = periods_to_use["EMA"]
+            if isinstance(ema_periods, dict):
+                ema_periods = ema_periods["periods"]
+            
+            for period in ema_periods:
                 ema = talib.EMA(market_data['close'].values, timeperiod=period)
                 indicators[f"EMA_{period}"] = ema
         
         # Extract ATR with optimal periods
-        if "ATR" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["ATR"]["periods"]:
+        if "ATR" in periods_to_use:
+            atr_periods = periods_to_use["ATR"]
+            if isinstance(atr_periods, dict):
+                atr_periods = atr_periods["periods"]
+            
+            for period in atr_periods:
                 atr = talib.ATR(
                     market_data['high'].values, 
                     market_data['low'].values, 
@@ -303,8 +443,12 @@ class FeatureInteractionEngine:
                 indicators[f"ATR_Normalized_{period}"] = atr_normalized
         
         # Extract Stochastic with optimal periods
-        if "Stochastic" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["Stochastic"]["periods"]:
+        if "Stochastic" in periods_to_use:
+            stoch_periods = periods_to_use["Stochastic"]
+            if isinstance(stoch_periods, dict):
+                stoch_periods = stoch_periods["periods"]
+            
+            for period in stoch_periods:
                 stoch_k, stoch_d = talib.STOCH(
                     market_data['high'].values, 
                     market_data['low'].values, 
@@ -317,8 +461,12 @@ class FeatureInteractionEngine:
                 indicators[f"Stoch_D_{period}"] = stoch_d
         
         # Extract ADX with optimal periods
-        if "ADX" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["ADX"]["periods"]:
+        if "ADX" in periods_to_use:
+            adx_periods = periods_to_use["ADX"]
+            if isinstance(adx_periods, dict):
+                adx_periods = adx_periods["periods"]
+            
+            for period in adx_periods:
                 adx = talib.ADX(
                     market_data['high'].values, 
                     market_data['low'].values, 
@@ -328,8 +476,12 @@ class FeatureInteractionEngine:
                 indicators[f"ADX_{period}"] = adx
         
         # Extract CCI with optimal periods
-        if "CCI" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["CCI"]["periods"]:
+        if "CCI" in periods_to_use:
+            cci_periods = periods_to_use["CCI"]
+            if isinstance(cci_periods, dict):
+                cci_periods = cci_periods["periods"]
+            
+            for period in cci_periods:
                 cci = talib.CCI(
                     market_data['high'].values, 
                     market_data['low'].values, 
@@ -339,8 +491,12 @@ class FeatureInteractionEngine:
                 indicators[f"CCI_{period}"] = cci
         
         # Extract Williams %R with optimal periods
-        if "Williams_R" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["Williams_R"]["periods"]:
+        if "Williams_R" in periods_to_use:
+            williams_periods = periods_to_use["Williams_R"]
+            if isinstance(williams_periods, dict):
+                williams_periods = williams_periods["periods"]
+            
+            for period in williams_periods:
                 williams_r = talib.WILLR(
                     market_data['high'].values, 
                     market_data['low'].values, 
@@ -350,13 +506,17 @@ class FeatureInteractionEngine:
                 indicators[f"Williams_R_{period}"] = williams_r
         
         # Extract ROC with optimal periods
-        if "ROC" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["ROC"]["periods"]:
+        if "ROC" in periods_to_use:
+            roc_periods = periods_to_use["ROC"]
+            if isinstance(roc_periods, dict):
+                roc_periods = roc_periods["periods"]
+            
+            for period in roc_periods:
                 roc = talib.ROC(market_data['close'].values, timeperiod=period)
                 indicators[f"ROC_{period}"] = roc
         
         # Extract OBV with optimal periods
-        if "OBV" in self.optimal_lookback_periods:
+        if "OBV" in periods_to_use:
             obv = talib.OBV(market_data['close'].values, market_data['volume'].values)
             # Normalize OBV
             obv_normalized = (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
@@ -364,8 +524,12 @@ class FeatureInteractionEngine:
             indicators["OBV_Normalized"] = obv_normalized
         
         # Extract MFI with optimal periods
-        if "MFI" in self.optimal_lookback_periods:
-            for period in self.optimal_lookback_periods["MFI"]["periods"]:
+        if "MFI" in periods_to_use:
+            mfi_periods = periods_to_use["MFI"]
+            if isinstance(mfi_periods, dict):
+                mfi_periods = mfi_periods["periods"]
+            
+            for period in mfi_periods:
                 mfi = talib.MFI(
                     market_data['high'].values, 
                     market_data['low'].values, 

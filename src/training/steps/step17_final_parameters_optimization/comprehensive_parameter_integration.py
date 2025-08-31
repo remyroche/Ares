@@ -31,18 +31,6 @@ try:
 except ImportError:
     MLFLOW_AVAILABLE = False
 
-# Import regime-specific triple barrier optimizer
-try:
-    from .regime_specific_triple_barrier_optimizer import (
-        RegimeSpecificTripleBarrierOptimizer,
-        create_regime_specific_triple_barrier_optimizer
-    )
-    REGIME_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    REGIME_OPTIMIZER_AVAILABLE = False
-    RegimeSpecificTripleBarrierOptimizer = None
-    create_regime_specific_triple_barrier_optimizer = None
-
 
 class ComprehensiveParameterIntegration:
     """
@@ -61,96 +49,20 @@ class ComprehensiveParameterIntegration:
         # Integration status tracking
         self.integration_status = {}
         self.parameter_validation = {}
-        
-        # Initialize regime-specific triple barrier optimizer if available
-        self.regime_optimizer = None
-        if REGIME_OPTIMIZER_AVAILABLE:
-            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config, training_manager)
-            self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
-        else:
-            self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
     
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:
         """Create comprehensive mapping of ML model trading parameters from all steps.
         
-        Note: Step5 (Labeling) does NOT have regime-specific optimizers. The triple barrier
+        Note: Only parameters that are actually used during live trading are included.
+        Data collection, training settings, validation parameters, etc. are excluded.
+        
+        Step5 (Labeling) does NOT have regime-specific optimizers. The triple barrier
         method is in Step4 and applies the same parameters across all regimes. If you need
         regime-specific optimization for the triple barrier method, this would need to be
         implemented separately.
         """
         
         return {
-            "step1_data_collection": {
-                "data_quality": {
-                    "min_data_points": (1000, 100000),
-                    "max_missing_ratio": (0.01, 0.5),
-                    "outlier_threshold": (1.0, 10.0)
-                },
-                "timeframe_settings": {
-                    "primary_timeframe": ["1m", "5m", "15m", "1h", "4h", "1d"],
-                    "secondary_timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"],
-                    "lookback_days": (30, 1000)
-                }
-            },
-            "step1_5_data_converter": {
-                "conversion_settings": {
-                    "batch_size": (100, 10000),
-                    "parallel_workers": (1, 16),
-                    "compression_level": (1, 9)
-                },
-                "format_settings": {
-                    "output_format": ["parquet", "hdf5", "csv"],
-                    "timestamp_format": ["unix", "iso", "custom"],
-                    "precision_decimals": (2, 8)
-                }
-            },
-            "step2_data_reading": {
-                "data_loading": {
-                    "chunk_size": (1000, 100000),
-                    "memory_limit_mb": (100, 2000),
-                    "parallel_loading": [True, False]
-                }
-            },
-            "step2_5_sr_optimization": {
-                "sr_parameters": {
-                    "fractional_d": (0.1, 0.9),
-                    "window_size": (10, 200),
-                    "min_periods": (5, 100),
-                    "threshold": (0.001, 0.1)
-                }
-            },
-            "step3_hmm_regime_discovery": {
-                "hmm_settings": {
-                    "n_components": (2, 10),
-                    "covariance_type": ["spherical", "diag", "tied", "full"],
-                    "random_state": (1, 1000),
-                    "n_iter": (100, 1000),
-                    "tol": (1e-6, 1e-2)
-                },
-                "regime_features": {
-                    "feature_subset_size": (5, 100),
-                    "regime_stability_threshold": (0.1, 1.0),
-                    "transition_smoothing": (0.01, 1.0),
-                    "min_regime_duration": (10, 1000)
-                }
-            },
-            "step3_5_final_regime_clustering": {
-                "clustering_settings": {
-                    "n_clusters": (2, 15),
-                    "clustering_method": ["kmeans", "hdbscan", "gaussian_mixture"],
-                    "min_cluster_size": (10, 1000),
-                    "cluster_selection_epsilon": (0.01, 1.0)
-                }
-            },
-            "step4_regime_data_splitting": {
-                "splitting_strategy": {
-                    "train_ratio": (0.5, 0.9),
-                    "validation_ratio": (0.1, 0.3),
-                    "test_ratio": (0.1, 0.3),
-                    "time_based_split": [True, False],
-                    "regime_balanced_split": [True, False]
-                }
-            },
             "step4_triple_barrier_method": {
                 "barrier_settings": {
                     "upper_barrier_multiplier": (0.1, 5.0),
@@ -180,61 +92,6 @@ class ComprehensiveParameterIntegration:
                     "risk_per_trade": (0.001, 0.1)
                 }
             },
-            "step6_feature_engineering": {
-                "feature_generation": {
-                    "technical_indicators": {
-                        "rsi_periods": (5, 50),
-                        "macd_fast": (5, 25),
-                        "macd_slow": (10, 50),
-                        "bollinger_periods": (10, 100),
-                        "atr_periods": (5, 50),
-                        "stochastic_periods": (5, 50)
-                    },
-                    "statistical_features": {
-                        "rolling_windows": (5, 200),
-                        "volatility_lookback": (10, 100),
-                        "correlation_lookback": (20, 200),
-                        "momentum_lookback": (5, 100)
-                    }
-                },
-                "feature_selection": {
-                    "selection_method": ["none", "variance", "mutual_info", "lasso", "recursive"],
-                    "max_features": (10, 1000),
-                    "correlation_threshold": (0.5, 0.99),
-                    "importance_threshold": (0.001, 0.1)
-                }
-            },
-            "step6_feature_interaction_engineering": {
-                "interaction_features": {
-                    "polynomial_degree": (1, 5),
-                    "interaction_features": [True, False],
-                    "lag_features": (1, 50),
-                    "rolling_features": (5, 200),
-                    "expansion_method": ["polynomial", "trigonometric", "fourier"]
-                }
-            },
-            "step7_enhanced_matrix_operations": {
-                "selection_algorithm": {
-                    "algorithm_type": ["variance", "mutual_info", "lasso", "recursive", "genetic"],
-                    "selection_threshold": (0.001, 0.5),
-                    "max_features": (10, 1000),
-                    "correlation_threshold": (0.5, 0.99),
-                    "stability_threshold": (0.5, 0.99)
-                },
-                "validation_settings": {
-                    "cv_folds": (3, 20),
-                    "validation_metric": ["accuracy", "f1", "roc_auc", "precision", "recall"],
-                    "stability_measure": ["jaccard", "dice", "kendall"]
-                }
-            },
-            "step8_regime_data_splitting": {
-                "splitting_strategy": {
-                    "train_ratio": (0.5, 0.9),
-                    "validation_ratio": (0.1, 0.3),
-                    "test_ratio": (0.1, 0.3),
-                    "regime_balanced_split": [True, False]
-                }
-            },
             "step9_hmm_based_training": {
                 "model_architecture": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost", "neural_network"],
@@ -250,28 +107,6 @@ class ComprehensiveParameterIntegration:
                     "colsample_bytree": (0.3, 1.0),
                     "reg_alpha": (0.0, 20.0),
                     "reg_lambda": (0.0, 20.0)
-                }
-            },
-            "step9_5_hmm_lm_generalist_training": {
-                "generalist_settings": {
-                    "model_type": ["random_forest", "xgboost", "lightgbm", "catboost"],
-                    "n_estimators": (100, 3000),
-                    "max_depth": (3, 50),
-                    "learning_rate": (0.001, 0.5)
-                }
-            },
-            "step9_5_multi_timeframe_hmm_ensemble": {
-                "ensemble_settings": {
-                    "ensemble_size": (3, 15),
-                    "timeframe_weights": ["equal", "performance", "regime_specific"],
-                    "meta_learner": ["logistic", "random_forest", "xgboost"]
-                }
-            },
-            "step10_unified_regime_intelligence": {
-                "intelligence_settings": {
-                    "regime_confidence_threshold": (0.5, 0.95),
-                    "regime_transition_smoothing": (0.01, 1.0),
-                    "multi_regime_handling": ["majority", "weighted", "ensemble"]
                 }
             },
             "step11_analyst_creation": {
@@ -339,73 +174,6 @@ class ComprehensiveParameterIntegration:
                     "confidence_level": (0.8, 0.99),
                     "uncertainty_threshold": (0.01, 0.5),
                     "calibration_validation": [True, False]
-                }
-            },
-            "step17_final_parameters_optimization": {
-                "optimization_settings": {
-                    "optimization_method": ["bayesian", "genetic", "grid_search", "random_search"],
-                    "n_trials": (50, 1000),
-                    "optimization_timeout": (1800, 72000),  # seconds
-                    "early_stopping_patience": (5, 50)
-                },
-                "objective_weights": {
-                    "total_profit_weight": (0.3, 0.7),
-                    "win_rate_weight": (0.1, 0.4),
-                    "sharpe_ratio_weight": (0.1, 0.4),
-                    "max_drawdown_weight": (0.0, 0.3)
-                }
-            },
-            "step18_walk_forward_validation": {
-                "validation_settings": {
-                    "window_size": (30, 500),
-                    "step_size": (5, 100),
-                    "min_train_size": (100, 2000),
-                    "validation_metric": ["sharpe", "sortino", "calmar", "max_drawdown", "total_return"]
-                },
-                "performance_thresholds": {
-                    "min_sharpe_ratio": (0.5, 3.0),
-                    "max_drawdown_threshold": (0.05, 0.5),
-                    "min_win_rate": (0.4, 0.8),
-                    "min_profit_factor": (1.1, 3.0)
-                }
-            },
-            "step19_monte_carlo_validation": {
-                "simulation_settings": {
-                    "n_simulations": (100, 10000),
-                    "simulation_length": (100, 10000),
-                    "confidence_level": (0.8, 0.99),
-                    "random_seed": (1, 10000)
-                },
-                "risk_metrics": {
-                    "var_confidence": (0.8, 0.99),
-                    "cvar_confidence": (0.8, 0.99),
-                    "tail_risk_threshold": (0.01, 0.1),
-                    "extreme_event_probability": (0.001, 0.1)
-                }
-            },
-            "step20_ab_testing": {
-                "testing_settings": {
-                    "test_duration_days": (7, 365),
-                    "traffic_split": (0.1, 0.5),
-                    "statistical_significance": (0.8, 0.99),
-                    "minimum_sample_size": (100, 10000)
-                },
-                "evaluation_metrics": {
-                    "primary_metric": ["total_return", "sharpe_ratio", "max_drawdown", "win_rate"],
-                    "secondary_metrics": ["sortino_ratio", "calmar_ratio", "profit_factor", "recovery_factor"]
-                }
-            },
-            "step21_saving": {
-                "model_persistence": {
-                    "save_format": ["pickle", "joblib", "onnx", "tensorflow", "pytorch"],
-                    "compression_level": (1, 9),
-                    "versioning_enabled": [True, False],
-                    "backup_enabled": [True, False]
-                },
-                "metadata_tracking": {
-                    "experiment_tracking": [True, False],
-                    "parameter_logging": [True, False],
-                    "performance_logging": [True, False]
                 }
             }
         }
@@ -690,70 +458,6 @@ class ComprehensiveParameterIntegration:
         recommendations.append("Update documentation with new parameter values")
         
         return recommendations
-    
-    async def run_regime_specific_triple_barrier_optimization(
-        self, 
-        regime_data: Dict[str, pd.DataFrame],
-        optimization_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Run regime-specific optimization for triple barrier method."""
-        
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
-        
-        try:
-            self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
-            
-            # Run optimization for all regimes
-            optimization_results = await self.regime_optimizer.optimize_regime_specific_parameters(
-                regime_data, 
-                optimization_config
-            )
-            
-            # Store regime optimization results
-            self.integration_status["regime_specific_optimization"] = optimization_results
-            
-            self.logger.info("✅ Regime-specific triple barrier optimization completed")
-            
-            return optimization_results
-            
-        except Exception as e:
-            error_msg = f"Regime-specific optimization failed: {e}"
-            self.logger.error(f"❌ {error_msg}")
-            return {"error": error_msg}
-    
-    async def get_regime_optimization_status(self) -> Dict[str, Any]:
-        """Get status of regime-specific triple barrier optimization."""
-        
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
-        
-        try:
-            return await self.regime_optimizer.get_regime_optimization_status()
-        except Exception as e:
-            return {"error": f"Failed to get regime optimization status: {e}"}
-    
-    async def apply_regime_specific_parameters(self, regime_name: str) -> Dict[str, Any]:
-        """Apply optimized parameters for a specific regime."""
-        
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
-        
-        try:
-            return await self.regime_optimizer.apply_regime_parameters(regime_name)
-        except Exception as e:
-            return {"error": f"Failed to apply regime parameters: {e}"}
-    
-    async def get_regime_optimization_recommendations(self) -> List[str]:
-        """Get recommendations based on regime-specific optimization results."""
-        
-        if not self.regime_optimizer:
-            return ["Regime-specific triple barrier optimizer not available"]
-        
-        try:
-            return await self.regime_optimizer.get_optimization_recommendations()
-        except Exception as e:
-            return [f"Failed to get regime optimization recommendations: {e}"]
     
     async def run_comprehensive_integration(self, optimized_parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Run comprehensive parameter integration process."""

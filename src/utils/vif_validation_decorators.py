@@ -16,6 +16,7 @@ import signal
 from contextlib import contextmanager
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class VIFValidationError(Exception):
@@ -66,6 +67,8 @@ def validate_vif_inputs(
             # Extract data from function arguments
             data = _extract_data_from_args(args, kwargs)
             if data is None:
+        # Fallback implementation for data
+        # Fallback implementation for data
                 logger.warning("⚠️ VIF Validation: Could not extract data from function arguments")
                 return func(*args, **kwargs)
             
@@ -136,6 +139,7 @@ def validate_vif_outputs(
             # Extract VIF values from result
             vif_values = _extract_vif_from_result(result)
             if vif_values is None:
+        # Fallback implementation for vif_values
                 logger.warning("⚠️ VIF Validation: Could not extract VIF values from function result")
                 return result
             
@@ -401,10 +405,13 @@ def _create_fallback_vif_result(args: tuple, kwargs: dict, fallback_value: Optio
     """Create fallback VIF result when calculation fails."""
     data = _extract_data_from_args(args, kwargs)
     if data is None:
+        # Fallback implementation for data
+        # Fallback implementation for data
         return pd.Series()
     
     numeric_cols = data.select_dtypes(include=[np.number]).columns
     if fallback_value is None:
+        # Fallback implementation for fallback_value
         return pd.Series(dtype=float)
     else:
         return pd.Series([fallback_value] * len(numeric_cols), index=numeric_cols)

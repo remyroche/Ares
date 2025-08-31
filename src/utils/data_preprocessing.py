@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 warnings.filterwarnings("ignore")
 
@@ -59,6 +60,7 @@ def regularize_timestamps(
 
         # Calculate expected interval if not provided
         if expected_interval is None:
+        # Fallback implementation for expected_interval
             expected_interval, (
                 time_diffs.mode().iloc[0]
         if len(time_diffs.mode()) > 0

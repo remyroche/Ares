@@ -23,6 +23,7 @@ import pandas as pd
 
 try:
     from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
     system_logger = logging.getLogger("DataQualityDecorators")
 
@@ -571,6 +572,7 @@ def log_feature_quality_issues(df: pd.DataFrame, df_name: str, logger: Optional[
         logger: Logger to use (defaults to system_logger)
     """
     if logger is None:
+        # Fallback implementation for logger
         logger = system_logger.getChild("FeatureQualityLogger")
     
     logger.info(f"🔍 Checking feature quality for {df_name}...")

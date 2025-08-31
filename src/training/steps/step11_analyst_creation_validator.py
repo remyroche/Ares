@@ -1,4 +1,4 @@
-# src/training/steps/step11_analyst_creation_validator.py
+# src/training/steps/step11_*.py
 
 import json
 import os

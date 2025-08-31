@@ -41,6 +41,7 @@ except ImportError:
     pd = None
 
 from src.utils.domain_errors import (
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     DataValidationError,
     DomainError,
     ExternalServiceError,
@@ -382,6 +383,7 @@ def pa_check_io(
 
         def _validate_input(df_value: Any) -> None:
             if input_schema is None:
+        # Fallback implementation for input_schema
                 return
             if pa is not None and hasattr(input_schema, "validate"):
                 try:
@@ -400,6 +402,7 @@ def pa_check_io(
 
         def _validate_output(result: Any) -> Any:
             if output_schema is None:
+        # Fallback implementation for output_schema
                 return result
             if pa is not None and hasattr(output_schema, "validate"):
                 try:
@@ -616,6 +619,7 @@ def guard_array_nan_inf(
                 param_name = param_names[index]
                 value = bound_args.arguments.get(param_name)
                 if value is None:
+        # Fallback implementation for value
                     continue
 
                 # Convert to numpy for checking

@@ -600,6 +600,225 @@ class PipelineStandards:
         
         return metadata
 
+    @staticmethod
+    def validate_cross_step_consistency(data_dict: Dict[str, pd.DataFrame], step_sequence: List[str]) -> ValidationResult:
+        """
+        Validate data consistency across pipeline steps.
+        
+        Args:
+            data_dict: Dictionary of dataframes from different steps
+            step_sequence: Sequence of steps to validate
+            
+        Returns:
+            ValidationResult with consistency issues
+        """
+        result = ValidationResult(passed=True)
+        
+        if len(data_dict) < 2:
+            return result
+        
+        # Get the first dataframe as reference
+        reference_df = None
+        for step in step_sequence:
+            if step in data_dict and data_dict[step] is not None:
+                reference_df = data_dict[step]
+                break
+        
+        if reference_df is None:
+            result.issues.append(ValidationIssue(
+                severity=DataQualityLevel.CRITICAL,
+                message="No reference dataframe found for consistency validation"
+            ))
+            result.passed = False
+            return result
+        
+        reference_length = len(reference_df)
+        reference_columns = set(reference_df.columns)
+        
+        # Check each step's data consistency
+        for step in step_sequence:
+            if step not in data_dict or data_dict[step] is None:
+                continue
+                
+            df = data_dict[step]
+            
+            # Check row count consistency
+            if len(df) != reference_length:
+                result.issues.append(ValidationIssue(
+                    severity=DataQualityLevel.WARNING,
+                    message=f"Row count mismatch in {step}: {len(df)} vs {reference_length}",
+                    details={"step": step, "actual_count": len(df), "expected_count": reference_length}
+                ))
+            
+            # Check for common columns
+            common_columns = reference_columns.intersection(set(df.columns))
+            if len(common_columns) < len(reference_columns) * 0.8:  # At least 80% common columns
+                result.warnings.append(ValidationIssue(
+                    severity=DataQualityLevel.WARNING,
+                    message=f"Low column overlap in {step}: {len(common_columns)}/{len(reference_columns)}",
+                    details={"step": step, "common_columns": len(common_columns), "total_columns": len(reference_columns)}
+                ))
+        
+        result.passed = len(result.issues) == 0
+        return result
+
+    @staticmethod
+    def track_data_lineage(data: pd.DataFrame, source_step: str, transformations: List[str]) -> Dict[str, Any]:
+        """
+        Track data lineage and transformations.
+        
+        Args:
+            data: The dataframe
+            source_step: Source step name
+            transformations: List of transformations applied
+            
+        Returns:
+            Lineage tracking information
+        """
+        lineage = {
+            "source_step": source_step,
+            "transformations": transformations,
+            "timestamp": datetime.now().isoformat(),
+            "data_shape": data.shape,
+            "columns": list(data.columns),
+            "memory_usage": data.memory_usage(deep=True).sum(),
+            "dtypes": data.dtypes.to_dict()
+        }
+        
+        return lineage
+
+    @staticmethod
+    def calculate_comprehensive_quality_score(data: pd.DataFrame, context: str = "general") -> float:
+        """
+        Calculate comprehensive data quality score.
+        
+        Args:
+            data: Dataframe to score
+            context: Context for scoring (e.g., "klines", "features", "labels")
+            
+        Returns:
+            Quality score between 0 and 1
+        """
+        if data is None or len(data) == 0:
+            return 0.0
+        
+        scores = []
+        
+        # Completeness score
+        completeness = 1 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
+        scores.append(completeness)
+        
+        # Consistency score (no duplicates)
+        consistency = 1 - (data.duplicated().sum() / len(data))
+        scores.append(consistency)
+        
+        # Validity score (no infinite values)
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (len(data) * len(numeric_cols))
+            validity = 1 - infinite_ratio
+        else:
+            validity = 1.0
+        scores.append(validity)
+        
+        # Timeliness score (if timestamp column exists)
+        if "timestamp" in data.columns:
+            try:
+                # Check if timestamps are in reasonable range
+                timestamps = pd.to_datetime(data["timestamp"], unit='s')
+                now = pd.Timestamp.now()
+                time_diff = abs((timestamps - now).dt.total_seconds())
+                timeliness = 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)  # Normalize to 1 year
+                scores.append(timeliness)
+            except:
+                scores.append(0.5)  # Default score if timestamp parsing fails
+        
+        # Context-specific scoring
+        if context == "klines":
+            # Additional checks for klines data
+            required_cols = ["open", "high", "low", "close", "volume"]
+            if all(col in data.columns for col in required_cols):
+                # Check OHLC consistency
+                ohlc_valid = ((data["high"] >= data["low"]) & 
+                             (data["high"] >= data["open"]) & 
+                             (data["high"] >= data["close"]) &
+                             (data["low"] <= data["open"]) & 
+                             (data["low"] <= data["close"])).mean()
+                scores.append(ohlc_valid)
+        
+        return np.mean(scores)
+
+    @staticmethod
+    def validate_feature_engineering_output(features: pd.DataFrame, original_data: pd.DataFrame) -> ValidationResult:
+        """
+        Validate feature engineering output.
+        
+        Args:
+            features: Engineered features dataframe
+            original_data: Original input data
+            
+        Returns:
+            ValidationResult with validation issues
+        """
+        result = ValidationResult(passed=True)
+        
+        if features is None or original_data is None:
+            result.issues.append(ValidationIssue(
+                severity=DataQualityLevel.CRITICAL,
+                message="Features or original data is None"
+            ))
+            result.passed = False
+            return result
+        
+        # Check that features have same number of rows as original data
+        if len(features) != len(original_data):
+            result.issues.append(ValidationIssue(
+                severity=DataQualityLevel.CRITICAL,
+                message=f"Feature count mismatch: {len(features)} vs {len(original_data)}",
+                details={"feature_count": len(features), "original_count": len(original_data)}
+            ))
+            result.passed = False
+        
+        # Check for NaN values in features
+        nan_counts = features.isnull().sum()
+        high_nan_cols = nan_counts[nan_counts > len(features) * 0.1]  # More than 10% NaN
+        if len(high_nan_cols) > 0:
+            result.warnings.append(ValidationIssue(
+                severity=DataQualityLevel.WARNING,
+                message=f"Features with high NaN values: {list(high_nan_cols.index)}",
+                details={"high_nan_features": list(high_nan_cols.index)}
+            ))
+        
+        # Check for infinite values in features
+        numeric_features = features.select_dtypes(include=[np.number])
+        if len(numeric_features.columns) > 0:
+            infinite_counts = np.isinf(numeric_features).sum()
+            infinite_cols = infinite_counts[infinite_counts > 0]
+            if len(infinite_cols) > 0:
+                result.warnings.append(ValidationIssue(
+                    severity=DataQualityLevel.WARNING,
+                    message=f"Features with infinite values: {list(infinite_cols.index)}",
+                    details={"infinite_features": list(infinite_cols.index)}
+                ))
+        
+        # Check for constant features
+        constant_features = []
+        for col in features.columns:
+            if features[col].nunique() <= 1:
+                constant_features.append(col)
+        
+        if constant_features:
+            result.warnings.append(ValidationIssue(
+                severity=DataQualityLevel.WARNING,
+                message=f"Constant features detected: {constant_features}",
+                details={"constant_features": constant_features}
+            ))
+        
+        # Calculate quality score
+        result.quality_score = PipelineStandards.calculate_comprehensive_quality_score(features, "features")
+        
+        return result
+
 
 # Global instance for easy access
 pipeline_standards = PipelineStandards()

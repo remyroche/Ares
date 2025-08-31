@@ -82,22 +82,29 @@ class FinalParametersOptimizationStep:
             exchange = training_input.get("exchange", "BINANCE")
             data_dir = training_input.get("data_dir", "data/training")
 
-            # Load calibration results
-            from src.utils.logger import heartbeat
+                    # Load calibration results
+        from src.utils.logger import heartbeat
 
-            with heartbeat(
-                self.logger,
-                name="Step12 load_calibration_results",
-                interval_seconds=60.0,
-            ):
-                calibration_results = await self._load_calibration_results(
-                    symbol,
-                    exchange,
-                    data_dir,
-                )
-            if not calibration_results:
-                msg = "Calibration results not found"
-                raise FileNotFoundError(msg)
+        with heartbeat(
+            self.logger,
+            name="Step17 load_calibration_results",
+            interval_seconds=60.0,
+        ):
+            calibration_results = await self._load_calibration_results(
+                symbol,
+                exchange,
+                data_dir,
+            )
+        if not calibration_results:
+            msg = "Calibration results not found"
+            raise FileNotFoundError(msg)
+        
+        # Load exit strategy models if available
+        exit_strategy_results = await self._load_exit_strategy_results(
+            symbol,
+            exchange,
+            data_dir,
+        )
             with contextlib.suppress(Exception):
                 self.logger.info(
                     f"Loaded calibration results for {exchange}/{symbol}: sections={list(calibration_results.keys())[:10]}"
@@ -130,12 +137,13 @@ class FinalParametersOptimizationStep:
             # Perform comprehensive parameter optimization
             with heartbeat(
                 self.logger,
-                name="Step12 optimize_all_parameters",
+                name="Step17 optimize_all_parameters",
                 interval_seconds=60.0,
             ):
                 optimization_results = await self._optimize_all_parameters(
                     calibration_results,
                     previous_results,
+                    exit_strategy_results,
                 )
             try:
                 keys = (
@@ -246,7 +254,9 @@ class FinalParametersOptimizationStep:
             return None
 
     async def _optimize_all_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, 
+        exit_strategy_results: Optional[Dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """Optimize all parameters using advanced Optuna features.
 
         Args:
@@ -311,6 +321,15 @@ class FinalParametersOptimizationStep:
                 previous_results,
             )
             optimization_results["timing_parameters"] = timing_results
+
+            # 8. Exit strategy parameters optimization
+            if exit_strategy_results:
+                exit_strategy_results, await self._optimize_exit_strategy_parameters(
+                    exit_strategy_results,
+                    calibration_results,
+                    previous_results,
+                )
+                optimization_results["exit_strategy_parameters"] = exit_strategy_results
 
             return optimization_results
 
@@ -1795,6 +1814,177 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
     except Exception:
         return False
+
+
+    async def _load_exit_strategy_results(
+        self, symbol: str, exchange: str, data_dir: str
+    ) -> Optional[Dict[str, Any]]:
+        """Load exit strategy training results if available."""
+        try:
+            exit_strategy_path = Path(data_dir) / f"{symbol}_{exchange}_step18_exit_strategy_results.json"
+            if exit_strategy_path.exists():
+                with open(exit_strategy_path, 'r') as f:
+                    import json
+                    return json.load(f)
+            return None
+        except Exception as e:
+            self.logger.warning(f"Failed to load exit strategy results: {e}")
+            return None
+
+    async def _optimize_exit_strategy_parameters(
+        self, exit_strategy_results: Dict[str, Any], calibration_results: Dict[str, Any], 
+        previous_results: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Optimize exit strategy parameters using Optuna."""
+        try:
+            import optuna
+
+            self.logger.info("Optimizing exit strategy parameters...")
+
+            def objective(trial):
+                params = {
+                    # Reversal detection thresholds
+                    "reversal_threshold": trial.suggest_float("reversal_threshold", 0.005, 0.02, step=0.001),
+                    "reversal_confidence_threshold": trial.suggest_float("reversal_confidence_threshold", 0.6, 0.9, step=0.05),
+                    
+                    # Exit timing parameters
+                    "exit_urgency_threshold": trial.suggest_float("exit_urgency_threshold", 0.3, 0.8, step=0.05),
+                    "exit_timing_confidence_threshold": trial.suggest_float("exit_timing_confidence_threshold", 0.6, 0.9, step=0.05),
+                    
+                    # Multi-timeframe entry parameters
+                    "entry_confidence_threshold": trial.suggest_float("entry_confidence_threshold", 0.7, 0.95, step=0.05),
+                    "multi_timeframe_agreement_threshold": trial.suggest_float("multi_timeframe_agreement_threshold", 0.5, 0.8, step=0.05),
+                    
+                    # Profit preservation parameters
+                    "profit_decay_threshold": trial.suggest_float("profit_decay_threshold", 0.1, 0.5, step=0.05),
+                    "profit_preservation_threshold": trial.suggest_float("profit_preservation_threshold", 0.3, 0.8, step=0.05),
+                    
+                    # Time decay parameters
+                    "time_decay_factor": trial.suggest_float("time_decay_factor", 0.1, 1.0, step=0.1),
+                    "max_hold_time_minutes": trial.suggest_int("max_hold_time_minutes", 30, 240, step=30),
+                    
+                    # Risk-adjusted parameters
+                    "risk_adjustment_factor": trial.suggest_float("risk_adjustment_factor", 0.5, 2.0, step=0.1),
+                    "volatility_scaling_factor": trial.suggest_float("volatility_scaling_factor", 0.5, 2.0, step=0.1),
+                }
+                
+                # Calculate objective score based on exit strategy performance
+                score = self._evaluate_exit_strategy_parameters(params, exit_strategy_results, calibration_results)
+                
+                return score
+
+            # Create study
+            study = optuna.create_study(
+                direction="maximize",
+                sampler=optuna.samplers.TPESampler(seed=42),
+                pruner=optuna.pruners.MedianPruner()
+            )
+
+            # Optimize
+            study.optimize(objective, n_trials=50, timeout=3600)
+
+            # Get best parameters
+            best_params = study.best_params
+            best_score = study.best_value
+
+            self.logger.info(f"Exit strategy optimization completed. Best score: {best_score:.4f}")
+
+            return {
+                "optimized_parameters": best_params,
+                "optimization_score": best_score,
+                "study_history": study.trials_dataframe().to_dict(),
+                "optimization_metadata": {
+                    "n_trials": len(study.trials),
+                    "optimization_time": study.duration.total_seconds(),
+                    "best_trial_number": study.best_trial.number
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Exit strategy optimization failed: {e}")
+            return {
+                "optimized_parameters": {},
+                "optimization_score": 0.0,
+                "error": str(e)
+            }
+
+    def _evaluate_exit_strategy_parameters(
+        self, params: Dict[str, Any], exit_strategy_results: Dict[str, Any], 
+        calibration_results: Dict[str, Any]
+    ) -> float:
+        """Evaluate exit strategy parameters and return a score."""
+        try:
+            # Extract performance metrics from exit strategy results
+            performance_metrics = exit_strategy_results.get("performance_metrics", {})
+            
+            # Base score from model accuracy
+            overall_accuracy = performance_metrics.get("overall_accuracy", 0.0)
+            reversal_accuracy = performance_metrics.get("reversal_detection_accuracy", 0.0)
+            exit_timing_accuracy = performance_metrics.get("exit_timing_accuracy", 0.0)
+            multi_timeframe_accuracy = performance_metrics.get("multi_timeframe_accuracy", 0.0)
+            
+            # Calculate weighted score
+            base_score = (
+                overall_accuracy * 0.3 +
+                reversal_accuracy * 0.25 +
+                exit_timing_accuracy * 0.25 +
+                multi_timeframe_accuracy * 0.2
+            )
+            
+            # Apply parameter-based adjustments
+            adjustments = []
+            
+            # Reversal threshold adjustment
+            reversal_threshold = params.get("reversal_threshold", 0.01)
+            if 0.008 <= reversal_threshold <= 0.015:
+                adjustments.append(0.1)  # Bonus for optimal range
+            else:
+                adjustments.append(-0.05)  # Penalty for suboptimal range
+            
+            # Confidence threshold adjustments
+            confidence_thresholds = [
+                params.get("reversal_confidence_threshold", 0.7),
+                params.get("exit_timing_confidence_threshold", 0.7),
+                params.get("entry_confidence_threshold", 0.8)
+            ]
+            
+            for threshold in confidence_thresholds:
+                if 0.65 <= threshold <= 0.85:
+                    adjustments.append(0.05)
+                else:
+                    adjustments.append(-0.02)
+            
+            # Multi-timeframe agreement adjustment
+            agreement_threshold = params.get("multi_timeframe_agreement_threshold", 0.6)
+            if 0.6 <= agreement_threshold <= 0.75:
+                adjustments.append(0.1)
+            else:
+                adjustments.append(-0.05)
+            
+            # Profit preservation adjustment
+            profit_threshold = params.get("profit_preservation_threshold", 0.5)
+            if 0.4 <= profit_threshold <= 0.7:
+                adjustments.append(0.1)
+            else:
+                adjustments.append(-0.05)
+            
+            # Time decay adjustment
+            max_hold_time = params.get("max_hold_time_minutes", 120)
+            if 60 <= max_hold_time <= 180:
+                adjustments.append(0.05)
+            else:
+                adjustments.append(-0.02)
+            
+            # Calculate final score
+            adjustment_score = np.mean(adjustments) if adjustments else 0.0
+            final_score = base_score + adjustment_score
+            
+            # Ensure score is between 0 and 1
+            return max(0.0, min(1.0, final_score))
+            
+        except Exception as e:
+            self.logger.error(f"Parameter evaluation failed: {e}")
+            return 0.0
 
 
 if __name__ == "__main__":

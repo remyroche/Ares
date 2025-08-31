@@ -14,6 +14,7 @@ from src.utils.warning_symbols import (
     failed,
     invalid,
 )
+from src.tactician.exit_strategy_manager import ExitStrategyManager
 
 class PositionCloser:
     """
@@ -53,6 +54,9 @@ class PositionCloser:
         # State tracking
         self.closed_positions = []
         self.position_history = []
+        
+        # Initialize exit strategy manager
+        self.exit_strategy_manager = ExitStrategyManager(config)
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -73,6 +77,10 @@ class PositionCloser:
             if not self._validate_configuration():
                 self.logger.error(invalid("Invalid position closer configuration"))
                 return False
+
+            # Initialize exit strategy manager
+            if not await self.exit_strategy_manager.initialize():
+                self.logger.warning("⚠️ Exit strategy manager initialization failed, using basic position closing")
 
             self.logger.info("✅ Position Closer initialized successfully")
             return True
@@ -146,7 +154,8 @@ class PositionCloser:
         position_data: Dict[str, Any],
         model_confidence: float,
         atr_value: float,
-        current_price: float
+        current_price: float,
+        market_data: Optional[pd.DataFrame] = None
     ) -> bool:
         """
         Determine if a position should be closed based on model confidence and ATR.
@@ -161,6 +170,29 @@ class PositionCloser:
             bool: True if position should be closed
         """
         try:
+            # Use exit strategy manager if market data is available
+            if market_data is not None and not market_data.empty:
+                # Update position context
+                position_context = {
+                    "entry_price": position_data.get("entry_price", current_price),
+                    "current_price": current_price,
+                    "current_pnl": position_data.get("unrealized_pnl", 0.0),
+                    "entry_time": position_data.get("entry_time"),
+                    "position_size": position_data.get("size", 0),
+                    "side": position_data.get("side", "long"),
+                    "confidence": model_confidence
+                }
+                
+                # Get exit decision from strategy manager
+                exit_decision = await self.exit_strategy_manager.evaluate_position_exit(
+                    market_data, position_context
+                )
+                
+                if exit_decision.get("should_exit", False):
+                    self.logger.info(f"Closing position due to exit strategy: {exit_decision.get('reasoning', '')}")
+                    return True
+            
+            # Fallback to basic logic
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
                 self.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")

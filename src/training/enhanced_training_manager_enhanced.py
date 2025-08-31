@@ -478,21 +478,28 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    Short Positions: {position_ratios.get('short_positions', 'N/A')}")
                     summary.append(f"    Hold Positions: {position_ratios.get('hold_positions', 'N/A')}")
                 
-                if "price_change_distribution" in quality_metrics:
-                    price_changes = quality_metrics["price_change_distribution"]
-                    summary.append("  Price Change Distribution:")
-                    summary.append(f"    Upper Barrier Captures: {price_changes.get('upper_barrier_captures', 'N/A')}")
-                    summary.append(f"    Lower Barrier Captures: {price_changes.get('lower_barrier_captures', 'N/A')}")
-                    summary.append(f"    Capture Efficiency: {price_changes.get('capture_efficiency', 'N/A'):.4f}" if isinstance(price_changes.get('capture_efficiency'), (int, float)) else f"    Capture Efficiency: {price_changes.get('capture_efficiency', 'N/A')}")
+                if "triple_barrier_captured_changes" in quality_metrics:
+                    captured_changes = quality_metrics["triple_barrier_captured_changes"]
+                    summary.append("  Triple Barrier Captured Changes:")
+                    summary.append(f"    Upper Barrier Captures: {captured_changes.get('upper_barrier_captures', 'N/A')}")
+                    summary.append(f"    Lower Barrier Captures: {captured_changes.get('lower_barrier_captures', 'N/A')}")
+                    summary.append(f"    Capture Efficiency: {captured_changes.get('capture_efficiency', 'N/A'):.4f}" if isinstance(captured_changes.get('capture_efficiency'), (int, float)) else f"    Capture Efficiency: {captured_changes.get('capture_efficiency', 'N/A')}")
                     
-                    if "price_change_stats" in price_changes:
-                        change_stats = price_changes["price_change_stats"]
-                        if "upper_barrier_stats" in change_stats:
-                            upper_stats = change_stats["upper_barrier_stats"]
-                            summary.append("    Upper Barrier Price Changes:")
+                    if "captured_price_changes" in captured_changes:
+                        change_stats = captured_changes["captured_price_changes"]
+                        if "upper_barrier_captured_stats" in change_stats:
+                            upper_stats = change_stats["upper_barrier_captured_stats"]
+                            summary.append("    Upper Barrier Captured Price Changes:")
                             summary.append(f"      Mean Capture: {upper_stats.get('mean_capture', 'N/A'):.4f}" if isinstance(upper_stats.get('mean_capture'), (int, float)) else f"      Mean Capture: {upper_stats.get('mean_capture', 'N/A')}")
                             summary.append(f"      Max Capture: {upper_stats.get('max_capture', 'N/A'):.4f}" if isinstance(upper_stats.get('max_capture'), (int, float)) else f"      Max Capture: {upper_stats.get('max_capture', 'N/A')}")
                             summary.append(f"      Capture Count: {upper_stats.get('capture_count', 'N/A')}")
+                        
+                        if "capture_summary" in change_stats:
+                            capture_summary = change_stats["capture_summary"]
+                            summary.append("    Capture Summary:")
+                            summary.append(f"      Total Captures: {capture_summary.get('total_captures', 'N/A')}")
+                            summary.append(f"      Upper Capture Ratio: {capture_summary.get('upper_capture_ratio', 'N/A'):.4f}" if isinstance(capture_summary.get('upper_capture_ratio'), (int, float)) else f"      Upper Capture Ratio: {capture_summary.get('upper_capture_ratio', 'N/A')}")
+                            summary.append(f"      Lower Capture Ratio: {capture_summary.get('lower_capture_ratio', 'N/A'):.4f}" if isinstance(capture_summary.get('lower_capture_ratio'), (int, float)) else f"      Lower Capture Ratio: {capture_summary.get('lower_capture_ratio', 'N/A')}")
                 
                 if "label_quality" in quality_metrics:
                     label_quality = quality_metrics["label_quality"]
@@ -507,7 +514,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             summary.append(f"    Majority Class: {balance.get('majority_class', 'N/A')}")
                             summary.append(f"    Minority Class: {balance.get('minority_class', 'N/A')}")
             
-            elif step_name == "step6_hmm_based_training":
+            elif step_name == "step6_feature_generation":
                 if "feature_generation_analysis" in quality_metrics:
                     generation = quality_metrics["feature_generation_analysis"]
                     summary.append("  Feature Generation Analysis:")
@@ -541,29 +548,47 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    Feature Correlations: {stats.get('feature_correlations', 'N/A')}")
                     summary.append(f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A'):.4f}" if isinstance(stats.get('feature_redundancy'), (int, float)) else f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A')}")
             
-            elif step_name == "step7_analyst_enhancement":
-                if "enhancement_analysis" in quality_metrics:
-                    enhancement = quality_metrics["enhancement_analysis"]
-                    summary.append("  Enhancement Analysis:")
-                    summary.append(f"    Enhancement Type: {enhancement.get('enhancement_type', 'N/A')}")
-                    summary.append(f"    Original Features: {enhancement.get('original_features', 'N/A')}")
-                    summary.append(f"    Enhanced Features: {enhancement.get('enhanced_features', 'N/A')}")
-                    summary.append(f"    Feature Increase: {enhancement.get('feature_increase', 'N/A')}")
+            elif step_name == "step7_matrix_feature_selection":
+                if "selection_analysis" in quality_metrics:
+                    selection = quality_metrics["selection_analysis"]
+                    summary.append("  Selection Analysis:")
+                    summary.append(f"    Selection Method: {selection.get('selection_method', 'N/A')}")
+                    summary.append(f"    Original Features: {selection.get('original_features', 'N/A')}")
+                    summary.append(f"    Selected Features: {selection.get('selected_features', 'N/A')}")
+                    summary.append(f"    Reduction Ratio: {selection.get('reduction_ratio', 'N/A'):.4f}" if isinstance(selection.get('reduction_ratio'), (int, float)) else f"    Reduction Ratio: {selection.get('reduction_ratio', 'N/A')}")
+                    summary.append(f"    Selection Criteria: {selection.get('selection_criteria', 'N/A')}")
                 
-                if "enhancement_quality" in quality_metrics:
-                    quality = quality_metrics["enhancement_quality"]
-                    summary.append("  Enhancement Quality:")
-                    summary.append(f"    Feature Relevance: {quality.get('feature_relevance', 'N/A'):.4f}" if isinstance(quality.get('feature_relevance'), (int, float)) else f"    Feature Relevance: {quality.get('feature_relevance', 'N/A')}")
-                    summary.append(f"    Information Gain: {quality.get('information_gain', 'N/A'):.4f}" if isinstance(quality.get('information_gain'), (int, float)) else f"    Information Gain: {quality.get('information_gain', 'N/A')}")
-                    summary.append(f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A'):.4f}" if isinstance(quality.get('enhancement_effectiveness'), (int, float)) else f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A')}")
+                if "selection_quality" in quality_metrics:
+                    quality = quality_metrics["selection_quality"]
+                    summary.append("  Selection Quality:")
+                    summary.append(f"    Feature Importance: {quality.get('feature_importance', 'N/A'):.4f}" if isinstance(quality.get('feature_importance'), (int, float)) else f"    Feature Importance: {quality.get('feature_importance', 'N/A')}")
+                    summary.append(f"    Information Preservation: {quality.get('information_preservation', 'N/A'):.4f}" if isinstance(quality.get('information_preservation'), (int, float)) else f"    Information Preservation: {quality.get('information_preservation', 'N/A')}")
+                    summary.append(f"    Selection Stability: {quality.get('selection_stability', 'N/A'):.4f}" if isinstance(quality.get('selection_stability'), (int, float)) else f"    Selection Stability: {quality.get('selection_stability', 'N/A')}")
+                    summary.append(f"    Cross Validation Score: {quality.get('cross_validation_score', 'N/A'):.4f}" if isinstance(quality.get('cross_validation_score'), (int, float)) else f"    Cross Validation Score: {quality.get('cross_validation_score', 'N/A')}")
+                
+                if "matrix_analysis" in quality_metrics:
+                    matrix = quality_metrics["matrix_analysis"]
+                    summary.append("  Matrix Analysis:")
+                    summary.append(f"    Correlation Matrix: {matrix.get('correlation_matrix', 'N/A')}")
+                    summary.append(f"    Variance Explained: {matrix.get('variance_explained', 'N/A'):.4f}" if isinstance(matrix.get('variance_explained'), (int, float)) else f"    Variance Explained: {matrix.get('variance_explained', 'N/A')}")
+                    summary.append(f"    Eigenvalue Distribution: {matrix.get('eigenvalue_distribution', 'N/A')}")
+                    summary.append(f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction', 'N/A'):.4f}" if isinstance(matrix.get('multicollinearity_reduction'), (int, float)) else f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction', 'N/A')}")
                 
                 if "performance_impact" in quality_metrics:
                     impact = quality_metrics["performance_impact"]
                     summary.append("  Performance Impact:")
-                    summary.append(f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_enhancement_accuracy'), (int, float)) else f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A')}")
-                    summary.append(f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_enhancement_accuracy'), (int, float)) else f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A')}")
-                    summary.append(f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A'):.4f}" if isinstance(impact.get('accuracy_improvement'), (int, float)) else f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A')}")
-                    summary.append(f"    Enhancement Cost: {impact.get('enhancement_cost', 'N/A')}")
+                    summary.append(f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_selection_accuracy'), (int, float)) else f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy', 'N/A')}")
+                    summary.append(f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_selection_accuracy'), (int, float)) else f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy', 'N/A')}")
+                    summary.append(f"    Accuracy Change: {impact.get('accuracy_change', 'N/A'):.4f}" if isinstance(impact.get('accuracy_change'), (int, float)) else f"    Accuracy Change: {impact.get('accuracy_change', 'N/A')}")
+                    summary.append(f"    Computational Savings: {impact.get('computational_savings', 'N/A')}")
+                
+                if "selected_features_analysis" in quality_metrics:
+                    features = quality_metrics["selected_features_analysis"]
+                    summary.append("  Selected Features Analysis:")
+                    summary.append(f"    Top Features: {features.get('top_features', 'N/A')}")
+                    summary.append(f"    Feature Categories: {features.get('feature_categories', 'N/A')}")
+                    summary.append(f"    Feature Rankings: {features.get('feature_rankings', 'N/A')}")
+                    summary.append(f"    Selection Confidence: {features.get('selection_confidence', 'N/A'):.4f}" if isinstance(features.get('selection_confidence'), (int, float)) else f"    Selection Confidence: {features.get('selection_confidence', 'N/A')}")
             
             # Add warnings from quality metrics
             if "warnings" in quality_metrics and quality_metrics["warnings"]:
@@ -1789,10 +1814,10 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 return await self._get_regime_splitting_metrics(step_result)
             elif step_name == "step5_triple_barrier_method":
                 return await self._get_triple_barrier_metrics(step_result)
-            elif step_name == "step6_hmm_based_training":
-                return await self._get_hmm_training_metrics(step_result)
-            elif step_name == "step7_analyst_enhancement":
-                return await self._get_analyst_enhancement_metrics(step_result)
+            elif step_name == "step6_feature_generation":
+                return await self._get_feature_generation_metrics(step_result)
+            elif step_name == "step7_matrix_feature_selection":
+                return await self._get_matrix_feature_selection_metrics(step_result)
             elif step_name == "step8_tactician_labeling":
                 return await self._get_tactician_labeling_metrics(step_result)
             elif step_name == "step9_tactician_specialist_training":
@@ -2157,25 +2182,29 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "average_barriers_per_day": result.get("avg_barriers_per_day", "Unknown"),
                         "total_trading_days": result.get("total_trading_days", "Unknown"),
                         "days_with_barriers": result.get("days_with_barriers", "Unknown"),
-                        "barrier_density": result.get("barrier_density", "Unknown")
+                        "barrier_density": result.get("barrier_density", "Unknown"),
+                        "daily_barrier_counts": result.get("daily_barrier_counts", "Unknown")
                     },
                     "barrier_values": {
                         "upper_barrier_value": result.get("upper_barrier_value", "Unknown"),
                         "lower_barrier_value": result.get("lower_barrier_value", "Unknown"),
                         "barrier_spread": result.get("barrier_spread", "Unknown"),
-                        "barrier_volatility": result.get("barrier_volatility", "Unknown")
+                        "barrier_volatility": result.get("barrier_volatility", "Unknown"),
+                        "barrier_distribution": result.get("barrier_distribution", "Unknown")
                     },
                     "position_ratios": {
                         "long_short_ratio": result.get("long_short_ratio", "Unknown"),
                         "long_positions": result.get("long_positions", "Unknown"),
                         "short_positions": result.get("short_positions", "Unknown"),
-                        "hold_positions": result.get("hold_positions", "Unknown")
+                        "hold_positions": result.get("hold_positions", "Unknown"),
+                        "position_distribution": result.get("position_distribution", "Unknown")
                     },
-                    "price_change_distribution": {
+                    "triple_barrier_captured_changes": {
                         "upper_barrier_captures": result.get("upper_barrier_captures", "Unknown"),
                         "lower_barrier_captures": result.get("lower_barrier_captures", "Unknown"),
-                        "price_change_stats": self._analyze_price_change_distribution(result),
-                        "capture_efficiency": result.get("capture_efficiency", "Unknown")
+                        "captured_price_changes": self._analyze_triple_barrier_captured_changes(result),
+                        "capture_efficiency": result.get("capture_efficiency", "Unknown"),
+                        "capture_distribution": result.get("capture_distribution", "Unknown")
                     },
                     "label_quality": {
                         "balanced_labels": self._check_label_balance(result),
@@ -2196,7 +2225,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         except Exception as e:
             return {"error": f"Failed to analyze triple barrier metrics: {str(e)}"}
     
-    async def _get_hmm_training_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_feature_generation_metrics(self, result: Any) -> Dict[str, Any]:
         """Get feature generation quality metrics (Step 6)."""
         
         try:
@@ -2235,7 +2264,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         except Exception as e:
             return {"error": f"Failed to analyze feature generation metrics: {str(e)}"}
     
-    async def _get_analyst_enhancement_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_matrix_feature_selection_metrics(self, result: Any) -> Dict[str, Any]:
         """Get matrix feature selection quality metrics (Step 7)."""
         
         try:
@@ -2407,35 +2436,39 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         except Exception:
             return {"error": "Could not analyze temporal regime distribution"}
     
-    def _analyze_price_change_distribution(self, result: Any) -> Dict[str, Any]:
-        """Analyze price change distribution for barrier captures."""
+    def _analyze_triple_barrier_captured_changes(self, result: Any) -> Dict[str, Any]:
+        """Analyze price changes specifically captured by triple barrier method."""
         try:
-            price_changes = result.get("price_changes", {})
-            if price_changes:
-                upper_changes = price_changes.get("upper_barrier", [])
-                lower_changes = price_changes.get("lower_barrier", [])
+            # Get only the price changes that were actually captured by triple barriers
+            captured_changes = result.get("triple_barrier_captured_changes", {})
+            if captured_changes:
+                upper_captures = captured_changes.get("upper_barrier_captures", [])
+                lower_captures = captured_changes.get("lower_barrier_captures", [])
                 
                 return {
-                    "upper_barrier_stats": {
-                        "mean_capture": sum(upper_changes) / len(upper_changes) if upper_changes else 0,
-                        "max_capture": max(upper_changes) if upper_changes else 0,
-                        "min_capture": min(upper_changes) if upper_changes else 0,
-                        "capture_count": len(upper_changes)
+                    "upper_barrier_captured_stats": {
+                        "mean_capture": sum(upper_captures) / len(upper_captures) if upper_captures else 0,
+                        "max_capture": max(upper_captures) if upper_captures else 0,
+                        "min_capture": min(upper_captures) if upper_captures else 0,
+                        "capture_count": len(upper_captures),
+                        "capture_percentiles": self._calculate_percentiles(upper_captures)
                     },
-                    "lower_barrier_stats": {
-                        "mean_capture": sum(lower_changes) / len(lower_changes) if lower_changes else 0,
-                        "max_capture": max(lower_changes) if lower_changes else 0,
-                        "min_capture": min(lower_changes) if lower_changes else 0,
-                        "capture_count": len(lower_changes)
+                    "lower_barrier_captured_stats": {
+                        "mean_capture": sum(lower_captures) / len(lower_captures) if lower_captures else 0,
+                        "max_capture": max(lower_captures) if lower_captures else 0,
+                        "min_capture": min(lower_captures) if lower_captures else 0,
+                        "capture_count": len(lower_captures),
+                        "capture_percentiles": self._calculate_percentiles(lower_captures)
                     },
-                    "capture_distribution": {
-                        "upper_percentiles": self._calculate_percentiles(upper_changes),
-                        "lower_percentiles": self._calculate_percentiles(lower_changes)
+                    "capture_summary": {
+                        "total_captures": len(upper_captures) + len(lower_captures),
+                        "upper_capture_ratio": len(upper_captures) / (len(upper_captures) + len(lower_captures)) if (len(upper_captures) + len(lower_captures)) > 0 else 0,
+                        "lower_capture_ratio": len(lower_captures) / (len(upper_captures) + len(lower_captures)) if (len(upper_captures) + len(lower_captures)) > 0 else 0
                     }
                 }
-            return {"error": "No price change data available"}
+            return {"error": "No triple barrier captured changes data available"}
         except Exception:
-            return {"error": "Could not analyze price change distribution"}
+            return {"error": "Could not analyze triple barrier captured changes"}
     
     def _calculate_percentiles(self, data: List[float]) -> Dict[str, float]:
         """Calculate percentiles for price change data."""
@@ -2531,7 +2564,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return warnings
     
     def _generate_feature_generation_warnings(self, result: Any) -> List[str]:
-        """Generate warnings for feature generation."""
+        """Generate warnings for feature generation (Step 6)."""
         warnings = []
         
         try:
@@ -2550,7 +2583,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         return warnings
     
     def _generate_matrix_selection_warnings(self, result: Any) -> List[str]:
-        """Generate warnings for matrix feature selection."""
+        """Generate warnings for matrix feature selection (Step 7)."""
         warnings = []
         
         try:

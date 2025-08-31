@@ -41,19 +41,23 @@ The SR Levels System is a comprehensive solution for managing Support/Resistance
 
 ### 1. SRLevelsManager (`src/tactician/sr_levels_manager.py`)
 
-The core component that manages SR levels throughout their lifecycle.
+The core component that manages SR levels throughout their lifecycle. **Fully integrated with SR breakout predictor logic.**
 
 **Features:**
-- Calculate SR levels from backtesting data
+- Calculate SR levels from backtesting data using SR breakout predictor methods
 - Continuous updates with live trading data
 - Persistent storage with JSON files
 - Level deduplication and filtering
 - Quality scoring and ranking
+- **Direct access to all SR detection methods** (fractal, volume, pivot, ATR)
 
 **Key Methods:**
 ```python
-# Calculate SR levels from backtesting
+# Calculate SR levels from backtesting (comprehensive)
 await sr_manager.calculate_sr_levels_from_backtest(market_data, timeframe)
+
+# Calculate SR levels with specific method
+await sr_manager.calculate_sr_levels_with_method(market_data, "fractal", "both")
 
 # Update levels with live data
 await sr_manager.update_levels_with_live_data(price, volume, timestamp)
@@ -64,6 +68,12 @@ trading_levels = sr_manager.get_sr_levels_for_trading(current_price)
 # Compare price vs VWAP predictions
 comparison = sr_manager.compare_price_vs_vwap_predictions(price_levels, vwap_levels)
 ```
+
+**SR Detection Methods Available:**
+- **Fractal Analysis**: Detects swing highs/lows using fractal patterns
+- **Volume Analysis**: Volume-weighted price level detection
+- **Pivot Analysis**: Traditional pivot point calculations
+- **ATR Analysis**: Average True Range based level detection
 
 ### 2. SR Trading Intelligence (`src/trading/sr_trading_intelligence.py`)
 
@@ -153,18 +163,30 @@ async def main():
             "storage_path": "data/sr_levels",
             "max_levels": 50,
             "min_strength": 0.3
+        },
+        "sr_breakout_predictor": {
+            "sr_detection_method": "fractal",
+            "max_sr_levels": 20,
+            "min_sr_strength": 0.3
         }
     }
     
     # Initialize manager
     sr_manager = await create_sr_levels_manager(config)
     
-    # Calculate SR levels from backtesting data
+    # Calculate SR levels from backtesting data (comprehensive)
     market_data = load_your_market_data()
     sr_levels = await sr_manager.calculate_sr_levels_from_backtest(market_data, "1m")
     
     print(f"Found {len(sr_levels['support_levels'])} support levels")
     print(f"Found {len(sr_levels['resistance_levels'])} resistance levels")
+    
+    # Calculate SR levels with specific method
+    fractal_levels = await sr_manager.calculate_sr_levels_with_method(market_data, "fractal", "both")
+    volume_levels = await sr_manager.calculate_sr_levels_with_method(market_data, "volume", "both")
+    
+    print(f"Fractal method: {len(fractal_levels['support_levels'])} support, {len(fractal_levels['resistance_levels'])} resistance")
+    print(f"Volume method: {len(volume_levels['support_levels'])} support, {len(volume_levels['resistance_levels'])} resistance")
 
 asyncio.run(main())
 ```
@@ -261,11 +283,26 @@ python test_sr_levels_system.py
 
 This will test:
 - SR level calculation from backtesting data
+- Individual detection methods (fractal, volume, pivot, ATR)
 - Continuous updates with live data
 - Trading intelligence functionality
 - Price vs VWAP comparison
 - Persistent storage
 - Performance metrics
+
+### Validation
+
+Run the import validation script to ensure proper integration:
+
+```bash
+python validate_sr_imports.py
+```
+
+This validates:
+- All required imports are working
+- SRBreakoutPredictor methods are accessible
+- SRLevelsManager can use SR calculation logic
+- Integration between components is functional
 
 ## File Structure
 

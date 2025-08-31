@@ -273,6 +273,24 @@ class Step7EnhancedMatrixOperations:
             # Execute matrix operations
             matrix_results = await self._execute_matrix_operations(df, matrix_config)
             
+            # Execute enhanced stability analysis
+            self.logger.info("🔍 Starting enhanced stability analysis...")
+            
+            # 1. Time-based stability analysis
+            time_stability_results = self._analyze_feature_stability_over_time(df)
+            matrix_results["time_based_stability"] = time_stability_results
+            
+            # 2. Distribution stability analysis
+            distribution_stability_results = self._analyze_distribution_stability(df)
+            matrix_results["distribution_stability"] = distribution_stability_results
+            
+            # 3. Feature importance stability analysis
+            target_column = 'returns' if 'returns' in df.columns else 'close' if 'close' in df.columns else None
+            importance_stability_results = self._analyze_feature_importance_stability(df, target_column)
+            matrix_results["feature_importance_stability"] = importance_stability_results
+            
+            self.logger.info("✅ Enhanced stability analysis completed")
+            
             # Calculate quality metrics
             quality_metrics = self._calculate_quality_metrics(df, matrix_results)
             
@@ -295,7 +313,12 @@ class Step7EnhancedMatrixOperations:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "feature_engineering_optimization": feature_optimization_results,
-                "timeframe_relevance_analysis": timeframe_analysis_results
+                "timeframe_relevance_analysis": timeframe_analysis_results,
+                "enhanced_stability_analysis": {
+                    "time_based_stability": time_stability_results,
+                    "distribution_stability": distribution_stability_results,
+                    "feature_importance_stability": importance_stability_results
+                }
             }
             
             self.logger.info("✅ Step 7: Enhanced Matrix Operations completed successfully")
@@ -1058,9 +1081,13 @@ class Step7EnhancedMatrixOperations:
                     # Range stability
                     range_stability = 1.0 / (1.0 + (values.max() - values.min()))
                     
+                    # Entropy-based stability
+                    entropy_stability = self._calculate_entropy_stability(values)
+                    
                     stability_metrics[column] = {
                         "coefficient_of_variation": float(cv),
                         "range_stability": float(range_stability),
+                        "entropy_stability": float(entropy_stability),
                         "mean": float(values.mean()),
                         "std": float(values.std()),
                         "min": float(values.min()),
@@ -1071,6 +1098,7 @@ class Step7EnhancedMatrixOperations:
             overall_stability = {
                 "mean_cv": np.mean([metrics["coefficient_of_variation"] for metrics in stability_metrics.values()]),
                 "mean_range_stability": np.mean([metrics["range_stability"] for metrics in stability_metrics.values()]),
+                "mean_entropy_stability": np.mean([metrics["entropy_stability"] for metrics in stability_metrics.values()]),
                 "stable_features": len([cv for cv in [metrics["coefficient_of_variation"] for metrics in stability_metrics.values()] if cv < 0.5]),
                 "unstable_features": len([cv for cv in [metrics["coefficient_of_variation"] for metrics in stability_metrics.values()] if cv > 1.0])
             }
@@ -1078,6 +1106,207 @@ class Step7EnhancedMatrixOperations:
             return {
                 "feature_stability": stability_metrics,
                 "overall_stability": overall_stability
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_feature_stability_over_time(self, df: pd.DataFrame, window_sizes: list[int] = None) -> dict[str, Any]:
+        """Analyze feature stability over different time windows."""
+        try:
+            if window_sizes is None:
+                window_sizes = [100, 500, 1000]  # Default window sizes
+            
+            stability_over_time = {}
+            
+            for column in df.select_dtypes(include=[np.number]).columns:
+                values = df[column].dropna()
+                if len(values) < min(window_sizes):
+                    continue
+                
+                column_stability = {}
+                
+                for window_size in window_sizes:
+                    if len(values) < window_size:
+                        continue
+                    
+                    # Rolling statistics
+                    rolling_mean = values.rolling(window=window_size, min_periods=window_size//2).mean()
+                    rolling_std = values.rolling(window=window_size, min_periods=window_size//2).std()
+                    
+                    # Stability metrics for this window
+                    mean_stability = 1.0 / (1.0 + rolling_std.std())  # Lower std of rolling std = more stable
+                    variance_stability = 1.0 / (1.0 + rolling_std.var())  # Lower variance of rolling std = more stable
+                    
+                    # Entropy stability over time
+                    entropy_stability = self._calculate_rolling_entropy_stability(values, window_size)
+                    
+                    column_stability[f"window_{window_size}"] = {
+                        "mean_stability": float(mean_stability),
+                        "variance_stability": float(variance_stability),
+                        "entropy_stability": float(entropy_stability),
+                        "rolling_mean_std": float(rolling_mean.std()),
+                        "rolling_std_std": float(rolling_std.std())
+                    }
+                
+                if column_stability:
+                    stability_over_time[column] = column_stability
+            
+            # Overall time-based stability metrics
+            overall_time_stability = {}
+            for window_size in window_sizes:
+                window_stabilities = []
+                for column_data in stability_over_time.values():
+                    if f"window_{window_size}" in column_data:
+                        window_stabilities.append(column_data[f"window_{window_size}"])
+                
+                if window_stabilities:
+                    overall_time_stability[f"window_{window_size}"] = {
+                        "mean_mean_stability": np.mean([w["mean_stability"] for w in window_stabilities]),
+                        "mean_variance_stability": np.mean([w["variance_stability"] for w in window_stabilities]),
+                        "mean_entropy_stability": np.mean([w["entropy_stability"] for w in window_stabilities]),
+                        "stable_features_count": len([w for w in window_stabilities if w["mean_stability"] > 0.7])
+                    }
+            
+            return {
+                "feature_stability_over_time": stability_over_time,
+                "overall_time_stability": overall_time_stability
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_distribution_stability(self, df: pd.DataFrame, reference_period: int = 1000) -> dict[str, Any]:
+        """Analyze distribution stability using PSI and other distribution metrics."""
+        try:
+            numeric_df = df.select_dtypes(include=[np.number])
+            distribution_stability = {}
+            
+            for column in numeric_df.columns:
+                values = numeric_df[column].dropna()
+                if len(values) < reference_period * 2:
+                    continue
+                
+                # Split data into reference and current periods
+                reference_data = values.iloc[:reference_period]
+                current_data = values.iloc[reference_period:]
+                
+                # Calculate Population Stability Index (PSI)
+                psi = self._calculate_psi(reference_data, current_data)
+                
+                # Calculate Kolmogorov-Smirnov test
+                ks_stat, ks_pvalue = self._calculate_ks_test(reference_data, current_data)
+                
+                # Calculate distribution moments stability
+                moment_stability = self._calculate_moment_stability(reference_data, current_data)
+                
+                # Calculate entropy-based distribution stability
+                entropy_stability = self._calculate_entropy_distribution_stability(reference_data, current_data)
+                
+                distribution_stability[column] = {
+                    "psi": float(psi),
+                    "ks_statistic": float(ks_stat),
+                    "ks_pvalue": float(ks_pvalue),
+                    "moment_stability": moment_stability,
+                    "entropy_stability": float(entropy_stability),
+                    "distribution_shift": "significant" if psi > 0.25 else "moderate" if psi > 0.1 else "stable"
+                }
+            
+            # Overall distribution stability metrics
+            overall_distribution_stability = {
+                "mean_psi": np.mean([metrics["psi"] for metrics in distribution_stability.values()]),
+                "stable_distributions": len([metrics for metrics in distribution_stability.values() if metrics["psi"] < 0.1]),
+                "moderate_shifts": len([metrics for metrics in distribution_stability.values() if 0.1 <= metrics["psi"] <= 0.25]),
+                "significant_shifts": len([metrics for metrics in distribution_stability.values() if metrics["psi"] > 0.25]),
+                "mean_entropy_stability": np.mean([metrics["entropy_stability"] for metrics in distribution_stability.values()])
+            }
+            
+            return {
+                "feature_distribution_stability": distribution_stability,
+                "overall_distribution_stability": overall_distribution_stability
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _analyze_feature_importance_stability(self, df: pd.DataFrame, target_column: str = None, 
+                                           window_sizes: list[int] = None) -> dict[str, Any]:
+        """Analyze stability of feature importance over time."""
+        try:
+            if window_sizes is None:
+                window_sizes = [500, 1000, 2000]
+            
+            numeric_df = df.select_dtypes(include=[np.number])
+            if target_column and target_column in numeric_df.columns:
+                target = numeric_df[target_column]
+                features_df = numeric_df.drop(columns=[target_column])
+            else:
+                # Use first column as target if none specified
+                target = numeric_df.iloc[:, 0]
+                features_df = numeric_df.iloc[:, 1:]
+            
+            importance_stability = {}
+            
+            for column in features_df.columns:
+                values = features_df[column].dropna()
+                target_values = target.loc[values.index].dropna()
+                
+                if len(values) < min(window_sizes) or len(target_values) < min(window_sizes):
+                    continue
+                
+                column_importance_stability = {}
+                
+                for window_size in window_sizes:
+                    if len(values) < window_size:
+                        continue
+                    
+                    # Rolling correlation importance
+                    rolling_corr = self._calculate_rolling_correlation(values, target_values, window_size)
+                    corr_stability = 1.0 / (1.0 + rolling_corr.std())
+                    
+                    # Rolling mutual information importance
+                    rolling_mi = self._calculate_rolling_mutual_information(values, target_values, window_size)
+                    mi_stability = 1.0 / (1.0 + rolling_mi.std()) if rolling_mi.std() > 0 else 1.0
+                    
+                    # Rolling variance importance
+                    rolling_var = values.rolling(window=window_size, min_periods=window_size//2).var()
+                    var_stability = 1.0 / (1.0 + rolling_var.std())
+                    
+                    # Entropy-based importance stability
+                    entropy_importance_stability = self._calculate_entropy_importance_stability(values, target_values, window_size)
+                    
+                    column_importance_stability[f"window_{window_size}"] = {
+                        "correlation_stability": float(corr_stability),
+                        "mutual_info_stability": float(mi_stability),
+                        "variance_stability": float(var_stability),
+                        "entropy_importance_stability": float(entropy_importance_stability),
+                        "overall_importance_stability": float((corr_stability + mi_stability + var_stability + entropy_importance_stability) / 4)
+                    }
+                
+                if column_importance_stability:
+                    importance_stability[column] = column_importance_stability
+            
+            # Overall importance stability metrics
+            overall_importance_stability = {}
+            for window_size in window_sizes:
+                window_stabilities = []
+                for column_data in importance_stability.values():
+                    if f"window_{window_size}" in column_data:
+                        window_stabilities.append(column_data[f"window_{window_size}"])
+                
+                if window_stabilities:
+                    overall_importance_stability[f"window_{window_size}"] = {
+                        "mean_correlation_stability": np.mean([w["correlation_stability"] for w in window_stabilities]),
+                        "mean_mutual_info_stability": np.mean([w["mutual_info_stability"] for w in window_stabilities]),
+                        "mean_variance_stability": np.mean([w["variance_stability"] for w in window_stabilities]),
+                        "mean_entropy_importance_stability": np.mean([w["entropy_importance_stability"] for w in window_stabilities]),
+                        "mean_overall_stability": np.mean([w["overall_importance_stability"] for w in window_stabilities]),
+                        "stable_features_count": len([w for w in window_stabilities if w["overall_importance_stability"] > 0.7])
+                    }
+            
+            return {
+                "feature_importance_stability": importance_stability,
+                "overall_importance_stability": overall_importance_stability
             }
             
         except Exception as e:
@@ -1186,7 +1415,10 @@ class Step7EnhancedMatrixOperations:
                 "data_types": numeric_df.dtypes.value_counts().to_dict()
             }
             
-            # 9. Overall Quality Score
+            # 9. Stability Metrics
+            quality_metrics["stability"] = self._calculate_stability_metrics(matrix_results)
+            
+            # 10. Overall Quality Score
             quality_metrics["overall_score"] = self._calculate_overall_quality_score(quality_metrics)
             
             self.logger.info(f"✅ Quality metrics calculated. Overall score: {quality_metrics['overall_score']:.2f}")
@@ -1284,6 +1516,108 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             self.logger.error(f"Error calculating overall quality score: {str(e)}")
             return 0.0
+
+    def _calculate_stability_metrics(self, matrix_results: dict[str, Any]) -> dict[str, Any]:
+        """Calculate comprehensive stability metrics from matrix results."""
+        try:
+            stability_metrics = {}
+            
+            # Time-based stability metrics
+            if "time_based_stability" in matrix_results:
+                time_stability = matrix_results["time_based_stability"]
+                if "overall_time_stability" in time_stability:
+                    overall_time = time_stability["overall_time_stability"]
+                    stability_metrics["time_based"] = {
+                        "mean_stability_score": np.mean([
+                            overall_time.get(f"window_{w}", {}).get("mean_mean_stability", 0.0)
+                            for w in [100, 500, 1000]
+                            if f"window_{w}" in overall_time
+                        ]),
+                        "variance_stability_score": np.mean([
+                            overall_time.get(f"window_{w}", {}).get("mean_variance_stability", 0.0)
+                            for w in [100, 500, 1000]
+                            if f"window_{w}" in overall_time
+                        ]),
+                        "entropy_stability_score": np.mean([
+                            overall_time.get(f"window_{w}", {}).get("mean_entropy_stability", 0.0)
+                            for w in [100, 500, 1000]
+                            if f"window_{w}" in overall_time
+                        ]),
+                        "stable_features_count": sum([
+                            overall_time.get(f"window_{w}", {}).get("stable_features_count", 0)
+                            for w in [100, 500, 1000]
+                            if f"window_{w}" in overall_time
+                        ])
+                    }
+            
+            # Distribution stability metrics
+            if "distribution_stability" in matrix_results:
+                dist_stability = matrix_results["distribution_stability"]
+                if "overall_distribution_stability" in dist_stability:
+                    overall_dist = dist_stability["overall_distribution_stability"]
+                    stability_metrics["distribution"] = {
+                        "mean_psi": overall_dist.get("mean_psi", 0.0),
+                        "stable_distributions_count": overall_dist.get("stable_distributions", 0),
+                        "moderate_shifts_count": overall_dist.get("moderate_shifts", 0),
+                        "significant_shifts_count": overall_dist.get("significant_shifts", 0),
+                        "mean_entropy_stability": overall_dist.get("mean_entropy_stability", 0.0),
+                        "distribution_stability_score": 1.0 / (1.0 + overall_dist.get("mean_psi", 0.0))
+                    }
+            
+            # Feature importance stability metrics
+            if "feature_importance_stability" in matrix_results:
+                imp_stability = matrix_results["feature_importance_stability"]
+                if "overall_importance_stability" in imp_stability:
+                    overall_imp = imp_stability["overall_importance_stability"]
+                    stability_metrics["importance"] = {
+                        "mean_correlation_stability": np.mean([
+                            overall_imp.get(f"window_{w}", {}).get("mean_correlation_stability", 0.0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ]),
+                        "mean_mutual_info_stability": np.mean([
+                            overall_imp.get(f"window_{w}", {}).get("mean_mutual_info_stability", 0.0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ]),
+                        "mean_variance_stability": np.mean([
+                            overall_imp.get(f"window_{w}", {}).get("mean_variance_stability", 0.0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ]),
+                        "mean_entropy_importance_stability": np.mean([
+                            overall_imp.get(f"window_{w}", {}).get("mean_entropy_importance_stability", 0.0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ]),
+                        "mean_overall_stability": np.mean([
+                            overall_imp.get(f"window_{w}", {}).get("mean_overall_stability", 0.0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ]),
+                        "stable_features_count": sum([
+                            overall_imp.get(f"window_{w}", {}).get("stable_features_count", 0)
+                            for w in [500, 1000, 2000]
+                            if f"window_{w}" in overall_imp
+                        ])
+                    }
+            
+            # Overall stability score
+            if stability_metrics:
+                overall_stability_score = np.mean([
+                    stability_metrics.get("time_based", {}).get("mean_stability_score", 0.0),
+                    stability_metrics.get("distribution", {}).get("distribution_stability_score", 0.0),
+                    stability_metrics.get("importance", {}).get("mean_overall_stability", 0.0)
+                ])
+                stability_metrics["overall_stability_score"] = float(overall_stability_score)
+            else:
+                stability_metrics["overall_stability_score"] = 0.0
+            
+            return stability_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating stability metrics: {str(e)}")
+            return {"overall_stability_score": 0.0}
 
     def _generate_detailed_quality_report(self, quality_metrics: dict[str, Any]) -> str:
         """Generate detailed quality report with recommendations."""
@@ -1437,9 +1771,56 @@ class Step7EnhancedMatrixOperations:
                 report.append("   ✅ Memory usage is reasonable")
             report.append("")
             
-            # 9. SR-Specific Analysis (if available)
+            # 9. Stability Analysis
+            stability = quality_metrics.get("stability", {})
+            report.append("🔄 9. STABILITY ANALYSIS")
+            report.append("-" * 40)
+            
+            # Time-based stability
+            time_stability = stability.get("time_based", {})
+            if time_stability:
+                report.append(f"   Time-based stability score: {time_stability.get('mean_stability_score', 0):.3f}")
+                report.append(f"   Variance stability score: {time_stability.get('variance_stability_score', 0):.3f}")
+                report.append(f"   Entropy stability score: {time_stability.get('entropy_stability_score', 0):.3f}")
+                report.append(f"   Stable features count: {time_stability.get('stable_features_count', 0)}")
+            
+            # Distribution stability
+            dist_stability = stability.get("distribution", {})
+            if dist_stability:
+                report.append(f"   Distribution stability score: {dist_stability.get('distribution_stability_score', 0):.3f}")
+                report.append(f"   Mean PSI: {dist_stability.get('mean_psi', 0):.3f}")
+                report.append(f"   Stable distributions: {dist_stability.get('stable_distributions_count', 0)}")
+                report.append(f"   Moderate shifts: {dist_stability.get('moderate_shifts_count', 0)}")
+                report.append(f"   Significant shifts: {dist_stability.get('significant_shifts_count', 0)}")
+                report.append(f"   Mean entropy stability: {dist_stability.get('mean_entropy_stability', 0):.3f}")
+            
+            # Feature importance stability
+            imp_stability = stability.get("importance", {})
+            if imp_stability:
+                report.append(f"   Importance stability score: {imp_stability.get('mean_overall_stability', 0):.3f}")
+                report.append(f"   Correlation stability: {imp_stability.get('mean_correlation_stability', 0):.3f}")
+                report.append(f"   Mutual info stability: {imp_stability.get('mean_mutual_info_stability', 0):.3f}")
+                report.append(f"   Variance stability: {imp_stability.get('mean_variance_stability', 0):.3f}")
+                report.append(f"   Entropy importance stability: {imp_stability.get('mean_entropy_importance_stability', 0):.3f}")
+                report.append(f"   Stable importance features: {imp_stability.get('stable_features_count', 0)}")
+            
+            # Overall stability score
+            overall_stability = stability.get("overall_stability_score", 0.0)
+            report.append(f"   Overall stability score: {overall_stability:.3f}")
+            
+            if overall_stability >= 0.8:
+                report.append("   ✅ EXCELLENT - Features are very stable over time")
+            elif overall_stability >= 0.6:
+                report.append("   🟢 GOOD - Features are generally stable")
+            elif overall_stability >= 0.4:
+                report.append("   🟡 MODERATE - Some features show instability")
+            else:
+                report.append("   🔴 POOR - Many features are unstable")
+            report.append("")
+            
+            # 10. SR-Specific Analysis (if available)
             if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
-                report.append("🎯 9. SR-SPECIFIC ANALYSIS")
+                report.append("🎯 10. SR-SPECIFIC ANALYSIS")
                 report.append("-" * 40)
                 
                 # Basic SR analysis
@@ -1519,6 +1900,23 @@ class Step7EnhancedMatrixOperations:
             report.append("📋 11. SUMMARY")
             report.append("-" * 40)
             report.append(f"   Overall Quality Score: {overall_score:.2f}/1.00")
+            
+            # Stability summary
+            stability = quality_metrics.get("stability", {})
+            if stability:
+                overall_stability = stability.get("overall_stability_score", 0.0)
+                report.append(f"   Overall Stability Score: {overall_stability:.3f}/1.00")
+                
+                if overall_stability >= 0.8:
+                    report.append("   Stability Status: ✅ EXCELLENT - Features are very stable")
+                elif overall_stability >= 0.6:
+                    report.append("   Stability Status: 🟢 GOOD - Features are generally stable")
+                elif overall_stability >= 0.4:
+                    report.append("   Stability Status: 🟡 MODERATE - Some features show instability")
+                else:
+                    report.append("   Stability Status: 🔴 POOR - Many features are unstable")
+            else:
+                report.append("   Stability Status: ⚠️  NO STABILITY DATA AVAILABLE")
             
             # SR-specific summary
             if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
@@ -1649,6 +2047,283 @@ class Step7EnhancedMatrixOperations:
         
         self.logger.info(f"💾 Saved matrix operations results to {self.output_dir}")
         return output_files
+
+    # ============================================================================
+    # ENTROPY AND STABILITY CALCULATION METHODS
+    # ============================================================================
+
+    def _calculate_entropy_stability(self, values: pd.Series) -> float:
+        """Calculate entropy-based stability measure."""
+        try:
+            if len(values) < 2:
+                return 0.0
+            
+            # Calculate Shannon entropy
+            hist, _ = np.histogram(values, bins=min(20, len(values)//10), density=True)
+            hist = hist[hist > 0]  # Remove zero bins
+            entropy = -np.sum(hist * np.log2(hist))
+            
+            # Normalize entropy (0 = no uncertainty, 1 = maximum uncertainty)
+            max_entropy = np.log2(len(hist))
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+            
+            # Stability is inverse of normalized entropy (lower entropy = more stable)
+            stability = 1.0 - normalized_entropy
+            
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_rolling_entropy_stability(self, values: pd.Series, window_size: int) -> float:
+        """Calculate rolling entropy stability over time."""
+        try:
+            if len(values) < window_size:
+                return 0.0
+            
+            # Calculate rolling entropy
+            rolling_entropy = []
+            for i in range(window_size, len(values)):
+                window_values = values.iloc[i-window_size:i]
+                hist, _ = np.histogram(window_values, bins=min(10, window_size//5), density=True)
+                hist = hist[hist > 0]
+                if len(hist) > 1:
+                    entropy = -np.sum(hist * np.log2(hist))
+                    max_entropy = np.log2(len(hist))
+                    normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+                    rolling_entropy.append(normalized_entropy)
+            
+            if not rolling_entropy:
+                return 0.0
+            
+            # Stability is inverse of entropy variance (lower variance = more stable)
+            entropy_std = np.std(rolling_entropy)
+            stability = 1.0 / (1.0 + entropy_std)
+            
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_entropy_distribution_stability(self, reference: pd.Series, current: pd.Series) -> float:
+        """Calculate entropy-based distribution stability between reference and current data."""
+        try:
+            if len(reference) < 2 or len(current) < 2:
+                return 0.0
+            
+            # Calculate entropy for both distributions
+            ref_hist, _ = np.histogram(reference, bins=min(20, len(reference)//10), density=True)
+            curr_hist, _ = np.histogram(current, bins=min(20, len(current)//10), density=True)
+            
+            ref_hist = ref_hist[ref_hist > 0]
+            curr_hist = curr_hist[curr_hist > 0]
+            
+            if len(ref_hist) < 2 or len(curr_hist) < 2:
+                return 0.0
+            
+            ref_entropy = -np.sum(ref_hist * np.log2(ref_hist))
+            curr_entropy = -np.sum(curr_hist * np.log2(curr_hist))
+            
+            # Calculate entropy difference
+            entropy_diff = abs(curr_entropy - ref_entropy)
+            max_entropy = max(ref_entropy, curr_entropy)
+            
+            # Stability is inverse of relative entropy difference
+            if max_entropy > 0:
+                relative_diff = entropy_diff / max_entropy
+                stability = 1.0 - relative_diff
+            else:
+                stability = 1.0
+            
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_entropy_importance_stability(self, feature: pd.Series, target: pd.Series, window_size: int) -> float:
+        """Calculate entropy-based importance stability."""
+        try:
+            if len(feature) < window_size or len(target) < window_size:
+                return 0.0
+            
+            # Calculate rolling mutual information
+            rolling_mi = []
+            for i in range(window_size, len(feature)):
+                f_window = feature.iloc[i-window_size:i]
+                t_window = target.iloc[i-window_size:i]
+                
+                # Calculate mutual information for this window
+                mi = self._calculate_mutual_information(f_window, t_window)
+                rolling_mi.append(mi)
+            
+            if not rolling_mi:
+                return 0.0
+            
+            # Stability is inverse of mutual information variance
+            mi_std = np.std(rolling_mi)
+            stability = 1.0 / (1.0 + mi_std)
+            
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
+        """Calculate mutual information between two series."""
+        try:
+            if len(x) < 2 or len(y) < 2:
+                return 0.0
+            
+            # Create 2D histogram
+            hist_2d, _, _ = np.histogram2d(x, y, bins=min(10, len(x)//10))
+            hist_2d = hist_2d.flatten()
+            hist_2d = hist_2d[hist_2d > 0]
+            
+            if len(hist_2d) < 2:
+                return 0.0
+            
+            # Normalize to probabilities
+            p_xy = hist_2d / hist_2d.sum()
+            
+            # Calculate mutual information
+            mi = -np.sum(p_xy * np.log2(p_xy))
+            
+            return max(0.0, mi)
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_psi(self, reference: pd.Series, current: pd.Series) -> float:
+        """Calculate Population Stability Index."""
+        try:
+            if len(reference) < 2 or len(current) < 2:
+                return 0.0
+            
+            # Create bins for both distributions
+            combined = pd.concat([reference, current])
+            bins = pd.cut(combined, bins=10, duplicates='drop')
+            
+            # Calculate bin counts
+            ref_counts = reference.groupby(pd.cut(reference, bins=bins.cat.categories)).count()
+            curr_counts = current.groupby(pd.cut(current, bins=bins.cat.categories)).count()
+            
+            # Normalize to probabilities
+            ref_probs = ref_counts / ref_counts.sum()
+            curr_probs = curr_counts / curr_counts.sum()
+            
+            # Calculate PSI
+            psi = 0
+            for bin_name in ref_probs.index:
+                if bin_name in curr_probs.index:
+                    ref_p = ref_probs[bin_name]
+                    curr_p = curr_probs[bin_name]
+                    
+                    if ref_p > 0 and curr_p > 0:
+                        psi += (curr_p - ref_p) * np.log(curr_p / ref_p)
+            
+            return max(0.0, psi)
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_ks_test(self, reference: pd.Series, current: pd.Series) -> tuple[float, float]:
+        """Calculate Kolmogorov-Smirnov test statistic and p-value."""
+        try:
+            from scipy import stats
+            
+            ref_clean = reference.dropna()
+            curr_clean = current.dropna()
+            
+            if len(ref_clean) > 0 and len(curr_clean) > 0:
+                ks_stat, p_value = stats.ks_2samp(ref_clean, curr_clean)
+                return float(ks_stat), float(p_value)
+            else:
+                return 0.0, 1.0
+                
+        except Exception:
+            return 0.0, 1.0
+
+    def _calculate_moment_stability(self, reference: pd.Series, current: pd.Series) -> dict[str, float]:
+        """Calculate stability of distribution moments."""
+        try:
+            ref_mean = reference.mean()
+            ref_std = reference.std()
+            ref_skew = reference.skew()
+            ref_kurt = reference.kurtosis()
+            
+            curr_mean = current.mean()
+            curr_std = current.std()
+            curr_skew = current.skew()
+            curr_kurt = current.kurtosis()
+            
+            # Calculate relative differences
+            mean_stability = 1.0 / (1.0 + abs(curr_mean - ref_mean) / (abs(ref_mean) + 1e-8))
+            std_stability = 1.0 / (1.0 + abs(curr_std - ref_std) / (ref_std + 1e-8))
+            skew_stability = 1.0 / (1.0 + abs(curr_skew - ref_skew) / (abs(ref_skew) + 1e-8))
+            kurt_stability = 1.0 / (1.0 + abs(curr_kurt - ref_kurt) / (abs(ref_kurt) + 1e-8))
+            
+            return {
+                "mean_stability": float(max(0.0, min(1.0, mean_stability))),
+                "std_stability": float(max(0.0, min(1.0, std_stability))),
+                "skew_stability": float(max(0.0, min(1.0, skew_stability))),
+                "kurt_stability": float(max(0.0, min(1.0, kurt_stability)))
+            }
+            
+        except Exception:
+            return {
+                "mean_stability": 0.0,
+                "std_stability": 0.0,
+                "skew_stability": 0.0,
+                "kurt_stability": 0.0
+            }
+
+    def _calculate_rolling_correlation(self, x: pd.Series, y: pd.Series, window_size: int) -> pd.Series:
+        """Calculate rolling correlation between two series."""
+        try:
+            if len(x) < window_size or len(y) < window_size:
+                return pd.Series(dtype=float)
+            
+            # Align series
+            aligned_data = pd.DataFrame({'x': x, 'y': y}).dropna()
+            
+            if len(aligned_data) < window_size:
+                return pd.Series(dtype=float)
+            
+            # Calculate rolling correlation
+            rolling_corr = aligned_data['x'].rolling(window=window_size, min_periods=window_size//2).corr(aligned_data['y'])
+            
+            return rolling_corr
+            
+        except Exception:
+            return pd.Series(dtype=float)
+
+    def _calculate_rolling_mutual_information(self, x: pd.Series, y: pd.Series, window_size: int) -> pd.Series:
+        """Calculate rolling mutual information between two series."""
+        try:
+            if len(x) < window_size or len(y) < window_size:
+                return pd.Series(dtype=float)
+            
+            # Align series
+            aligned_data = pd.DataFrame({'x': x, 'y': y}).dropna()
+            
+            if len(aligned_data) < window_size:
+                return pd.Series(dtype=float)
+            
+            # Calculate rolling mutual information
+            rolling_mi = []
+            for i in range(window_size, len(aligned_data)):
+                x_window = aligned_data['x'].iloc[i-window_size:i]
+                y_window = aligned_data['y'].iloc[i-window_size:i]
+                
+                mi = self._calculate_mutual_information(x_window, y_window)
+                rolling_mi.append(mi)
+            
+            # Create series with proper index
+            result = pd.Series(rolling_mi, index=aligned_data.index[window_size:])
+            return result
+            
+        except Exception:
+            return pd.Series(dtype=float)
 
 
 # Step execution function

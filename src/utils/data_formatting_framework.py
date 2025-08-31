@@ -355,18 +355,31 @@ class DataFormattingFramework:
         
         return rounded_data
     
-    def handle_missing_values(self, data: pd.DataFrame, strategy: str = "forward_fill", 
-                            limit: int = None) -> pd.DataFrame:
+    def handle_missing_values(self, data: pd.DataFrame, strategy: str = "intelligent", 
+                            limit: int = None, symbol: str = None, exchange: str = None,
+                            timeframe: str = "1m") -> pd.DataFrame:
         """Handle missing values according to specified strategy.
         
         Args:
             data: Data with missing values
             strategy: Strategy for handling missing values
             limit: Limit for forward/backward fill
+            symbol: Trading symbol for data download (for intelligent strategy)
+            exchange: Exchange name for data download (for intelligent strategy)
+            timeframe: Timeframe for data download (for intelligent strategy)
             
         Returns:
             Data with handled missing values
         """
+        if strategy == "intelligent":
+            # Use enhanced missing value handler for intelligent gap filling
+            from .enhanced_missing_value_handler import enhanced_missing_value_handler
+            
+            return enhanced_missing_value_handler.handle_missing_values_intelligently(
+                data, "timestamp", symbol, exchange, timeframe
+            )
+        
+        # Fallback to traditional strategies
         handled_data = data.copy()
         
         if strategy == "forward_fill":

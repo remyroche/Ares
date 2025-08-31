@@ -746,15 +746,304 @@ class TacticsOrchestrator:
 
     async def _generate_decisions(self) -> None:
         """
-        Generate new trade decisions.
+        Generate new trade decisions using multi-output predictions.
         """
         try:
-            # This would typically involve getting market data and signals
-            # For now, this is a placeholder
-            pass
+            # Get market data and analyst predictions
+            market_data = await self._get_market_data()
+            analyst_predictions = await self._get_analyst_predictions()
+            
+            if not market_data or not analyst_predictions:
+                return
+            
+            # Generate Tactician multi-output predictions
+            tactician_predictions = await self._generate_tactician_predictions(
+                market_data, analyst_predictions
+            )
+            
+            if not tactician_predictions:
+                return
+            
+            # Evaluate green light signal
+            green_light_signal = tactician_predictions.get("green_light_signal", {})
+            
+            if green_light_signal.get("signal") == "GREEN_LIGHT":
+                # Generate trade decision
+                decision = await self._create_trade_decision(
+                    market_data, analyst_predictions, tactician_predictions
+                )
+                
+                if decision:
+                    self.decision_history.append(decision)
+                    self.logger.info(f"Generated trade decision: {decision.action} (confidence: {decision.confidence:.3f})")
+            
+            # Check for exit signals on existing positions
+            await self._check_exit_signals(tactician_predictions)
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error generating decisions: {e}"))
+
+    async def _get_market_data(self) -> Optional[pd.DataFrame]:
+        """
+        Get current market data.
+        
+        Returns:
+            pd.DataFrame: Market data or None
+        """
+        try:
+            # This would get actual market data
+            # For now, return None to indicate no data available
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting market data: {e}"))
+            return None
+
+    async def _get_analyst_predictions(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Analyst predictions.
+        
+        Returns:
+            Dict: Analyst predictions or None
+        """
+        try:
+            # This would get actual Analyst predictions
+            # For now, return None to indicate no predictions available
+            return None
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error getting Analyst predictions: {e}"))
+            return None
+
+    async def _generate_tactician_predictions(
+        self,
+        market_data: pd.DataFrame,
+        analyst_predictions: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate Tactician multi-output predictions.
+        
+        Args:
+            market_data: Market data
+            analyst_predictions: Analyst predictions
+            
+        Returns:
+            Dict: Tactician predictions or None
+        """
+        try:
+            if not self.ml_tactics:
+                return None
+            
+            # Extract Analyst barriers
+            analyst_barriers = self._extract_analyst_barriers(analyst_predictions)
+            
+            # Extract analyst confidence
+            analyst_confidence = analyst_predictions.get("confidence", 0.5)
+            
+            # Generate multi-output predictions
+            tactician_predictions = await self.ml_tactics.generate_multi_output_predictions(
+                market_data=market_data,
+                analyst_barriers=analyst_barriers,
+                symbol="BTCUSDT",  # This would come from context
+                timeframe="1m",
+                analyst_confidence=analyst_confidence
+            )
+            
+            return tactician_predictions
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error generating Tactician predictions: {e}"))
+            return None
+
+    def _extract_analyst_barriers(self, analyst_predictions: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Extract barrier values from Analyst predictions.
+        
+        Args:
+            analyst_predictions: Analyst predictions
+            
+        Returns:
+            Dict: Barrier values
+        """
+        try:
+            # Extract barriers from Analyst predictions
+            # This is a simplified extraction - adjust based on actual Analyst output structure
+            barriers = {
+                "upper_barrier": analyst_predictions.get("upper_barrier", 0.02),
+                "lower_barrier": analyst_predictions.get("lower_barrier", -0.01)
+            }
+            
+            return barriers
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error extracting Analyst barriers: {e}"))
+            return {"upper_barrier": 0.02, "lower_barrier": -0.01}
+
+    async def _create_trade_decision(
+        self,
+        market_data: pd.DataFrame,
+        analyst_predictions: Dict[str, Any],
+        tactician_predictions: Dict[str, Any]
+    ) -> Optional[TradeDecision]:
+        """
+        Create trade decision based on predictions.
+        
+        Args:
+            market_data: Market data
+            analyst_predictions: Analyst predictions
+            tactician_predictions: Tactician predictions
+            
+        Returns:
+            TradeDecision: Trade decision or None
+        """
+        try:
+            # Get combined confidence
+            combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
+            
+            # Determine action based on direction
+            action = self._determine_action_from_predictions(tactician_predictions)
+            
+            if not action:
+                return None
+            
+            # Calculate position size and leverage
+            position_size = await self._calculate_position_size(tactician_predictions)
+            leverage = await self._calculate_leverage(tactician_predictions)
+            
+            # Create decision
+            decision = TradeDecision(
+                action=action,
+                confidence=combined_confidence,
+                position_size=position_size,
+                leverage=leverage,
+                price=None,  # Would be set based on current market price
+                metadata={
+                    "analyst_predictions": analyst_predictions,
+                    "tactician_predictions": tactician_predictions,
+                    "green_light_signal": tactician_predictions.get("green_light_signal", {}),
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            return decision
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error creating trade decision: {e}"))
+            return None
+
+    def _determine_action_from_predictions(self, tactician_predictions: Dict[str, Any]) -> Optional[str]:
+        """
+        Determine action from Tactician predictions.
+        
+        Args:
+            tactician_predictions: Tactician predictions
+            
+        Returns:
+            str: Action or None
+        """
+        try:
+            # Check direction from 50% barrier prediction (more reliable)
+            fifty_percent_pred = tactician_predictions.get("fifty_percent", {})
+            direction = fifty_percent_pred.get("direction", "UP")
+            
+            if direction == "UP":
+                return "BUY"
+            elif direction == "DOWN":
+                return "SELL"
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error determining action: {e}"))
+            return None
+
+    async def _calculate_position_size(self, tactician_predictions: Dict[str, Any]) -> float:
+        """
+        Calculate position size based on Tactician predictions.
+        
+        Args:
+            tactician_predictions: Tactician predictions
+            
+        Returns:
+            float: Position size
+        """
+        try:
+            if not self.position_sizer:
+                return 0.0
+            
+            # Use combined confidence for position sizing
+            combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
+            
+            # Calculate position size using position sizer
+            position_size = await self.position_sizer.calculate_position_size(
+                ml_predictions=tactician_predictions,
+                analyst_confidence=combined_confidence,
+                tactician_confidence=combined_confidence
+            )
+            
+            return position_size
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating position size: {e}"))
+            return 0.0
+
+    async def _calculate_leverage(self, tactician_predictions: Dict[str, Any]) -> float:
+        """
+        Calculate leverage based on Tactician predictions.
+        
+        Args:
+            tactician_predictions: Tactician predictions
+            
+        Returns:
+            float: Leverage
+        """
+        try:
+            if not self.leverage_sizer:
+                return 1.0
+            
+            # Use combined confidence for leverage calculation
+            combined_confidence = tactician_predictions.get("combined_confidence", 0.5)
+            
+            # Calculate leverage using leverage sizer
+            leverage = await self.leverage_sizer.calculate_leverage(
+                ml_predictions=tactician_predictions,
+                analyst_confidence=combined_confidence,
+                tactician_confidence=combined_confidence
+            )
+            
+            return leverage
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating leverage: {e}"))
+            return 1.0
+
+    async def _check_exit_signals(self, tactician_predictions: Dict[str, Any]) -> None:
+        """
+        Check for exit signals on existing positions.
+        
+        Args:
+            tactician_predictions: Tactician predictions
+        """
+        try:
+            if not self.ml_tactics:
+                return
+            
+            # Get current positions
+            active_positions = self.get_active_positions()
+            
+            for position_id, position in active_positions.items():
+                # Evaluate exit signal for this position
+                exit_signal = await self.ml_tactics.evaluate_exit_signal(
+                    tactician_predictions,
+                    position
+                )
+                
+                if exit_signal.get("exit_signal") in ["EXIT", "PARTIAL_EXIT"]:
+                    self.logger.info(f"Exit signal for position {position_id}: {exit_signal['exit_signal']}")
+                    # This would trigger position closing logic
+                    
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error checking exit signals: {e}"))
 
     async def _execute_decisions(self) -> None:
         """

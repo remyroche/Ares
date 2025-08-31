@@ -80,21 +80,17 @@ class MLTacticsManager:
             }
         }
         
-        # NEW: Confidence thresholds for green light signals
+        # NEW: Confidence thresholds for green light signals (MTF unified)
         self.green_light_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
             "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
-            "fifty_percent_5m": ml_tactics_optimization.get("fifty_percent_5m_threshold", 0.75),
-            "twenty_five_percent_5m": ml_tactics_optimization.get("twenty_five_percent_5m_threshold", 0.8),
             "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
         }
         
-        # NEW: Exit thresholds
+        # NEW: Exit thresholds (MTF unified)
         self.exit_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
             "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
-            "fifty_percent_5m": ml_tactics_optimization.get("exit_fifty_percent_5m_threshold", 0.4),
-            "twenty_five_percent_5m": ml_tactics_optimization.get("exit_twenty_five_percent_5m_threshold", 0.35),
             "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
         }
         
@@ -254,15 +250,11 @@ class MLTacticsManager:
                 self.green_light_thresholds = {
                     "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
                     "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
-                    "fifty_percent_5m": ml_tactics_optimization.get("fifty_percent_5m_threshold", 0.75),
-                    "twenty_five_percent_5m": ml_tactics_optimization.get("twenty_five_percent_5m_threshold", 0.8),
                     "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
                 }
                 self.exit_thresholds = {
                     "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
                     "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
-                    "fifty_percent_5m": ml_tactics_optimization.get("exit_fifty_percent_5m_threshold", 0.4),
-                    "twenty_five_percent_5m": ml_tactics_optimization.get("exit_twenty_five_percent_5m_threshold", 0.35),
                     "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
                 }
                 self.confidence_weights = {
@@ -1446,34 +1438,35 @@ class MLTacticsManager:
             dict: Green light signal evaluation
         """
         try:
-            # Check individual barrier thresholds
-            fifty_percent_1m_ok = False
-            twenty_five_percent_1m_ok = False
-            fifty_percent_5m_ok = False
-            twenty_five_percent_5m_ok = False
+            # Check individual barrier thresholds (MTF unified)
+            fifty_percent_ok = False
+            twenty_five_percent_ok = False
             
+            # Check 50% barriers (both 1m and 5m)
+            fifty_percent_confidences = []
             if "fifty_percent" in predictions and predictions["fifty_percent"]:
-                fifty_1m_confidence = predictions["fifty_percent"]["confidence"]
-                fifty_percent_1m_ok = fifty_1m_confidence >= self.green_light_thresholds["fifty_percent"]
-            
-            if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
-                twenty_five_1m_confidence = predictions["twenty_five_percent"]["confidence"]
-                twenty_five_percent_1m_ok = twenty_five_1m_confidence >= self.green_light_thresholds["twenty_five_percent"]
-            
+                fifty_percent_confidences.append(predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in predictions and predictions["fifty_percent_5m"]:
-                fifty_5m_confidence = predictions["fifty_percent_5m"]["confidence"]
-                fifty_percent_5m_ok = fifty_5m_confidence >= self.green_light_thresholds["fifty_percent_5m"]
+                fifty_percent_confidences.append(predictions["fifty_percent_5m"]["confidence"])
             
+            if fifty_percent_confidences:
+                fifty_percent_ok = max(fifty_percent_confidences) >= self.green_light_thresholds["fifty_percent"]
+            
+            # Check 25% barriers (both 1m and 5m)
+            twenty_five_percent_confidences = []
+            if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
+                twenty_five_percent_confidences.append(predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in predictions and predictions["twenty_five_percent_5m"]:
-                twenty_five_5m_confidence = predictions["twenty_five_percent_5m"]["confidence"]
-                twenty_five_percent_5m_ok = twenty_five_5m_confidence >= self.green_light_thresholds["twenty_five_percent_5m"]
+                twenty_five_percent_confidences.append(predictions["twenty_five_percent_5m"]["confidence"])
+            
+            if twenty_five_percent_confidences:
+                twenty_five_percent_ok = max(twenty_five_percent_confidences) >= self.green_light_thresholds["twenty_five_percent"]
             
             # Check combined threshold
             combined_ok = combined_confidence >= self.green_light_thresholds["combined_threshold"]
             
             # Determine signal
-            if (fifty_percent_1m_ok and twenty_five_percent_1m_ok and 
-                fifty_percent_5m_ok and twenty_five_percent_5m_ok and combined_ok):
+            if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
                 signal = "GREEN_LIGHT"
                 reason = "All thresholds met"
             elif combined_ok:
@@ -1486,10 +1479,8 @@ class MLTacticsManager:
             return {
                 "signal": signal,
                 "reason": reason,
-                "fifty_percent_1m_ok": fifty_percent_1m_ok,
-                "twenty_five_percent_1m_ok": twenty_five_percent_1m_ok,
-                "fifty_percent_5m_ok": fifty_percent_5m_ok,
-                "twenty_five_percent_5m_ok": twenty_five_percent_5m_ok,
+                "fifty_percent_ok": fifty_percent_ok,
+                "twenty_five_percent_ok": twenty_five_percent_ok,
                 "combined_ok": combined_ok,
                 "combined_confidence": combined_confidence,
                 "thresholds": self.green_light_thresholds
@@ -1551,10 +1542,8 @@ class MLTacticsManager:
             "green_light_signal": {
                 "signal": "RED_LIGHT",
                 "reason": "Fallback mode",
-                "fifty_percent_1m_ok": False,
-                "twenty_five_percent_1m_ok": False,
-                "fifty_percent_5m_ok": False,
-                "twenty_five_percent_5m_ok": False,
+                "fifty_percent_ok": False,
+                "twenty_five_percent_ok": False,
                 "combined_ok": False,
                 "combined_confidence": 0.5,
                 "thresholds": self.green_light_thresholds
@@ -1588,17 +1577,29 @@ class MLTacticsManager:
         try:
             combined_confidence = current_predictions.get("combined_confidence", 0.5)
             
-            # Check exit thresholds
+            # Check exit thresholds (MTF unified)
             fifty_percent_exit = False
             twenty_five_percent_exit = False
             
+            # Check 50% barriers (both 1m and 5m)
+            fifty_percent_confidences = []
             if "fifty_percent" in current_predictions and current_predictions["fifty_percent"]:
-                fifty_confidence = current_predictions["fifty_percent"]["confidence"]
-                fifty_percent_exit = fifty_confidence <= self.exit_thresholds["fifty_percent"]
+                fifty_percent_confidences.append(current_predictions["fifty_percent"]["confidence"])
+            if "fifty_percent_5m" in current_predictions and current_predictions["fifty_percent_5m"]:
+                fifty_percent_confidences.append(current_predictions["fifty_percent_5m"]["confidence"])
             
+            if fifty_percent_confidences:
+                fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds["fifty_percent"]
+            
+            # Check 25% barriers (both 1m and 5m)
+            twenty_five_percent_confidences = []
             if "twenty_five_percent" in current_predictions and current_predictions["twenty_five_percent"]:
-                twenty_five_confidence = current_predictions["twenty_five_percent"]["confidence"]
-                twenty_five_percent_exit = twenty_five_confidence <= self.exit_thresholds["twenty_five_percent"]
+                twenty_five_percent_confidences.append(current_predictions["twenty_five_percent"]["confidence"])
+            if "twenty_five_percent_5m" in current_predictions and current_predictions["twenty_five_percent_5m"]:
+                twenty_five_percent_confidences.append(current_predictions["twenty_five_percent_5m"]["confidence"])
+            
+            if twenty_five_percent_confidences:
+                twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds["twenty_five_percent"]
             
             combined_exit = combined_confidence <= self.exit_thresholds["combined_exit_threshold"]
             

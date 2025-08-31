@@ -229,9 +229,9 @@ constraint: 0.0 <= all_thresholds <= 1.0
 # Barrier multipliers must be positive
 constraint: all_multipliers > 0.0
 
-# Position sizing and leverage thresholds should be reasonable
-constraint: 0.5 <= positionsize_combined_threshold <= 0.9
-constraint: 0.6 <= leverage_combined_threshold <= 0.95
+# Position sizing and leverage thresholds - let Optuna decide
+constraint: 0.4 <= positionsize_combined_threshold <= 0.99
+constraint: 0.4 <= leverage_combined_threshold <= 0.99
 ```
 
 ## Benefits of MTF Unified System

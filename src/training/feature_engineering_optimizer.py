@@ -8,6 +8,7 @@ This module optimizes feature engineering parameters using:
 2. Mutual importance matrix for feature parameter selection
 3. Regime-specific optimization for each HMM regime
 4. Top 3 parameter selection based on correlation, multicollinearity, and mutual information
+5. Feature Interaction Engineering for capturing non-linear relationships
 """
 
 import asyncio
@@ -40,6 +41,7 @@ class FeatureEngineeringOptimizer:
     - Mutual importance matrix for parameter selection
     - Regime-specific optimization
     - Top 3 parameter selection with correlation/multicollinearity/MI analysis
+    - Feature Interaction Engineering for non-linear relationships
     """
     
     def __init__(self, config: dict[str, Any]):
@@ -91,6 +93,40 @@ class FeatureEngineeringOptimizer:
             }
         }
         
+        # Feature Interaction Engineering Configuration
+        self.interaction_config = {
+            "momentum_volume": {
+                "enabled": True,
+                "weight": 1.5,
+                "features": ["RSI", "MACD", "Stochastic", "Volume_Ratio"]
+            },
+            "trend_volatility": {
+                "enabled": True,
+                "weight": 1.8,
+                "features": ["SMA_Ratio", "EMA_Ratio", "BB_Position", "ATR_Normalized"]
+            },
+            "oscillator_trend": {
+                "enabled": True,
+                "weight": 1.3,
+                "features": ["RSI", "Williams_R", "CCI", "SMA_Ratio"]
+            },
+            "volume_price": {
+                "enabled": True,
+                "weight": 1.6,
+                "features": ["OBV_Normalized", "MFI", "Price_Momentum", "Volume_Ratio"]
+            },
+            "volatility_regime": {
+                "enabled": True,
+                "weight": 1.4,
+                "features": ["ATR_Normalized", "BB_Squeeze", "Volatility", "Market_Regime"]
+            },
+            "cross_timeframe": {
+                "enabled": True,
+                "weight": 1.2,
+                "features": ["RSI_14", "RSI_30", "MACD_12_26", "MACD_20_40"]
+            }
+        }
+        
         # Optimization settings
         self.optimization_config = config.get("feature_engineering_optimization", {
             "n_trials": 100,
@@ -98,10 +134,13 @@ class FeatureEngineeringOptimizer:
             "random_state": 42,
             "correlation_threshold": 0.8,
             "mi_threshold": 0.1,
-            "top_k_parameters": 3
+            "top_k_parameters": 3,
+            "interaction_enabled": True,
+            "max_interactions": 50,
+            "interaction_selection_threshold": 0.05
         })
         
-        self.logger.info("🚀 Feature Engineering Optimizer initialized")
+        self.logger.info("🚀 Feature Engineering Optimizer initialized with interaction engineering")
     
     @handle_errors(exceptions=(Exception,), default_return={})
     async def optimize_feature_parameters(
@@ -137,7 +176,8 @@ class FeatureEngineeringOptimizer:
             "regime_optimizations": {},
             "global_optimizations": {},
             "correlation_analysis": {},
-            "mutual_importance_matrix": {}
+            "mutual_importance_matrix": {},
+            "interaction_engineering": {}
         }
         
         # 1. Global optimization (all data)
@@ -145,7 +185,13 @@ class FeatureEngineeringOptimizer:
         global_opt = await self._optimize_global_parameters(data, target)
         results["global_optimizations"] = global_opt
         
-        # 2. Regime-specific optimization
+        # 2. Feature Interaction Engineering
+        if self.optimization_config.get("interaction_enabled", True):
+            self.logger.info("🔗 Performing feature interaction engineering...")
+            interaction_results = await self._engineer_feature_interactions(data, target)
+            results["interaction_engineering"] = interaction_results
+        
+        # 3. Regime-specific optimization
         if regimes is not None and len(regimes.unique()) > 1:
             self.logger.info("🎭 Performing regime-specific optimization...")
             for regime in regimes.unique():
@@ -163,17 +209,17 @@ class FeatureEngineeringOptimizer:
                 )
                 results["regime_optimizations"][f"regime_{regime}"] = regime_opt
         
-        # 3. Correlation and mutual importance analysis
+        # 4. Correlation and mutual importance analysis
         self.logger.info("🔍 Performing correlation and mutual importance analysis...")
         correlation_analysis = await self._analyze_correlations_and_mi(data, target)
         results["correlation_analysis"] = correlation_analysis
         
-        # 4. Select top 3 parameters for each feature
+        # 5. Select top 3 parameters for each feature
         self.logger.info("🏆 Selecting top 3 parameters for each feature...")
         top_parameters = await self._select_top_parameters(results)
         results["top_parameters"] = top_parameters
         
-        # 5. Save results
+        # 6. Save results
         await self._save_optimization_results(results, symbol, exchange, timeframe)
         
         self.logger.info("✅ Feature parameter optimization completed successfully")
@@ -598,6 +644,349 @@ class FeatureEngineeringOptimizer:
         cci = (typical_price - sma_tp) / (constant * mad)
         
         return cci
+    
+    @handle_errors(exceptions=(Exception,), default_return={})
+    async def _engineer_feature_interactions(
+        self, 
+        data: pd.DataFrame, 
+        target: pd.Series
+    ) -> dict[str, Any]:
+        """
+        Engineer feature interactions for capturing non-linear relationships.
+        
+        Args:
+            data: Feature data
+            target: Target variable
+            
+        Returns:
+            Dictionary with interaction features and their importance
+        """
+        self.logger.info("🔗 Starting feature interaction engineering...")
+        
+        interaction_results = {
+            "interaction_features": {},
+            "interaction_importance": {},
+            "selected_interactions": {},
+            "interaction_performance": {}
+        }
+        
+        # 1. Create basic pairwise interactions
+        basic_interactions = self._create_basic_interactions(data)
+        interaction_results["interaction_features"]["basic"] = basic_interactions
+        
+        # 2. Create pattern-based interactions
+        pattern_interactions = self._create_pattern_interactions(data)
+        interaction_results["interaction_features"]["pattern"] = pattern_interactions
+        
+        # 3. Create regime-dependent interactions
+        regime_interactions = self._create_regime_interactions(data)
+        interaction_results["interaction_features"]["regime"] = regime_interactions
+        
+        # 4. Combine all interactions
+        all_interactions = pd.concat([
+            basic_interactions,
+            pattern_interactions,
+            regime_interactions
+        ], axis=1)
+        
+        # 5. Select optimal interactions
+        selected_interactions = await self._select_optimal_interactions(all_interactions, target)
+        interaction_results["selected_interactions"] = selected_interactions
+        
+        # 6. Calculate interaction importance
+        importance_scores = await self._calculate_interaction_importance(selected_interactions, target)
+        interaction_results["interaction_importance"] = importance_scores
+        
+        # 7. Evaluate interaction performance
+        performance_metrics = await self._evaluate_interaction_performance(selected_interactions, target)
+        interaction_results["interaction_performance"] = performance_metrics
+        
+        self.logger.info(f"✅ Feature interaction engineering completed. Created {len(selected_interactions.columns)} interaction features")
+        
+        return interaction_results
+    
+    def _create_basic_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create basic pairwise interactions between features.
+        """
+        interactions = []
+        
+        # Define important feature pairs for interactions
+        important_pairs = [
+            ("RSI", "MACD"),
+            ("RSI", "Volume_Ratio"),
+            ("MACD", "Volume_Ratio"),
+            ("BB_Position", "ATR_Normalized"),
+            ("SMA_Ratio", "EMA_Ratio"),
+            ("Price_Momentum", "Volume_Ratio"),
+            ("OBV_Normalized", "Price_Momentum"),
+            ("Stochastic", "RSI"),
+            ("Williams_R", "RSI"),
+            ("CCI", "RSI")
+        ]
+        
+        for feature1, feature2 in important_pairs:
+            if feature1 in data.columns and feature2 in data.columns:
+                # Create interaction
+                interaction = data[feature1] * data[feature2]
+                interactions.append(interaction)
+                
+                # Create ratio interaction
+                ratio_interaction = data[feature1] / (data[feature2] + 1e-8)
+                interactions.append(ratio_interaction)
+                
+                # Create difference interaction
+                diff_interaction = data[feature1] - data[feature2]
+                interactions.append(diff_interaction)
+        
+        if interactions:
+            return pd.concat(interactions, axis=1, keys=[f"interaction_{i}" for i in range(len(interactions))])
+        else:
+            return pd.DataFrame()
+    
+    def _create_pattern_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create pattern-based interactions using predefined patterns.
+        """
+        interactions = []
+        
+        for pattern_name, pattern_config in self.interaction_config.items():
+            if not pattern_config["enabled"]:
+                continue
+                
+            pattern_features = pattern_config["features"]
+            weight = pattern_config["weight"]
+            
+            # Find available features for this pattern
+            available_features = [f for f in pattern_features if f in data.columns]
+            
+            if len(available_features) >= 2:
+                pattern_data = data[available_features]
+                
+                if pattern_name == "momentum_volume":
+                    # Momentum × Volume interactions
+                    momentum_features = [f for f in available_features if f in ["RSI", "MACD", "Stochastic"]]
+                    volume_features = [f for f in available_features if "Volume" in f or "OBV" in f]
+                    
+                    if momentum_features and volume_features:
+                        momentum_avg = data[momentum_features].mean(axis=1)
+                        volume_avg = data[volume_features].mean(axis=1)
+                        
+                        interactions.extend([
+                            momentum_avg * volume_avg * weight,
+                            momentum_avg / (volume_avg + 1e-8) * weight,
+                            momentum_avg.std(axis=1) * volume_avg * weight
+                        ])
+                
+                elif pattern_name == "trend_volatility":
+                    # Trend × Volatility interactions
+                    trend_features = [f for f in available_features if "SMA" in f or "EMA" in f]
+                    volatility_features = [f for f in available_features if "ATR" in f or "BB" in f or "Volatility" in f]
+                    
+                    if trend_features and volatility_features:
+                        trend_avg = data[trend_features].mean(axis=1)
+                        volatility_avg = data[volatility_features].mean(axis=1)
+                        
+                        interactions.extend([
+                            trend_avg * volatility_avg * weight,
+                            trend_avg / (volatility_avg + 1e-8) * weight,
+                            np.abs(trend_avg) * volatility_avg * weight
+                        ])
+                
+                elif pattern_name == "oscillator_trend":
+                    # Oscillator × Trend interactions
+                    oscillator_features = [f for f in available_features if f in ["RSI", "Williams_R", "CCI", "Stochastic"]]
+                    trend_features = [f for f in available_features if "SMA" in f or "EMA" in f]
+                    
+                    if oscillator_features and trend_features:
+                        oscillator_avg = data[oscillator_features].mean(axis=1)
+                        trend_avg = data[trend_features].mean(axis=1)
+                        
+                        interactions.extend([
+                            oscillator_avg * trend_avg * weight,
+                            oscillator_avg / (trend_avg + 1e-8) * weight,
+                            oscillator_avg.std(axis=1) * trend_avg * weight
+                        ])
+        
+        if interactions:
+            return pd.concat(interactions, axis=1, keys=[f"pattern_{i}" for i in range(len(interactions))])
+        else:
+            return pd.DataFrame()
+    
+    def _create_regime_interactions(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create regime-dependent interactions.
+        """
+        interactions = []
+        
+        # Identify market regime based on volatility and trend
+        volatility = data.get("ATR_Normalized", data.get("Volatility", pd.Series(0.5, index=data.index)))
+        trend_strength = data.get("SMA_Ratio", pd.Series(1.0, index=data.index))
+        
+        # Simple regime classification
+        regime = pd.Series("ranging", index=data.index)
+        regime[volatility > 0.03] = "volatile"
+        regime[abs(trend_strength - 1.0) > 0.02] = "trending"
+        
+        # Create regime-specific interactions
+        for regime_type in ["trending", "ranging", "volatile"]:
+            regime_mask = regime == regime_type
+            
+            if regime_mask.sum() > 0:
+                regime_data = data[regime_mask]
+                
+                if regime_type == "trending":
+                    # Trend-following interactions
+                    trend_features = [f for f in data.columns if "SMA" in f or "EMA" in f or "MACD" in f]
+                    momentum_features = [f for f in data.columns if f in ["RSI", "Stochastic", "CCI"]]
+                    
+                    if trend_features and momentum_features:
+                        trend_avg = regime_data[trend_features].mean(axis=1)
+                        momentum_avg = regime_data[momentum_features].mean(axis=1)
+                        
+                        interaction = trend_avg * momentum_avg * 1.5
+                        interactions.append(interaction)
+                
+                elif regime_type == "ranging":
+                    # Range-trading interactions
+                    oscillator_features = [f for f in data.columns if f in ["RSI", "Stochastic", "Williams_R", "CCI"]]
+                    volume_features = [f for f in data.columns if "Volume" in f or "OBV" in f or "MFI" in f]
+                    
+                    if oscillator_features and volume_features:
+                        oscillator_avg = regime_data[oscillator_features].mean(axis=1)
+                        volume_avg = regime_data[volume_features].mean(axis=1)
+                        
+                        interaction = oscillator_avg * volume_avg * 1.6
+                        interactions.append(interaction)
+                
+                elif regime_type == "volatile":
+                    # Volatility-focused interactions
+                    volatility_features = [f for f in data.columns if "ATR" in f or "BB" in f or "Volatility" in f]
+                    risk_features = [f for f in data.columns if f in ["RSI", "Stochastic", "Williams_R"]]
+                    
+                    if volatility_features and risk_features:
+                        volatility_avg = regime_data[volatility_features].mean(axis=1)
+                        risk_avg = regime_data[risk_features].mean(axis=1)
+                        
+                        interaction = volatility_avg * risk_avg * 1.8
+                        interactions.append(interaction)
+        
+        if interactions:
+            return pd.concat(interactions, axis=1, keys=[f"regime_{i}" for i in range(len(interactions))])
+        else:
+            return pd.DataFrame()
+    
+    @handle_errors(exceptions=(Exception,), default_return=pd.DataFrame())
+    async def _select_optimal_interactions(
+        self, 
+        interactions: pd.DataFrame, 
+        target: pd.Series
+    ) -> pd.DataFrame:
+        """
+        Select optimal interactions based on importance and correlation.
+        """
+        if interactions.empty:
+            return pd.DataFrame()
+        
+        try:
+            # Calculate mutual information
+            mi_scores = mutual_info_classif(interactions, target, random_state=42)
+            
+            # Select interactions based on mutual information threshold
+            threshold = self.optimization_config.get("interaction_selection_threshold", 0.05)
+            important_indices = np.where(mi_scores > threshold)[0]
+            
+            # Limit number of interactions
+            max_interactions = self.optimization_config.get("max_interactions", 50)
+            if len(important_indices) > max_interactions:
+                # Select top interactions by mutual information
+                top_indices = np.argsort(mi_scores)[-max_interactions:]
+                selected_interactions = interactions.iloc[:, top_indices]
+            else:
+                selected_interactions = interactions.iloc[:, important_indices]
+            
+            return selected_interactions
+            
+        except Exception as e:
+            self.logger.error(f"Interaction selection failed: {e}")
+            return interactions.iloc[:, :min(50, interactions.shape[1])]  # Return first 50 interactions as fallback
+    
+    @handle_errors(exceptions=(Exception,), default_return={})
+    async def _calculate_interaction_importance(
+        self, 
+        interactions: pd.DataFrame, 
+        target: pd.Series
+    ) -> dict[str, Any]:
+        """
+        Calculate importance of interaction features.
+        """
+        if interactions.empty:
+            return {}
+        
+        try:
+            # Calculate mutual information for interaction importance
+            mi_scores = mutual_info_classif(interactions, target, random_state=42)
+            
+            # Create importance dictionary
+            importance_dict = {
+                "mutual_information_scores": mi_scores.tolist(),
+                "mean_importance": float(np.mean(mi_scores)),
+                "max_importance": float(np.max(mi_scores)),
+                "min_importance": float(np.min(mi_scores)),
+                "std_importance": float(np.std(mi_scores)),
+                "top_interactions": []
+            }
+            
+            # Get top interactions
+            top_indices = np.argsort(mi_scores)[-10:]  # Top 10
+            for idx in top_indices:
+                importance_dict["top_interactions"].append({
+                    "feature": interactions.columns[idx],
+                    "importance": float(mi_scores[idx])
+                })
+            
+            return importance_dict
+            
+        except Exception as e:
+            self.logger.error(f"Interaction importance calculation failed: {e}")
+            return {}
+    
+    @handle_errors(exceptions=(Exception,), default_return={})
+    async def _evaluate_interaction_performance(
+        self, 
+        interactions: pd.DataFrame, 
+        target: pd.Series
+    ) -> dict[str, Any]:
+        """
+        Evaluate performance of interaction features.
+        """
+        if interactions.empty:
+            return {}
+        
+        try:
+            # Combine original features with interactions
+            combined_features = pd.concat([interactions], axis=1)
+            
+            # Train a simple model to evaluate performance
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import cross_val_score
+            
+            model = RandomForestClassifier(n_estimators=50, random_state=42)
+            scores = cross_val_score(model, combined_features, target, cv=3, scoring='accuracy')
+            
+            performance_metrics = {
+                "mean_accuracy": float(np.mean(scores)),
+                "std_accuracy": float(np.std(scores)),
+                "min_accuracy": float(np.min(scores)),
+                "max_accuracy": float(np.max(scores)),
+                "n_interactions": len(interactions.columns)
+            }
+            
+            return performance_metrics
+            
+        except Exception as e:
+            self.logger.error(f"Interaction performance evaluation failed: {e}")
+            return {}
     
     async def _save_optimization_results(
         self, 

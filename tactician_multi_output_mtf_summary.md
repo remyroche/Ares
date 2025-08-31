@@ -1,7 +1,7 @@
 # Tactician Multi-Output Prediction System - MTF Unified Summary
 
 ## Overview
-Successfully implemented a new Tactician multi-output prediction system that generates confidence scores for hitting 50% and 25% barriers without hitting opposite barriers first, using both 1-minute and 5-minute timeframes with **unified MTF thresholds**.
+Successfully implemented a new Tactician multi-output prediction system that generates confidence scores for hitting 50% and 25% barriers without hitting opposite barriers first, using both 1-minute and 5-minute timeframes with **unified MTF thresholds**. The system now integrates with position sizer and leverage sizer using combined confidence thresholds.
 
 ## Key Features
 
@@ -28,6 +28,18 @@ Successfully implemented a new Tactician multi-output prediction system that gen
 - **Combined exit threshold**: Overall exit confidence threshold
 - **Logic**: `EXIT` if MIN(50%_1m, 50%_5m) ≤ threshold OR MIN(25%_1m, 25%_5m) ≤ threshold OR combined ≤ threshold
 
+### **Position Sizer Integration**
+- **NEW**: Uses `combined_confidence` from Tactician multi-output predictions
+- **NEW**: `positionsize_combined_threshold` (optimizable in step17)
+- **Logic**: If `combined_confidence >= positionsize_combined_threshold`, calculate full position size; otherwise use minimum position size
+- **Backward compatible**: Still works with legacy ML prediction format
+
+### **Leverage Sizer Integration**
+- **NEW**: Uses `combined_confidence` from Tactician multi-output predictions
+- **NEW**: `leverage_combined_threshold` (optimizable in step17)
+- **Logic**: If `combined_confidence >= leverage_combined_threshold`, calculate full leverage; otherwise use minimum leverage
+- **Backward compatible**: Still works with legacy ML prediction format
+
 ## Step17 Optimization Parameters
 
 ### **Green Light Thresholds (3 params)**
@@ -51,6 +63,16 @@ Successfully implemented a new Tactician multi-output prediction system that gen
 "twenty_five_percent_1m_weight": 0.15,         # 1m 25% weight
 "fifty_percent_5m_weight": 0.2,                # 5m 50% weight
 "twenty_five_percent_5m_weight": 0.1           # 5m 25% weight
+```
+
+### **Position Sizing Thresholds (1 param)**
+```python
+"positionsize_combined_threshold": 0.7,        # Combined confidence threshold for position sizing
+```
+
+### **Leverage Sizing Thresholds (1 param)**
+```python
+"leverage_combined_threshold": 0.75,           # Combined confidence threshold for leverage sizing
 ```
 
 ### **Barrier Configuration (8 params)**
@@ -92,6 +114,34 @@ combined_exit = combined_confidence <= combined_exit_threshold
 # Exit signal
 if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
     exit_signal = "EXIT"
+```
+
+### **Position Sizing Logic**
+```python
+# Extract combined confidence from Tactician predictions
+combined_confidence = ml_predictions.get("combined_confidence", 0.5)
+
+# Use combined confidence for position sizing
+if combined_confidence >= self.positionsize_combined_threshold:
+    # Calculate full position size using Kelly criterion and ML confidence
+    final_position_size = calculate_full_position_size()
+else:
+    # Use minimum position size due to low combined confidence
+    final_position_size = self.min_position_size
+```
+
+### **Leverage Sizing Logic**
+```python
+# Extract combined confidence from Tactician predictions
+combined_confidence = ml_predictions.get("combined_confidence", 0.5)
+
+# Use combined confidence for leverage sizing
+if combined_confidence >= self.leverage_combined_threshold:
+    # Calculate full leverage using ML confidence and liquidation risk
+    final_leverage = calculate_full_leverage()
+else:
+    # Use minimum leverage due to low combined confidence
+    final_leverage = self.min_leverage
 ```
 
 ## Output Structure
@@ -156,6 +206,8 @@ if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
 1. **Threshold Group**: Optimize all thresholds together
    - Green light thresholds (3 parameters)
    - Exit thresholds (3 parameters)
+   - Position sizing threshold (1 parameter)
+   - Leverage sizing threshold (1 parameter)
 
 2. **Weight Group**: Optimize confidence weights together
    - All 5 confidence weights (must sum to 1.0)
@@ -176,6 +228,10 @@ constraint: 0.0 <= all_thresholds <= 1.0
 
 # Barrier multipliers must be positive
 constraint: all_multipliers > 0.0
+
+# Position sizing and leverage thresholds should be reasonable
+constraint: 0.5 <= positionsize_combined_threshold <= 0.9
+constraint: 0.6 <= leverage_combined_threshold <= 0.95
 ```
 
 ## Benefits of MTF Unified System
@@ -187,11 +243,15 @@ constraint: all_multipliers > 0.0
 5. **Joint Optimization**: All parameters can be optimized together in step17
 6. **Risk Management**: More granular control over entry and exit conditions
 7. **MTF Logic**: Uses MAX for green light (best signal wins) and MIN for exit (worst signal triggers exit)
+8. **Position Sizer Integration**: Uses combined confidence with configurable threshold
+9. **Leverage Sizer Integration**: Uses combined confidence with configurable threshold
+10. **Backward Compatibility**: Works with both new and legacy ML prediction formats
 
 ## Usage for Trading Decisions
 
 ### **For Leverage**
 - Uses `combined_confidence` (Analyst + Tactician) as primary factor
+- Applies `leverage_combined_threshold` for minimum confidence requirement
 - Weights can be optimized to balance Analyst vs Tactician influence
 
 ### **For Confidence**
@@ -200,11 +260,13 @@ constraint: all_multipliers > 0.0
 
 ### **For Position Sizing**
 - Uses `combined_confidence` for size calculation
+- Applies `positionsize_combined_threshold` for minimum confidence requirement
 - Weights determine relative importance of each confidence source
 
 ### **For Opening Positions**
 - Requires MTF 50% and 25% barrier thresholds to be met
 - Combined threshold provides additional safety check
+- Position sizing and leverage use their respective combined confidence thresholds
 - All thresholds configurable in step17
 
 ### **For Closing Positions**
@@ -220,10 +282,13 @@ The MTF unified Tactician multi-output prediction system now provides:
 ✅ **Analyst confidence integration** with configurable weights  
 ✅ **Simplified threshold management** (3 green light + 3 exit thresholds)  
 ✅ **MTF logic**: MAX for green light, MIN for exit signals  
+✅ **Position sizer integration** with combined confidence threshold  
+✅ **Leverage sizer integration** with combined confidence threshold  
 ✅ **All thresholds optimizable** in step17  
 ✅ **Joint parameter optimization** for best performance  
 ✅ **Comprehensive risk management** with granular control  
 ✅ **Flexible confidence weighting** system  
 ✅ **Enhanced decision making** with multiple signal sources  
+✅ **Backward compatibility** with legacy ML prediction formats  
 
 The system is ready for step17 optimization with all parameters configurable and optimizable together for maximum performance.

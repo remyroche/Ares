@@ -73,45 +73,134 @@ tactician_triple_barrier:
   primary_timeframe: "1m"      # Default primary timeframe
   secondary_timeframe: "5m"    # Default secondary timeframe
   
-  # Scenario Analysis Configuration (for step17 optimization)
-  scenario_analysis:
-    # Scenario definitions (configurable for step17)
-    profit_zone_1_target: 0.005      # 0.5% profit target
+  # Enhanced Scenario Analysis Configuration (for step17 optimization)
+  enhanced_scenario_analysis:
+    # Fractal scenario definitions (configurable for step17)
+    # Profit zones (0.25% to 2.0% in 0.25% increments)
+    profit_zone_1_target: 0.0025     # 0.25% profit target
     profit_zone_1_stop_loss: -0.005  # 0.5% stop loss
-    profit_zone_2_target: 0.01       # 1.0% profit target
+    profit_zone_2_target: 0.005      # 0.5% profit target
     profit_zone_2_stop_loss: -0.005  # 0.5% stop loss
-    profit_zone_3_target: 0.015      # 1.5% profit target
+    profit_zone_3_target: 0.0075     # 0.75% profit target
     profit_zone_3_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_4_target: 0.01       # 1.0% profit target
+    profit_zone_4_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_5_target: 0.0125     # 1.25% profit target
+    profit_zone_5_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_6_target: 0.015      # 1.5% profit target
+    profit_zone_6_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_7_target: 0.0175     # 1.75% profit target
+    profit_zone_7_stop_loss: -0.005  # 0.5% stop loss
+    profit_zone_8_target: 0.02       # 2.0% profit target
+    profit_zone_8_stop_loss: -0.005  # 0.5% stop loss
+    
+    # Risk zones (-0.25% to -2.0% in 0.25% increments)
     risk_zone_1_target: 0.005        # 0.5% profit target (for risk scenario)
-    risk_zone_1_stop_loss: -0.005    # 0.5% stop loss
-    risk_zone_2_target: 0.01         # 1.0% profit target (for risk scenario)
+    risk_zone_1_stop_loss: -0.0025   # 0.25% stop loss
+    risk_zone_2_target: 0.005        # 0.5% profit target (for risk scenario)
     risk_zone_2_stop_loss: -0.005    # 0.5% stop loss
+    risk_zone_3_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_3_stop_loss: -0.0075   # 0.75% stop loss
+    risk_zone_4_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_4_stop_loss: -0.01     # 1.0% stop loss
+    risk_zone_5_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_5_stop_loss: -0.0125   # 1.25% stop loss
+    risk_zone_6_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_6_stop_loss: -0.015    # 1.5% stop loss
+    risk_zone_7_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_7_stop_loss: -0.0175   # 1.75% stop loss
+    risk_zone_8_target: 0.005        # 0.5% profit target (for risk scenario)
+    risk_zone_8_stop_loss: -0.02     # 2.0% stop loss
+    
     neutral_target: 0.0              # Neutral scenario target
     neutral_stop_loss: 0.0           # Neutral scenario stop loss
     
-    # Time limit for scenario evaluation
-    time_limit_minutes: 30
+    # Time limit for scenario evaluation (15 minutes)
+    time_limit_minutes: 15
     
-    # Model configuration (configurable for step17)
-    n_estimators: 100
-    learning_rate: 0.1
-    max_depth: 6
-    num_leaves: 31
+    # Enhanced model configuration (configurable for step17)
+    n_estimators: 200
+    learning_rate: 0.05
+    max_depth: 8
+    num_leaves: 63
     subsample: 0.8
     colsample_bytree: 0.8
     random_state: 42
     
-    # Decision thresholds (configurable for step17)
+    # Enhanced decision thresholds (configurable for step17)
     profit_zone_combined_threshold: 0.6    # Minimum combined profit zone probability
     risk_zone_combined_threshold: 0.2      # Maximum combined risk zone probability
     exit_risk_threshold: 0.5               # Risk threshold for exit signals
     neutral_threshold: 0.3                 # Neutral scenario threshold
     confidence_threshold: 0.7              # Minimum confidence for decisions
+    profit_risk_ratio_threshold: 2.0       # Minimum profit/risk ratio
+    scenario_dominance_threshold: 0.4      # Minimum scenario dominance
     
-    # Feature engineering parameters (configurable for step17)
-    lookback_periods: 20
-    volatility_window: 20
-    rsi_period: 14
-    ma_short_period: 5
-    ma_long_period: 20
-    volume_ma_period: 10
+    # Step7 technical indicator parameters (configurable for step17)
+    # RSI parameters
+    rsi_lookback_period: 14
+    rsi_overbought_threshold: 70
+    rsi_oversold_threshold: 30
+    
+    # MACD parameters
+    macd_fast_period: 12
+    macd_slow_period: 26
+    macd_signal_period: 9
+    
+    # Bollinger Bands parameters
+    bb_lookback_period: 20
+    bb_std_dev: 2.0
+    bb_squeeze_threshold: 0.2
+    
+    # SMA parameters
+    sma_short_period: 10
+    sma_long_period: 30
+    
+    # EMA parameters
+    ema_short_period: 10
+    ema_long_period: 30
+    
+    # ATR parameters
+    atr_lookback_period: 14
+    
+    # Stochastic parameters
+    stoch_k_period: 14
+    stoch_d_period: 3
+    stoch_overbought: 80
+    stoch_oversold: 20
+    
+    # ADX parameters
+    adx_lookback_period: 14
+    adx_threshold: 25
+    
+    # CCI parameters
+    cci_lookback_period: 14
+    cci_constant: 0.015
+    
+         # Enhanced feature engineering parameters (configurable for step17)
+     lookback_periods: 20
+     volatility_window: 20
+     volume_ma_period: 10
+     price_momentum_periods: [5, 10, 20]  # Multiple momentum periods
+     volatility_periods: [5, 10, 20]      # Multiple volatility periods
+   
+   # Fully Migrated Tactician Configuration (for step17 optimization)
+   fully_migrated_tactician:
+     # Decision thresholds (configurable for step17)
+     entry_profit_threshold: 0.6          # Minimum profit zone probability for entry
+     entry_risk_threshold: 0.2            # Maximum risk zone probability for entry
+     entry_confidence_threshold: 0.7      # Minimum confidence for entry
+     entry_profit_risk_ratio: 2.0         # Minimum profit/risk ratio for entry
+     entry_scenario_dominance: 0.4        # Minimum scenario dominance for entry
+     exit_risk_threshold: 0.5             # Risk threshold for exit
+     exit_confidence_drop: 0.2            # Confidence drop threshold for exit
+     position_size_multiplier: 1.0        # Position size multiplier
+     leverage_multiplier: 1.0             # Leverage multiplier
+     
+     # Risk management parameters (configurable for step17)
+     max_position_size: 0.1               # Maximum position size (10% of capital)
+     max_leverage: 3.0                    # Maximum leverage
+     stop_loss_multiplier: 1.0            # Stop loss multiplier
+     take_profit_multiplier: 1.0          # Take profit multiplier
+     max_drawdown: 0.05                   # Maximum drawdown (5%)
+     correlation_threshold: 0.8           # Correlation threshold for risk management

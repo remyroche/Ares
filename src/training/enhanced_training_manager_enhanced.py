@@ -515,8 +515,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         summary.append(f"      Total Count: {upper_first.get('total_count', 'N/A')}")
                         summary.append(f"      Long Positions: {upper_first.get('long_positions', 'N/A')}")
                         summary.append(f"      Short Positions: {upper_first.get('short_positions', 'N/A')}")
-                        summary.append(f"      Average Price Deviation: {upper_first.get('average_price_deviation', 'N/A'):.4f}" if isinstance(upper_first.get('average_price_deviation'), (int, float)) else f"      Average Price Deviation: {upper_first.get('average_price_deviation', 'N/A')}")
-                        summary.append(f"      Max Price Deviation: {upper_first.get('max_price_deviation', 'N/A'):.4f}" if isinstance(upper_first.get('max_price_deviation'), (int, float)) else f"      Max Price Deviation: {upper_first.get('max_price_deviation', 'N/A')}")
+                        summary.append(f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('average_post_hit_movement'), (int, float)) else f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement', 'N/A')}")
+                        summary.append(f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('max_post_hit_movement'), (int, float)) else f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement', 'N/A')}")
                         
                         # Lower barrier hits without upper barrier hits first
                         lower_first = hit_analysis.get("lower_hits_without_upper_first", {})
@@ -524,37 +524,19 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         summary.append(f"      Total Count: {lower_first.get('total_count', 'N/A')}")
                         summary.append(f"      Long Positions: {lower_first.get('long_positions', 'N/A')}")
                         summary.append(f"      Short Positions: {lower_first.get('short_positions', 'N/A')}")
-                        summary.append(f"      Average Price Deviation: {lower_first.get('average_price_deviation', 'N/A'):.4f}" if isinstance(lower_first.get('average_price_deviation'), (int, float)) else f"      Average Price Deviation: {lower_first.get('average_price_deviation', 'N/A')}")
-                        summary.append(f"      Max Price Deviation: {lower_first.get('max_price_deviation', 'N/A'):.4f}" if isinstance(lower_first.get('max_price_deviation'), (int, float)) else f"      Max Price Deviation: {lower_first.get('max_price_deviation', 'N/A')}")
                     
-                    if "price_deviation_analysis" in captured_changes:
-                        deviation_analysis = captured_changes["price_deviation_analysis"]
+                    if "upper_barrier_post_hit_analysis" in captured_changes:
+                        post_hit_analysis = captured_changes["upper_barrier_post_hit_analysis"]
+                        summary.append("    Upper Barrier Post-Hit Analysis:")
+                        summary.append(f"      Total Post-Hit Movements: {post_hit_analysis.get('total_post_hit_movements', 'N/A')}")
+                        summary.append(f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('mean_post_hit_movement'), (int, float)) else f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement', 'N/A')}")
+                        summary.append(f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('max_post_hit_movement'), (int, float)) else f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement', 'N/A')}")
                         
-                        # Upper barrier price deviations
-                        upper_deviations = deviation_analysis.get("upper_barrier_deviations", {})
-                        summary.append("    Upper Barrier Price Deviations:")
-                        summary.append(f"      Total Deviations: {upper_deviations.get('total_deviations', 'N/A')}")
-                        summary.append(f"      Mean Deviation: {upper_deviations.get('mean_deviation', 'N/A'):.4f}" if isinstance(upper_deviations.get('mean_deviation'), (int, float)) else f"      Mean Deviation: {upper_deviations.get('mean_deviation', 'N/A')}")
-                        summary.append(f"      Max Deviation: {upper_deviations.get('max_deviation', 'N/A'):.4f}" if isinstance(upper_deviations.get('max_deviation'), (int, float)) else f"      Max Deviation: {upper_deviations.get('max_deviation', 'N/A')}")
-                        
-                        deviation_dist = upper_deviations.get("deviation_distribution", {})
-                        summary.append("      Deviation Distribution:")
-                        summary.append(f"        Small (≤1%): {deviation_dist.get('small_deviations', 'N/A')}")
-                        summary.append(f"        Medium (1-5%): {deviation_dist.get('medium_deviations', 'N/A')}")
-                        summary.append(f"        Large (>5%): {deviation_dist.get('large_deviations', 'N/A')}")
-                        
-                        # Lower barrier price deviations
-                        lower_deviations = deviation_analysis.get("lower_barrier_deviations", {})
-                        summary.append("    Lower Barrier Price Deviations:")
-                        summary.append(f"      Total Deviations: {lower_deviations.get('total_deviations', 'N/A')}")
-                        summary.append(f"      Mean Deviation: {lower_deviations.get('mean_deviation', 'N/A'):.4f}" if isinstance(lower_deviations.get('mean_deviation'), (int, float)) else f"      Mean Deviation: {lower_deviations.get('mean_deviation', 'N/A')}")
-                        summary.append(f"      Max Deviation: {lower_deviations.get('max_deviation', 'N/A'):.4f}" if isinstance(lower_deviations.get('max_deviation'), (int, float)) else f"      Max Deviation: {lower_deviations.get('max_deviation', 'N/A')}")
-                        
-                        deviation_dist = lower_deviations.get("deviation_distribution", {})
-                        summary.append("      Deviation Distribution:")
-                        summary.append(f"        Small (≤1%): {deviation_dist.get('small_deviations', 'N/A')}")
-                        summary.append(f"        Medium (1-5%): {deviation_dist.get('medium_deviations', 'N/A')}")
-                        summary.append(f"        Large (>5%): {deviation_dist.get('large_deviations', 'N/A')}")
+                        movement_dist = post_hit_analysis.get("post_hit_movement_distribution", {})
+                        summary.append("      Post-Hit Movement Distribution:")
+                        summary.append(f"        Small (≤1%): {movement_dist.get('small_movements', 'N/A')}")
+                        summary.append(f"        Medium (1-5%): {movement_dist.get('medium_movements', 'N/A')}")
+                        summary.append(f"        Large (>5%): {movement_dist.get('large_movements', 'N/A')}")
                     
                     if "summary_statistics" in captured_changes:
                         summary_stats = captured_changes["summary_statistics"]
@@ -2521,9 +2503,8 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             lower_hits_without_upper_first = []
             lower_hits_with_upper_first = []
             
-            # Analyze price deviation after hitting barriers
-            upper_barrier_price_deviations = []
-            lower_barrier_price_deviations = []
+            # Analyze price movement AFTER upper barrier is hit
+            upper_barrier_post_hit_movements = []
             
             for hit in barrier_hits:
                 hit_type = hit.get("hit_type")  # "upper", "lower", or "both"
@@ -2532,17 +2513,20 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 position_type = hit.get("position_type")  # "long" or "short"
                 
                 if hit_type == "upper":
+                    # Get price movement AFTER the upper barrier was hit
+                    post_hit_movement = hit.get("post_hit_price_movement", 0)  # Price movement after barrier hit
+                    
                     if hit_order == "upper_first":
                         upper_hits_without_lower_first.append({
                             "position_type": position_type,
-                            "price_deviation": price_deviation,
+                            "post_hit_movement": post_hit_movement,
                             "timestamp": hit.get("timestamp")
                         })
-                        upper_barrier_price_deviations.append(price_deviation)
+                        upper_barrier_post_hit_movements.append(post_hit_movement)
                     else:
                         upper_hits_with_lower_first.append({
                             "position_type": position_type,
-                            "price_deviation": price_deviation,
+                            "post_hit_movement": post_hit_movement,
                             "timestamp": hit.get("timestamp")
                         })
                 
@@ -2550,14 +2534,11 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     if hit_order == "lower_first":
                         lower_hits_without_upper_first.append({
                             "position_type": position_type,
-                            "price_deviation": price_deviation,
                             "timestamp": hit.get("timestamp")
                         })
-                        lower_barrier_price_deviations.append(price_deviation)
                     else:
                         lower_hits_with_upper_first.append({
                             "position_type": position_type,
-                            "price_deviation": price_deviation,
                             "timestamp": hit.get("timestamp")
                         })
             
@@ -2567,17 +2548,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "total_count": len(upper_hits_without_lower_first),
                         "long_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "long"]),
                         "short_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "short"]),
-                        "average_price_deviation": sum(h["price_deviation"] for h in upper_hits_without_lower_first) / len(upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
-                        "max_price_deviation": max(h["price_deviation"] for h in upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
-                        "price_deviation_percentiles": self._calculate_percentiles([h["price_deviation"] for h in upper_hits_without_lower_first])
+                        "average_post_hit_movement": sum(h["post_hit_movement"] for h in upper_hits_without_lower_first) / len(upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
+                        "max_post_hit_movement": max(h["post_hit_movement"] for h in upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
+                        "post_hit_movement_percentiles": self._calculate_percentiles([h["post_hit_movement"] for h in upper_hits_without_lower_first])
                     },
                     "lower_hits_without_upper_first": {
                         "total_count": len(lower_hits_without_upper_first),
                         "long_positions": len([h for h in lower_hits_without_upper_first if h["position_type"] == "long"]),
-                        "short_positions": len([h for h in lower_hits_without_upper_first if h["position_type"] == "short"]),
-                        "average_price_deviation": sum(h["price_deviation"] for h in lower_hits_without_upper_first) / len(lower_hits_without_upper_first) if lower_hits_without_upper_first else 0,
-                        "max_price_deviation": max(h["price_deviation"] for h in lower_hits_without_upper_first) if lower_hits_without_upper_first else 0,
-                        "price_deviation_percentiles": self._calculate_percentiles([h["price_deviation"] for h in lower_hits_without_upper_first])
+                        "short_positions": len([h for h in lower_hits_without_upper_first if h["position_type"] == "short"])
                     },
                     "upper_hits_with_lower_first": {
                         "total_count": len(upper_hits_with_lower_first),

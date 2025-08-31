@@ -504,9 +504,10 @@ class DataQualityFramework:
                     cleaned_data[col].fillna(median_value, inplace=True)
                     self.logger.info(f"Filled missing values in {col} with median: {median_value}")
         
-        # Remove outliers (if enabled)
-        if default_rules["remove_outliers"]:
-            cleaned_data = self._remove_outliers(cleaned_data)
+        # Enhanced outlier handling (if enabled)
+        outlier_handling = default_rules.get("outlier_handling", "detect_only")
+        if outlier_handling != "none":
+            cleaned_data = self._handle_outliers_enhanced(cleaned_data, default_rules)
         
         # Normalize whitespace in string columns
         if default_rules["normalize_whitespace"]:
@@ -538,6 +539,35 @@ class DataQualityFramework:
                     self.logger.info(f"Removed {outlier_count} outliers from {col}")
         
         return cleaned_data
+    
+    def _handle_outliers_enhanced(self, data: pd.DataFrame, cleaning_rules: Dict[str, Any]) -> pd.DataFrame:
+        """Handle outliers using enhanced outlier handler with error raising."""
+        from .enhanced_outlier_handler import enhanced_outlier_handler, OutlierSeverity
+        
+        # Get outlier handling configuration
+        outlier_config = cleaning_rules.get("outlier_config", {})
+        method = outlier_config.get("method", "zscore")
+        threshold = outlier_config.get("threshold", 3.0)
+        severity_threshold = OutlierSeverity(outlier_config.get("severity_threshold", "medium"))
+        raise_errors = outlier_config.get("raise_errors", True)
+        
+        # Detect outliers with enhanced handler
+        outliers = enhanced_outlier_handler.detect_outliers(
+            data=data,
+            columns=outlier_config.get("columns"),
+            method=method,
+            threshold=threshold,
+            severity_threshold=severity_threshold
+        )
+        
+        # Log outlier detection results
+        if outliers:
+            self.logger.warning(f"Detected {len(outliers)} outlier groups")
+            for outlier in outliers:
+                self.logger.warning(f"  {outlier.column}: {len(outlier.indices)} values, severity={outlier.severity.value}")
+        
+        # Return original data (enhanced handler raises errors instead of removing)
+        return data
     
     def profile_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Generate comprehensive data profile.

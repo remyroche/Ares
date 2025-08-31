@@ -54,38 +54,31 @@ This document describes the enhanced reporting structure and the specific improv
 
 ### **What We Calculate Exactly**
 
-The triple barrier method analysis now focuses on **specific price changes captured by the triple barrier method**, not all possible price changes in the dataset.
+The triple barrier method analysis now focuses on **specific price changes captured by the triple barrier method**, with particular emphasis on **upper barrier post-hit movements**.
 
 #### **1. Barrier Hit Analysis**
 
 **Upper Barrier Hits Without Lower Barrier Hits First:**
 - **Count**: How many times the upper barrier was hit without the lower barrier being hit first
 - **Position Types**: Breakdown by long vs short positions
-- **Price Deviation**: How much further the price moved after hitting the upper barrier
-- **Statistics**: Mean, max, and percentile analysis of price deviations
+- **Post-Hit Movement**: How much further the price moved AFTER hitting the upper barrier
+- **Statistics**: Mean, max, and percentile analysis of post-hit movements
 
 **Lower Barrier Hits Without Upper Barrier Hits First:**
 - **Count**: How many times the lower barrier was hit without the upper barrier being hit first
 - **Position Types**: Breakdown by long vs short positions
-- **Price Deviation**: How much further the price moved after hitting the lower barrier
-- **Statistics**: Mean, max, and percentile analysis of price deviations
+- **Note**: No post-hit movement analysis for lower barriers (not necessary)
 
-#### **2. Price Deviation Analysis**
+#### **2. Upper Barrier Post-Hit Analysis**
 
 **When Hitting the Upper Barrier:**
-- **Total Deviations**: Number of times price moved beyond the upper barrier
-- **Mean Deviation**: Average additional price movement beyond the barrier
-- **Max Deviation**: Maximum additional price movement beyond the barrier
-- **Deviation Distribution**: Categorized by size:
-  - Small deviations (≤1%)
-  - Medium deviations (1-5%)
-  - Large deviations (>5%)
-
-**When Hitting the Lower Barrier:**
-- **Total Deviations**: Number of times price moved beyond the lower barrier
-- **Mean Deviation**: Average additional price movement beyond the barrier
-- **Max Deviation**: Maximum additional price movement beyond the barrier
-- **Deviation Distribution**: Same categorization as upper barrier
+- **Total Post-Hit Movements**: Number of times price moved further after hitting the upper barrier
+- **Mean Post-Hit Movement**: Average additional price movement after hitting the barrier
+- **Max Post-Hit Movement**: Maximum additional price movement after hitting the barrier
+- **Post-Hit Movement Distribution**: Categorized by size:
+  - Small movements (≤1%)
+  - Medium movements (1-5%)
+  - Large movements (>5%)
 
 ### **Example Report Structure**
 
@@ -97,49 +90,36 @@ The triple barrier method analysis now focuses on **specific price changes captu
         "total_count": 1250,
         "long_positions": 800,
         "short_positions": 450,
-        "average_price_deviation": 0.025,
-        "max_price_deviation": 0.085,
-        "price_deviation_percentiles": {
-          "25th": 0.015,
-          "50th": 0.025,
-          "75th": 0.035,
-          "90th": 0.045
+        "average_post_hit_movement": 0.025,
+        "max_post_hit_movement": 0.085,
+        "post_hit_movement_percentiles": {
+          "p25": 0.015,
+          "p50": 0.025,
+          "p75": 0.035,
+          "p90": 0.045
         }
       },
       "lower_hits_without_upper_first": {
         "total_count": 1185,
         "long_positions": 420,
-        "short_positions": 765,
-        "average_price_deviation": 0.022,
-        "max_price_deviation": 0.078,
-        "price_deviation_percentiles": {
-          "25th": 0.012,
-          "50th": 0.022,
-          "75th": 0.032,
-          "90th": 0.042
-        }
+        "short_positions": 765
       }
     },
-    "price_deviation_analysis": {
-      "upper_barrier_deviations": {
-        "total_deviations": 1250,
-        "mean_deviation": 0.025,
-        "max_deviation": 0.085,
-        "deviation_distribution": {
-          "small_deviations": 450,    // ≤1%
-          "medium_deviations": 600,   // 1-5%
-          "large_deviations": 200     // >5%
-        }
+    "upper_barrier_post_hit_analysis": {
+      "total_post_hit_movements": 1250,
+      "mean_post_hit_movement": 0.025,
+      "max_post_hit_movement": 0.085,
+      "min_post_hit_movement": 0.005,
+      "post_hit_movement_percentiles": {
+        "p25": 0.015,
+        "p50": 0.025,
+        "p75": 0.035,
+        "p90": 0.045
       },
-      "lower_barrier_deviations": {
-        "total_deviations": 1185,
-        "mean_deviation": 0.022,
-        "max_deviation": 0.078,
-        "deviation_distribution": {
-          "small_deviations": 520,    // ≤1%
-          "medium_deviations": 550,   // 1-5%
-          "large_deviations": 115     // >5%
-        }
+      "post_hit_movement_distribution": {
+        "small_movements": 450,    // ≤1%
+        "medium_movements": 600,   // 1-5%
+        "large_movements": 200     // >5%
       }
     },
     "summary_statistics": {
@@ -162,33 +142,22 @@ Triple Barrier Captured Changes:
     Total Count: 1250
     Long Positions: 800
     Short Positions: 450
-    Average Price Deviation: 0.0250
-    Max Price Deviation: 0.0850
+    Average Post-Hit Movement: 0.0250
+    Max Post-Hit Movement: 0.0850
   
   Lower Barrier Hits (Without Upper First):
     Total Count: 1185
     Long Positions: 420
     Short Positions: 765
-    Average Price Deviation: 0.0220
-    Max Price Deviation: 0.0780
   
-  Upper Barrier Price Deviations:
-    Total Deviations: 1250
-    Mean Deviation: 0.0250
-    Max Deviation: 0.0850
-    Deviation Distribution:
+  Upper Barrier Post-Hit Analysis:
+    Total Post-Hit Movements: 1250
+    Mean Post-Hit Movement: 0.0250
+    Max Post-Hit Movement: 0.0850
+    Post-Hit Movement Distribution:
       Small (≤1%): 450
       Medium (1-5%): 600
       Large (>5%): 200
-  
-  Lower Barrier Price Deviations:
-    Total Deviations: 1185
-    Mean Deviation: 0.0220
-    Max Deviation: 0.0780
-    Deviation Distribution:
-      Small (≤1%): 520
-      Medium (1-5%): 550
-      Large (>5%): 115
   
   Summary Statistics:
     Total Barrier Hits: 2435
@@ -234,14 +203,20 @@ STEP_ORDER = [
 - **After**: Only analyzes price changes that were actually captured by the triple barrier method
 - **Benefit**: More accurate representation of what the triple barrier method actually captures
 
+### **Upper Barrier Post-Hit Focus**
+- **Primary Focus**: Price movement AFTER the upper barrier is hit
+- **Key Metric**: `post_hit_price_movement` - how much further price moved after hitting the upper barrier
+- **Distribution Analysis**: Categorization of post-hit movements by size
+- **Lower Barrier**: No post-hit movement analysis (not necessary)
+
 ### **Detailed Position Analysis**
 - **Long vs Short**: Breakdown of barrier hits by position type
 - **Hit Order**: Analysis of which barrier was hit first
-- **Price Deviations**: Quantification of how much further price moved after hitting barriers
+- **Post-Hit Movements**: Quantification of price movement after hitting upper barriers
 
 ### **Comprehensive Statistics**
-- **Percentile Analysis**: 25th, 50th, 75th, 90th percentiles of price deviations
-- **Distribution Categories**: Small, medium, and large deviations
+- **Percentile Analysis**: 25th, 50th, 75th, 90th percentiles of post-hit movements
+- **Distribution Categories**: Small, medium, and large post-hit movements
 - **Summary Ratios**: Upper first vs lower first hit ratios
 
 ### **Shared Reporting**
@@ -266,6 +241,26 @@ step5_report = shared_report["steps"]["step5_triple_barrier_method"]
 
 # Access triple barrier analysis
 triple_barrier_metrics = step5_report["step_quality_metrics"]["triple_barrier_captured_changes"]
+
+# Access upper barrier post-hit analysis
+post_hit_analysis = triple_barrier_metrics["upper_barrier_post_hit_analysis"]
+mean_post_hit = post_hit_analysis["mean_post_hit_movement"]
 ```
 
-This enhanced reporting structure provides comprehensive insights into the triple barrier method's performance and captures the specific price movements that the method actually identifies and captures.
+## 6. Key Changes Summary
+
+### **What Changed**
+1. **Shared Report Structure**: One report per run instead of individual step reports
+2. **Upper Barrier Focus**: Analysis focuses on price movement AFTER upper barrier hits
+3. **Post-Hit Movement**: New metric `post_hit_price_movement` for upper barriers
+4. **Simplified Lower Barrier**: No post-hit analysis for lower barriers
+5. **Updated Step Names**: Steps 6 and 7 renamed for clarity
+
+### **What This Provides**
+- **Accurate Capture Analysis**: Only analyzes price movements actually captured by triple barriers
+- **Upper Barrier Insights**: Detailed analysis of what happens after upper barrier hits
+- **Position Breakdown**: Long vs short position analysis for barrier hits
+- **Movement Distribution**: Categorization of post-hit movements by size
+- **Centralized Reporting**: All pipeline information in one comprehensive report
+
+This enhanced reporting structure provides focused insights into the triple barrier method's performance, specifically analyzing the price movements that occur after upper barriers are hit, which is the key metric for understanding the method's effectiveness.

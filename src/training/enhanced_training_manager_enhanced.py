@@ -122,6 +122,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             step_end_time = time.time()
             execution_duration = step_end_time - step_start_time
             
+            # Get step-specific quality metrics
+            step_quality_metrics = await self._get_step_quality_metrics(step_name, step_result)
+            
             # Create step report
             step_report = {
                 "step_name": step_name,
@@ -133,6 +136,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                 "success": step_success,
                 "result_type": type(step_result).__name__,
                 "result_summary": self._summarize_result(step_result),
+                "step_quality_metrics": step_quality_metrics,
                 "errors": step_errors or [],
                 "warnings": step_warnings or [],
                 "system_resources": await self._get_system_resources(),
@@ -248,6 +252,106 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             summary.append("-" * 40)
             for key, value in result_summary.items():
                 summary.append(f"  {key}: {value}")
+            summary.append("")
+        
+        # Step-specific quality metrics
+        if step_report.get("step_quality_metrics"):
+            quality_metrics = step_report["step_quality_metrics"]
+            summary.append("STEP QUALITY METRICS:")
+            summary.append("-" * 40)
+            
+            # Handle different types of quality metrics based on step
+            step_name = step_report['step_name']
+            
+            if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+                if "data_quality" in quality_metrics:
+                    data_quality = quality_metrics["data_quality"]
+                    summary.append("  Data Quality:")
+                    summary.append(f"    Total Rows: {data_quality.get('total_rows', 'N/A')}")
+                    summary.append(f"    Total Columns: {data_quality.get('total_columns', 'N/A')}")
+                    summary.append(f"    Memory Usage: {data_quality.get('memory_usage_mb', 'N/A'):.2f} MB")
+                    
+                    if "null_percentage" in data_quality:
+                        max_null = max(data_quality["null_percentage"].values()) if data_quality["null_percentage"] else 0
+                        summary.append(f"    Max Null Percentage: {max_null:.2f}%")
+                    
+                    if "duplicate_percentage" in data_quality:
+                        summary.append(f"    Duplicate Rows: {data_quality['duplicate_percentage']:.2f}%")
+                
+                if "data_validation" in quality_metrics:
+                    validation = quality_metrics["data_validation"]
+                    summary.append("  Data Validation:")
+                    summary.append(f"    Has Required Columns: {validation.get('has_required_columns', 'N/A')}")
+                    
+                    if "price_consistency" in validation:
+                        price_check = validation["price_consistency"]
+                        summary.append(f"    Price Consistency: {'❌ Issues' if price_check.get('has_issues') else '✅ OK'}")
+                        if price_check.get('issues'):
+                            for issue in price_check['issues']:
+                                summary.append(f"      - {issue}")
+                    
+                    if "volume_consistency" in validation:
+                        volume_check = validation["volume_consistency"]
+                        summary.append(f"    Volume Consistency: {'❌ Issues' if volume_check.get('has_issues') else '✅ OK'}")
+                        if volume_check.get('issues'):
+                            for issue in volume_check['issues']:
+                                summary.append(f"      - {issue}")
+            
+            elif step_name == "step2_feature_engineering":
+                if "feature_quality" in quality_metrics:
+                    feature_quality = quality_metrics["feature_quality"]
+                    summary.append("  Feature Quality:")
+                    summary.append(f"    Total Features: {feature_quality.get('total_features', 'N/A')}")
+                    summary.append(f"    Numeric Features: {feature_quality.get('numeric_features', 'N/A')}")
+                    summary.append(f"    Categorical Features: {feature_quality.get('categorical_features', 'N/A')}")
+                    summary.append(f"    Memory Usage: {feature_quality.get('memory_usage_mb', 'N/A'):.2f} MB")
+                
+                if "multicollinearity_analysis" in quality_metrics:
+                    multicollinearity = quality_metrics["multicollinearity_analysis"]
+                    summary.append("  Multicollinearity Analysis:")
+                    summary.append(f"    High Correlation Pairs: {multicollinearity.get('high_correlation_count', 'N/A')}")
+                    
+                    if "high_vif_features" in multicollinearity:
+                        high_vif = multicollinearity["high_vif_features"]
+                        summary.append(f"    High VIF Features: {len(high_vif)}")
+                        if high_vif:
+                            summary.append(f"      - {', '.join(high_vif[:5])}{'...' if len(high_vif) > 5 else ''}")
+                
+                if "feature_statistics" in quality_metrics:
+                    feature_stats = quality_metrics["feature_statistics"]
+                    summary.append("  Feature Statistics:")
+                    summary.append(f"    Constant Features: {len(feature_stats.get('constant_features', []))}")
+                    summary.append(f"    Low Variance Features: {len(feature_stats.get('low_variance_features', []))}")
+                    summary.append(f"    High Cardinality Features: {len(feature_stats.get('high_cardinality_features', []))}")
+                
+                if "data_quality_issues" in quality_metrics:
+                    quality_issues = quality_metrics["data_quality_issues"]
+                    summary.append("  Data Quality Issues:")
+                    summary.append(f"    NaN Features: {len(quality_issues.get('nan_features', []))}")
+                    summary.append(f"    Inf Features: {len(quality_issues.get('inf_features', []))}")
+                    summary.append(f"    Zero Variance Features: {len(quality_issues.get('zero_variance_features', []))}")
+            
+            elif step_name == "step3_hmm_regime_discovery":
+                if "regime_analysis" in quality_metrics:
+                    regime_analysis = quality_metrics["regime_analysis"]
+                    summary.append("  Regime Analysis:")
+                    summary.append(f"    Number of Regimes: {regime_analysis.get('number_of_regimes', 'N/A')}")
+                    summary.append(f"    Convergence Status: {regime_analysis.get('convergence_status', 'N/A')}")
+                    summary.append(f"    Log Likelihood: {regime_analysis.get('log_likelihood', 'N/A')}")
+                
+                if "validation_metrics" in quality_metrics:
+                    validation_metrics = quality_metrics["validation_metrics"]
+                    summary.append("  Validation Metrics:")
+                    summary.append(f"    AIC Score: {validation_metrics.get('aic_score', 'N/A')}")
+                    summary.append(f"    BIC Score: {validation_metrics.get('bic_score', 'N/A')}")
+                    summary.append(f"    Model Complexity: {validation_metrics.get('model_complexity', 'N/A')}")
+            
+            # Add warnings from quality metrics
+            if "warnings" in quality_metrics and quality_metrics["warnings"]:
+                summary.append("  Quality Warnings:")
+                for warning in quality_metrics["warnings"]:
+                    summary.append(f"    ⚠️ {warning}")
+            
             summary.append("")
         
         # System resources
@@ -1449,6 +1553,379 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         summary.append("=" * 100)
         
         return "\n".join(summary)
+
+    async def _get_step_quality_metrics(self, step_name: str, step_result: Any) -> Dict[str, Any]:
+        """Get step-specific quality metrics and validation information."""
+        
+        try:
+            if step_name == "step1_data_collection":
+                return await self._get_data_collection_metrics(step_result)
+            elif step_name == "step1_5_data_converter":
+                return await self._get_data_converter_metrics(step_result)
+            elif step_name == "step2_feature_engineering":
+                return await self._get_feature_engineering_metrics(step_result)
+            elif step_name == "step3_hmm_regime_discovery":
+                return await self._get_hmm_regime_metrics(step_result)
+            elif step_name == "step4_regime_data_splitting":
+                return await self._get_regime_splitting_metrics(step_result)
+            elif step_name == "step5_triple_barrier_method":
+                return await self._get_triple_barrier_metrics(step_result)
+            elif step_name == "step6_hmm_based_training":
+                return await self._get_hmm_training_metrics(step_result)
+            elif step_name == "step7_analyst_enhancement":
+                return await self._get_analyst_enhancement_metrics(step_result)
+            elif step_name == "step8_tactician_labeling":
+                return await self._get_tactician_labeling_metrics(step_result)
+            elif step_name == "step9_tactician_specialist_training":
+                return await self._get_tactician_training_metrics(step_result)
+            elif step_name == "step10_confidence_calibration":
+                return await self._get_confidence_calibration_metrics(step_result)
+            elif step_name == "step11_final_parameters_optimization":
+                return await self._get_optimization_metrics(step_result)
+            elif step_name == "step12_walk_forward_validation":
+                return await self._get_walk_forward_metrics(step_result)
+            elif step_name == "step13_monte_carlo_validation":
+                return await self._get_monte_carlo_metrics(step_result)
+            elif step_name == "step14_ab_testing":
+                return await self._get_ab_testing_metrics(step_result)
+            elif step_name == "step15_saving":
+                return await self._get_saving_metrics(step_result)
+            else:
+                return {"error": f"Unknown step: {step_name}"}
+                
+        except Exception as e:
+            return {"error": f"Failed to get quality metrics: {str(e)}"}
+    
+    async def _get_data_collection_metrics(self, result: Any) -> Dict[str, Any]:
+        """Get data collection quality metrics."""
+        
+        try:
+            import pandas as pd
+            
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                return {
+                    "data_quality": {
+                        "total_rows": len(result),
+                        "total_columns": len(result.columns),
+                        "null_counts": result.isnull().sum().to_dict(),
+                        "null_percentage": (result.isnull().sum() / len(result) * 100).to_dict(),
+                        "duplicate_rows": result.duplicated().sum(),
+                        "duplicate_percentage": (result.duplicated().sum() / len(result) * 100),
+                        "data_types": result.dtypes.to_dict(),
+                        "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2),
+                        "date_range": {
+                            "start": str(result.index.min()) if hasattr(result.index, 'min') else None,
+                            "end": str(result.index.max()) if hasattr(result.index, 'max') else None
+                        }
+                    },
+                    "data_validation": {
+                        "has_required_columns": all(col in result.columns for col in ['open', 'high', 'low', 'close', 'volume']),
+                        "price_consistency": self._check_price_consistency(result),
+                        "volume_consistency": self._check_volume_consistency(result),
+                        "timestamp_consistency": self._check_timestamp_consistency(result)
+                    },
+                    "warnings": self._generate_data_collection_warnings(result)
+                }
+            else:
+                return {"error": "No DataFrame result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze data collection metrics: {str(e)}"}
+    
+    async def _get_data_converter_metrics(self, result: Any) -> Dict[str, Any]:
+        """Get data converter quality metrics."""
+        
+        try:
+            import pandas as pd
+            
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                return {
+                    "conversion_quality": {
+                        "total_rows": len(result),
+                        "total_columns": len(result.columns),
+                        "converted_columns": list(result.columns),
+                        "null_counts": result.isnull().sum().to_dict(),
+                        "null_percentage": (result.isnull().sum() / len(result) * 100).to_dict(),
+                        "data_types": result.dtypes.to_dict(),
+                        "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2)
+                    },
+                    "format_validation": {
+                        "has_ohlcv": all(col in result.columns for col in ['open', 'high', 'low', 'close', 'volume']),
+                        "has_timestamp": 'timestamp' in result.columns or result.index.name == 'timestamp',
+                        "numeric_columns": result.select_dtypes(include=['number']).columns.tolist(),
+                        "datetime_columns": result.select_dtypes(include=['datetime']).columns.tolist()
+                    },
+                    "warnings": self._generate_data_converter_warnings(result)
+                }
+            else:
+                return {"error": "No DataFrame result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze data converter metrics: {str(e)}"}
+    
+    async def _get_feature_engineering_metrics(self, result: Any) -> Dict[str, Any]:
+        """Get feature engineering quality metrics."""
+        
+        try:
+            import pandas as pd
+            import numpy as np
+            
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                # Calculate multicollinearity
+                numeric_cols = result.select_dtypes(include=[np.number]).columns
+                correlation_matrix = result[numeric_cols].corr()
+                high_correlation_pairs = []
+                
+                for i in range(len(correlation_matrix.columns)):
+                    for j in range(i+1, len(correlation_matrix.columns)):
+                        corr_value = correlation_matrix.iloc[i, j]
+                        if abs(corr_value) > 0.95:  # High correlation threshold
+                            high_correlation_pairs.append({
+                                "feature1": correlation_matrix.columns[i],
+                                "feature2": correlation_matrix.columns[j],
+                                "correlation": corr_value
+                            })
+                
+                # Calculate VIF for multicollinearity
+                vif_scores = {}
+                try:
+                    from statsmodels.stats.outliers_influence import variance_inflation_factor
+                    for col in numeric_cols:
+                        if len(numeric_cols) > 1:
+                            other_cols = [c for c in numeric_cols if c != col]
+                            if len(other_cols) > 0:
+                                vif_scores[col] = variance_inflation_factor(result[other_cols + [col]], len(other_cols))
+                except ImportError:
+                    vif_scores = {"error": "statsmodels not available for VIF calculation"}
+                
+                return {
+                    "feature_quality": {
+                        "total_features": len(result.columns),
+                        "numeric_features": len(numeric_cols),
+                        "categorical_features": len(result.select_dtypes(include=['object', 'category']).columns),
+                        "null_counts": result.isnull().sum().to_dict(),
+                        "null_percentage": (result.isnull().sum() / len(result) * 100).to_dict(),
+                        "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2)
+                    },
+                    "multicollinearity_analysis": {
+                        "high_correlation_pairs": high_correlation_pairs,
+                        "high_correlation_count": len(high_correlation_pairs),
+                        "vif_scores": vif_scores,
+                        "high_vif_features": [col for col, vif in vif_scores.items() if isinstance(vif, (int, float)) and vif > 10]
+                    },
+                    "feature_statistics": {
+                        "constant_features": result.columns[result.nunique() == 1].tolist(),
+                        "low_variance_features": result.columns[result.var() < 0.01].tolist(),
+                        "high_cardinality_features": result.columns[result.nunique() > len(result) * 0.5].tolist()
+                    },
+                    "data_quality_issues": {
+                        "nan_features": result.columns[result.isnull().any()].tolist(),
+                        "inf_features": result.columns[np.isinf(result.select_dtypes(include=[np.number])).any()].tolist(),
+                        "zero_variance_features": result.columns[result.var() == 0].tolist()
+                    },
+                    "warnings": self._generate_feature_engineering_warnings(result, high_correlation_pairs, vif_scores)
+                }
+            else:
+                return {"error": "No DataFrame result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze feature engineering metrics: {str(e)}"}
+    
+    async def _get_hmm_regime_metrics(self, result: Any) -> Dict[str, Any]:
+        """Get HMM regime discovery quality metrics."""
+        
+        try:
+            if isinstance(result, dict):
+                return {
+                    "regime_analysis": {
+                        "number_of_regimes": result.get("n_regimes", "Unknown"),
+                        "regime_transitions": result.get("transition_matrix", "Unknown"),
+                        "regime_probabilities": result.get("regime_probs", "Unknown"),
+                        "convergence_status": result.get("converged", "Unknown"),
+                        "log_likelihood": result.get("log_likelihood", "Unknown")
+                    },
+                    "regime_quality": {
+                        "regime_separation": self._calculate_regime_separation(result),
+                        "regime_stability": self._calculate_regime_stability(result),
+                        "regime_duration": self._calculate_regime_duration(result)
+                    },
+                    "validation_metrics": {
+                        "aic_score": result.get("aic", "Unknown"),
+                        "bic_score": result.get("bic", "Unknown"),
+                        "model_complexity": result.get("n_parameters", "Unknown")
+                    }
+                }
+            else:
+                return {"error": "No HMM result available"}
+                
+        except Exception as e:
+            return {"error": f"Failed to analyze HMM regime metrics: {str(e)}"}
+    
+    # Helper methods for quality checks
+    def _check_price_consistency(self, df) -> Dict[str, Any]:
+        """Check price data consistency."""
+        try:
+            issues = []
+            if 'high' in df.columns and 'low' in df.columns:
+                invalid_high_low = (df['high'] < df['low']).sum()
+                if invalid_high_low > 0:
+                    issues.append(f"High < Low: {invalid_high_low} rows")
+            
+            if 'open' in df.columns and 'close' in df.columns:
+                zero_prices = ((df['open'] == 0) | (df['close'] == 0)).sum()
+                if zero_prices > 0:
+                    issues.append(f"Zero prices: {zero_prices} rows")
+            
+            return {
+                "has_issues": len(issues) > 0,
+                "issues": issues
+            }
+        except Exception:
+            return {"error": "Could not check price consistency"}
+    
+    def _check_volume_consistency(self, df) -> Dict[str, Any]:
+        """Check volume data consistency."""
+        try:
+            issues = []
+            if 'volume' in df.columns:
+                negative_volume = (df['volume'] < 0).sum()
+                if negative_volume > 0:
+                    issues.append(f"Negative volume: {negative_volume} rows")
+                
+                zero_volume = (df['volume'] == 0).sum()
+                if zero_volume > 0:
+                    issues.append(f"Zero volume: {zero_volume} rows")
+            
+            return {
+                "has_issues": len(issues) > 0,
+                "issues": issues
+            }
+        except Exception:
+            return {"error": "Could not check volume consistency"}
+    
+    def _check_timestamp_consistency(self, df) -> Dict[str, Any]:
+        """Check timestamp consistency."""
+        try:
+            issues = []
+            if hasattr(df.index, 'is_monotonic_increasing'):
+                if not df.index.is_monotonic_increasing:
+                    issues.append("Timestamps not in ascending order")
+            
+            if hasattr(df.index, 'duplicated'):
+                duplicates = df.index.duplicated().sum()
+                if duplicates > 0:
+                    issues.append(f"Duplicate timestamps: {duplicates}")
+            
+            return {
+                "has_issues": len(issues) > 0,
+                "issues": issues
+            }
+        except Exception:
+            return {"error": "Could not check timestamp consistency"}
+    
+    def _generate_data_collection_warnings(self, df) -> List[str]:
+        """Generate warnings for data collection."""
+        warnings = []
+        
+        try:
+            if df.isnull().any().any():
+                null_percentage = (df.isnull().sum() / len(df) * 100).max()
+                if null_percentage > 10:
+                    warnings.append(f"High null percentage: {null_percentage:.2f}%")
+            
+            if len(df) < 1000:
+                warnings.append(f"Low data volume: {len(df)} rows")
+            
+            if 'volume' in df.columns and (df['volume'] == 0).sum() > len(df) * 0.5:
+                warnings.append("High percentage of zero volume data")
+                
+        except Exception:
+            warnings.append("Could not generate data collection warnings")
+        
+        return warnings
+    
+    def _generate_data_converter_warnings(self, df) -> List[str]:
+        """Generate warnings for data converter."""
+        warnings = []
+        
+        try:
+            if not all(col in df.columns for col in ['open', 'high', 'low', 'close', 'volume']):
+                warnings.append("Missing required OHLCV columns")
+            
+            if df.isnull().any().any():
+                warnings.append("Data contains null values after conversion")
+                
+        except Exception:
+            warnings.append("Could not generate data converter warnings")
+        
+        return warnings
+    
+    def _generate_feature_engineering_warnings(self, df, high_correlation_pairs, vif_scores) -> List[str]:
+        """Generate warnings for feature engineering."""
+        warnings = []
+        
+        try:
+            if len(high_correlation_pairs) > 10:
+                warnings.append(f"High multicollinearity: {len(high_correlation_pairs)} highly correlated feature pairs")
+            
+            high_vif_features = [col for col, vif in vif_scores.items() if isinstance(vif, (int, float)) and vif > 10]
+            if high_vif_features:
+                warnings.append(f"High VIF features: {high_vif_features}")
+            
+            if df.isnull().any().any():
+                warnings.append("Features contain null values")
+                
+        except Exception:
+            warnings.append("Could not generate feature engineering warnings")
+        
+        return warnings
+    
+    # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
+    async def _get_regime_splitting_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_triple_barrier_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_hmm_training_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_analyst_enhancement_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_tactician_labeling_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_tactician_training_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_confidence_calibration_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_optimization_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_walk_forward_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_monte_carlo_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_ab_testing_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    async def _get_saving_metrics(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Metrics calculation not implemented yet"}
+    
+    # Helper methods for HMM analysis
+    def _calculate_regime_separation(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Not implemented yet"}
+    
+    def _calculate_regime_stability(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Not implemented yet"}
+    
+    def _calculate_regime_duration(self, result: Any) -> Dict[str, Any]:
+        return {"status": "Not implemented yet"}
 
 
 # Convenience function to create enhanced training manager

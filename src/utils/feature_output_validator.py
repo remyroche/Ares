@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import critical
 
 warnings.filterwarnings("ignore")
@@ -474,6 +475,7 @@ class FeatureOutputValidator:
         """Convert features to DataFrame for validation."""
         # Handle None input
         if features is None:
+        # Fallback implementation for features
             self.logger.warning(
                 "⚠️ [FEATURE OUTPUT VALIDATION] Features input is None",
             )
@@ -520,6 +522,8 @@ class FeatureOutputValidator:
                     feature_series = []
                     for name, value in features.items():
                         if value is None:
+        # Fallback implementation for value
+        # Fallback implementation for value
                             continue
                         if isinstance(value, np.ndarray):
                             # Convert numpy array to pandas Series
@@ -575,6 +579,8 @@ class FeatureOutputValidator:
                     feature_series = []
                     for name, value in features.items():
                         if value is None:
+        # Fallback implementation for value
+        # Fallback implementation for value
                             continue
                         if isinstance(value, pd.Series):
                             feature_series.append(value.rename(name))

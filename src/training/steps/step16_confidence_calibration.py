@@ -1,4 +1,4 @@
-# src/training/steps/step11_confidence_calibration.py
+# src/training/steps/step16_*.py
 
 import asyncio
 import contextlib
@@ -27,7 +27,16 @@ except Exception:  # pragma: no cover
 class ConfidenceCalibrationStep:
     """Step 11: Confidence Calibration for individual models and ensembles."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    
+
+    def _validate_environment(self) -> None:
+        """Validate environment dependencies and configuration."""
+        if not dependency_status["all_available"]:
+            missing_modules = dependency_status["missing_modules"]
+            self.logger.warning(f"Missing modules: {missing_modules}")
+            # Continue with available modules, using fallbacks where needed
+
+def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
 

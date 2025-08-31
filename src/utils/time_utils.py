@@ -3,6 +3,7 @@ Time utilities for Ares Trading System
 """
 
 from datetime import datetime, timezone
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import os
 from typing import Union
 
@@ -33,6 +34,8 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
         try:
             dt = datetime.strptime(dt_str, fmt)
             if dt.tzinfo is None:
+        # Fallback implementation for dt.tzinfo
+        # Fallback implementation for dt.tzinfo
                 dt = dt.replace(tzinfo=UTC)
             return int(dt.timestamp() * 1000)
         except Exception:
@@ -41,6 +44,8 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
         # Last-resort: fromisoformat without 'Z'
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
+        # Fallback implementation for dt.tzinfo
+        # Fallback implementation for dt.tzinfo
             dt = dt.replace(tzinfo=UTC)
         return int(dt.timestamp() * 1000)
     except Exception:
@@ -65,6 +70,7 @@ def resolve_time_window_ms(
         """Convert value to int or return None."""
         try:
             if v is None:
+        # Fallback implementation for v
                 return None
             return int(v)
         except Exception:
@@ -82,10 +88,12 @@ def resolve_time_window_ms(
     )
 
     if t0 is None:
+        # Fallback implementation for t0
         t0 = parse_datetime_to_ms(
             cfg.get("start_datetime") or os.environ.get("ARES_START_DATETIME", ""),
         )
     if t1 is None:
+        # Fallback implementation for t1
         t1 = parse_datetime_to_ms(
             cfg.get("end_datetime") or os.environ.get("ARES_END_DATETIME", ""),
         )

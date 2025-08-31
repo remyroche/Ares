@@ -6,6 +6,7 @@ that optimizes memory usage and computational efficiency.
 """
 
 import asyncio
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -275,6 +276,7 @@ class IntelligentFeatureCache:
             metadata: Optional metadata
         """
         if metadata is None:
+        # Fallback implementation for metadata
             metadata = {}
 
         # Add metadata
@@ -382,6 +384,7 @@ def get_feature_cache() -> IntelligentFeatureCache:
     """
     global _feature_cache
     if _feature_cache is None:
+        # Fallback implementation for _feature_cache
         _feature_cache = IntelligentFeatureCache()
     return _feature_cache
 

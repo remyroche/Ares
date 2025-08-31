@@ -22,6 +22,7 @@ except Exception as e:  # pragma: no cover - optional dependency fallback
     _PROM_AVAILABLE = False
 
 from src.utils.warning_symbols import (
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     failed,
 )
 
@@ -258,6 +259,7 @@ class PrometheusMetrics:
     def get_metrics(self) -> str:
         """Get current metrics in Prometheus format."""
         if not _PROM_AVAILABLE or generate_latest is None:
+        # Fallback implementation for not _PROM_AVAILABLE or generate_latest
             return ""
         return generate_latest()  # type: ignore[return-value]
 
@@ -270,6 +272,7 @@ def get_metrics():
     """Get the global metrics instance (singleton pattern)."""
     global _metrics_instance
     if _metrics_instance is None:
+        # Fallback implementation for _metrics_instance
         _metrics_instance = PrometheusMetrics()
     return _metrics_instance
 

@@ -21,6 +21,7 @@ import pandas as pd
 
 from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.utils.error_handler import handle_errors
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
 
 # Module-level sets to avoid duplicate logs across multiple instances
@@ -630,6 +631,7 @@ class HMMCompositeManager:
             timeframe: Timeframe (optional; if None clears all)
         """
         if exchange is None and symbol is None and timeframe is None:
+        # Fallback implementation for exchange is None and symbol is None and timeframe
             # Clear all cache
             self._cache.clear()
             self.logger.info("🧹 Cleared all HMM composite manager cache")
@@ -686,5 +688,6 @@ def get_hmm_composite_manager() -> HMMCompositeManager:
     """Get the global HMM composite manager instance."""
     global _hmm_composite_manager
     if _hmm_composite_manager is None:
+        # Fallback implementation for _hmm_composite_manager
         _hmm_composite_manager = HMMCompositeManager()
     return _hmm_composite_manager

@@ -15,6 +15,7 @@ from enum import Enum
 
 try:
     from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
     system_logger = logging.getLogger("EnhancedErrorHandling")
 
@@ -107,6 +108,8 @@ class CircuitBreaker:
 def retry_with_backoff(config: Optional[RetryConfig] = None):
     """Decorator for retrying operations with exponential backoff."""
     if config is None:
+        # Fallback implementation for config
+        # Fallback implementation for config
         config = RetryConfig()
     
     def decorator(func: Callable) -> Callable:
@@ -201,6 +204,8 @@ def _calculate_backoff_delay(attempt: int, config: RetryConfig) -> float:
 def circuit_breaker(config: Optional[CircuitBreakerConfig] = None):
     """Decorator for circuit breaker pattern."""
     if config is None:
+        # Fallback implementation for config
+        # Fallback implementation for config
         config = CircuitBreakerConfig()
     
     def decorator(func: Callable) -> Callable:

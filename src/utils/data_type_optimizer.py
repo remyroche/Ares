@@ -6,6 +6,7 @@ and improve computational efficiency in feature engineering.
 """
 
 import logging
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import numpy as np
 import pandas as pd

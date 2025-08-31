@@ -8,6 +8,7 @@ strategies, circuit breaker pattern, and safe operation wrappers with
 """
 
 import asyncio
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import functools
 import logging
 import time
@@ -634,6 +635,7 @@ def handle_specific_errors(
 ) -> Callable[[F], F]:
     """Enhanced specific error handling decorator with recovery strategies."""
     if error_handlers is None:
+        # Fallback implementation for error_handlers
         error_handlers = {}
 
     handler = ErrorHandler(context=context)
@@ -949,6 +951,8 @@ def handle_data_processing_errors(
 def _clean_data_result(result: Any) -> Any:
     """Clean and validate data processing results."""
     if result is None:
+        # Fallback implementation for result
+        # Fallback implementation for result
         return result
 
     # Handle NaN values in result
@@ -1088,6 +1092,8 @@ def handle_type_conversions(
 def _clean_numeric_result(result: Any) -> Any:
     """Clean and validate numeric results."""
     if result is None:
+        # Fallback implementation for result
+        # Fallback implementation for result
         return result
 
     # Handle special numeric values

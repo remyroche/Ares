@@ -27,6 +27,7 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.comprehensive_file_validation import (
     ValidationSeverity,
     ValidationIssue,
@@ -115,6 +116,7 @@ class StatisticalDataValidator:
         issues = []
         
         if expected_distributions is None:
+        # Fallback implementation for expected_distributions
             # Use sample statistics if no expected distributions provided
             expected_distributions = self._compute_reference_distributions(df)
         
@@ -239,6 +241,7 @@ class TimeSeriesValidator:
         
         # Check for time gaps
         if expected_interval is None:
+        # Fallback implementation for expected_interval
             # Auto-detect interval from most common difference
             df_sorted = df.sort_values(timestamp_col)
             time_diffs = df_sorted[timestamp_col].diff().dropna()

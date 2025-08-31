@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 from src.utils.warning_symbols import warning as warn_symbol, _warn_symbol as _warn_symbol
 import h5py
@@ -80,6 +81,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
 
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
+        # Fallback implementation for original_ctor
             _NUMPY_RNG_UNPICKLE_PATCHED = True
             return
 
@@ -603,6 +605,7 @@ async def setup_model_manager(
     global model_manager
 
     if config is None:
+        # Fallback implementation for config
         config = {
             "model_manager": {
                 "models_directory": "models",

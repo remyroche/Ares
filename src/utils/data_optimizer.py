@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, initialization_error, missing
@@ -453,6 +454,7 @@ async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
     global data_optimizer
 
     if data_optimizer is None:
+        # Fallback implementation for data_optimizer
         data_optimizer = DataOptimizer(config)
         await data_optimizer.initialize()
 

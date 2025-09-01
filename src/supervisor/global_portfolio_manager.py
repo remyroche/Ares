@@ -107,11 +107,8 @@ default_return=None, context="portfolio configuration loading",
 )
 async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Set default portfolio parameters
+        try:
+            # Set default portfolio parameters
 self.portfolio_config.setdefault("management_interval", 3600)
 self.portfolio_config.setdefault("max_management_history", 100)
 self.portfolio_config.setdefault("enable_portfolio_allocation", True)
@@ -153,11 +150,8 @@ Validate global portfolio manager configuration.
 Returns:
             bool: True if configuration is valid, False otherwise
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Validate management interval
+        try:
+            # Validate management interval
 if self.management_interval <= 0:
                 self.print(invalid("Invalid management interval"))
 return False
@@ -193,11 +187,8 @@ default_return=None, context="portfolio modules initialization",
 )
 async def _initialize_portfolio_modules(self) -> None:
         """Initialize global portfolio manager modules."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Initialize portfolio allocation module
+        try:
+            # Initialize portfolio allocation module
 if self.enable_portfolio_allocation:
                 await self._initialize_portfolio_allocation()
 

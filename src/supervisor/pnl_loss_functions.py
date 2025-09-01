@@ -206,11 +206,8 @@ Validate PnL loss functions configuration.
 Returns:
             bool: True if configuration is valid, False otherwise
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Validate calculation interval
+        try:
+            # Validate calculation interval
 if self.calculation_interval <= 0:
                 self.logger.error("Invalid calculation interval")
 return False
@@ -247,11 +244,8 @@ context="PnL modules initialization",
 )
 async def _initialize_pnl_modules(self) -> None:
         """Initialize PnL loss functions modules."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Initialize PnL calculation module
+        try:
+            # Initialize PnL calculation module
 if self.enable_pnl_calculation:
                 await self._initialize_pnl_calculation()
 
@@ -283,11 +277,8 @@ context="PnL calculation initialization",
 )
 async def _initialize_pnl_calculation(self) -> None:
         """Initialize PnL calculation components."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.pnl_calculation_components = {
+        try:
+            self.pnl_calculation_components = {
 "realized_pnl": True,
 "unrealized_pnl": True,
 "total_pnl": True,
@@ -414,11 +405,8 @@ Args:
 Returns:
             bool: True if successful, False otherwise
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Executing PnL Loss Functions Calculation...")
+        try:
+            self.logger.info("Executing PnL Loss Functions Calculation...")
 
 # Validate calculation inputs
 if not self._validate_calculation_inputs(calculation_input):
@@ -479,11 +467,8 @@ Args:
 Returns:
             bool: True if valid, False otherwise
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not isinstance(calculation_input, dict):
+        try:
+            if not isinstance(calculation_input, dict):
                 self.logger.error("Calculation input must be a dictionary")
 return False
 
@@ -508,12 +493,9 @@ context="PnL calculation",
 async def _perform_pnl_calculation(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform PnL-based calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-results = {}
+                """Perform PnL-based calculation."""
+        try:
+            results = {}
 
 # Realized PnL
 if self.pnl_calculation_components.get("realized_pnl", False):
@@ -549,12 +531,9 @@ context="loss calculation",
 async def _perform_loss_calculation(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform loss-based calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-results = {}
+                """Perform loss-based calculation."""
+        try:
+            results = {}
 
 # Maximum drawdown
 if self.loss_calculation_components.get("maximum_drawdown", False):
@@ -594,12 +573,9 @@ context="risk metrics",
 async def _perform_risk_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform risk metrics calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-results = {}
+                """Perform risk metrics calculation."""
+        try:
+            results = {}
 
 # VaR 95%
 if self.risk_metrics_components.get("var_95", False):

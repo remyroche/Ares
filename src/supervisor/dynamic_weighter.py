@@ -589,12 +589,39 @@ return {}
 def _perform_sharpe_based_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform Sharpe based weighting."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate Sharpe based weighting
+                """Perform Sharpe based weighting."""
+        try:
+            # Calculate Sharpe ratio based weights
+            returns = weighting_input.get("returns", {})
+            volatilities = weighting_input.get("volatilities", {})
+            risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
+            
+            if not returns or not volatilities:
+                return {"error": "Missing returns or volatility data"}
+            
+            # Calculate Sharpe ratios
+            sharpe_ratios = {}
+            for asset in returns:
+                if asset in volatilities and volatilities[asset] > 0:
+                    excess_return = returns[asset] - risk_free_rate
+                    sharpe_ratios[asset] = excess_return / volatilities[asset]
+                else:
+                    sharpe_ratios[asset] = 0
+            
+            # Calculate weights
+            total_sharpe = sum(sharpe_ratios.values())
+            if total_sharpe == 0:
+                return {"error": "Zero total Sharpe ratio"}
+            
+            weights = {}
+            for asset, ratio in sharpe_ratios.items():
+                weights[asset] = ratio / total_sharpe if total_sharpe > 0 else 1.0 / len(sharpe_ratios)
+            
+            return {
+                "sharpe_based_weighting_completed": True,
+                "weights": weights,
+                "sharpe_ratios": sharpe_ratios
+            }
 return {
 "sharpe_based_weighting_completed": True,
 "weighting_method": "sharpe_based",
@@ -609,12 +636,39 @@ return {}
 def _perform_sortino_based_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform Sortino based weighting."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate Sortino based weighting
+                """Perform Sortino based weighting."""
+        try:
+            # Calculate Sortino ratio based weights
+            returns = weighting_input.get("returns", {})
+            downside_deviations = weighting_input.get("downside_deviations", {})
+            risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
+            
+            if not returns or not downside_deviations:
+                return {"error": "Missing returns or downside deviation data"}
+            
+            # Calculate Sortino ratios
+            sortino_ratios = {}
+            for asset in returns:
+                if asset in downside_deviations and downside_deviations[asset] > 0:
+                    excess_return = returns[asset] - risk_free_rate
+                    sortino_ratios[asset] = excess_return / downside_deviations[asset]
+                else:
+                    sortino_ratios[asset] = 0
+            
+            # Calculate weights
+            total_sortino = sum(sortino_ratios.values())
+            if total_sortino == 0:
+                return {"error": "Zero total Sortino ratio"}
+            
+            weights = {}
+            for asset, ratio in sortino_ratios.items():
+                weights[asset] = ratio / total_sortino if total_sortino > 0 else 1.0 / len(sortino_ratios)
+            
+            return {
+                "sortino_based_weighting_completed": True,
+                "weights": weights,
+                "sortino_ratios": sortino_ratios
+            }
 return {
 "sortino_based_weighting_completed": True,
 "weighting_method": "sortino_based",
@@ -778,12 +832,41 @@ return {}
 def _perform_drawdown_based_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform drawdown based weighting."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate drawdown based weighting
+                """Perform drawdown based weighting."""
+        try:
+            # Calculate drawdown-based weights
+            max_drawdowns = weighting_input.get("max_drawdowns", {})
+            
+            if not max_drawdowns:
+                return {"error": "No drawdown data provided"}
+            
+            # Calculate inverse drawdown weights (lower drawdown = higher weight)
+            weights = {}
+            total_inverse_dd = 0
+            
+            for asset, drawdown in max_drawdowns.items():
+                if drawdown > 0:
+                    inverse_dd = 1 / drawdown
+                    weights[asset] = inverse_dd
+                    total_inverse_dd += inverse_dd
+                else:
+                    weights[asset] = 0
+            
+            # Normalize weights
+            if total_inverse_dd > 0:
+                for asset in weights:
+                    weights[asset] /= total_inverse_dd
+            else:
+                # Equal weights if no valid drawdown data
+                num_assets = len(max_drawdowns)
+                for asset in weights:
+                    weights[asset] = 1.0 / num_assets
+            
+            return {
+                "drawdown_based_weighting_completed": True,
+                "weights": weights,
+                "max_drawdowns": max_drawdowns
+            }
 return {
 "drawdown_based_weighting_completed": True,
 "weighting_method": "drawdown_based",
@@ -798,12 +881,48 @@ return {}
 def _perform_correlation_based_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform correlation based weighting."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate correlation based weighting
+                """Perform correlation based weighting."""
+        try:
+            # Calculate correlation-based weights
+            correlation_matrix = weighting_input.get("correlation_matrix", {})
+            
+            if not correlation_matrix:
+                return {"error": "No correlation matrix provided"}
+            
+            # Calculate diversification weights (lower correlation = higher weight)
+            weights = {}
+            total_diversification = 0
+            
+            for asset, correlations in correlation_matrix.items():
+                if isinstance(correlations, dict):
+                    # Calculate average correlation with other assets
+                    other_correlations = [corr for other_asset, corr in correlations.items() if other_asset != asset]
+                    if other_correlations:
+                        avg_correlation = sum(other_correlations) / len(other_correlations)
+                        # Lower correlation = higher diversification = higher weight
+                        diversification_score = 1 - abs(avg_correlation)
+                        weights[asset] = diversification_score
+                        total_diversification += diversification_score
+                    else:
+                        weights[asset] = 0
+                else:
+                    weights[asset] = 0
+            
+            # Normalize weights
+            if total_diversification > 0:
+                for asset in weights:
+                    weights[asset] /= total_diversification
+            else:
+                # Equal weights if no valid correlation data
+                num_assets = len(correlation_matrix)
+                for asset in weights:
+                    weights[asset] = 1.0 / num_assets
+            
+            return {
+                "correlation_based_weighting_completed": True,
+                "weights": weights,
+                "correlation_matrix": correlation_matrix
+            }
 return {
 "correlation_based_weighting_completed": True,
 "weighting_method": "correlation_based",
@@ -820,12 +939,49 @@ return {}
 def _perform_market_regime_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform market regime weighting."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate market regime weighting
+                """Perform market regime weighting."""
+        try:
+            # Calculate market regime-based weights
+            market_data = weighting_input.get("market_data", {})
+            current_regime = weighting_input.get("current_regime", "neutral")
+            
+            if not market_data:
+                return {"error": "No market data provided"}
+            
+            # Define regime-specific weight adjustments
+            regime_adjustments = {
+                "bull_market": 1.2,  # Increase weights in bull market
+                "bear_market": 0.8,  # Decrease weights in bear market
+                "sideways_market": 1.0,  # No adjustment
+                "volatile_market": 0.9,  # Slight decrease in volatile market
+                "neutral": 1.0  # Default
+            }
+            
+            # Get base weights (could be from other weighting methods)
+            base_weights = weighting_input.get("base_weights", {})
+            if not base_weights:
+                # Use equal weights if no base weights provided
+                assets = list(market_data.keys())
+                base_weights = {asset: 1.0 / len(assets) for asset in assets}
+            
+            # Apply regime adjustment
+            adjustment = regime_adjustments.get(current_regime, 1.0)
+            weights = {}
+            for asset, base_weight in base_weights.items():
+                weights[asset] = base_weight * adjustment
+            
+            # Normalize weights
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                for asset in weights:
+                    weights[asset] /= total_weight
+            
+            return {
+                "market_regime_weighting_completed": True,
+                "weights": weights,
+                "regime": current_regime,
+                "adjustment_factor": adjustment
+            }
 return {
 "market_regime_weighting_completed": True,
 "weighting_method": "market_regime",
@@ -840,12 +996,55 @@ return {}
 def _perform_regime_detection(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform regime detection."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate regime detection
+                """Perform regime detection."""
+        try:
+            # Detect market regime based on market data
+            market_data = weighting_input.get("market_data", {})
+            
+            if not market_data:
+                return {"error": "No market data provided"}
+            
+            # Extract key metrics for regime detection
+            returns = market_data.get("returns", [])
+            volatilities = market_data.get("volatilities", [])
+            
+            if not returns or not volatilities:
+                return {"error": "Missing returns or volatility data"}
+            
+            # Calculate regime indicators
+            avg_return = sum(returns) / len(returns) if returns else 0
+            avg_volatility = sum(volatilities) / len(volatilities) if volatilities else 0
+            
+            # Simple regime detection logic
+            if avg_return > 0.02 and avg_volatility < 0.15:  # High return, low volatility
+                regime = "bull_market"
+                probability = 0.8
+                confidence = 0.85
+            elif avg_return < -0.02 and avg_volatility > 0.20:  # Low return, high volatility
+                regime = "bear_market"
+                probability = 0.7
+                confidence = 0.80
+            elif avg_volatility > 0.25:  # High volatility
+                regime = "volatile_market"
+                probability = 0.6
+                confidence = 0.75
+            elif abs(avg_return) < 0.01:  # Low return
+                regime = "sideways_market"
+                probability = 0.5
+                confidence = 0.70
+            else:
+                regime = "neutral"
+                probability = 0.4
+                confidence = 0.65
+            
+            return {
+                "regime_detection_completed": True,
+                "detected_regime": regime,
+                "regime_probability": probability,
+                "regime_confidence": confidence,
+                "avg_return": avg_return,
+                "avg_volatility": avg_volatility
+            }
 return {
 "regime_detection_completed": True,
 "detected_regime": "bull_market",

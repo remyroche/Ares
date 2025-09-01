@@ -138,9 +138,6 @@ def get_model_performances(self) -> dict[str , list[float]]:
 return {k: v.copy() for k, v in self.model_performances.items()}
 
 class Supervisor:
-    pass  # TODO: Add implementation
-class Supervisor:
-class Supervisor:
     """
 System-Level Supervisor component responsible for:
     - System Health Monitoring: Monitor all component health and performance

@@ -42,9 +42,7 @@ python ares_launcher.py step5 --symbol ETHUSDT --exchange BINANCE --training-mod
 echo "⚙️ Step 6: Feature Engineering"
 python ares_launcher.py step6 --symbol ETHUSDT --exchange BINANCE --training-mode blank
 
-# Step 6.5: Unified Regime Intelligence
-echo "🔗 Step 6.5: Unified Regime Intelligence"
-python ares_launcher.py step6_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+# Step 6.5 removed - Unified Regime Intelligence is now Step 10
 
 # Step 7: Enhanced Matrix Operations
 echo "🔢 Step 7: Enhanced Matrix Operations"
@@ -127,3 +125,4 @@ echo "   • Steps 1-15 use 'blank' training mode (180 days, faster)"
 echo "   • Steps 16-21 use 'full' training mode (730 days, comprehensive)"
 echo "   • Each step includes automatic validation of previous steps"
 echo "   • Use --force flag to restart from a specific step"
+echo "   • Step 6.5 removed - Unified Regime Intelligence is now Step 10"

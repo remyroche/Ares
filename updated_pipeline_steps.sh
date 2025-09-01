@@ -42,9 +42,7 @@ python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step5_r
 echo "⚙️ Step 6: Feature Engineering"
 python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step6_feature_engineering --force-rerun
 
-# Step 6.5: Unified Regime Intelligence
-echo "🔗 Step 6.5: Unified Regime Intelligence"
-python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step6_5_unified_regime_intelligence --force-rerun
+# Step 6.5 removed - Unified Regime Intelligence is now Step 10
 
 # Step 7: Enhanced Matrix Operations
 echo "🔢 Step 7: Enhanced Matrix Operations"
@@ -114,10 +112,12 @@ echo "✅ All 21 steps completed!"
 echo ""
 echo "🎉 Pipeline Summary:"
 echo "   • Data Collection & Processing: Steps 1-2.5"
-echo "   • Regime Discovery & Labeling: Steps 3-5"
+echo "   • Regime Discovery & Labeling: Steps 3-5"  
 echo "   • Feature Engineering: Steps 6-7"
 echo "   • Training & Intelligence: Steps 8-10"
 echo "   • Analyst Development: Steps 11-13"
 echo "   • Tactician Training: Steps 14-15"
 echo "   • Validation & Testing: Steps 16-20"
 echo "   • Final Output: Step 21"
+echo ""
+echo "📝 Note: Step 6.5 removed - Unified Regime Intelligence is now Step 10"

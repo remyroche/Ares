@@ -1659,7 +1659,6 @@ class AresLauncher:
             "step4_processing_labeling",       # Step 4: Processing & Labeling (Triple Barrier)
             "step5_regime_data_splitting",     # Step 5: Regime Data Splitting
             "step6_feature_engineering",       # Step 6: Feature Engineering
-            "step6_5_unified_regime_intelligence", # Step 6.5: Unified Regime Intelligence
             "step7_enhanced_matrix_operations", # Step 7: Enhanced Matrix Operations
             "step8_regime_data_splitting",     # Step 8: Regime Data Splitting (final)
             "step9_hmm_based_training",        # Step 9: HMM-Based Training
@@ -2237,7 +2236,7 @@ Examples:
             "resume",
             "modes",  # Show available training modes
             # New step-based commands
-            "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step6_5", "step7", "step8",
+            "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
             "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
             "step18", "step19", "step20", "step21",
         ],
@@ -2380,7 +2379,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "load",
         "precompute",
         # Step-based commands
-        "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step6_5", "step7", "step8",
+        "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
         "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
         "step18", "step19", "step20", "step21",
     ]
@@ -2533,16 +2532,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step6_5": lambda: asyncio.run(
-            launcher.run_step_based_training_with_validation(
-                args.symbol,
-                args.exchange,
-                start_step="step6_5_unified_regime_intelligence",
-                training_mode=args.training_mode,
-                force_rerun=force_flag,
-                with_gui=args.gui,
-            ),
-        ),
+
         "step7": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,

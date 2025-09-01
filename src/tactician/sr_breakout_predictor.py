@@ -381,164 +381,159 @@ async def _load_optimized_parameters(self) -> None:
         except Exception as e:
             self.logger.error(f"Failed to load optimized parameters: {e}")
 
-async def _apply_optimized_parameters(self) -> None:
+    async def _apply_optimized_parameters(self) -> None:
         """Apply optimized parameters to the S/R predictor."""
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-if not self.optimized_params:
+        try:
+            if not self.optimized_params:
                 return
 
-# Apply method weights
-method_weights = self.optimized_params.get("method_weights", {})
-if method_weights:
+            # Apply method weights
+            method_weights = self.optimized_params.get("method_weights", {})
+            if method_weights:
                 self.model_weights.update(method_weights)
-self.logger.info(f"Applied optimized method weights: {method_weights}")
-
-# Apply strength weights
-strength_weights = self.optimized_params.get("strength_weights", {})
-if strength_weights:
+                self.logger.info(f"Applied optimized method weights: {method_weights}")
+            
+            # Apply other optimized parameters
+            if "sr_detection_method" in self.optimized_params:
+                self.sr_detection_method = self.optimized_params["sr_detection_method"]
+            
+            if "min_sr_strength" in self.optimized_params:
+                self.min_sr_strength = self.optimized_params["min_sr_strength"]
+                
+            if "breakout_confidence_threshold" in self.optimized_params:
+                self.breakout_confidence_threshold = self.optimized_params["breakout_confidence_threshold"]
+                
+            # Apply strength weights
+            strength_weights = self.optimized_params.get("strength_weights", {})
+            if strength_weights:
                 self.strength_score_weights.update(strength_weights)
-self.logger.info(f"Applied optimized strength weights: {strength_weights}")
+                self.logger.info(f"Applied optimized strength weights: {strength_weights}")
 
-# Apply DBSCAN parameters
-dbscan_params = self.optimized_params.get("dbscan_params", {})
-if dbscan_params:
+            # Apply DBSCAN parameters
+            dbscan_params = self.optimized_params.get("dbscan_params", {})
+            if dbscan_params:
                 if "eps" in dbscan_params:
                     self.dbscan_eps = dbscan_params["eps"]
-if "min_samples" in dbscan_params:
+                if "min_samples" in dbscan_params:
                     self.dbscan_min_samples = dbscan_params["min_samples"]
-self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
+                self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
 
-# Apply advanced parameters
-advanced_params = self.optimized_params.get("advanced_params", {})
-if advanced_params:
+            # Apply advanced parameters
+            advanced_params = self.optimized_params.get("advanced_params", {})
+            if advanced_params:
                 # Apply Fibonacci parameters
-if "fibonacci_sensitivity" in advanced_params:
+                if "fibonacci_sensitivity" in advanced_params:
                     self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
-self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
+                    self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
 
-# Apply Elliott Wave parameters
-if "elliott_confidence_threshold" in advanced_params:
+                # Apply Elliott Wave parameters
+                if "elliott_confidence_threshold" in advanced_params:
                     self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
-self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
+                    self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
 
-# Apply Order Flow parameters
-if "order_flow_hvn_threshold" in advanced_params:
+                # Apply Order Flow parameters
+                if "order_flow_hvn_threshold" in advanced_params:
                     self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
-self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
+                    self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
 
-self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
+                self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
 
-# Apply timeframe weights
-timeframe_weights = self.optimized_params.get("timeframe_weights", {})
-if timeframe_weights:
+            # Apply timeframe weights
+            timeframe_weights = self.optimized_params.get("timeframe_weights", {})
+            if timeframe_weights:
                 self.timeframe_weights = timeframe_weights
-self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
+                self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
 
-except Exception as e:
+            self.logger.info("✅ Successfully applied optimized parameters")
+            
+        except Exception as e:
             self.logger.error(f"Failed to apply optimized parameters: {e}")
+            raise
 
-async def set_optimized_parameters(self, optimized_params: dict[str, Any]) -> None:
+    async def set_optimized_parameters(self, optimized_params: dict[str, Any]) -> None:
         """Set optimized parameters directly."""
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-self.optimized_params = optimized_params
-await self._apply_optimized_parameters()
-self.logger.info("✅ Set optimized parameters directly")
-except Exception as e:
+        try:
+            self.optimized_params = optimized_params
+            await self._apply_optimized_parameters()
+            self.logger.info("✅ Set optimized parameters directly")
+        except Exception as e:
             self.logger.error(f"Failed to set optimized parameters: {e}")
+            raise
 
-def get_current_parameters(self) -> dict[str, Any]:
+    def get_current_parameters(self) -> dict[str, Any]:
         """Get current parameters for comparison."""
-return {
-"method_weights": self.model_weights,
-"strength_weights": self.strength_score_weights,
-"dbscan_params": {
-"eps": self.dbscan_eps,
-"min_samples": self.dbscan_min_samples,
-},
-"advanced_params": {
-"fibonacci_sensitivity": self.fibonacci_sensitivity,
-"elliott_confidence_threshold": self.elliott_confidence_threshold,
-"order_flow_hvn_threshold": self.order_flow_hvn_threshold,
-},
-"timeframe_weights": self.timeframe_weights,
-}
+        return {
+            "method_weights": self.model_weights,
+            "strength_weights": self.strength_score_weights,
+            "dbscan_params": {
+                "eps": self.dbscan_eps,
+                "min_samples": self.dbscan_min_samples,
+            },
+            "advanced_params": {
+                "fibonacci_sensitivity": self.fibonacci_sensitivity,
+                "elliott_confidence_threshold": self.elliott_confidence_threshold,
+                "order_flow_hvn_threshold": self.order_flow_hvn_threshold,
+            },
+            "timeframe_weights": self.timeframe_weights,
+        }
 
-def _initialize_reporting_system(self) -> None:
+    def _initialize_reporting_system(self) -> None:
         """Initialize the reporting system."""
-try:
+        try:
+            import os
+            from pathlib import Path
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-import os
-from pathlib import Path
+            # Create report directory if it doesn't exist
+            report_path = Path(self.report_directory)
+            report_path.mkdir(parents=True, exist_ok=True)
 
-# Create report directory if it doesn't exist
-report_path = Path(self.report_directory)
-report_path.mkdir(parents=True, exist_ok=True)
+            # Create subdirectories for different report types
+            (report_path / "json").mkdir(exist_ok=True)
+            (report_path / "csv").mkdir(exist_ok=True)
+            (report_path / "html").mkdir(exist_ok=True)
+            (report_path / "metrics").mkdir(exist_ok=True)
 
-# Create subdirectories for different report types
-(report_path / "json").mkdir(exist_ok=True)
-(report_path / "csv").mkdir(exist_ok=True)
-(report_path / "html").mkdir(exist_ok=True)
-(report_path / "metrics").mkdir(exist_ok=True)
-
-self.logger.info(f"📊 Reporting system initialized: {report_path}")
-
-except Exception as e:
+            self.logger.info(f"📊 Reporting system initialized: {report_path}")
+            
+        except Exception as e:
             self.logger.error(f"Failed to initialize reporting system: {e}")
+            raise
 
-def _generate_report_id(self) -> str:
+    def _generate_report_id(self) -> str:
         """Generate a unique report ID."""
-from datetime import datetime
-import uuid
+        from datetime import datetime
+        import uuid
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-unique_id = str(uuid.uuid4())[:8]
-return f"sr_report_{timestamp}_{unique_id}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        return f"sr_report_{timestamp}_{unique_id}"
 
-def _calculate_comprehensive_metrics(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
+    def _calculate_comprehensive_metrics(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Calculate comprehensive metrics for reporting."""
-try:
+        try:
+            current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
-
-# Basic market metrics
-market_metrics = {
-"data_points": len(market_data),
-"price_range": {
-"min": float(market_data["low"].min()),
-"max": float(market_data["high"].max()),
-"current": float(current_price),
-"volatility": float(market_data["close"].pct_change().std()),
-},
-"volume_metrics": {
-"total_volume": float(market_data["volume"].sum()),
-"avg_volume": float(market_data["volume"].mean()),
-"volume_std": float(market_data["volume"].std()),
-"volume_trend": float(market_data["volume"].iloc[-10:].mean() / market_data["volume"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
-},
-"price_metrics": {
-"price_change_1h": float(market_data["close"].pct_change().iloc[-1]),
-"price_change_24h": float(market_data["close"].pct_change(24).iloc[-1]) if len(market_data) >= 24 else 0.0,
-"price_trend": float(market_data["close"].iloc[-10:].mean() / market_data["close"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
-}
-}
+            # Basic market metrics
+            market_metrics = {
+                "data_points": len(market_data),
+                "price_range": {
+                    "min": float(market_data["low"].min()),
+                    "max": float(market_data["high"].max()),
+                    "current": float(current_price),
+                    "volatility": float(market_data["close"].pct_change().std()),
+                },
+                "volume_metrics": {
+                    "total_volume": float(market_data["volume"].sum()),
+                    "avg_volume": float(market_data["volume"].mean()),
+                    "volume_std": float(market_data["volume"].std()),
+                    "volume_trend": float(market_data["volume"].iloc[-10:].mean() / market_data["volume"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
+                },
+                "price_metrics": {
+                    "price_change_1h": float(market_data["close"].pct_change().iloc[-1]),
+                    "price_change_24h": float(market_data["close"].pct_change(24).iloc[-1]) if len(market_data) >= 24 else 0.0,
+                    "price_trend": float(market_data["close"].iloc[-10:].mean() / market_data["close"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
+                }
+            }
 
 # S/R level metrics
 support_levels = sr_context.get("support_levels", [])

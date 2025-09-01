@@ -36,16 +36,16 @@ class SurrogateTrainingIntegration:
     async def initialize(self) -> bool:
         """Initialize the integration components."""
         self.logger.info("🚀 Initializing Surrogate Training Integration")
-        
+
         # Initialize training manager
         training_config = {
             "enable_enhanced_matrix_operations": True,
             "enable_step_2_5_enhancement": True,
             "enable_step_5_5_enhancement": True,
         }
-        
+
         self.training_manager = EnhancedTrainingManager(training_config)
-        
+
         # Initialize surrogate optimizer
         surrogate_config = ComputationalOptimizationConfig(
             enable_surrogate_models=True,
@@ -55,9 +55,9 @@ class SurrogateTrainingIntegration:
             expensive_evaluation_ratio=0.3,
             enable_surrogate_models_multi=True
         )
-        
+
         self.surrogate_optimizer = SurrogateOptimizer(surrogate_config)
-        
+
         self.logger.info("✅ Surrogate Training Integration initialized")
         return True
 
@@ -70,29 +70,29 @@ class SurrogateTrainingIntegration:
     ) -> Dict[str, Any]:
         """
         Optimize training hyperparameters using surrogate optimization.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Timeframe for data
             n_trials: Number of optimization trials
-            
+
         Returns:
             Optimization results with best hyperparameters
         """
         self.logger.info(f"🎯 Starting hyperparameter optimization for {symbol}")
-        
+
         # Define hyperparameter space
         parameter_space = self._create_training_hyperparameter_space()
-        
+
         # Define constraints
         constraints = self._create_training_constraints()
-        
+
         # Create objective function
         objective_function = self._create_training_objective_function(
             symbol, exchange, timeframe
         )
-        
+
         # Run surrogate optimization
         result = self.surrogate_optimizer.optimize_with_surrogates(
             objective_func=objective_function,
@@ -100,11 +100,11 @@ class SurrogateTrainingIntegration:
             parameter_space=parameter_space,
             constraints=constraints
         )
-        
+
         self.logger.info(f"✅ Hyperparameter optimization completed")
         self.logger.info(f"📊 Best score: {result.get('best_score', 0):.4f}")
         self.logger.info(f"🎯 Best parameters: {result.get('best_params', {})}")
-        
+
         return result
 
     def _create_training_hyperparameter_space(self) -> Dict[str, Any]:
@@ -136,7 +136,7 @@ class SurrogateTrainingIntegration:
                 'min': 1,
                 'max': 10
             },
-            
+
             # Feature engineering parameters
             'feature_selection_threshold': {
                 'type': 'float',
@@ -153,7 +153,7 @@ class SurrogateTrainingIntegration:
                 'min': 1.0,
                 'max': 10.0
             },
-            
+
             # Data processing parameters
             'lookback_window': {
                 'type': 'int',
@@ -165,7 +165,7 @@ class SurrogateTrainingIntegration:
                 'min': 0.1,
                 'max': 0.3
             },
-            
+
             # Training parameters
             'batch_size': {
                 'type': 'int',
@@ -195,23 +195,23 @@ class SurrogateTrainingIntegration:
         timeframe: str
     ):
         """Create objective function for training optimization."""
-        
+
         async def training_objective(params: Dict[str, Any]) -> float:
             """
             Objective function that runs training with given hyperparameters.
-            
+
             Args:
                 params: Hyperparameters to test
-                
+
             Returns:
                 Training performance score
             """
             try:
                 self.logger.info(f"🔬 Testing hyperparameters: {params}")
-                
+
                 # Update training configuration with hyperparameters
                 training_config = self._create_training_config_with_params(params)
-                
+
                 # Create training input
                 training_input = {
                     "symbol": symbol,
@@ -222,34 +222,34 @@ class SurrogateTrainingIntegration:
                     "force_rerun": False,
                     "hyperparameters": params
                 }
-                
+
                 # Run training
                 start_time = time.time()
                 success = await self.training_manager.execute_enhanced_training(training_input)
                 training_time = time.time() - start_time
-                
+
                 if not success:
                     self.logger.warning("Training failed, returning low score")
                     return -1000.0  # Penalty for failed training
-                
+
                 # Get training results
                 results = self.training_manager.get_enhanced_training_results()
-                
+
                 if not results:
                     self.logger.warning("No training results, returning low score")
                     return -500.0
-                
+
                 # Calculate performance score
                 score = self._calculate_training_score(results, training_time, params)
-                
+
                 self.logger.info(f"📊 Training completed. Score: {score:.4f}, Time: {training_time:.2f}s")
-                
+
                 return score
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Training objective failed: {e}")
                 return -1000.0  # Penalty for errors
-        
+
         return training_objective
 
     def _create_training_config_with_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -258,7 +258,7 @@ class SurrogateTrainingIntegration:
             "enable_enhanced_matrix_operations": True,
             "enable_step_2_5_enhancement": True,
             "enable_step_5_5_enhancement": True,
-            
+
             # Model hyperparameters
             "model_training": {
                 "learning_rate": params.get('learning_rate', 0.1),
@@ -269,7 +269,7 @@ class SurrogateTrainingIntegration:
                 "batch_size": params.get('batch_size', 128),
                 "early_stopping_patience": params.get('early_stopping_patience', 10)
             },
-            
+
             # Feature engineering
             "feature_engineering": {
                 "feature_selection_threshold": params.get('feature_selection_threshold', 0.1),
@@ -277,7 +277,7 @@ class SurrogateTrainingIntegration:
                 "vif_threshold": params.get('vif_threshold', 5.0),
                 "lookback_window": params.get('lookback_window', 50)
             },
-            
+
             # Data processing
             "data_processing": {
                 "validation_split": params.get('validation_split', 0.2),
@@ -294,27 +294,27 @@ class SurrogateTrainingIntegration:
     ) -> float:
         """
         Calculate performance score from training results.
-        
+
         Args:
             results: Training results
             training_time: Time taken for training
             params: Hyperparameters used
-            
+
         Returns:
             Performance score (higher is better)
         """
         if not results:
             return -100.0
-        
+
         # Extract metrics from results
         metrics = {}
         for result in results:
             if 'metrics' in result:
                 metrics.update(result['metrics'])
-        
+
         # Calculate score components
         score_components = {}
-        
+
         # Model performance (if available)
         if 'accuracy' in metrics:
             score_components['accuracy'] = metrics['accuracy'] * 100
@@ -322,10 +322,10 @@ class SurrogateTrainingIntegration:
             score_components['f1_score'] = metrics['f1_score'] * 100
         else:
             score_components['accuracy'] = 50.0  # Default
-        
+
         # Training efficiency
         score_components['efficiency'] = max(0, 100 - training_time / 10)  # Penalize slow training
-        
+
         # Model complexity penalty
         complexity_penalty = (
             params.get('max_depth', 6) * 0.5 +
@@ -333,14 +333,14 @@ class SurrogateTrainingIntegration:
             params.get('batch_size', 128) * 0.001
         )
         score_components['complexity'] = max(0, 100 - complexity_penalty)
-        
+
         # Feature efficiency
         feature_efficiency = (
             params.get('feature_selection_threshold', 0.1) * 100 +
             params.get('correlation_threshold', 0.8) * 50
         )
         score_components['feature_efficiency'] = feature_efficiency / 2
-        
+
         # Combine scores with weights
         weights = {
             'accuracy': 0.4,
@@ -348,12 +348,12 @@ class SurrogateTrainingIntegration:
             'complexity': 0.2,
             'feature_efficiency': 0.1
         }
-        
+
         total_score = sum(
             score_components.get(component, 0) * weight
             for component, weight in weights.items()
         )
-        
+
         return total_score
 
     async def run_optimized_training(
@@ -364,34 +364,34 @@ class SurrogateTrainingIntegration:
     ) -> Dict[str, Any]:
         """
         Run training with optimized hyperparameters.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Timeframe for data
-            
+
         Returns:
             Training results with optimized hyperparameters
         """
         self.logger.info(f"🚀 Running optimized training for {symbol}")
-        
+
         # First, optimize hyperparameters
         optimization_result = await self.optimize_training_hyperparameters(
             symbol, exchange, timeframe, n_trials=30
         )
-        
+
         if not optimization_result or 'best_params' not in optimization_result:
             self.logger.error("❌ Hyperparameter optimization failed")
             return {}
-        
+
         best_params = optimization_result['best_params']
         best_score = optimization_result.get('best_score', 0)
-        
+
         self.logger.info(f"🎯 Using optimized hyperparameters (score: {best_score:.4f})")
-        
+
         # Create final training configuration
         final_config = self._create_training_config_with_params(best_params)
-        
+
         # Run final training with optimized parameters
         training_input = {
             "symbol": symbol,
@@ -402,23 +402,23 @@ class SurrogateTrainingIntegration:
             "force_rerun": True,
             "hyperparameters": best_params
         }
-        
+
         self.logger.info("🏃‍♂️ Running final training with optimized parameters...")
-        
+
         start_time = time.time()
         success = await self.training_manager.execute_enhanced_training(training_input)
         final_training_time = time.time() - start_time
-        
+
         if not success:
             self.logger.error("❌ Final training failed")
             return {
                 'optimization_result': optimization_result,
                 'final_training_success': False
             }
-        
+
         # Get final results
         final_results = self.training_manager.get_enhanced_training_results()
-        
+
         return {
             'optimization_result': optimization_result,
             'final_training_success': True,
@@ -433,28 +433,28 @@ class SurrogateTrainingIntegration:
         print("\n" + "="*80)
         print("🎯 SURROGATE TRAINING OPTIMIZATION SUMMARY")
         print("="*80)
-        
+
         optimization_result = results.get('optimization_result', {})
-        
+
         if optimization_result:
             print(f"\n📊 Optimization Results:")
             print(f"  Best Score: {optimization_result.get('best_score', 0):.4f}")
             print(f"  Best Parameters:")
             for param, value in optimization_result.get('best_params', {}).items():
                 print(f"    {param}: {value}")
-            
+
             # Surrogate accuracy
             if 'surrogate_accuracy' in optimization_result:
                 accuracy = optimization_result['surrogate_accuracy']
                 print(f"  Surrogate Accuracy - R²: {accuracy.get('r2', 0):.4f}")
                 print(f"  Surrogate Accuracy - MAE: {accuracy.get('mae', 0):.4f}")
-            
+
             # Efficiency metrics
             if 'optimization_efficiency' in optimization_result:
                 efficiency = optimization_result['optimization_efficiency']
                 print(f"  Expensive Evaluations: {efficiency.get('expensive_evaluation_ratio', 0):.2f}")
                 print(f"  Time Saved: {efficiency.get('total_time_saved', 0):.2f}")
-        
+
         # Final training results
         if results.get('final_training_success'):
             print(f"\n✅ Final Training Results:")
@@ -462,7 +462,7 @@ class SurrogateTrainingIntegration:
             print(f"  Success: Yes")
         else:
             print(f"\n❌ Final Training Failed")
-        
+
         print("\n" + "="*80)
 
 
@@ -470,25 +470,25 @@ async def main():
     """Main function to demonstrate surrogate training integration."""
     print("🚀 Starting Surrogate Training Integration Demo")
     print("="*80)
-    
+
     # Initialize integration
     integration = SurrogateTrainingIntegration()
     success = await integration.initialize()
-    
+
     if not success:
         print("❌ Failed to initialize integration")
         return
-    
+
     # Run optimized training
     results = await integration.run_optimized_training(
         symbol="BTCUSDT",
         exchange="binance",
         timeframe="1m"
     )
-    
+
     # Print summary
     integration.print_optimization_summary(results)
-    
+
     print("\n✅ Surrogate Training Integration Demo completed!")
 
 

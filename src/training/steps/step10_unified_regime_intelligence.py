@@ -1824,7 +1824,7 @@ class UnifiedRegimeIntelligenceStep:
             # Get HPO parameters from training input or use defaults
             hpo_trials = self.training_input.get("hpo_trials", self.n_trials)
             hpo_timeout = self.training_input.get("hpo_timeout", self.hpo_timeout)
-            
+
             study.optimize(
                 objective, n_trials=hpo_trials, timeout=hpo_timeout, show_progress_bar=False
             )

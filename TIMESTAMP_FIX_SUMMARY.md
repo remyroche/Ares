@@ -8,7 +8,7 @@ The multi-timeframe feature engineering system was experiencing critical timesta
 
 2. **No Overlap Warnings**: The system was logging warnings like:
    ```
-   ⚠️ No overlap between sma_10_15m data (1970-01-01 00:27:40.435200 to 1970-01-01 00:28:25.103100) 
+   ⚠️ No overlap between sma_10_15m data (1970-01-01 00:27:40.435200 to 1970-01-01 00:28:25.103100)
    and target data (2025-02-18 21:03:00 to 2025-06-18 14:59:00)
    ```
 

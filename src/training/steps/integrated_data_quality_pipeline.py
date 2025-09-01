@@ -35,7 +35,7 @@ class IntegratedDataQualityPipeline:
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
-        
+
         # Initialize components
         self.enhanced_quality_manager = None
         self._initialize_components()
@@ -68,7 +68,7 @@ class IntegratedDataQualityPipeline:
         force_rerun: bool = False
     ) -> Dict[str, Any]:
         """Run the comprehensive data quality pipeline.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
@@ -78,7 +78,7 @@ class IntegratedDataQualityPipeline:
             run_step3: Whether to run step3 HMM regime discovery
             run_step4: Whether to run step4 processing labeling
             force_rerun: Whether to force re-run all steps
-            
+
         Returns:
             Dictionary with pipeline results
         """
@@ -106,7 +106,7 @@ class IntegratedDataQualityPipeline:
             # Step 1: Initial comprehensive quality check
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
             initial_quality = await self._run_initial_quality_check(symbol, exchange, timeframe)
-            
+
             if initial_quality.get("success", False):
                 logger.info("✅ Initial quality check passed")
                 results["quality_metrics"]["initial_check"] = initial_quality
@@ -119,7 +119,7 @@ class IntegratedDataQualityPipeline:
             if run_step1:
                 logger.info("📊 Step 1: Data Collection...")
                 step01_result = await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
-                
+
                 if step01_result.get("success", False):
                     logger.info("✅ Step 1: Data Collection completed successfully")
                     results["steps_completed"].append("step01_data_collection")
@@ -132,7 +132,7 @@ class IntegratedDataQualityPipeline:
             if run_step1_5:
                 logger.info("🔄 Step 1.5: Data Conversion...")
                 step01_5_result = await self._run_step1_5_data_conversion(symbol, exchange, timeframe, force_rerun)
-                
+
                 if step01_5_result.get("success", False):
                     logger.info("✅ Step 1.5: Data Conversion completed successfully")
                     results["steps_completed"].append("step01_5_data_conversion")
@@ -145,7 +145,7 @@ class IntegratedDataQualityPipeline:
             if run_step3:
                 logger.info("🔍 Step 3: HMM Regime Discovery...")
                 step03_result = await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
-                
+
                 if step03_result.get("success", False):
                     logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
                     results["steps_completed"].append("step03_hmm_discovery")
@@ -159,7 +159,7 @@ class IntegratedDataQualityPipeline:
             if run_step4:
                 logger.info("🏷️ Step 4: Processing Labeling...")
                 step04_result = await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
-                
+
                 if step04_result.get("success", False):
                     logger.info("✅ Step 4: Processing Labeling completed successfully")
                     results["steps_completed"].append("step04_labeling")
@@ -213,7 +213,7 @@ class IntegratedDataQualityPipeline:
         """Run step1 data collection."""
         try:
             from .step01_data_collection import run_step as run_step1
-            
+
             success = await run_step1(
                 symbol=symbol,
                 exchange=exchange,
@@ -221,7 +221,7 @@ class IntegratedDataQualityPipeline:
                 data_dir=str(self.data_cache_path),
                 force_rerun=force_rerun
             )
-            
+
             return {
                 "success": success,
                 "step": "step01_data_collection",
@@ -238,7 +238,7 @@ class IntegratedDataQualityPipeline:
         """Run step01_5 data conversion."""
         try:
             from .step01_5_data_converter import run_step as run_step1_5
-            
+
             success = await run_step1_5(
                 symbol=symbol,
                 exchange=exchange,
@@ -246,7 +246,7 @@ class IntegratedDataQualityPipeline:
                 data_dir=str(self.data_cache_path),
                 force_rerun=force_rerun
             )
-            
+
             return {
                 "success": success,
                 "step": "step01_5_data_conversion",
@@ -263,7 +263,7 @@ class IntegratedDataQualityPipeline:
         """Run step3 HMM regime discovery."""
         try:
             from .step03_hmm_regime_discovery import run_step as run_step3
-            
+
             success = await run_step3(
                 symbol=symbol,
                 exchange=exchange,
@@ -271,7 +271,7 @@ class IntegratedDataQualityPipeline:
                 data_dir=str(self.data_cache_path),
                 force_rerun=force_rerun
             )
-            
+
             return {
                 "success": success,
                 "step": "step03_hmm_discovery",
@@ -294,15 +294,15 @@ class IntegratedDataQualityPipeline:
                     exchange=exchange,
                     timeframe=timeframe
                 )
-                
+
                 if not data_ready.get("success", False):
                     logger.warning("⚠️ Data not ready for step4, attempting to fix...")
                     # The step4 module will handle data quality internally
-            
+
             # For now, return success as step4 integration is complex
             # In a full implementation, this would call the actual step4 processing
             logger.info("📝 Step4 processing labeling would be executed here")
-            
+
             return {
                 "success": True,
                 "step": "step04_labeling",
@@ -346,23 +346,23 @@ class IntegratedDataQualityPipeline:
         report.append(f"📊 Timeframe: {results.get('timeframe', 'N/A')}")
         report.append(f"✅ Success: {results.get('success', False)}")
         report.append("")
-        
+
         # Steps summary
         report.append("📋 STEPS SUMMARY:")
         completed_steps = results.get("steps_completed", [])
         failed_steps = results.get("steps_failed", [])
-        
+
         for step in completed_steps:
             report.append(f"   ✅ {step}")
         for step in failed_steps:
             report.append(f"   ❌ {step}")
-        
+
         report.append("")
-        
+
         # Quality metrics
         report.append("📈 QUALITY METRICS:")
         quality_metrics = results.get("quality_metrics", {})
-        
+
         if "initial_check" in quality_metrics:
             initial = quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
@@ -370,15 +370,15 @@ class IntegratedDataQualityPipeline:
                 report.append(f"      📊 Gaps detected: {len(initial['gaps_detected'])}")
             if initial.get("gaps_filled"):
                 report.append(f"      🔧 Gaps filled: {len(initial['gaps_filled'])}")
-        
+
         if "final_check" in quality_metrics:
             final = quality_metrics["final_check"]
             report.append(f"   🔍 Final Check: {'✅ Passed' if final.get('success') else '❌ Failed'}")
-        
+
         if "hmm_results" in quality_metrics:
             hmm = quality_metrics["hmm_results"]
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
-        
+
         # Recommendations
         recommendations = results.get("recommendations", [])
         if recommendations:
@@ -386,7 +386,7 @@ class IntegratedDataQualityPipeline:
             report.append("💡 RECOMMENDATIONS:")
             for rec in recommendations:
                 report.append(f"   • {rec}")
-        
+
         report.append("=" * 80)
         return "\n".join(report)
 
@@ -405,7 +405,7 @@ async def run_integrated_pipeline(
     force_rerun: bool = False
 ) -> bool:
     """Run the integrated data quality pipeline.
-    
+
     Args:
         symbol: Trading symbol (e.g., "ETHUSDT")
         exchange: Exchange name (e.g., "BINANCE")
@@ -413,15 +413,15 @@ async def run_integrated_pipeline(
         data_cache_path: Data cache directory
         run_all_steps: Whether to run all steps
         force_rerun: Whether to force re-run all steps
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
-        
+
         pipeline = IntegratedDataQualityPipeline(data_cache_path)
-        
+
         results = await pipeline.run_comprehensive_quality_pipeline(
             symbol=symbol,
             exchange=exchange,
@@ -432,13 +432,13 @@ async def run_integrated_pipeline(
             run_step4=run_all_steps,
             force_rerun=force_rerun
         )
-        
+
         # Generate and log report
         report = pipeline.generate_quality_report(results)
         logger.info("\n" + report)
-        
+
         return results.get("success", False)
-        
+
     except Exception as e:
         logger.exception(f"❌ Integrated pipeline failed: {e}")
         return False

@@ -8,9 +8,6 @@ from src.utils.warning_symbols import failed, invalid, warning
 from src.utils.centralized_decorators import validate_data_quality
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
-from sklearn.model_selection import train_test_split
-from sklearn.calibration import CalibratedClassifierCV
 
 class MLTacticsManager:
     """
@@ -35,16 +32,16 @@ class MLTacticsManager:
 
         # Configuration from step17 optimization results
         self.ml_config: dict[str, Any] = self.config.get("ml_tactics_manager", {})
-        
+
         # Load step17 optimized parameters
         step17_config = self.config.get("step17_optimization", {})
         ml_tactics_optimization = step17_config.get("ml_tactics", {})
-        
+
         # Load optimized ML tactics parameters
         self.enable_ml_tactics: bool = ml_tactics_optimization.get("enable_ml_tactics", True)
         self.confidence_threshold: float = ml_tactics_optimization.get("confidence_threshold", 0.7)
         self.regime_threshold: float = ml_tactics_optimization.get("regime_threshold", 0.6)
-        
+
         # Load additional optimized parameters
         self.ml_weight: float = ml_tactics_optimization.get("ml_weight", 0.8)
         self.regime_weight: float = ml_tactics_optimization.get("regime_weight", 0.2)
@@ -55,10 +52,10 @@ class MLTacticsManager:
         self.multi_output_models: dict[str, Any] = {}
         self.is_trained: bool = False
         self.last_training_time: datetime | None = None
-        
+
         # NEW: Scenario-based predictor
         self.scenario_predictor = None
-        
+
         # NEW: Barrier configuration (50% and 25% of Analyst barriers)
         self.barrier_config = {
             "fifty_percent": {
@@ -82,21 +79,21 @@ class MLTacticsManager:
                 "timeframe": "5m"  # 5-minute timeframe
             }
         }
-        
+
         # NEW: Confidence thresholds for green light signals (MTF unified)
         self.green_light_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("fifty_percent_threshold", 0.75),
             "twenty_five_percent": ml_tactics_optimization.get("twenty_five_percent_threshold", 0.8),
             "combined_threshold": ml_tactics_optimization.get("combined_threshold", 0.7)
         }
-        
+
         # NEW: Exit thresholds (MTF unified)
         self.exit_thresholds = {
             "fifty_percent": ml_tactics_optimization.get("exit_fifty_percent_threshold", 0.4),
             "twenty_five_percent": ml_tactics_optimization.get("exit_twenty_five_percent_threshold", 0.35),
             "combined_exit_threshold": ml_tactics_optimization.get("combined_exit_threshold", 0.45)
         }
-        
+
         # NEW: Combined confidence weights (Analyst + Tactician confidences)
         self.confidence_weights = {
             "analyst_weight": ml_tactics_optimization.get("analyst_confidence_weight", 0.3),
@@ -132,7 +129,7 @@ class MLTacticsManager:
 
             # Initialize ML models
             await self._initialize_ml_models()
-            
+
             # Initialize scenario-based predictor
             await self._initialize_scenario_predictor()
 
@@ -189,13 +186,13 @@ class MLTacticsManager:
                 if threshold <= 0 or threshold > 1:
                     self.logger.error(invalid(f"Invalid exit threshold for {threshold_type}"))
                     return False
-            
+
             # Validate confidence weights
             total_weight = sum(self.confidence_weights.values())
             if abs(total_weight - 1.0) > 0.01:  # Allow small floating point errors
                 self.logger.error(invalid(f"Confidence weights must sum to 1.0, got {total_weight}"))
                 return False
-            
+
             for weight_name, weight in self.confidence_weights.items():
                 if weight < 0 or weight > 1:
                     self.logger.error(invalid(f"Invalid confidence weight for {weight_name}: {weight}"))
@@ -211,25 +208,25 @@ class MLTacticsManager:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "ml_tactics" in step17_results:
                 ml_tactics_optimization = step17_results["ml_tactics"]
-                
+
                 # Update ML tactics parameters
                 self.enable_ml_tactics = ml_tactics_optimization.get("enable_ml_tactics", self.enable_ml_tactics)
                 self.confidence_threshold = ml_tactics_optimization.get("confidence_threshold", self.confidence_threshold)
                 self.regime_threshold = ml_tactics_optimization.get("regime_threshold", self.regime_threshold)
-                
+
                 # Update additional parameters
                 self.ml_weight = ml_tactics_optimization.get("ml_weight", self.ml_weight)
                 self.regime_weight = ml_tactics_optimization.get("regime_weight", self.regime_weight)
                 self.confidence_boost_factor = ml_tactics_optimization.get("confidence_boost_factor", self.confidence_boost_factor)
                 self.risk_adjustment_factor = ml_tactics_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-                
+
                 # Update barrier and threshold configurations
                 self.barrier_config = {
                     "fifty_percent": {
@@ -270,9 +267,9 @@ class MLTacticsManager:
                     "fifty_percent_5m_weight": ml_tactics_optimization.get("fifty_percent_5m_weight", 0.2),
                     "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1)
                 }
-                
+
                 self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
-                
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -1040,13 +1037,13 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Generate multi-output predictions for 50% and 25% barriers.
-        
+
         Args:
             market_data: Market data with OHLCV
             analyst_barriers: Analyst's barrier values (for reference)
             symbol: Trading symbol
             timeframe: Current timeframe
-            
+
         Returns:
             dict: Multi-output predictions with confidence scores and directions
         """
@@ -1057,10 +1054,10 @@ class MLTacticsManager:
 
             # Calculate Tactician barriers (50% and 25% of Analyst barriers)
             tactician_barriers = self._calculate_tactician_barriers(analyst_barriers)
-            
+
             # Generate predictions for each barrier type
             predictions = {}
-            
+
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
                 barrier_prediction = await self._generate_barrier_prediction(
                     barrier_type=barrier_type,
@@ -1069,14 +1066,14 @@ class MLTacticsManager:
                     symbol=symbol,
                     timeframe=timeframe
                 )
-                
+
                 if barrier_prediction:
                     predictions[barrier_type] = barrier_prediction
 
             # Calculate combined confidence and green light signal
             combined_confidence = self._calculate_combined_confidence(predictions, analyst_confidence)
             green_light_signal = self._evaluate_green_light_signal(predictions, combined_confidence)
-            
+
             # Add metadata
             result = {
                 **predictions,
@@ -1090,7 +1087,7 @@ class MLTacticsManager:
                     "barrier_config": self.barrier_config
                 }
             }
-            
+
             self.logger.info(f"Generated multi-output predictions for {symbol}: {green_light_signal['signal']}")
             return result
 
@@ -1113,14 +1110,14 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Generate enhanced predictions combining multi-output and scenario analysis.
-        
+
         Args:
             market_data: Market data with OHLCV
             analyst_barriers: Analyst's barrier values
             symbol: Trading symbol
             timeframe: Current timeframe
             analyst_confidence: Analyst's confidence score
-            
+
         Returns:
             dict: Enhanced predictions with both systems
         """
@@ -1129,23 +1126,23 @@ class MLTacticsManager:
             multi_output_predictions = await self.generate_multi_output_predictions(
                 market_data, analyst_barriers, symbol, timeframe, analyst_confidence
             )
-            
+
             # Generate scenario-based predictions
             scenario_predictions = None
             if self.scenario_predictor:
                 # Extract features for scenario prediction
                 scenario_features = self.scenario_predictor.extract_features(market_data)
                 scenario_features = scenario_features.reshape(1, -1)  # Reshape for single prediction
-                
+
                 scenario_predictions = await self.scenario_predictor.predict_scenarios(
                     scenario_features, market_data
                 )
-            
+
             # Combine predictions and make enhanced decisions
             enhanced_decisions = self._make_enhanced_decisions(
                 multi_output_predictions, scenario_predictions, analyst_confidence
             )
-            
+
             result = {
                 "multi_output": multi_output_predictions,
                 "scenario_analysis": scenario_predictions,
@@ -1158,10 +1155,10 @@ class MLTacticsManager:
                     "has_scenario_predictor": self.scenario_predictor is not None
                 }
             }
-            
+
             self.logger.info(f"Generated enhanced predictions for {symbol}")
             return result
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Enhanced predictions generation failed: {e}"))
             return {
@@ -1187,12 +1184,12 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Make enhanced entry/exit decisions using both prediction systems.
-        
+
         Args:
             multi_output_predictions: Multi-output predictions
             scenario_predictions: Scenario-based predictions
             analyst_confidence: Analyst's confidence score
-            
+
         Returns:
             dict: Enhanced decisions
         """
@@ -1200,12 +1197,12 @@ class MLTacticsManager:
             # Base decision from multi-output system
             base_green_light = multi_output_predictions.get("green_light_signal", {}).get("signal", "RED")
             base_confidence = multi_output_predictions.get("combined_confidence", 0.0)
-            
+
             # Enhanced decision with scenario analysis
             enhanced_entry_signal = False
             enhanced_confidence = base_confidence
             reasoning = []
-            
+
             # Multi-output system requirements
             if base_green_light == "GREEN":
                 reasoning.append("Multi-output system: GREEN")
@@ -1217,14 +1214,14 @@ class MLTacticsManager:
                     "reasoning": "Multi-output system not green",
                     "scenario_analysis": None
                 }
-            
+
             # Scenario analysis enhancement
             if scenario_predictions:
                 scenario_analysis = scenario_predictions.get("scenario_analysis", {})
                 profit_zone_prob = scenario_analysis.get("profit_zone_probability", 0.0)
                 risk_zone_prob = scenario_analysis.get("risk_zone_probability", 0.0)
                 scenario_confidence = scenario_predictions.get("confidence", 0.0)
-                
+
                 # Get thresholds from scenario predictor
                 if self.scenario_predictor:
                     thresholds = self.scenario_predictor.decision_thresholds
@@ -1235,14 +1232,14 @@ class MLTacticsManager:
                     profit_threshold = 0.6
                     risk_threshold = 0.2
                     confidence_threshold = 0.7
-                
+
                 # Enhanced entry logic
                 scenario_conditions_met = (
                     profit_zone_prob > profit_threshold and
                     risk_zone_prob < risk_threshold and
                     scenario_confidence > confidence_threshold
                 )
-                
+
                 if scenario_conditions_met:
                     reasoning.append(f"Scenario analysis: FAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
                     enhanced_entry_signal = True
@@ -1251,7 +1248,7 @@ class MLTacticsManager:
                 else:
                     reasoning.append(f"Scenario analysis: UNFAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
                     enhanced_entry_signal = False
-                
+
                 # Add scenario details
                 scenario_details = {
                     "profit_zone_probability": profit_zone_prob,
@@ -1265,10 +1262,10 @@ class MLTacticsManager:
             else:
                 scenario_details = None
                 reasoning.append("Scenario analysis: NOT AVAILABLE")
-            
+
             # Final decision
             final_entry_signal = enhanced_entry_signal and base_green_light == "GREEN"
-            
+
             return {
                 "entry_signal": final_entry_signal,
                 "confidence": enhanced_confidence,
@@ -1280,7 +1277,7 @@ class MLTacticsManager:
                     "combined_confidence": multi_output_predictions.get("combined_confidence", 0.0)
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Enhanced decision making failed: {e}"))
             return {
@@ -1297,10 +1294,10 @@ class MLTacticsManager:
     ) -> dict[str, dict[str, float]]:
         """
         Calculate Tactician barriers as 50% and 25% of Analyst barriers.
-        
+
         Args:
             analyst_barriers: Analyst's barrier values
-            
+
         Returns:
             dict: Tactician barriers for 50% and 25% levels
         """
@@ -1308,39 +1305,39 @@ class MLTacticsManager:
             # Extract Analyst barriers
             analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
             analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
-            
+
             tactician_barriers = {}
-            
+
             # Calculate 50% barriers
             tactician_barriers["fifty_percent"] = {
                 "upper_barrier": analyst_upper * self.barrier_config["fifty_percent"]["profit_target_multiplier"],
                 "lower_barrier": analyst_lower * self.barrier_config["fifty_percent"]["stop_loss_multiplier"],
                 "timeframe": self.barrier_config["fifty_percent"]["timeframe"]
             }
-            
+
             # Calculate 25% barriers
             tactician_barriers["twenty_five_percent"] = {
                 "upper_barrier": analyst_upper * self.barrier_config["twenty_five_percent"]["profit_target_multiplier"],
                 "lower_barrier": analyst_lower * self.barrier_config["twenty_five_percent"]["stop_loss_multiplier"],
                 "timeframe": self.barrier_config["twenty_five_percent"]["timeframe"]
             }
-            
+
             # Calculate 50% barriers (5m)
             tactician_barriers["fifty_percent_5m"] = {
                 "upper_barrier": analyst_upper * self.barrier_config["fifty_percent_5m"]["profit_target_multiplier"],
                 "lower_barrier": analyst_lower * self.barrier_config["fifty_percent_5m"]["stop_loss_multiplier"],
                 "timeframe": self.barrier_config["fifty_percent_5m"]["timeframe"]
             }
-            
+
             # Calculate 25% barriers (5m)
             tactician_barriers["twenty_five_percent_5m"] = {
                 "upper_barrier": analyst_upper * self.barrier_config["twenty_five_percent_5m"]["profit_target_multiplier"],
                 "lower_barrier": analyst_lower * self.barrier_config["twenty_five_percent_5m"]["stop_loss_multiplier"],
                 "timeframe": self.barrier_config["twenty_five_percent_5m"]["timeframe"]
             }
-            
+
             return tactician_barriers
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Barrier calculation failed: {e}"))
             return {
@@ -1360,21 +1357,21 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Generate prediction for a specific barrier type.
-        
+
         Args:
             barrier_type: "fifty_percent" or "twenty_five_percent"
             market_data: Market data
             barriers: Barrier values
             symbol: Trading symbol
             timeframe: Timeframe
-            
+
         Returns:
             dict: Barrier prediction with confidence and direction
         """
         try:
             # Extract features from market data
             features = self._extract_features(market_data)
-            
+
             # Generate prediction using model
             if self.multi_output_models[barrier_type]["model"] == "fallback":
                 # Use fallback prediction
@@ -1384,14 +1381,14 @@ class MLTacticsManager:
                 # Use actual model prediction
                 confidence = self._predict_with_model(barrier_type, features)
                 direction = self._determine_direction(features)
-            
+
             # Apply calibration if available
             if self.multi_output_models[barrier_type]["calibrator"]:
                 confidence = self._calibrate_prediction(barrier_type, confidence)
-            
+
             # Validate confidence
             confidence = np.clip(confidence, 0.0, 1.0)
-            
+
             return {
                 "confidence": confidence,
                 "direction": direction,
@@ -1400,7 +1397,7 @@ class MLTacticsManager:
                 "timeframe": barriers["timeframe"],
                 "barrier_type": barrier_type
             }
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Barrier prediction failed for {barrier_type}: {e}"))
             return None
@@ -1408,50 +1405,50 @@ class MLTacticsManager:
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
         Extract features from market data for prediction.
-        
+
         Args:
             market_data: Market data with OHLCV
-            
+
         Returns:
             np.ndarray: Feature array
         """
         try:
             features = []
-            
+
             if len(market_data) < 20:
                 # Not enough data, return default features
                 return np.array([0.5] * 10)
-            
+
             # Price-based features
             close_prices = market_data['close'].values
             high_prices = market_data['high'].values
             low_prices = market_data['low'].values
             volumes = market_data['volume'].values
-            
+
             # Calculate technical indicators
             # Price momentum
             price_momentum = (close_prices[-1] - close_prices[-5]) / close_prices[-5]
             features.append(price_momentum)
-            
+
             # Volatility
             returns = np.diff(close_prices) / close_prices[:-1]
             volatility = np.std(returns[-20:])
             features.append(volatility)
-            
+
             # Volume trend
             volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
             features.append(volume_trend)
-            
+
             # Price range
             price_range = (high_prices[-1] - low_prices[-1]) / close_prices[-1]
             features.append(price_range)
-            
+
             # Moving averages
             ma_short = np.mean(close_prices[-5:])
             ma_long = np.mean(close_prices[-20:])
             ma_ratio = ma_short / ma_long if ma_long > 0 else 1.0
             features.append(ma_ratio)
-            
+
             # RSI-like indicator
             gains = np.where(returns > 0, returns, 0)
             losses = np.where(returns < 0, -returns, 0)
@@ -1460,7 +1457,7 @@ class MLTacticsManager:
             rs = avg_gain / avg_loss if avg_loss > 0 else 1.0
             rsi = 100 - (100 / (1 + rs))
             features.append(rsi / 100)  # Normalize to 0-1
-            
+
             # Additional features
             features.extend([
                 close_prices[-1] / close_prices[-2] - 1,  # Latest return
@@ -1468,9 +1465,9 @@ class MLTacticsManager:
                 (high_prices[-1] - close_prices[-1]) / close_prices[-1],  # Upper shadow
                 (close_prices[-1] - low_prices[-1]) / close_prices[-1]   # Lower shadow
             ])
-            
+
             return np.array(features)
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Feature extraction failed: {e}"))
             return np.array([0.5] * 10)
@@ -1478,18 +1475,18 @@ class MLTacticsManager:
     def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:
         """
         Generate fallback confidence score.
-        
+
         Args:
             barrier_type: Barrier type
             features: Feature array
-            
+
         Returns:
             float: Confidence score
         """
         try:
             # Simple heuristic-based confidence
             base_confidence = 0.5
-            
+
             # Adjust based on price momentum
             if len(features) > 0:
                 momentum = features[0]
@@ -1497,7 +1494,7 @@ class MLTacticsManager:
                     base_confidence += 0.2
                 elif abs(momentum) > 0.005:  # Moderate momentum
                     base_confidence += 0.1
-            
+
             # Adjust based on volatility
             if len(features) > 1:
                 volatility = features[1]
@@ -1505,7 +1502,7 @@ class MLTacticsManager:
                     base_confidence += 0.1
                 elif volatility > 0.03:  # High volatility
                     base_confidence -= 0.1
-            
+
             # Adjust based on RSI
             if len(features) > 5:
                 rsi = features[5]
@@ -1513,13 +1510,13 @@ class MLTacticsManager:
                     base_confidence += 0.1
                 elif rsi < 0.2 or rsi > 0.8:  # Extreme RSI
                     base_confidence -= 0.1
-            
+
             # Adjust for barrier type (25% barriers need higher confidence)
             if barrier_type == "twenty_five_percent":
                 base_confidence *= 0.9  # Slightly lower for smaller barriers
-            
+
             return np.clip(base_confidence, 0.0, 1.0)
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Fallback confidence generation failed: {e}"))
             return 0.5
@@ -1527,10 +1524,10 @@ class MLTacticsManager:
     def _determine_direction(self, features: np.ndarray) -> str:
         """
         Determine price direction based on features.
-        
+
         Args:
             features: Feature array
-            
+
         Returns:
             str: "UP" or "DOWN"
         """
@@ -1543,7 +1540,7 @@ class MLTacticsManager:
                     return "DOWN"
             else:
                 return "UP"  # Default direction
-                
+
         except Exception as e:
             self.logger.error(failed(f"❌ Direction determination failed: {e}"))
             return "UP"
@@ -1551,11 +1548,11 @@ class MLTacticsManager:
     def _predict_with_model(self, barrier_type: str, features: np.ndarray) -> float:
         """
         Predict confidence using actual model.
-        
+
         Args:
             barrier_type: Barrier type
             features: Feature array
-            
+
         Returns:
             float: Confidence score
         """
@@ -1563,7 +1560,7 @@ class MLTacticsManager:
             # This would use the actual trained model
             # For now, return fallback confidence
             return self._generate_fallback_confidence(barrier_type, features)
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Model prediction failed: {e}"))
             return 0.5
@@ -1571,11 +1568,11 @@ class MLTacticsManager:
     def _calibrate_prediction(self, barrier_type: str, confidence: float) -> float:
         """
         Calibrate prediction using calibrator.
-        
+
         Args:
             barrier_type: Barrier type
             confidence: Raw confidence
-            
+
         Returns:
             float: Calibrated confidence
         """
@@ -1583,35 +1580,35 @@ class MLTacticsManager:
             # This would use the actual calibrator
             # For now, return original confidence
             return confidence
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Prediction calibration failed: {e}"))
             return confidence
 
     def _calculate_combined_confidence(
-        self, 
-        predictions: dict[str, Any], 
+        self,
+        predictions: dict[str, Any],
         analyst_confidence: float = 0.5
     ) -> float:
         """
         Calculate combined confidence from Analyst and Tactician predictions.
-        
+
         Args:
             predictions: Tactician predictions dictionary
             analyst_confidence: Analyst confidence score
-            
+
         Returns:
             float: Combined confidence score
         """
         try:
             # Start with Analyst confidence
             combined_confidence = analyst_confidence * self.confidence_weights["analyst_weight"]
-            
+
             # Add Tactician confidences with their respective weights
             for barrier_type, prediction in predictions.items():
                 if prediction and "confidence" in prediction:
                     confidence = prediction["confidence"]
-                    
+
                     # Get weight for this barrier type
                     if barrier_type == "fifty_percent":
                         weight = self.confidence_weights["fifty_percent_1m_weight"]
@@ -1623,11 +1620,11 @@ class MLTacticsManager:
                         weight = self.confidence_weights["twenty_five_percent_5m_weight"]
                     else:
                         weight = 0.0
-                    
+
                     combined_confidence += confidence * weight
-            
+
             return np.clip(combined_confidence, 0.0, 1.0)
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Combined confidence calculation failed: {e}"))
             return 0.5
@@ -1639,11 +1636,11 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Evaluate green light signal based on predictions and thresholds.
-        
+
         Args:
             predictions: Predictions dictionary
             combined_confidence: Combined confidence score
-            
+
         Returns:
             dict: Green light signal evaluation
         """
@@ -1651,30 +1648,30 @@ class MLTacticsManager:
             # Check individual barrier thresholds (MTF unified)
             fifty_percent_ok = False
             twenty_five_percent_ok = False
-            
+
             # Check 50% barriers (both 1m and 5m)
             fifty_percent_confidences = []
             if "fifty_percent" in predictions and predictions["fifty_percent"]:
                 fifty_percent_confidences.append(predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in predictions and predictions["fifty_percent_5m"]:
                 fifty_percent_confidences.append(predictions["fifty_percent_5m"]["confidence"])
-            
+
             if fifty_percent_confidences:
                 fifty_percent_ok = max(fifty_percent_confidences) >= self.green_light_thresholds["fifty_percent"]
-            
+
             # Check 25% barriers (both 1m and 5m)
             twenty_five_percent_confidences = []
             if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in predictions and predictions["twenty_five_percent_5m"]:
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent_5m"]["confidence"])
-            
+
             if twenty_five_percent_confidences:
                 twenty_five_percent_ok = max(twenty_five_percent_confidences) >= self.green_light_thresholds["twenty_five_percent"]
-            
+
             # Check combined threshold
             combined_ok = combined_confidence >= self.green_light_thresholds["combined_threshold"]
-            
+
             # Determine signal
             if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
                 signal = "GREEN_LIGHT"
@@ -1685,7 +1682,7 @@ class MLTacticsManager:
             else:
                 signal = "RED_LIGHT"
                 reason = "Thresholds not met"
-            
+
             return {
                 "signal": signal,
                 "reason": reason,
@@ -1695,7 +1692,7 @@ class MLTacticsManager:
                 "combined_confidence": combined_confidence,
                 "thresholds": self.green_light_thresholds
             }
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Green light signal evaluation failed: {e}"))
             return {
@@ -1711,7 +1708,7 @@ class MLTacticsManager:
     def _generate_fallback_predictions(self) -> dict[str, Any]:
         """
         Generate fallback predictions when models are not available.
-        
+
         Returns:
             dict: Fallback predictions
         """
@@ -1776,43 +1773,43 @@ class MLTacticsManager:
     ) -> dict[str, Any]:
         """
         Evaluate exit signal based on current predictions and position context.
-        
+
         Args:
             current_predictions: Current multi-output predictions
             position_context: Current position context
-            
+
         Returns:
             dict: Exit signal evaluation
         """
         try:
             combined_confidence = current_predictions.get("combined_confidence", 0.5)
-            
+
             # Check exit thresholds (MTF unified)
             fifty_percent_exit = False
             twenty_five_percent_exit = False
-            
+
             # Check 50% barriers (both 1m and 5m)
             fifty_percent_confidences = []
             if "fifty_percent" in current_predictions and current_predictions["fifty_percent"]:
                 fifty_percent_confidences.append(current_predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in current_predictions and current_predictions["fifty_percent_5m"]:
                 fifty_percent_confidences.append(current_predictions["fifty_percent_5m"]["confidence"])
-            
+
             if fifty_percent_confidences:
                 fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds["fifty_percent"]
-            
+
             # Check 25% barriers (both 1m and 5m)
             twenty_five_percent_confidences = []
             if "twenty_five_percent" in current_predictions and current_predictions["twenty_five_percent"]:
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in current_predictions and current_predictions["twenty_five_percent_5m"]:
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent_5m"]["confidence"])
-            
+
             if twenty_five_percent_confidences:
                 twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds["twenty_five_percent"]
-            
+
             combined_exit = combined_confidence <= self.exit_thresholds["combined_exit_threshold"]
-            
+
             # Determine exit signal
             if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
                 exit_signal = "EXIT"
@@ -1823,7 +1820,7 @@ class MLTacticsManager:
             else:
                 exit_signal = "HOLD"
                 reason = "Confidence above exit thresholds"
-            
+
             return {
                 "exit_signal": exit_signal,
                 "reason": reason,
@@ -1833,7 +1830,7 @@ class MLTacticsManager:
                 "combined_confidence": combined_confidence,
                 "exit_thresholds": self.exit_thresholds
             }
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Exit signal evaluation failed: {e}"))
             return {

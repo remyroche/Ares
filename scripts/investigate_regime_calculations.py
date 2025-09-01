@@ -4,7 +4,6 @@ Investigate Regime Calculation Issues
 Analyzes why regime features may have zero variance and provides fixes.
 """
 
-from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List

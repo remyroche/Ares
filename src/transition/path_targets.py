@@ -1,6 +1,5 @@
 # src/transition/path_targets.py
 
-from __future__ import annotations
 from src.utils.logger import system_logger
 from typing import TYPE_CHECKING, Any
 import pandas as pd

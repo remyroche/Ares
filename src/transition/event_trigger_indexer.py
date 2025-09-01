@@ -1,6 +1,5 @@
 # src/transition/event_trigger_indexer.py
 
-from __future__ import annotations
 from collections.abc import Iterable
 from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 from src.utils.logger import system_logger

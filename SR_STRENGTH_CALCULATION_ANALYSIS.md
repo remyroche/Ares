@@ -127,41 +127,41 @@ import numpy as np
 def cluster_sr_levels(self, sr_levels: list[dict[str, Any]], eps: float = 0.01, min_samples: int = 3) -> dict[str, Any]:
     """
     Cluster S/R levels using DBSCAN to identify significant levels.
-    
+
     Args:
         sr_levels: List of S/R levels with prices and strengths
         eps: Maximum distance between points to be considered neighbors (1% of price)
         min_samples: Minimum number of points to form a cluster
-    
+
     Returns:
         dict: Clustered S/R levels with cluster information
     """
     if not sr_levels:
         return {}
-    
+
     # Extract prices for clustering
     prices = np.array([level['price'] for level in sr_levels])
-    
+
     # Normalize prices for clustering (use percentage of price)
     price_mean = np.mean(prices)
     normalized_prices = (prices - price_mean) / price_mean
-    
+
     # Apply DBSCAN clustering
     clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(normalized_prices.reshape(-1, 1))
-    
+
     # Process clustering results
     cluster_labels = clustering.labels_
     n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
-    
+
     # Group levels by cluster
     clustered_levels = {}
     for i, level in enumerate(sr_levels):
         cluster_id = cluster_labels[i]
-        
+
         if cluster_id == -1:
             # Noise points (weak levels)
             continue
-            
+
         if cluster_id not in clustered_levels:
             clustered_levels[cluster_id] = {
                 'levels': [],
@@ -170,22 +170,22 @@ def cluster_sr_levels(self, sr_levels: list[dict[str, Any]], eps: float = 0.01, 
                 'cluster_volume': 0.0,
                 'touch_count': 0
             }
-        
+
         clustered_levels[cluster_id]['levels'].append(level)
-    
+
     # Calculate cluster statistics
     for cluster_id, cluster_data in clustered_levels.items():
         levels = cluster_data['levels']
-        
+
         # Calculate cluster center (weighted average by strength)
         total_strength = sum(level.get('strength', 0.5) for level in levels)
         cluster_price = sum(level['price'] * level.get('strength', 0.5) for level in levels) / total_strength
-        
+
         # Aggregate cluster metrics
         cluster_strength = sum(level.get('strength', 0.5) for level in levels) / len(levels)
         cluster_volume = sum(level.get('volume', 0) for level in levels)
         touch_count = sum(level.get('touch_count', 1) for level in levels)
-        
+
         clustered_levels[cluster_id].update({
             'cluster_price': cluster_price,
             'cluster_strength': cluster_strength,
@@ -193,7 +193,7 @@ def cluster_sr_levels(self, sr_levels: list[dict[str, Any]], eps: float = 0.01, 
             'touch_count': touch_count,
             'level_count': len(levels)
         })
-    
+
     return {
         'clusters': clustered_levels,
         'n_clusters': n_clusters,
@@ -274,12 +274,12 @@ strength = base_strength * volume_factor * price_factor
 ### **Recommended (Comprehensive)**
 ```python
 strength = (
-    base_strength * 
-    volume_factor * 
-    price_factor * 
-    touch_count_factor * 
-    age_factor * 
-    bounce_rate_factor * 
+    base_strength *
+    volume_factor *
+    price_factor *
+    touch_count_factor *
+    age_factor *
+    bounce_rate_factor *
     isolation_factor
 )
 ```

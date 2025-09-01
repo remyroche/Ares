@@ -24,7 +24,7 @@ The Tactician currently uses multiple ML models across different components, cre
 
 The system currently generates 4 key probabilities:
 - `triple_barrier_probability`: Probability of reaching profit target without hitting stop-loss
-- `direction_probability`: Probability of price moving in predicted direction  
+- `direction_probability`: Probability of price moving in predicted direction
 - `magnitude_probability`: Probability of price moving by expected magnitude
 - `barrier_avoidance_probability`: Probability of avoiding adverse price movements
 
@@ -47,7 +47,7 @@ The system currently generates 4 key probabilities:
 Analyst (Primary Predictor)
 ├── Unified Probability Generator
 │   ├── triple_barrier_probability
-│   ├── direction_probability  
+│   ├── direction_probability
 │   ├── magnitude_probability
 │   └── barrier_avoidance_probability
 └── Enhanced Confidence Scoring

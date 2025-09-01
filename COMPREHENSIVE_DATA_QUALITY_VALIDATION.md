@@ -40,7 +40,7 @@ This document describes the comprehensive data quality validation system impleme
 - Validates data completeness and format
 - **Data Structure Validation**: Columns, format, index, data types
 - **Detailed Data Extract**: Comprehensive logging of data structure, types, samples, and quality metrics
-- **Thresholds**: 
+- **Thresholds**:
   - Max NaN ratio: 0% (zero tolerance)
   - Max infinite count: 0 values (zero tolerance)
   - Min unique values: 2 (except boolean)
@@ -336,7 +336,7 @@ python test_comprehensive_data_quality_validation.py
 
 ### Test Coverage
 - ✅ Step1 data quality validation
-- ✅ Step1_5 data quality validation  
+- ✅ Step1_5 data quality validation
 - ✅ Step2 feature quality validation
 - ✅ NaN, infinite, constant value detection
 - ✅ High correlation detection

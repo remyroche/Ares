@@ -6,7 +6,6 @@ Test script for advanced S/R methods in sr_breakout_predictor.py
 import asyncio
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
 # Mock the imports to avoid dependency issues
 class MockLogger:
@@ -56,21 +55,21 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 def create_sample_market_data():
     """Create sample market data for testing."""
     np.random.seed(42)
-    
+
     # Create 100 data points
     dates = pd.date_range(start='2024-01-01', periods=100, freq='1H')
-    
+
     # Generate realistic price data with trends and volatility
     base_price = 100.0
     prices = [base_price]
-    
+
     for i in range(1, 100):
         # Add trend and random walk
         trend = 0.001 * np.sin(i * 0.1)  # Cyclical trend
         random_walk = np.random.normal(0, 0.005)  # Random component
         new_price = prices[-1] * (1 + trend + random_walk)
         prices.append(new_price)
-    
+
     # Create OHLCV data
     data = []
     for i, price in enumerate(prices):
@@ -80,12 +79,12 @@ def create_sample_market_data():
         low = price * (1 - np.random.uniform(0, volatility))
         open_price = prices[i-1] if i > 0 else price
         close_price = price
-        
+
         # Volume with some correlation to price movement
         base_volume = 1000000
         volume_factor = 1 + abs(close_price - open_price) / open_price * 10
         volume = int(base_volume * volume_factor * np.random.uniform(0.5, 1.5))
-        
+
         data.append({
             'open': open_price,
             'high': high,
@@ -93,19 +92,19 @@ def create_sample_market_data():
             'close': close_price,
             'volume': volume
         })
-    
+
     return pd.DataFrame(data, index=dates)
 
 def create_multi_timeframe_data():
     """Create sample multi-timeframe data."""
     base_data = create_sample_market_data()
-    
+
     # Create different timeframes by resampling
     multi_tf_data = {}
-    
+
     # 1-minute data (original)
     multi_tf_data['1m'] = base_data.copy()
-    
+
     # 5-minute data
     multi_tf_data['5m'] = base_data.resample('5T').agg({
         'open': 'first',
@@ -114,7 +113,7 @@ def create_multi_timeframe_data():
         'close': 'last',
         'volume': 'sum'
     }).dropna()
-    
+
     # 15-minute data
     multi_tf_data['15m'] = base_data.resample('15T').agg({
         'open': 'first',
@@ -123,7 +122,7 @@ def create_multi_timeframe_data():
         'close': 'last',
         'volume': 'sum'
     }).dropna()
-    
+
     # 1-hour data
     multi_tf_data['1h'] = base_data.resample('1H').agg({
         'open': 'first',
@@ -132,21 +131,21 @@ def create_multi_timeframe_data():
         'close': 'last',
         'volume': 'sum'
     }).dropna()
-    
+
     return multi_tf_data
 
 async def test_advanced_sr_methods():
     """Test all advanced S/R methods."""
     print("🚀 Testing Advanced S/R Methods")
     print("=" * 60)
-    
+
     # Create sample data
     market_data = create_sample_market_data()
     multi_tf_data = create_multi_timeframe_data()
-    
+
     print(f"✅ Created sample market data: {len(market_data)} data points")
     print(f"✅ Created multi-timeframe data: {list(multi_tf_data.keys())}")
-    
+
     # Initialize SRBreakoutPredictor
     config = {
         "sr_breakout_predictor": {
@@ -164,18 +163,18 @@ async def test_advanced_sr_methods():
             "false_breakout_filter": True
         }
     }
-    
+
     sr_predictor = SRBreakoutPredictor(config)
-    
+
     # Test initialization
     print("\n📋 Testing Initialization...")
     init_success = await sr_predictor.initialize()
     print(f"✅ Initialization: {'SUCCESS' if init_success else 'FAILED'}")
-    
+
     if not init_success:
         print("❌ Cannot proceed with tests - initialization failed")
         return
-    
+
     # Test 1: Fibonacci Levels
     print("\n🔢 Testing Fibonacci Levels...")
     try:
@@ -185,7 +184,7 @@ async def test_advanced_sr_methods():
             print(f"   {level_name}: {price:.2f}")
     except Exception as e:
         print(f"❌ Fibonacci Levels Error: {e}")
-    
+
     # Test 2: Elliott Wave Analysis
     print("\n🌊 Testing Elliott Wave Analysis...")
     try:
@@ -196,7 +195,7 @@ async def test_advanced_sr_methods():
             print(f"   Wave 1: {elliott_levels['wave1']}")
     except Exception as e:
         print(f"❌ Elliott Wave Error: {e}")
-    
+
     # Test 3: Order Flow Analysis
     print("\n📊 Testing Order Flow Analysis...")
     try:
@@ -207,7 +206,7 @@ async def test_advanced_sr_methods():
         print(f"   Imbalances: {len(order_flow.get('imbalances', []))}")
     except Exception as e:
         print(f"❌ Order Flow Error: {e}")
-    
+
     # Test 4: Multi-Timeframe Confluence
     print("\n⏰ Testing Multi-Timeframe Confluence...")
     try:
@@ -217,7 +216,7 @@ async def test_advanced_sr_methods():
             print(f"   {level_key}: {level_data['type']} at {level_data['price']:.2f} ({len(level_data['timeframes'])} timeframes)")
     except Exception as e:
         print(f"❌ Multi-Timeframe Confluence Error: {e}")
-    
+
     # Test 5: Comprehensive S/R Analysis
     print("\n🎯 Testing Comprehensive S/R Analysis...")
     try:
@@ -229,14 +228,14 @@ async def test_advanced_sr_methods():
         print(f"   Nearest Resistance: {comprehensive.get('nearest_resistance', 0):.2f}")
     except Exception as e:
         print(f"❌ Comprehensive Analysis Error: {e}")
-    
+
     # Test 6: Basic S/R Context (should include advanced methods)
     print("\n🔍 Testing Enhanced S/R Context...")
     try:
         current_price = market_data['close'].iloc[-1]
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         print(f"✅ Enhanced S/R Context: {len(sr_context)} context elements")
-        
+
         # Check for advanced methods in context
         advanced_methods = ['fibonacci_levels', 'elliott_wave_levels', 'order_flow_analysis']
         for method in advanced_methods:
@@ -246,7 +245,7 @@ async def test_advanced_sr_methods():
                 print(f"   ❌ {method}: Missing from context")
     except Exception as e:
         print(f"❌ Enhanced S/R Context Error: {e}")
-    
+
     print("\n" + "=" * 60)
     print("🎉 Advanced S/R Methods Testing Complete!")
     print("=" * 60)

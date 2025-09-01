@@ -30,7 +30,7 @@ All requested advanced ML data quality validation features have been successfull
 
 ### 4. **Pipeline Integration**
 - ✅ **Step 1**: Data Collection - Enhanced with ML validation
-- ✅ **Step 2**: Feature Engineering - Enhanced with ML validation  
+- ✅ **Step 2**: Feature Engineering - Enhanced with ML validation
 - ✅ **Step 4**: Processing & Labeling - Enhanced with ML validation
 
 ## 🔧 Key Features Delivered
@@ -174,7 +174,7 @@ async def _run_data_collection(self, training_input):
     # Enhanced with ML validation
     pass
 
-# Step 2: Feature Engineering  
+# Step 2: Feature Engineering
 @step_specific_ml_validation("step2", timestamp_col="timestamp")
 async def run_step(self, symbol, exchange, data_dir, timeframe):
     # Enhanced with ML validation
@@ -198,7 +198,7 @@ async def run_step(self, symbol, exchange_name, data_dir, timeframe):
 
 ### Dependencies Required
 - `numpy` - For numerical operations
-- `pandas` - For DataFrame operations  
+- `pandas` - For DataFrame operations
 - `scipy` - For statistical tests
 - `scikit-learn` - For VIF calculations
 - `requests` - For alert system webhooks

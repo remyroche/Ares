@@ -23,7 +23,7 @@ The original issue was that Step3's SR block had no features available:
 - `_calculate_sr_proximity_features()` - SR proximity score using exponential decay
 - `_calculate_strength_score_features()` - Enhanced strength score with formula:
   ```
-  Strength_score = (w1 * log(Touch Count)) + (w2 * log(Total Volume)) + 
+  Strength_score = (w1 * log(Touch Count)) + (w2 * log(Total Volume)) +
                    (w3 * log(Level Age)) + (w4 * Bounce Rate) + (w5 * Isolation_Score)
   ```
 - `_calculate_clarity_factor_features()` - Clarity factor calculation

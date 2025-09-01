@@ -76,7 +76,7 @@ class DataGapDetector:
 
         """
         detection_start = datetime.now()
-        
+
         if start_date is None:
             start_date = datetime.now() - timedelta(days=365*2)
             logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
@@ -131,17 +131,17 @@ class DataGapDetector:
             len(results["existing_klines_months"]) +
             len(results["existing_futures_months"])
         )
-        
+
         detection_end = datetime.now()
         detection_time = detection_end - detection_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 MISSING DATA DETECTION SUMMARY")
         logger.info(f"⏱️  Detection time: {detection_time}")
         logger.info(f"📈 Total existing files: {total_existing}")
         logger.info(f"❌ Total missing files: {total_missing}")
         logger.info(f"📊 Coverage: {total_existing/(total_existing + total_missing)*100:.1f}%" if (total_existing + total_missing) > 0 else "📊 Coverage: N/A")
-        
+
         if total_missing > 0:
             logger.warning(f"⚠️  {total_missing} missing data files detected!")
         else:

@@ -111,7 +111,7 @@ class LabelingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
         self._initialize_components()
@@ -119,7 +119,7 @@ class LabelingStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -130,7 +130,7 @@ class LabelingStep:
     def _initialize_components(self) -> None:
         """Initialize labeling components."""
         self.logger.info("🔧 Initializing labeling components...")
-        
+
         # Initialize meta-labeling system if available
         if meta_labeling_system is not None:
             try:
@@ -233,21 +233,21 @@ class LabelingStep:
                 "created_at": pd.Timestamp.now().isoformat(),
                 "labeling_config": self.config.get("labeling", {})
             }
-            
+
             import json
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            
+
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
             self._log_step_timing("Labeling", step_start)
-            
+
             # Log artifacts and create detailed report
             await self._log_step5_artifacts_and_report(
             # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
             )
-            
+
 
             return True
 
@@ -277,14 +277,14 @@ class LabelingStep:
                 "data_quality_score": 1.0,
                 "processing_efficiency": 1.0,
             }
-            
+
             # Collect artifacts generated
             artifacts_generated = [
                 str(output_path),
                 str(metadata_path),
                 f"{exchange}_{symbol}_{timeframe}_labeling_metrics.json",
             ]
-            
+
             # Collect metrics
             metrics_calculated = {
                 "labeling_success": 1.0,
@@ -293,7 +293,7 @@ class LabelingStep:
                 "label_distribution": labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {},
                 "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict() if labeled_data is not None and 'triple_barrier_label' in labeled_data.columns else {},
             }
-            
+
             # Create training input for report
             training_input = {
                 "symbol": symbol,
@@ -305,7 +305,7 @@ class LabelingStep:
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
                 "project_version": self.config.get("project_version", "1.0.0"),  # Default version
             }
-            
+
             # Create step data for report
             step_data = {
                 "output_path": str(output_path),
@@ -313,7 +313,7 @@ class LabelingStep:
                 "data_shape": list(labeled_data.shape) if labeled_data is not None else [],
                 "label_columns": list(labeled_data.columns) if labeled_data is not None else [],
             }
-            
+
             # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step05_labeling",
@@ -324,7 +324,7 @@ class LabelingStep:
                 metrics_calculated=metrics_calculated,
                 errors_encountered=[]
             )
-            
+
             # Log the report
             report_name = log_step_report(
                 config=self.config,
@@ -341,7 +341,7 @@ class LabelingStep:
                 }
             )
             self.logger.info(f"✅ Logged labeling report: {report_name}")
-            
+
             # Log labeled data DataFrame
             if labeled_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
@@ -361,7 +361,7 @@ class LabelingStep:
                     }
                 )
                 self.logger.info(f"✅ Logged labeled data: {artifact_name}")
-            
+
             # Log labeling metadata
             if metadata_path.exists():
                 metadata_artifact_name = log_step_artifact_with_standardized_name(
@@ -379,7 +379,7 @@ class LabelingStep:
                 }
                 )
                 self.logger.info(f"✅ Logged labeling metadata: {metadata_artifact_name}")
-            
+
             # Log metrics
             log_step_metrics(
                 config=self.config,
@@ -394,9 +394,9 @@ class LabelingStep:
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
             )
-            
+
             self.logger.info("✅ Step 5 artifacts and reports logged successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
@@ -405,17 +405,17 @@ class LabelingStep:
         """Generate comprehensive labels combining multiple labeling strategies."""
         try:
             result_data = data.copy()
-            
+
             # 1. Triple barrier labels (already present)
             if 'triple_barrier_label' not in result_data.columns:
                 self.logger.error("❌ Triple barrier labels not found in data")
                 return None
-            
+
             # 2. Generate meta-labels if meta-labeling system is available
             if self.meta_labeling_system:
                 try:
                     await self.meta_labeling_system.initialize()
-                    
+
                     # Generate analyst labels
                     analyst_labels = await self.meta_labeling_system._generate_analyst_labels(
                         data, symbol, exchange, timeframe
@@ -423,7 +423,7 @@ class LabelingStep:
                     if analyst_labels is not None:
                         result_data['analyst_label'] = analyst_labels
                         self.logger.info("✅ Generated analyst labels")
-                    
+
                     # Generate tactician labels
                     tactician_labels = await self.meta_labeling_system._generate_tactician_labels(
                         data, symbol, exchange, timeframe
@@ -431,21 +431,21 @@ class LabelingStep:
                     if tactician_labels is not None:
                         result_data['tactician_label'] = tactician_labels
                         self.logger.info("✅ Generated tactician labels")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Meta-labeling failed: {e}")
-            
+
             # 3. Create composite label (primary label for training)
             composite_label = await self._create_composite_label(result_data)
             result_data['label'] = composite_label
-            
+
             # 6. Add label metadata
             result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
             result_data['label_source'] = await self._determine_label_source(result_data)
-            
+
             self.logger.info(f"✅ Generated comprehensive labels with {len(result_data.columns)} columns")
             self.logger.info(f"   - Label distribution: {result_data['label'].value_counts().to_dict()}")
-            
+
             return result_data
 
         except Exception as e:
@@ -459,17 +459,17 @@ class LabelingStep:
         try:
             # Start with triple barrier labels as base
             composite_label = data['triple_barrier_label'].copy()
-            
+
             # If we have analyst labels, use them to enhance the composite
             if 'analyst_label' in data.columns:
                 # Combine triple barrier with analyst labels
                 # Analyst labels can override triple barrier in certain conditions
                 analyst_override_mask = (
-                    (data['analyst_label'] != 0) & 
+                    (data['analyst_label'] != 0) &
                     (data['triple_barrier_label'] == 0)
                 )
                 composite_label[analyst_override_mask] = data['analyst_label'][analyst_override_mask]
-            
+
             return composite_label
 
         except Exception as e:
@@ -481,15 +481,15 @@ class LabelingStep:
         """Calculate confidence scores for labels."""
         try:
             confidence = np.ones(len(data), dtype=np.float32)
-            
+
             # Higher confidence when multiple labeling strategies agree
             if 'analyst_label' in data.columns:
                 agreement_mask = (data['label'] == data['analyst_label']) & (data['analyst_label'] != 0)
                 confidence[agreement_mask] += 0.2
-            
+
             # Cap confidence at 1.0
             confidence = np.minimum(confidence, 1.0)
-            
+
             return pd.Series(confidence, index=data.index)
 
         except Exception as e:
@@ -500,7 +500,7 @@ class LabelingStep:
         """Determine the source of each label."""
         try:
             sources = []
-            
+
             for idx in range(len(data)):
                 if data['label'].iloc[idx] == data['triple_barrier_label'].iloc[idx]:
                     if 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
@@ -511,7 +511,7 @@ class LabelingStep:
                     sources.append("analyst")
                 else:
                     sources.append("composite")
-            
+
             return pd.Series(sources, index=data.index)
 
         except Exception as e:
@@ -564,7 +564,7 @@ async def run_step(
 
     step = LabelingStep(step_config)
     await step.initialize()
-    
+
     return await step.execute_labeling(
         symbol=symbol,
         exchange=exchange,

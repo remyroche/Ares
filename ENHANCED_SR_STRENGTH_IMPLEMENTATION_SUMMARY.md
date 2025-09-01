@@ -134,18 +134,18 @@ The `get_sr_context()` method now includes:
 ```python
 context = {
     # ... existing context ...
-    
+
     # Enhanced Strength Analysis
     "enhanced_strength_support": enhanced_strength_support,
     "enhanced_strength_resistance": enhanced_strength_resistance,
-    
+
     # DBSCAN Clustering Results
     "clustering_result": clustering_result,
-    
+
     # Updated S/R Levels (clustered and filtered)
     "support_levels": clustered_support,
     "resistance_levels": clustered_resistance,
-    
+
     # Enhanced Strength for Nearest Levels
     "support_strength": nearest_support.get("enhanced_strength", ...),
     "resistance_strength": nearest_resistance.get("enhanced_strength", ...),

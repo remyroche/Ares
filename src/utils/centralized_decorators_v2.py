@@ -118,7 +118,7 @@ def validate_data_quality_v2(
 ):
     """
     Enhanced data quality validation decorator with configurable levels and auto-fixing.
-    
+
     Args:
         validation_level: Validation severity level
         context: Context for logging and error messages
@@ -129,7 +129,7 @@ def validate_data_quality_v2(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"DataQualityV2.{context}")
-            
+
             # Pre-validation
             if global_config.enable_data_quality_checks:
                 try:
@@ -149,14 +149,14 @@ def validate_data_quality_v2(
                         args, kwargs = await _apply_data_quality_fixes(args, kwargs, context)
                     else:
                         raise
-            
+
             # Execute the function
             try:
                 result = await func(*args, **kwargs)
             except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
-            
+
             # Post-validation
             if global_config.enable_data_quality_checks:
                 try:
@@ -167,13 +167,13 @@ def validate_data_quality_v2(
                         result = await _apply_output_quality_fixes(result, context)
                     else:
                         raise
-            
+
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"DataQualityV2.{context}")
-            
+
             # Pre-validation
             if global_config.enable_data_quality_checks:
                 try:
@@ -189,14 +189,14 @@ def validate_data_quality_v2(
                         args, kwargs = _apply_data_quality_fixes_sync(args, kwargs, context)
                     else:
                         raise
-            
+
             # Execute the function
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
-            
+
             # Post-validation
             if global_config.enable_data_quality_checks:
                 try:
@@ -207,11 +207,11 @@ def validate_data_quality_v2(
                         result = _apply_output_quality_fixes_sync(result, context)
                     else:
                         raise
-            
+
             return result
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 # ============================================================================
@@ -232,7 +232,7 @@ def quality_gate_v2(
 ):
     """
     Enhanced quality gate decorator with configurable thresholds and actions.
-    
+
     Args:
         min_quality_score: Minimum quality score required (0.0 to 1.0)
         required_grade: Minimum grade required (A, B, C, D, F)
@@ -243,16 +243,16 @@ def quality_gate_v2(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"QualityGateV2.{context}")
-            
+
             # Execute the function
             result = await func(*args, **kwargs)
-            
+
             # Assess quality
             quality_score, grade = _assess_quality(result, context)
-            
+
             if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
-                
+
                 if action_on_failure == "raise":
                     raise ValueError(f"Quality gate failed in {context}: {msg}")
                 elif action_on_failure == "warn":
@@ -261,23 +261,23 @@ def quality_gate_v2(
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
                     # Apply degradation logic
                     result = _apply_quality_degradation(result, quality_score, context)
-            
+
             logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"QualityGateV2.{context}")
-            
+
             # Execute the function
             result = func(*args, **kwargs)
-            
+
             # Assess quality
             quality_score, grade = _assess_quality(result, context)
-            
+
             if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
                 msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
-                
+
                 if action_on_failure == "raise":
                     raise ValueError(f"Quality gate failed in {context}: {msg}")
                 elif action_on_failure == "warn":
@@ -286,12 +286,12 @@ def quality_gate_v2(
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
                     # Apply degradation logic
                     result = _apply_quality_degradation(result, quality_score, context)
-            
+
             logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
             return result
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 # ============================================================================
@@ -312,7 +312,7 @@ def step_specific_ml_validation_v2(
 ):
     """
     Enhanced step-specific ML validation decorator with adaptive thresholds.
-    
+
     Args:
         step_name: Name of the ML pipeline step
         validation_config: Configuration for validation parameters
@@ -323,41 +323,41 @@ def step_specific_ml_validation_v2(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
-            
+
             # Determine validation thresholds
             thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
-            
+
             # Pre-validation
             await _validate_ml_step_prerequisites(args, kwargs, step_name, thresholds, logger)
-            
+
             # Execute the function
             result = await func(*args, **kwargs)
-            
+
             # Post-validation
             await _validate_ml_step_output(result, step_name, thresholds, logger)
-            
+
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
-            
+
             # Determine validation thresholds
             thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
-            
+
             # Pre-validation
             _validate_ml_step_prerequisites_sync(args, kwargs, step_name, thresholds, logger)
-            
+
             # Execute the function
             result = func(*args, **kwargs)
-            
+
             # Post-validation
             _validate_ml_step_output_sync(result, step_name, thresholds, logger)
-            
+
             return result
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 # ============================================================================
@@ -377,7 +377,7 @@ def auto_fix_data_quality_issues_v2(
 ):
     """
     Enhanced auto-fix decorator with intelligent issue resolution.
-    
+
     Args:
         context: Context for logging and error messages
         fix_strategies: List of fix strategies to apply
@@ -387,7 +387,7 @@ def auto_fix_data_quality_issues_v2(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"AutoFixV2.{context}")
-            
+
             # Execute with auto-fixing
             for attempt in range(max_fix_attempts):
                 try:
@@ -400,13 +400,13 @@ def auto_fix_data_quality_issues_v2(
                     else:
                         logger.error(f"All auto-fix attempts failed in {context}: {e}")
                         raise
-            
+
             return None  # Should never reach here
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"AutoFixV2.{context}")
-            
+
             # Execute with auto-fixing
             for attempt in range(max_fix_attempts):
                 try:
@@ -419,11 +419,11 @@ def auto_fix_data_quality_issues_v2(
                     else:
                         logger.error(f"All auto-fix attempts failed in {context}: {e}")
                         raise
-            
+
             return None  # Should never reach here
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 # ============================================================================
@@ -580,13 +580,13 @@ __all__ = [
     "auto_fix_data_quality_issues_v2",
     "monitor_feature_engineering_v2",
     "monitor_data_collection_v2",
-    
+
     # Enhanced decorators from enhanced_decorators module
     "smart_error_recovery",
     "cached_validation",
     "enhanced_validation",
     "performance_monitor_v2",
-    
+
     # Existing decorators for backwards compatibility
     "validate_call_or_runtime_types",
     "pa_check_input",
@@ -598,7 +598,7 @@ __all__ = [
     "guard_dataframe_nulls",
     "normalize_errors",
     "with_tracing_span",
-    
+
     # Training pipeline decorators
     "deterministic_seed",
     "idempotent_step",
@@ -614,7 +614,7 @@ __all__ = [
     "debug_training_step",
     "circuit_breaker_protection",
     "validate_step_output",
-    
+
     # Data quality decorators
     "validate_constant_features",
     "validate_low_variance_features",
@@ -629,7 +629,7 @@ __all__ = [
     "validate_feature_engineering_pipeline",
     "validate_hmm_regime_discovery",
     "validate_multi_timeframe_processing",
-    
+
     # Advanced decorators
     "performance_monitor",
     "model_validation",
@@ -639,7 +639,7 @@ __all__ = [
     "comprehensive_validation",
     "PerformanceLevel",
     "ValidationLevel",
-    
+
     # Registry and config access
     "decorator_registry",
     "global_config",

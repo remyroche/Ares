@@ -115,17 +115,17 @@ class TrainingOrchestrator:
     ) -> dict[str, Any]:
         """
         Validate the entire training pipeline configuration and dependencies.
-        
+
         Args:
             pipeline_config: Pipeline configuration dictionary
             validation_level: Validation level ("BASIC", "STANDARD", "COMPREHENSIVE", "CRITICAL") - defaults to CRITICAL
-            
+
         Returns:
             Validation result dictionary
         """
         try:
             self.logger.info(f"🔍 Validating training pipeline with {validation_level} level")
-            
+
             validation_results = {
                 "pipeline_valid": True,
                 "validation_level": validation_level,
@@ -136,37 +136,37 @@ class TrainingOrchestrator:
                 "warnings": [],
                 "recommendations": [],
             }
-            
+
             # Validate configuration
             config_validation = await self._validate_pipeline_configuration(pipeline_config)
             validation_results["configuration_validation"] = config_validation
-            
+
             if not config_validation.get("valid", True):
                 validation_results["pipeline_valid"] = False
                 validation_results["critical_issues"].append("Configuration validation failed")
-            
+
             # Validate component dependencies
             dependency_validation = await self._validate_component_dependencies(pipeline_config)
             validation_results["dependency_validation"] = dependency_validation
-            
+
             if not dependency_validation.get("valid", True):
                 validation_results["pipeline_valid"] = False
                 validation_results["critical_issues"].append("Dependency validation failed")
-            
+
             # Enhanced validation for comprehensive and critical levels
             if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
                 component_validation = await self._validate_component_health(pipeline_config)
                 validation_results["component_validation"] = component_validation
-                
+
                 if not component_validation.get("valid", True):
                     validation_results["pipeline_valid"] = False
                     validation_results["critical_issues"].append("Component health validation failed")
-                
+
                 # Generate recommendations
                 validation_results["recommendations"] = self._generate_pipeline_recommendations(
                     validation_results, validation_level
                 )
-            
+
             # Log validation summary
             if validation_results["pipeline_valid"]:
                 self.logger.info("✅ Training pipeline validation passed")
@@ -174,9 +174,9 @@ class TrainingOrchestrator:
                 self.logger.error("❌ Training pipeline validation failed")
                 for issue in validation_results["critical_issues"]:
                     self.logger.error(f"   - {issue}")
-            
+
             return validation_results
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error validating training pipeline: {e}")
             return {
@@ -191,10 +191,10 @@ class TrainingOrchestrator:
     ) -> dict[str, Any]:
         """
         Validate pipeline configuration.
-        
+
         Args:
             pipeline_config: Pipeline configuration dictionary
-            
+
         Returns:
             Validation result dictionary
         """
@@ -205,28 +205,28 @@ class TrainingOrchestrator:
                 "invalid_values": [],
                 "warnings": [],
             }
-            
+
             # Check required configuration keys
             required_keys = ["symbol", "exchange", "timeframe", "data_dir"]
             for key in required_keys:
                 if key not in pipeline_config:
                     validation_result["missing_keys"].append(key)
                     validation_result["valid"] = False
-            
+
             # Validate data types and ranges
             if "timeframe" in pipeline_config:
                 valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
                 if pipeline_config["timeframe"] not in valid_timeframes:
                     validation_result["invalid_values"].append(f"Invalid timeframe: {pipeline_config['timeframe']}")
                     validation_result["valid"] = False
-            
+
             if "data_dir" in pipeline_config:
                 import os
                 if not os.path.exists(pipeline_config["data_dir"]):
                     validation_result["warnings"].append(f"Data directory does not exist: {pipeline_config['data_dir']}")
-            
+
             return validation_result
-            
+
         except Exception as e:
             return {
                 "valid": False,
@@ -239,10 +239,10 @@ class TrainingOrchestrator:
     ) -> dict[str, Any]:
         """
         Validate component dependencies.
-        
+
         Args:
             pipeline_config: Pipeline configuration dictionary
-            
+
         Returns:
             Validation result dictionary
         """
@@ -252,22 +252,22 @@ class TrainingOrchestrator:
                 "missing_components": [],
                 "dependency_issues": [],
             }
-            
+
             # Check if required components are available
             required_components = [
                 "model_trainer",
-                "optimization_manager", 
+                "optimization_manager",
                 "ensemble_manager",
                 "calibration_manager",
             ]
-            
+
             for component in required_components:
                 if not hasattr(self, component) or getattr(self, component) is None:
                     validation_result["missing_components"].append(component)
                     validation_result["valid"] = False
-            
+
             return validation_result
-            
+
         except Exception as e:
             return {
                 "valid": False,
@@ -280,10 +280,10 @@ class TrainingOrchestrator:
     ) -> dict[str, Any]:
         """
         Validate component health and readiness.
-        
+
         Args:
             pipeline_config: Pipeline configuration dictionary
-            
+
         Returns:
             Validation result dictionary
         """
@@ -293,15 +293,15 @@ class TrainingOrchestrator:
                 "component_status": {},
                 "health_issues": [],
             }
-            
+
             # Check each component's health
             components = [
                 "model_trainer",
                 "optimization_manager",
-                "ensemble_manager", 
+                "ensemble_manager",
                 "calibration_manager",
             ]
-            
+
             for component in components:
                 if hasattr(self, component) and getattr(self, component) is not None:
                     try:
@@ -311,16 +311,16 @@ class TrainingOrchestrator:
                             status = comp.is_initialized if hasattr(comp, 'is_initialized') else True
                         else:
                             status = True
-                        
+
                         validation_result["component_status"][component] = {
                             "available": True,
                             "healthy": status,
                         }
-                        
+
                         if not status:
                             validation_result["health_issues"].append(f"{component} is not healthy")
                             validation_result["valid"] = False
-                            
+
                     except Exception as e:
                         validation_result["component_status"][component] = {
                             "available": False,
@@ -335,9 +335,9 @@ class TrainingOrchestrator:
                     }
                     validation_result["health_issues"].append(f"{component} not available")
                     validation_result["valid"] = False
-            
+
             return validation_result
-            
+
         except Exception as e:
             return {
                 "valid": False,
@@ -351,37 +351,37 @@ class TrainingOrchestrator:
     ) -> list[str]:
         """
         Generate recommendations based on validation results.
-        
+
         Args:
             validation_results: Validation results dictionary
             validation_level: Validation level
-            
+
         Returns:
             List of recommendations
         """
         recommendations = []
-        
+
         # Configuration recommendations
         if validation_results["configuration_validation"].get("missing_keys"):
             recommendations.append("Add missing configuration keys")
-        
+
         if validation_results["configuration_validation"].get("warnings"):
             recommendations.append("Review configuration warnings")
-        
+
         # Dependency recommendations
         if validation_results["dependency_validation"].get("missing_components"):
             recommendations.append("Initialize missing components")
-        
+
         # Component health recommendations
         if validation_results["component_validation"].get("health_issues"):
             recommendations.append("Address component health issues")
-        
+
         # Level-specific recommendations
         if validation_level == "CRITICAL":
             recommendations.append("Run additional data quality checks")
             recommendations.append("Verify model performance metrics")
             recommendations.append("Review risk management settings")
-        
+
         return recommendations
 
     @handle_errors(

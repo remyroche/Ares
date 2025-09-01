@@ -104,7 +104,7 @@ class TacticianSpecialistTrainingStep:
         self.logger = system_logger
         self.standards = pipeline_standards
         self.models: dict[str, Any] = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
@@ -137,7 +137,7 @@ class TacticianSpecialistTrainingStep:
                 self.optimized_feature_selection = optimized_feature_selection.OptimizedFeatureSelectionManager(config)
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
-        
+
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
             self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
@@ -148,7 +148,7 @@ class TacticianSpecialistTrainingStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -689,9 +689,9 @@ class TacticianSpecialistTrainingStep:
                     }
                 }
             }
-            
+
             multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
-            
+
             # Generate multi-output targets
             y_train_multi = multi_output_trainer.prepare_multi_output_targets(
                 X_train.values, y_train.values, market_data.iloc[:len(X_train)]
@@ -699,20 +699,20 @@ class TacticianSpecialistTrainingStep:
             y_test_multi = multi_output_trainer.prepare_multi_output_targets(
                 X_test.values, y_test.values, market_data.iloc[len(X_train):]
             )
-            
+
             # Train multi-output model
             trained_models = multi_output_trainer.train_multi_output_model(
                 X_train.values, y_train_multi, X_test.values, y_test_multi
             )
-            
+
             # Generate probability outputs
             price_action_probabilities = multi_output_trainer.predict_probabilities(
                 X_test.values, market_data.iloc[len(X_train):]
             )
-            
+
             # Calculate overall accuracy from probability outputs
             overall_accuracy = 0.0
-            prob_values = [v for k, v in price_action_probabilities.items() 
+            prob_values = [v for k, v in price_action_probabilities.items()
                           if k not in ["generation_timestamp", "model_type"]]
             if prob_values:
                 overall_accuracy = sum(prob_values) / len(prob_values)
@@ -793,14 +793,14 @@ class TacticianSpecialistTrainingStep:
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
                     'volume': np.random.randn(len(X_test))
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
                     calibrated_model, X_test.values, y_test.values, market_data, model_type="classification"
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for Calibrated Logistic model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {
@@ -934,14 +934,14 @@ class TacticianSpecialistTrainingStep:
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
                     'volume': np.random.randn(len(X_test))
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
                     model, X_test.values, y_test.values, market_data, model_type="classification"
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for XGBoost model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {
@@ -1029,14 +1029,14 @@ class TacticianSpecialistTrainingStep:
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
                     'volume': np.random.randn(len(X_test))
                 })
-                
+
                 price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
                     model, X_test.values, y_test.values, market_data, model_type="classification"
                 )
-                
+
                 self.logger.info(f"✅ Generated probability outputs for Random Forest model ({symbol})")
                 self.logger.info(f"   Probabilities: {price_action_probabilities}")
-                
+
             except Exception as prob_error:
                 self.logger.warning(f"⚠️ Failed to generate probabilities: {prob_error}")
                 price_action_probabilities = {

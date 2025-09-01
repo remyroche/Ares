@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 def get_diverse_lookback_config() -> dict[str, Any]:
     """
     Get diverse lookback period optimization configuration.
-    
+
     Returns:
         dict: Configuration dictionary
     """
@@ -201,7 +201,7 @@ def get_diverse_lookback_config() -> dict[str, Any]:
 def get_diverse_period_selection_strategy() -> dict[str, Any]:
     """
     Get strategy for selecting diverse periods.
-    
+
     Returns:
         dict: Selection strategy
     """
@@ -269,7 +269,7 @@ def get_diverse_period_selection_strategy() -> dict[str, Any]:
 def get_period_insight_mapping() -> dict[str, Any]:
     """
     Get mapping of periods to market insights.
-    
+
     Returns:
         dict: Period to insight mapping
     """
@@ -357,7 +357,7 @@ def get_period_insight_mapping() -> dict[str, Any]:
 def get_high_leverage_period_priorities() -> dict[str, Any]:
     """
     Get period priorities for high leverage trading.
-    
+
     Returns:
         dict: High leverage period priorities
     """

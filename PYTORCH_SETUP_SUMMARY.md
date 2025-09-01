@@ -14,7 +14,7 @@ Your codebase already has sophisticated PyTorch implementations:
 
 #### **Core Models** (in `src/training/steps/step6_hmm_based_training.py`)
 - **CNN Model**: For 1-minute timeframe predictions
-- **TCN Model**: Temporal Convolutional Network for 5-minute timeframe  
+- **TCN Model**: Temporal Convolutional Network for 5-minute timeframe
 - **Transformer Model**: For 15-minute timeframe predictions
 
 #### **Advanced Features**
@@ -65,7 +65,7 @@ from src.training.steps.step6_hmm_based_training import CNNModel, TCNModel, Tran
 # CNN for 1m timeframe
 cnn_model = CNNModel(input_channels=10, sequence_length=100, num_classes=3)
 
-# TCN for 5m timeframe  
+# TCN for 5m timeframe
 tcn_model = TCNModel(input_size=10, num_channels=[64, 128, 256], kernel_size=3, num_classes=3)
 
 # Transformer for 15m timeframe
@@ -82,7 +82,7 @@ class CustomTradingModel(nn.Module):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
         self.fc = nn.Linear(hidden_size, num_classes)
-    
+
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
         return self.fc(lstm_out[:, -1, :])
@@ -129,7 +129,7 @@ config = {
     "HMM_LM": {
         "specialist_models": {
             "1m": {"architecture": "CNN"},
-            "5m": {"architecture": "TCN"}, 
+            "5m": {"architecture": "TCN"},
             "15m": {"architecture": "Transformer"}
         }
     }

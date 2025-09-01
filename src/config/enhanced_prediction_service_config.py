@@ -10,7 +10,7 @@ from typing import Dict, Any
 def get_enhanced_prediction_service_config() -> Dict[str, Any]:
     """
     Get configuration for the Enhanced Prediction Service.
-    
+
     Returns:
         Dict containing configuration settings
     """
@@ -19,27 +19,27 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
             # Service configuration
             "data_dir": "data/training",
             "models_dir": "models",
-            
+
             # Prediction thresholds
             "confidence_threshold": 0.7,
             "price_prediction_threshold": 0.6,
-            
+
             # ML Profit Integration thresholds
             "profit_threshold": 0.02,  # 2% default profit target
             "barrier_threshold": 0.01,  # 1% default barrier
             "direction_confidence_threshold": 0.65,  # Minimum confidence for directional trades
-            
+
             # Timeframe configuration
             "timeframes": ["1m", "5m", "15m", "30m"],
             "primary_timeframe": "1m",
             "secondary_timeframe": "5m",
-            
+
             # Model loading configuration
             "load_hmm_models": True,
             "load_analyst_models": True,
             "load_tactician_models": True,
             "load_ensemble_models": True,
-            
+
             # Confidence calculation parameters
             "confidence_calculation": {
                 "volatility_scaling_factor": 10.0,
@@ -51,7 +51,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "volatility_adjustment_scale": 20.0,
                 "volatility_adjustment_offset": 5.0
             },
-            
+
             # Risk management parameters
             "risk_management": {
                 "max_position_size": 100.0,  # Maximum position size as percentage
@@ -65,7 +65,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "medium_confidence_threshold": 0.6, # Threshold for medium confidence
                 "low_confidence_threshold": 0.4     # Threshold for low confidence
             },
-            
+
             # Performance monitoring
             "performance_monitoring": {
                 "enable_prediction_tracking": True,
@@ -75,7 +75,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "confidence_history_size": 1000,
                 "risk_history_size": 1000
             },
-            
+
             # Integration settings
             "integration": {
                 "enable_analyst_integration": True,
@@ -85,7 +85,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "retry_attempts": 3,
                 "retry_delay": 1  # Seconds
             },
-            
+
             # Caching configuration
             "caching": {
                 "enable_caching": True,
@@ -93,7 +93,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "max_cache_size": 1000,
                 "cache_cleanup_interval": 60  # Seconds
             },
-            
+
             # Validation settings
             "validation": {
                 "enable_data_validation": True,
@@ -101,7 +101,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
                 "validation_level": "WARNING",  # DEBUG, INFO, WARNING, ERROR
                 "strict_validation": False
             },
-            
+
             # Logging configuration
             "logging": {
                 "log_level": "INFO",
@@ -116,7 +116,7 @@ def get_enhanced_prediction_service_config() -> Dict[str, Any]:
 def get_ml_profit_integration_config() -> Dict[str, Any]:
     """
     Get specific configuration for ML Profit Integration.
-    
+
     Returns:
         Dict containing ML profit integration settings
     """
@@ -125,11 +125,11 @@ def get_ml_profit_integration_config() -> Dict[str, Any]:
             # Model types to integrate
             "model_types": [
                 "hmm_profit",
-                "analyst_profit", 
+                "analyst_profit",
                 "tactician_profit",
                 "ensemble_profit"
             ],
-            
+
             # Prediction processing
             "prediction_processing": {
                 "extract_direction": True,
@@ -138,7 +138,7 @@ def get_ml_profit_integration_config() -> Dict[str, Any]:
                 "apply_confidence_calibration": True,
                 "apply_optimization_weights": True
             },
-            
+
             # Confidence enhancement
             "confidence_enhancement": {
                 "enable_barrier_analysis": True,
@@ -152,7 +152,7 @@ def get_ml_profit_integration_config() -> Dict[str, Any]:
                     "neutral_confidence": 0.5
                 }
             },
-            
+
             # Risk calculation
             "risk_calculation": {
                 "enable_risk_reward_calculation": True,
@@ -164,7 +164,7 @@ def get_ml_profit_integration_config() -> Dict[str, Any]:
                     "magnitude_boost_max": 0.3
                 }
             },
-            
+
             # Integration thresholds
             "integration_thresholds": {
                 "minimum_confidence": 0.3,
@@ -178,7 +178,7 @@ def get_ml_profit_integration_config() -> Dict[str, Any]:
 def get_enhanced_confidence_config() -> Dict[str, Any]:
     """
     Get configuration for enhanced confidence calculation.
-    
+
     Returns:
         Dict containing enhanced confidence settings
     """
@@ -191,7 +191,7 @@ def get_enhanced_confidence_config() -> Dict[str, Any]:
                 "min_probability": 0.1,
                 "max_probability": 0.95
             },
-            
+
             # Magnitude probability calculation
             "magnitude_probability": {
                 "magnitude_scaling": 5.0,
@@ -199,7 +199,7 @@ def get_enhanced_confidence_config() -> Dict[str, Any]:
                 "min_probability": 0.05,
                 "max_probability": 0.9
             },
-            
+
             # Barrier avoidance probability calculation
             "barrier_avoidance": {
                 "distance_scaling": 10.0,
@@ -208,7 +208,7 @@ def get_enhanced_confidence_config() -> Dict[str, Any]:
                 "min_probability": 0.1,
                 "max_probability": 0.95
             },
-            
+
             # Volatility adjustment
             "volatility_adjustment": {
                 "scaling_factor": 20.0,
@@ -216,7 +216,7 @@ def get_enhanced_confidence_config() -> Dict[str, Any]:
                 "min_adjustment": 0.5,
                 "max_adjustment": 1.2
             },
-            
+
             # Confidence bounds
             "confidence_bounds": {
                 "min_confidence": 0.0,
@@ -229,17 +229,17 @@ def get_enhanced_confidence_config() -> Dict[str, Any]:
 def get_integration_config() -> Dict[str, Any]:
     """
     Get complete integration configuration.
-    
+
     Returns:
         Dict containing all integration settings
     """
-    base_config = get_enhanced_prediction_service_config()
+    base_config , get_enhanced_prediction_service_config()
     ml_profit_config = get_ml_profit_integration_config()
-    confidence_config = get_enhanced_confidence_config()
-    
+    confidence_config , get_enhanced_confidence_config()
+
     # Merge configurations
     complete_config = base_config.copy()
     complete_config.update(ml_profit_config)
     complete_config.update(confidence_config)
-    
+
     return complete_config

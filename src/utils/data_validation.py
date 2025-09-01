@@ -1,7 +1,5 @@
 # src/utils/data_validation.py
 
-from __future__ import annotations
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 from typing import Any, Optional, Union, overload
 import logging
@@ -170,7 +168,7 @@ def safe_division(
     try:
         # Series / Series
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
-            with np.errstate(divide="ignore", invalid="ignore"): 
+            with np.errstate(divide="ignore", invalid="ignore"):
                 result = numerator / denominator
             zeros = (denominator == 0).sum()
             smalls = ((denominator != 0) & (np.abs(denominator) < 1e-12)).sum()

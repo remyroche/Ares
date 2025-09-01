@@ -62,7 +62,7 @@ class EnhancedSRPositionAnalyzer:
                 "atr_multiplier": 1.5,
                 "breakout_confirmation_periods": 3,
                 "false_breakout_filter": True,
-                
+
                 # Enhanced strength calculation configuration
                 "strength_calculation": {
                     "enable_enhanced_strength": True,
@@ -71,7 +71,7 @@ class EnhancedSRPositionAnalyzer:
                     "isolation_distance_threshold": 0.05,
                     "age_decay_factor": 0.95
                 },
-                
+
                 # DBSCAN clustering configuration
                 "dbscan_clustering": {
                     "enable_dbscan_clustering": True,
@@ -79,7 +79,7 @@ class EnhancedSRPositionAnalyzer:
                     "min_samples": 2,
                     "enable_noise_filtering": True
                 },
-                
+
                 # Feature calculation configuration
                 "feature_calculation": {
                     "enable_comprehensive_features": True,
@@ -96,7 +96,7 @@ class EnhancedSRPositionAnalyzer:
 
         self.sr_predictor = SRBreakoutPredictor(sr_config)
         init_success = await self.sr_predictor.initialize()
-        
+
         if not init_success:
             self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
             return False
@@ -120,11 +120,11 @@ class EnhancedSRPositionAnalyzer:
             return pd.Series(dtype=float)
 
         close = price_data["close"].astype(float)
-        
+
         # Get S/R levels from context
         support_levels = sr_context.get("support_levels", [])
         resistance_levels = sr_context.get("resistance_levels", [])
-        
+
         # Get nearest levels
         nearest_support = sr_context.get("nearest_support", close.iloc[-1])
         nearest_resistance = sr_context.get("nearest_resistance", close.iloc[-1])
@@ -151,7 +151,7 @@ class EnhancedSRPositionAnalyzer:
             # Find the actual closest support and resistance levels
             closest_support = min(support_levels, key=lambda x: abs(price - x.get('price', x)))
             closest_resistance = min(resistance_levels, key=lambda x: abs(price - x.get('price', x)))
-            
+
             support_price = closest_support.get('price', closest_support)
             resistance_price = closest_resistance.get('price', closest_resistance)
 
@@ -198,7 +198,7 @@ class EnhancedSRPositionAnalyzer:
 
         # Calculate position series
         position_series = self.calculate_sr_position(price_data, sr_context)
-        
+
         if position_series.empty:
             return {}
 
@@ -215,7 +215,7 @@ class EnhancedSRPositionAnalyzer:
         # Trend analysis
         position_trend = position_series.diff().fillna(0)
         trend_direction = "upward" if position_trend.iloc[-10:].mean() > 0 else "downward"
-        
+
         # Volatility analysis
         position_volatility = position_series.rolling(20).std().fillna(0)
         current_volatility = position_volatility.iloc[-1]
@@ -224,11 +224,11 @@ class EnhancedSRPositionAnalyzer:
         enhanced_support = sr_context.get("enhanced_strength_support", {})
         enhanced_resistance = sr_context.get("enhanced_strength_resistance", {})
         clustering_result = sr_context.get("clustering_result", {})
-        
+
         # Count significant levels
-        significant_support = len([level for level in sr_context.get("support_levels", []) 
+        significant_support = len([level for level in sr_context.get("support_levels", [])
                                  if level.get("enhanced_strength", 0.5) > 0.6])
-        significant_resistance = len([level for level in sr_context.get("resistance_levels", []) 
+        significant_resistance = len([level for level in sr_context.get("resistance_levels", [])
                                     if level.get("enhanced_strength", 0.5) > 0.6])
 
         analysis = {
@@ -325,7 +325,7 @@ class EnhancedSRPositionAnalyzer:
         if sr_levels["support_levels"]:
             support_prices = [level.get('price', level) for level in sr_levels['support_levels']]
             print(f"   Support Range: {min(support_prices):.2f} - {max(support_prices):.2f}")
-        
+
         print(f"   Resistance Levels: {len(sr_levels['resistance_levels'])} levels")
         if sr_levels["resistance_levels"]:
             resistance_prices = [level.get('price', level) for level in sr_levels['resistance_levels']]
@@ -382,7 +382,7 @@ async def main():
 
     # Initialize analyzer
     config = {
-        "symbol": args.symbol, 
+        "symbol": args.symbol,
         "exchange": args.exchange,
         "timeframe": args.timeframe
     }
@@ -394,7 +394,7 @@ async def main():
 
     # Get current price
     current_price = price_data["close"].iloc[-1]
-    
+
     # Get enhanced S/R context using SRBreakoutPredictor
     sr_context = await analyzer.sr_predictor.get_sr_context(price_data, current_price)
     if not sr_context:

@@ -6,10 +6,7 @@ This module provides comprehensive request/response tracing across all component
 of the Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
-from __future__ import annotations
 
-import asyncio
-import json
 import time
 import uuid
 from dataclasses import asdict, dataclass, field

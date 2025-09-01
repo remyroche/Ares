@@ -9,13 +9,10 @@ for large datasets.
 from functools import lru_cache
 from pathlib import Path
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 import os
-import time
 
-import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
@@ -348,14 +345,14 @@ class PartitionedDataLoader:
     def _optimize_filters_for_pruning(self, filters: List[Tuple], dataset_path: str) -> List[Tuple]:
         """Optimize filters for better partition pruning."""
         optimized_filters = []
-        
+
         # Get partition metadata to optimize filters
         partition_info = self._get_partition_info(dataset_path)
-        
+
         for filter_tuple in filters:
             if len(filter_tuple) == 3:
                 column, operator, value = filter_tuple
-                
+
             # Check if this filter can be used for partition pruning
             if column in partition_info.get('partition_columns', []):
                 # Keep partition filters as-is for optimal pruning
@@ -375,13 +372,13 @@ class PartitionedDataLoader:
             try:
                 dataset = ds.dataset(dataset_path)
                 schema = dataset.schema
-                
+
                 # Extract partition columns from schema
                 partition_columns = []
                 for field in schema:
                     if field.name in ['exchange', 'symbol', 'timeframe', 'year', 'month', 'day', 'hour']:
                         partition_columns.append(field.name)
-                
+
                 return {
                     'partition_columns': partition_columns,
                     'schema': schema,
@@ -389,16 +386,16 @@ class PartitionedDataLoader:
                 }
             except Exception:
                 pass
-        
+
         return {'partition_columns': [], 'schema': None, 'dataset_path': dataset_path}
 
     def get_partition_statistics(self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades") -> Dict[str, Any]:
         """Get comprehensive statistics about partitioned data."""
         dataset_path = os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
-        
+
         if not os.path.exists(dataset_path):
             return {'error': 'Dataset not found'}
-        
+
         try:
             stats = {
                 'dataset_path': dataset_path,
@@ -408,18 +405,18 @@ class PartitionedDataLoader:
                 'date_range': {},
                 'file_sizes': []
             }
-            
+
             # Walk through partition structure
             for root, dirs, files in os.walk(dataset_path):
                 parquet_files = [f for f in files if f.endswith('.parquet')]
                 stats['total_files'] += len(parquet_files)
-                
+
                 for file in parquet_files:
                     file_path = os.path.join(root, file)
                     file_size = os.path.getsize(file_path)
                     stats['total_size_bytes'] += file_size
                     stats['file_sizes'].append(file_size)
-                
+
                 # Extract partition information from path
                 rel_path = os.path.relpath(root, dataset_path)
                 if '=' in rel_path:
@@ -430,34 +427,34 @@ class PartitionedDataLoader:
                             if key not in stats['partition_counts']:
                                 stats['partition_counts'][key] = set()
                             stats['partition_counts'][key].add(value)
-            
+
             # Convert sets to lists for JSON serialization
             for key in stats['partition_counts']:
                 stats['partition_counts'][key] = list(stats['partition_counts'][key])
-            
+
             # Calculate additional statistics
             if stats['file_sizes']:
                 stats['avg_file_size'] = sum(stats['file_sizes']) / len(stats['file_sizes'])
                 stats['min_file_size'] = min(stats['file_sizes'])
                 stats['max_file_size'] = max(stats['file_sizes'])
-            
+
             return stats
-        
+
         except Exception as e:
             return {'error': str(e)}
 
     def optimize_partition_access(self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades") -> Dict[str, Any]:
         """Analyze and suggest optimizations for partition access patterns."""
         stats = self.get_partition_statistics(base_dir, exchange, symbol, data_type)
-        
+
         if 'error' in stats:
             return stats
-        
+
         recommendations = {
             'partition_analysis': stats,
             'recommendations': []
         }
-        
+
         # Analyze partition distribution
         if 'partition_counts' in stats:
             for partition_col, values in stats['partition_counts'].items():
@@ -475,7 +472,7 @@ class PartitionedDataLoader:
                         'unique_values': len(values),
                         'suggestion': f'Consider removing {partition_col} partitioning'
                     })
-        
+
         # File size analysis
         if 'avg_file_size' in stats:
             if stats['avg_file_size'] > 100_000_000:  # 100MB
@@ -490,7 +487,7 @@ class PartitionedDataLoader:
                     'avg_size_mb': stats['avg_file_size'] / 1_000_000,
                     'suggestion': 'Consider coarser partitioning to increase file sizes'
                 })
-        
+
         return recommendations
 
 # Convenience function for loading data

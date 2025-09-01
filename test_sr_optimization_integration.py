@@ -10,7 +10,6 @@ This script tests:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -25,10 +24,10 @@ async def test_sr_optimization_step():
     """Test the SR optimization step."""
     try:
         logger.info("🧪 Testing SR optimization step...")
-        
+
         # Import the step
         from src.training.steps.step2_5_sr_optimization import run_step
-        
+
         # Test configuration
         test_config = {
             "sr_detection_optimization": {
@@ -52,17 +51,17 @@ async def test_sr_optimization_step():
                 "report_retention_days": 30
             }
         }
-        
+
         # Run the step
         success = await run_step(test_config)
-        
+
         if success:
             logger.info("✅ SR optimization step test passed")
             return True
         else:
             logger.error("❌ SR optimization step test failed")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ SR optimization step test error: {e}")
         return False
@@ -72,10 +71,10 @@ async def test_hmm_uses_optimized_params():
     """Test that HMM clustering uses optimized parameters."""
     try:
         logger.info("🧪 Testing HMM uses optimized parameters...")
-        
+
         # Import HMM step
         from src.training.steps.step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
-        
+
         # Test configuration with optimized parameters
         test_config = {
             "sr_breakout_predictor": {
@@ -90,10 +89,10 @@ async def test_hmm_uses_optimized_params():
                 "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
             }
         }
-        
+
         # Create HMM step
         hmm_step = HMMRegimeDiscoveryStep(test_config)
-        
+
         # Check if SR predictor is initialized with optimized params
         if hasattr(hmm_step, 'sr_predictor'):
             sr_predictor = hmm_step.sr_predictor
@@ -110,7 +109,7 @@ async def test_hmm_uses_optimized_params():
         else:
             logger.error("❌ HMM step does not have SR predictor")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ HMM optimized params test error: {e}")
         return False
@@ -120,7 +119,7 @@ async def test_subsequent_steps_use_optimized_params():
     """Test that subsequent steps use optimized parameters."""
     try:
         logger.info("🧪 Testing subsequent steps use optimized parameters...")
-        
+
         # Test configuration with optimized parameters
         test_config = {
             "sr_breakout_predictor": {
@@ -135,25 +134,25 @@ async def test_subsequent_steps_use_optimized_params():
                 "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
             }
         }
-        
+
         # Test various components that should use optimized parameters
         components_to_test = [
             ("SR Breakout Predictor", "src.tactician.sr_breakout_predictor", "SRBreakoutPredictor"),
             ("Analyst Unified Regime Classifier", "src.analyst.unified_regime_classifier", "UnifiedRegimeClassifier"),
             ("Tactician SR Backtesting Validator", "src.tactician.sr_backtesting_validator", "SRBacktestingValidator"),
         ]
-        
+
         all_passed = True
-        
+
         for component_name, module_path, class_name in components_to_test:
             try:
                 # Import the module
                 module = __import__(module_path, fromlist=[class_name])
                 component_class = getattr(module, class_name)
-                
+
                 # Create instance with test config
                 component = component_class(test_config)
-                
+
                 # Check if it uses optimized parameters
                 if hasattr(component, 'sr_predictor'):
                     sr_predictor = component.sr_predictor
@@ -164,12 +163,12 @@ async def test_subsequent_steps_use_optimized_params():
                         all_passed = False
                 else:
                     logger.warning(f"⚠️ {component_name} does not have SR predictor")
-                    
+
             except Exception as e:
                 logger.warning(f"⚠️ Could not test {component_name}: {e}")
-        
+
         return all_passed
-        
+
     except Exception as e:
         logger.error(f"❌ Subsequent steps test error: {e}")
         return False
@@ -179,19 +178,19 @@ async def test_pipeline_integration():
     """Test that the pipeline correctly includes the new step."""
     try:
         logger.info("🧪 Testing pipeline integration...")
-        
+
         # Test step dependency validator
         from src.utils.step_dependency_validator import StepDependencyValidator
-        
+
         validator = StepDependencyValidator()
-        
+
         # Check if step2_5_sr_optimization is in dependencies
         if "step2_5_sr_optimization" in validator.step_dependencies:
             logger.info("✅ step2_5_sr_optimization found in step dependencies")
         else:
             logger.error("❌ step2_5_sr_optimization not found in step dependencies")
             return False
-        
+
         # Check if step3_hmm_regime_discovery depends on step2_5_sr_optimization
         step3_deps = validator.step_dependencies.get("step3_hmm_regime_discovery", [])
         if "step2_5_sr_optimization" in step3_deps:
@@ -199,26 +198,26 @@ async def test_pipeline_integration():
         else:
             logger.error("❌ step3_hmm_regime_discovery does not depend on step2_5_sr_optimization")
             return False
-        
+
         # Test enhanced training manager
         from src.training.enhanced_training_manager import EnhancedTrainingManager
-        
+
         # Check if step2_5_sr_optimization is in STEP_ORDER
         if "step2_5_sr_optimization" in EnhancedTrainingManager.STEP_ORDER:
             logger.info("✅ step2_5_sr_optimization found in STEP_ORDER")
         else:
             logger.error("❌ step2_5_sr_optimization not found in STEP_ORDER")
             return False
-        
+
         # Check if step2_5_sr_optimization is in CRITICAL_ARTIFACTS
         if "step2_5_sr_optimization" in EnhancedTrainingManager.CRITICAL_ARTIFACTS:
             logger.info("✅ step2_5_sr_optimization found in CRITICAL_ARTIFACTS")
         else:
             logger.error("❌ step2_5_sr_optimization not found in CRITICAL_ARTIFACTS")
             return False
-        
+
         return True
-        
+
     except Exception as e:
         logger.error(f"❌ Pipeline integration test error: {e}")
         return False
@@ -227,48 +226,48 @@ async def test_pipeline_integration():
 async def run_all_tests():
     """Run all tests."""
     logger.info("🚀 Starting SR optimization integration tests...")
-    
+
     tests = [
         ("SR Optimization Step", test_sr_optimization_step),
         ("HMM Uses Optimized Params", test_hmm_uses_optimized_params),
         ("Subsequent Steps Use Optimized Params", test_subsequent_steps_use_optimized_params),
         ("Pipeline Integration", test_pipeline_integration),
     ]
-    
+
     results = {}
-    
+
     for test_name, test_func in tests:
         logger.info(f"\n{'='*60}")
         logger.info(f"Running test: {test_name}")
         logger.info(f"{'='*60}")
-        
+
         try:
             result = await test_func()
             results[test_name] = result
-            
+
             if result:
                 logger.info(f"✅ {test_name} PASSED")
             else:
                 logger.error(f"❌ {test_name} FAILED")
-                
+
         except Exception as e:
             logger.error(f"❌ {test_name} ERROR: {e}")
             results[test_name] = False
-    
+
     # Summary
     logger.info(f"\n{'='*60}")
     logger.info("TEST SUMMARY")
     logger.info(f"{'='*60}")
-    
+
     passed = sum(1 for result in results.values() if result)
     total = len(results)
-    
+
     for test_name, result in results.items():
         status = "✅ PASSED" if result else "❌ FAILED"
         logger.info(f"{test_name:<40} {status}")
-    
+
     logger.info(f"\nOverall: {passed}/{total} tests passed")
-    
+
     if passed == total:
         logger.info("🎉 All tests passed! SR optimization integration is working correctly.")
         return True
@@ -280,7 +279,7 @@ async def run_all_tests():
 if __name__ == "__main__":
     # Run all tests
     success = asyncio.run(run_all_tests())
-    
+
     if success:
         print("\n🎉 All SR optimization integration tests passed!")
         sys.exit(0)

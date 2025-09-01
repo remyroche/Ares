@@ -63,7 +63,7 @@ def calculate_triple_barrier_probability(self, model, X_test, market_data):
     # Uses model confidence + market volatility + target ratios
     # Returns probability between 0.0 and 1.0
 
-# Direction probability calculation  
+# Direction probability calculation
 def calculate_direction_probability(self, model, X_test, y_test):
     # Combines model accuracy with prediction confidence
     # Returns probability between 0.0 and 1.0
@@ -111,15 +111,15 @@ def calculate_barrier_avoidance_probability(self, model, X_test, market_data):
 ```python
 async def _train_lightgbm_model(self, data, timeframe):
     # ... existing training code ...
-    
+
     # Generate probability outputs
     price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
         model, X_test, y_test, market_data, model_type="classification"
     )
-    
+
     # Save with standardized format
     save_model_with_probabilities(model_data, model_path, price_action_probabilities)
-    
+
     return {
         # ... existing return data ...
         "price_action_probabilities": price_action_probabilities
@@ -130,15 +130,15 @@ async def _train_lightgbm_model(self, data, timeframe):
 ```python
 async def _train_lightgbm(self, X_train, X_test, y_train, y_test, symbol, exchange):
     # ... existing training code ...
-    
+
     # Generate probability outputs
     price_action_probabilities = self.probability_generator.generate_price_action_probabilities(
         model, X_test.values, y_test.values, market_data, model_type="classification"
     )
-    
+
     # Save with standardized format
     save_model_with_probabilities(model_data, model_path, price_action_probabilities)
-    
+
     return {
         # ... existing return data ...
         "price_action_probabilities": price_action_probabilities
@@ -165,7 +165,7 @@ async def _train_lightgbm(self, X_train, X_test, y_train, y_test, symbol, exchan
 
 ### **Phase 3: Enhanced Models Implementation**
 - [ ] Update Step 7: Analyst Ensemble Creation
-- [ ] Update Step 10: Tactician Ensemble Creation  
+- [ ] Update Step 10: Tactician Ensemble Creation
 - [ ] Update Step 11: Confidence Calibration
 
 ### **Phase 4: Optimization Models Implementation**

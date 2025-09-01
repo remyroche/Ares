@@ -43,7 +43,7 @@ fi
 if [ -f package.json ] && command -v npx >/dev/null 2>&1; then
   echo "  📝 Formatting JavaScript/TypeScript code with prettier..."
   npx --yes prettier . --write || true
-  
+
   echo "  🧹 Auto-fixing JavaScript/TypeScript linting issues with eslint..."
   npx --yes eslint . --fix || true
 else

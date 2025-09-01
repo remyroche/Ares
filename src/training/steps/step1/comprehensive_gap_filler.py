@@ -932,7 +932,7 @@ class ComprehensiveGapFiller:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from src.utils.logger import system_logger
         logger = system_logger.getChild("ComprehensiveGapFiller")
-        
+
         gap_filling_start = datetime.now()
         logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
@@ -940,7 +940,7 @@ class ComprehensiveGapFiller:
         logger.info(f"⏱️  Call delay: {self.call_delay}s")
         logger.info(f"⏱️  Max consecutive empty: {self.max_consecutive_empty}")
         logger.info("-" * 60)
-        
+
         # Find all files for each data type
         aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
         aggtrades_csv_pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
@@ -1043,7 +1043,7 @@ class ComprehensiveGapFiller:
         # Summary
         gap_filling_end = datetime.now()
         gap_filling_time = gap_filling_end - gap_filling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 COMPREHENSIVE GAP FILLING SUMMARY")
         logger.info(f"⏱️  Total processing time: {gap_filling_time}")
@@ -1054,18 +1054,18 @@ class ComprehensiveGapFiller:
         logger.info(f"❌ Gaps failed: {total_gaps_failed}")
         logger.info(f"📡 API calls made: {total_api_calls}")
         logger.info(f"📡 Successful API calls: {total_successful_calls}")
-        
+
         if total_gaps_found > 0:
             success_rate = (total_gaps_filled / total_gaps_found) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
-            
+
             if total_gaps_filled > 0:
                 logger.info("✅ GAP FILLING COMPLETED SUCCESSFULLY!")
             else:
                 logger.warning("⚠️  GAP FILLING COMPLETED WITH NO SUCCESSFUL FILLS!")
         else:
             logger.info("✅ NO GAPS FOUND - ALL DATA IS COMPLETE!")
-        
+
         if total_gaps_found > 0:
             return {
                 "files_processed": total_files_processed,

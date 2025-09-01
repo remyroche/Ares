@@ -22,7 +22,6 @@ Usage:
 
 # ruff: noqa: E501, I001, C901, PLR2004
 
-from __future__ import annotations
 
 import argparse
 import asyncio

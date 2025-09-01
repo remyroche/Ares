@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.intelligent_feature_cache import (
 	cache_feature_engineering,
 	clear_feature_cache,
@@ -299,7 +298,7 @@ async def main() -> None:
 	Main function to run integration tests.
 	"""
 	logging.basicConfig(level=logging.INFO)
-	
+
 	tester = OptimizationIntegrationTest()
 	results = await tester.run_all_tests()
 

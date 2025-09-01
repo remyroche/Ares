@@ -6,7 +6,6 @@ This script demonstrates a strength-weighted SR position calculation,
 showing the difference between simple nearest-level and a strength-weighted approach.
 """
 
-from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Tuple

@@ -31,7 +31,7 @@ class ImprovedPipelineExecutor:
             pipeline_components: Dictionary containing all pipeline components
         """
         self.logger = system_logger.getChild("ImprovedPipelineExecutor")
-        
+
         # Pipeline components
         self.analyst = pipeline_components.get("analyst")
         self.strategist = pipeline_components.get("strategist")
@@ -39,7 +39,7 @@ class ImprovedPipelineExecutor:
         self.dual_model_system = pipeline_components.get("dual_model_system")
         self.supervisor = pipeline_components.get("supervisor")
         self.exchange_client = pipeline_components.get("exchange_client")
-        
+
         # Pipeline state
         self.cycle_count = 0
         self.cycle_history: List[Dict[str, Any]] = []
@@ -155,7 +155,7 @@ class ImprovedPipelineExecutor:
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
         """Generate mock market data for testing."""
         import numpy as np
-        
+
         # Generate realistic mock data
         base_price = 100.0
         prices = []
@@ -251,8 +251,8 @@ class ImprovedPipelineExecutor:
         context="step 2 strategy development",
     )
     async def execute_step_2_strategy_development(
-        self, 
-        market_context: Dict[str, Any], 
+        self,
+        market_context: Dict[str, Any],
         analysis_results: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
         """
@@ -277,13 +277,13 @@ class ImprovedPipelineExecutor:
 
             if strategy_result:
                 self.logger.info("✅ Step 2: Strategy Development completed successfully")
-                
+
                 # Log strategy details
                 direction = strategy_result.get("direction", "HOLD")
                 confidence = strategy_result.get("confidence", 0.0)
                 position_size = strategy_result.get("position_size", 0.0)
                 self.logger.info(f"   📊 Strategy: {direction}, Confidence: {confidence:.3f}, Position Size: {position_size:.4f}")
-                
+
                 return {
                     "step": 2,
                     "status": "success",
@@ -442,7 +442,7 @@ class ImprovedPipelineExecutor:
                         market_data=market_context["market_data"],
                         force_training=False,
                     )
-                    
+
                     if training_result.get("success", False):
                         self.logger.info("   ✅ Model training completed successfully")
                     else:
@@ -607,7 +607,7 @@ class ImprovedPipelineExecutor:
         try:
             self.cycle_count += 1
             cycle_start = datetime.now()
-            
+
             self.logger.info(f"🔄 Starting complete pipeline execution - Cycle {self.cycle_count}")
 
             # Step 0: Get market data
@@ -662,7 +662,7 @@ class ImprovedPipelineExecutor:
             return "error"
 
         statuses = [result.get("status", "error") if result else "error" for result in step_results]
-        
+
         if all(status == "success" for status in statuses):
             return "success"
         elif any(status == "error" for status in statuses):

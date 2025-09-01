@@ -89,12 +89,10 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 from src.config import CONFIG
-from src.config.constants import (
     FULL_TRAINING_LOOKBACK_DAYS,
     BLANK_TRAINING_LOOKBACK_DAYS,
     SHORT_BLANK_LOOKBACK_DAYS,
 )
-from src.config.training_modes import (
     get_training_mode_config,
     get_training_config_dict,
     get_training_input_dict,
@@ -336,13 +334,13 @@ class AresLauncher:
             if target_file.exists():
                 target_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
-            
+
             # Also clear any individual step checkpoint files
             for checkpoint_file in ns_dir.glob("*.json"):
                 if checkpoint_file.name != "training_progress.json":
                     checkpoint_file.unlink()
                     self.logger.info(f"🗑️  Cleared step checkpoint: {checkpoint_file}")
-                    
+
         except (OSError, IOError) as e:
             self.logger.warning(f"Failed to clear checkpoint: {e}")
 
@@ -355,25 +353,25 @@ class AresLauncher:
                     f"Cannot clear progress: step '{start_step}' is not in available steps"
                 )
                 return
-            
+
             # Find the index of the starting step
             try:
                 start_index = steps.index(start_step)
             except ValueError:
                 self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all progress")
                 start_index = 0
-            
+
             # Clear progress for the starting step and all subsequent steps
             steps_to_clear = steps[start_index:]
-            
+
             for step in steps_to_clear:
                 if orchestrator.clear_progress(step):
                     self.logger.info(f"🧹 Cleared progress for '{step}' (force)")
                 else:
                     self.logger.warning(f"⚠️ Failed to clear progress for '{step}'")
-            
+
             self.logger.info(f"✅ Cleared progress for {len(steps_to_clear)} steps: {steps_to_clear}")
-            
+
         except (OSError, IOError) as e:
             self.logger.warning(
                 f"Failed clearing progress from step '{start_step}': {e}"
@@ -487,7 +485,7 @@ class AresLauncher:
                 # Get training configuration from centralized mode configuration
                 training_config = get_training_config_dict(training_mode)
                 training_config["database"] = default_config["database"]
-                
+
                 # Override lookback_days if provided
                 if lookback_days != mode_config.lookback_days:
                     training_config["enhanced_training_manager"]["lookback_days"] = lookback_days
@@ -627,33 +625,33 @@ class AresLauncher:
         print("=" * 80)
         print("🎯 AVAILABLE TRAINING MODES")
         print("=" * 80)
-        
+
         # Show intensity comparison table
         print("\n📊 INTENSITY COMPARISON")
         print("-" * 80)
         comparison = get_intensity_comparison()
-        
+
         # Print header
         print(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
         print("-" * 80)
-        
+
         for mode, data in comparison.items():
             intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
             print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
-        
+
         print("\n" + "=" * 80)
         print("📋 DETAILED MODE CONFIGURATIONS")
         print("=" * 80)
-        
+
         modes = list_available_modes()
         recommendations = get_mode_recommendations()
-        
+
         for mode_name, description in modes.items():
             try:
                 config = get_training_mode_config(mode_name)
                 recommendation = recommendations.get(mode_name, "No specific recommendation available.")
                 intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
-                
+
                 print(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
                 print(f"   Description: {description}")
                 print(f"   Lookback Days: {config.lookback_days}")
@@ -668,10 +666,10 @@ class AresLauncher:
                 print(f"   Multi-timeframe Training: {'✅' if config.enable_multi_timeframe_training else '❌'}")
                 print(f"   Adaptive Training: {'✅' if config.enable_adaptive_training else '❌'}")
                 print(f"   Recommendation: {recommendation}")
-                
+
             except ValueError as e:
                 print(f"\n❌ Error loading {mode_name} mode: {e}")
-        
+
         print("\n" + "=" * 80)
         print("💡 USAGE EXAMPLES")
         print("=" * 80)
@@ -682,7 +680,7 @@ class AresLauncher:
         print("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --lookback-days 90")
         print("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --lookback-days 365")
         print("=" * 80)
-        
+
         return True
 
     @handle_errors(
@@ -1460,13 +1458,13 @@ class AresLauncher:
         )
         self.logger.info(f"📊 Starting from: {start_step}")
         self.logger.info(f"🎯 Training mode: {training_mode}")
-        
+
         # Validate previous steps before proceeding
         validation_success = await self._validate_previous_steps(symbol, exchange, start_step)
         if not validation_success:
             self.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
             return False
-        
+
         # Run the step pipeline with the specified training mode
         return self._run_step_pipeline(
             symbol=symbol,
@@ -1497,14 +1495,14 @@ class AresLauncher:
         self.logger.info(
             "📊 Using existing data from step1 and step1_5 - no new downloads"
         )
-        
+
         # Use existing validator orchestrator to validate step1 and step1_5
         try:
             from src.utils.validator_orchestrator import ValidatorOrchestrator
-            
+
             # Create validator orchestrator
             validator_orchestrator = ValidatorOrchestrator()
-            
+
             # Prepare training input for validation
             training_input = {
                 "symbol": symbol,
@@ -1512,52 +1510,52 @@ class AresLauncher:
                 "timeframe": "1m",
                 "data_dir": "data_cache"
             }
-            
+
             # Empty pipeline state since we're checking existing data
             pipeline_state = {}
-            
+
             # Validate step1 and step1_5 using existing validators
             self.logger.info("🔍 Validating step1_data_collection using existing validator")
             step1_result = await validator_orchestrator.run_step_validator(
                 "step1_data_collection", training_input, pipeline_state, CONFIG
             )
-            
+
             self.logger.info("🔍 Validating step1_5_data_converter using existing validator")
             step1_5_result = await validator_orchestrator.run_step_validator(
                 "step1_5_data_converter", training_input, pipeline_state, CONFIG
             )
-            
+
             # Print validation report
             self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
-            
+
             # Check if we can proceed
             step1_passed = step1_result.get("validation_passed", False)
             step1_5_passed = step1_5_result.get("validation_passed", False)
             can_start = step1_passed and step1_5_passed
-            
+
             if not can_start:
                 self.logger.error("❌ Cannot start from step2 - data validation failed")
                 self.logger.error("Please run step1 and step1_5 first to collect and process data")
                 return False
-            
+
             # Log warnings if any issues found
             step1_warnings = step1_result.get("warnings", [])
             step1_5_warnings = step1_5_result.get("warnings", [])
             total_warnings = len(step1_warnings) + len(step1_5_warnings)
-            
+
             if total_warnings > 0:
                 self.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
                 for warning in step1_warnings:
                     self.logger.warning(f"   • Step1: {warning}")
                 for warning in step1_5_warnings:
                     self.logger.warning(f"   • Step1_5: {warning}")
-            
+
             self.logger.info("✅ Data validation passed - proceeding with existing data")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Could not run existing validators: {e}")
             self.logger.warning("Proceeding with basic file existence check")
-            
+
             # Fallback to basic check
             consolidated_file = (
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
@@ -1571,7 +1569,7 @@ class AresLauncher:
                 )
                 return False
             self.logger.info(f"✅ Found consolidated data: {consolidated_file}")
-        
+
         return self._run_step_pipeline(
             symbol=symbol,
             exchange=exchange,
@@ -1584,15 +1582,15 @@ class AresLauncher:
     async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str) -> bool:
         """Validate all previous steps before starting from a specific step."""
         self.logger.info(f"🔍 Validating previous steps before starting from {start_step}")
-        
+
         try:
             from src.utils.validator_orchestrator import ValidatorOrchestrator
             from src.utils.step_dependency_validator import StepDependencyValidator
-            
+
             # Create validator orchestrator and dependency validator
             validator_orchestrator = ValidatorOrchestrator()
             dependency_validator = StepDependencyValidator()
-            
+
             # Prepare training input for validation
             training_input = {
                 "symbol": symbol,
@@ -1600,23 +1598,23 @@ class AresLauncher:
                 "timeframe": "1m",
                 "data_dir": "data_cache"
             }
-            
+
             # Get step dependencies
             step_dependencies = dependency_validator.step_dependencies
-            
+
             # Find all steps that need to be validated
             steps_to_validate = self._get_required_steps(start_step, step_dependencies)
-            
+
             if not steps_to_validate:
                 self.logger.info(f"✅ No previous steps to validate for {start_step}")
                 return True
-            
+
             self.logger.info(f"🔍 Validating {len(steps_to_validate)} previous steps: {steps_to_validate}")
-            
+
             # Validate each required step
             validation_results = {}
             all_passed = True
-            
+
             for step in steps_to_validate:
                 self.logger.info(f"🔍 Validating {step}...")
                 try:
@@ -1624,23 +1622,23 @@ class AresLauncher:
                         step, training_input, {}, CONFIG
                     )
                     validation_results[step] = result
-                    
+
                     if result.get("validation_passed", False):
                         self.logger.info(f"✅ {step} validation passed")
                     else:
                         self.logger.error(f"❌ {step} validation failed: {result.get('error', 'Unknown error')}")
                         all_passed = False
-                        
+
                 except Exception as e:
                     self.logger.error(f"❌ Error validating {step}: {e}")
                     validation_results[step] = {"validation_passed": False, "error": str(e)}
                     all_passed = False
-            
+
             # Print validation report
             self._print_validation_report(validation_results, symbol, exchange, start_step)
-            
+
             return all_passed
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in step validation: {e}")
             return False
@@ -1648,8 +1646,6 @@ class AresLauncher:
     def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
         """Get all steps that need to be validated before starting from a specific step."""
         required_steps = []
-        
-        # Correct 21-step pipeline order based on actual step files
         step_order = [
             "step1_data_collection",           # Step 1: Data Collection
             "step1_5_data_converter",          # Step 1.5: Data Converter
@@ -1676,14 +1672,14 @@ class AresLauncher:
             "step20_ab_testing",               # Step 20: A/B Testing
             "step21_saving",                   # Step 21: Saving Results
         ]
-        
+
         try:
             start_index = step_order.index(start_step)
             required_steps = step_order[:start_index]
         except ValueError:
             self.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
             return []
-        
+
         return required_steps
 
     def _print_validation_report(self, validation_results: dict, symbol: str, exchange: str, start_step: str):
@@ -1694,18 +1690,18 @@ class AresLauncher:
         print(f"🏢 Exchange: {exchange}")
         print(f"🚀 Starting from: {start_step}")
         print("="*80)
-        
+
         all_passed = True
         for step, result in validation_results.items():
             passed = result.get("validation_passed", False)
             status = "✅ PASSED" if passed else "❌ FAILED"
             print(f"{step:<35} {status}")
-            
+
             if not passed:
                 all_passed = False
                 error = result.get("error", "Unknown error")
                 print(f"   Error: {error}")
-        
+
         print("="*80)
         if all_passed:
             print("🎉 All previous steps validated successfully!")
@@ -1720,7 +1716,7 @@ class AresLauncher:
         print(f"🎯 Symbol: {symbol}")
         print(f"🏢 Exchange: {exchange}")
         print("="*80)
-        
+
         # Step1 status
         step1_passed = step1_result.get("validation_passed", False)
         step1_status = "✅ PASSED" if step1_passed else "❌ FAILED"
@@ -1730,7 +1726,7 @@ class AresLauncher:
             print(f"   ⚠️  Found {len(step1_warnings)} warnings")
             for warning in step1_warnings:
                 print(f"     • {warning}")
-        
+
         # Step1_5 status
         step1_5_passed = step1_5_result.get("validation_passed", False)
         step1_5_status = "✅ PASSED" if step1_5_passed else "❌ FAILED"
@@ -1740,13 +1736,13 @@ class AresLauncher:
             print(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
             for warning in step1_5_warnings:
                 print(f"     • {warning}")
-        
+
         # Show validation details if available
         if step1_result.get("details"):
             print(f"   📋 Step1 Details: {step1_result['details']}")
         if step1_5_result.get("details"):
             print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
-        
+
         # Overall assessment
         can_start = step1_passed and step1_5_passed
         if can_start:
@@ -1755,7 +1751,7 @@ class AresLauncher:
         else:
             print(f"\n❌ NOT READY FOR STEP2")
             print(f"   Data validation failed - missing or invalid data")
-        
+
         print("="*80 + "\n")
 
     @handle_errors(
@@ -2165,7 +2161,7 @@ Examples:
       python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
     python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_data_reading  # Specific step2
-    
+
     # New step-based commands with validation
     python ares_launcher.py step1 --symbol ETHUSDT --exchange BINANCE --training-mode light
     python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
@@ -2177,7 +2173,7 @@ Examples:
     python ares_launcher.py step10 --symbol ETHUSDT --exchange BINANCE --training-mode blank --gui
     python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
     python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
-    
+
     # Legacy step-based commands (still supported)
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step1_data_collection
     python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --step step2_processing_labeling_feature_engineering

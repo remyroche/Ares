@@ -26,7 +26,7 @@
 ```python
 class Step3_5FinalRegimeClusteringValidator:
     """Validator for Step 3.5: Final Regime Clustering."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = logger
@@ -36,7 +36,7 @@ class Step3_5FinalRegimeClusteringValidator:
 ```python
 class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
@@ -112,11 +112,11 @@ from src.utils.enhanced_validation_decorators import validate_step3_5_comprehens
 
 class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
-    
+
     @validate_step3_5_comprehensive
     async def validate_step3_5_final_regime_clustering(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
@@ -128,7 +128,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         # - Output validation
         # - Data quality validation
         # - Performance monitoring
-        
+
         # Your validation logic here
         return True
 ```
@@ -140,11 +140,11 @@ from src.utils.enhanced_validation_decorators import smart_validation_cache
 
 class Step3ParameterOptimizationValidator(BaseValidator):
     """Validator for Step 3: Parameter Optimization."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step03_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
-    
+
     @smart_validation_cache(ttl_seconds=600)  # Cache for 10 minutes
     def validate_optimization_results(self, results_file: Path) -> bool:
         """Validate optimization results with caching."""
@@ -157,11 +157,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
 ```python
 class Step4RegimeDataSplittingValidator(BaseValidator):
     """Validator for Step 4: Regime Data Splitting."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step04_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
-    
+
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites using BaseValidator methods."""
         validation_result = {
@@ -170,12 +170,12 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
             "errors": [],
             "details": {}
         }
-        
+
         try:
             # Use BaseValidator's file validation
             step03_output_dir = Path("data/training")
             step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
-            
+
             if not step03_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -193,14 +193,14 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                             validation_result["warnings"].append(f"File {file_path.name} has quality issues")
                     except Exception as e:
                         validation_result["warnings"].append(f"Could not read {file_path.name}: {e}")
-                
+
                 validation_result["details"]["step03_files_found"] = len(step03_files)
                 validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
-        
+
         except Exception as e:
             validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
-        
+
         return validation_result
 ```
 
@@ -226,7 +226,7 @@ def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Di
 def validate_multiple_files(self, file_paths: List[Path]) -> Dict[str, Any]:
     """Validate multiple files in batch for better performance."""
     validation_results = {}
-    
+
     # Use asyncio.gather for parallel validation
     async def validate_single_file(file_path: Path) -> Tuple[str, bool]:
         try:
@@ -235,14 +235,14 @@ def validate_multiple_files(self, file_paths: List[Path]) -> Dict[str, Any]:
             return str(file_path), valid
         except Exception as e:
             return str(file_path), False
-    
+
     # Run validations in parallel
     tasks = [validate_single_file(path) for path in file_paths]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     for file_path, result in results:
         validation_results[file_path] = result
-    
+
     return validation_results
 ```
 
@@ -251,22 +251,22 @@ def validate_multiple_files(self, file_paths: List[Path]) -> Dict[str, Any]:
 ```python
 class LazyValidationMixin:
     """Mixin for lazy validation that only validates when needed."""
-    
+
     def __init__(self):
         self._validation_cache = {}
         self._validation_needed = True
-    
+
     def mark_validation_needed(self):
         """Mark that validation is needed."""
         self._validation_needed = True
         self._validation_cache.clear()
-    
+
     def get_cached_validation(self, key: str) -> Optional[Dict[str, Any]]:
         """Get cached validation result if available and still valid."""
         if not self._validation_needed and key in self._validation_cache:
             return self._validation_cache[key]
         return None
-    
+
     def cache_validation_result(self, key: str, result: Dict[str, Any]):
         """Cache validation result."""
         self._validation_cache[key] = result
@@ -280,14 +280,14 @@ class LazyValidationMixin:
 ```python
 class ValidationError(Exception):
     """Structured validation error with context."""
-    
+
     def __init__(self, message: str, context: Dict[str, Any], severity: str = "ERROR"):
         self.message = message
         self.context = context
         self.severity = severity
         self.timestamp = datetime.now().isoformat()
         super().__init__(self.message)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert error to dictionary for logging."""
         return {
@@ -338,7 +338,7 @@ def validate_with_fallback(self, validation_func: Callable, *args, **kwargs) -> 
         return {"validation_passed": True, "method": "comprehensive", "result": result}
     except Exception as e:
         self.logger.warning(f"Comprehensive validation failed, falling back to basic: {e}")
-        
+
         try:
             # Fall back to basic validation
             basic_result = self._basic_validation(*args, **kwargs)
@@ -355,7 +355,7 @@ def validate_with_fallback(self, validation_func: Callable, *args, **kwargs) -> 
 ```python
 class ValidationMetricsCollector:
     """Collect and report validation metrics."""
-    
+
     def __init__(self):
         self.metrics = {
             "total_validations": 0,
@@ -364,7 +364,7 @@ class ValidationMetricsCollector:
             "validation_times": [],
             "error_counts": defaultdict(int)
         }
-    
+
     def record_validation(self, step_name: str, passed: bool, duration: float, errors: List[str] = None):
         """Record validation result."""
         self.metrics["total_validations"] += 1
@@ -372,18 +372,18 @@ class ValidationMetricsCollector:
             self.metrics["passed_validations"] += 1
         else:
             self.metrics["failed_validations"] += 1
-        
+
         self.metrics["validation_times"].append(duration)
-        
+
         if errors:
             for error in errors:
                 self.metrics["error_counts"][error] += 1
-    
+
     def get_summary(self) -> Dict[str, Any]:
         """Get validation summary."""
         if not self.metrics["validation_times"]:
             return self.metrics
-        
+
         return {
             **self.metrics,
             "success_rate": self.metrics["passed_validations"] / self.metrics["total_validations"],
@@ -405,16 +405,16 @@ def log_validation_result(self, result: Dict[str, Any], context: Dict[str, Any])
         "errors_count": len(result.get("errors", [])),
         "context": context
     }
-    
+
     if result.get("validation_passed"):
         self.logger.info(f"✅ Validation passed: {log_data}")
     else:
         self.logger.error(f"❌ Validation failed: {log_data}")
-        
+
         # Log detailed errors
         for error in result.get("errors", []):
             self.logger.error(f"   Error: {error}")
-        
+
         # Log warnings
         for warning in result.get("warnings", []):
             self.logger.warning(f"   Warning: {warning}")

@@ -428,7 +428,7 @@ class DataPreparation:
 
         """
         resampling_start = datetime.now()
-        
+
         if timeframes is None:
             timeframes = ["5m", "15m", "30m"]
 
@@ -503,7 +503,7 @@ class DataPreparation:
 
         resampling_end = datetime.now()
         resampling_time = resampling_end - resampling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 RESAMPLING SUMMARY")
         logger.info(f"⏱️  Total resampling time: {resampling_time}")
@@ -511,22 +511,22 @@ class DataPreparation:
         logger.info(f"📁 Resampled files created: {len(results.get('resampled_files', {}))}")
         logger.info(f"📁 Partitioned datasets created: {len(results.get('partitioned_datasets', {}))}")
         logger.info(f"✅ Success: {results.get('success', False)}")
-        
+
         if results.get('resampled_files'):
             logger.info("📊 RESAMPLED FILES CREATED:")
             for timeframe, file_path in results['resampled_files'].items():
                 logger.info(f"  • {timeframe}: {file_path}")
-        
+
         if results.get('partitioned_datasets'):
             logger.info("📁 PARTITIONED DATASETS CREATED:")
             for timeframe, dataset_path in results['partitioned_datasets'].items():
                 logger.info(f"  • {timeframe}: {dataset_path}")
-        
+
         if results.get('success'):
             logger.info("✅ RESAMPLING COMPLETED SUCCESSFULLY!")
         else:
             logger.error(f"❌ RESAMPLING FAILED: {results.get('error', 'Unknown error')}")
-        
+
         return results
 
     @validate_data_quality()

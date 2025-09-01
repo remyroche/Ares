@@ -68,7 +68,7 @@ class Step1DataCollectionValidator(BaseValidator):
 		md = pipeline_state.get("market_data") or {}
 		if isinstance(md, pd.DataFrame) and not md.empty:
 			self.logger.info(f"✅ Market data present in state: {md.shape} rows/cols")
-			
+
 			# Comprehensive DataFrame validation
 			df_validation, df_metrics = self.validate_dataframe_quality(
 				df=md,
@@ -79,16 +79,16 @@ class Step1DataCollectionValidator(BaseValidator):
 				check_duplicates=True,
 				check_temporal_consistency=True,
 			)
-			
+
 			validation_result["validation_results"]["pipeline_state_data"] = {
 				"valid": df_validation,
 				"metrics": df_metrics,
 			}
-			
+
 			if df_validation:
 				validation_result["validation_passed"] = True
 				validation_result["data_quality_metrics"] = df_metrics
-				
+
 				# Log additional details
 				try:
 					if isinstance(md.index, pd.DatetimeIndex):
@@ -100,7 +100,7 @@ class Step1DataCollectionValidator(BaseValidator):
 			else:
 				validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
 				validation_result["warnings"].extend(df_metrics.get("data_quality_issues", []))
-			
+
 			return validation_result
 
 		# Check for consolidated files in data_cache directory

@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover
 class ConfidenceCalibrationStep:
     """Step 11: Confidence Calibration for individual models and ensembles."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""

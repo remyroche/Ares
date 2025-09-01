@@ -7,7 +7,6 @@ This module provides base classes that make it easy for trading components
 to participate in the dependency injection system.
 """
 
-from __future__ import annotations
 
 import sys
 from typing import TYPE_CHECKING, Any

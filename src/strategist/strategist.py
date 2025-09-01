@@ -29,7 +29,7 @@ class Strategist:
     - Strategy Generation: Create trading strategies based on market analysis
     - Market Analysis Integration: Combine analyst and tactician inputs
     - Strategy History Management: Track and store strategy performance
-    
+
     Note: Position sizing is handled by the Tactician component
     """
 
@@ -379,7 +379,7 @@ class Strategist:
             if trading_decision:
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
                 decision_direction = trading_decision.get("direction", "HOLD")
-                
+
                 # Set strategy solely from ML/HMM decision
                 strategy["dual_model_direction"] = decision_direction
                 strategy["dual_model_confidence"] = decision_confidence
@@ -406,7 +406,7 @@ class Strategist:
 
             # Calculate stop loss and take profit levels
             volatility = strategy["indicators"]["price_volatility"]
-            
+
             if strategy["direction"] == "LONG":
                 # Stop loss: 2x volatility below current price
                 stop_loss_pct = volatility * 2

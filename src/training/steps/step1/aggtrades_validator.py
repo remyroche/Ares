@@ -343,7 +343,7 @@ class AggtradesValidator:
 
         validation_end = datetime.now()
         validation_time = validation_end - validation_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 AGGTRADES VALIDATION SUMMARY")
         logger.info(f"⏱️  Validation time: {validation_time}")
@@ -352,12 +352,12 @@ class AggtradesValidator:
         logger.info(f"❌ Invalid files: {validation_result['invalid_files']}")
         logger.info(f"🔧 Fixed files: {validation_result['fixed_files']}")
         logger.info(f"📊 Success rate: {validation_result['valid_files']/validation_result['total_files']*100:.1f}%" if validation_result['total_files'] > 0 else "📊 Success rate: N/A")
-        
+
         if validation_result['errors']:
             logger.error("❌ VALIDATION ERRORS:")
             for i, error in enumerate(validation_result['errors'], 1):
                 logger.error(f"  {i}. {error}")
-        
+
         if validation_result['invalid_files'] > 0 and not auto_fix:
             logger.warning("⚠️  Some files are invalid and auto-fix is disabled!")
         elif validation_result['invalid_files'] == 0:

@@ -1,6 +1,5 @@
 # src/transition/multitask_rf.py
 
-from __future__ import annotations
 from collections import Counter
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, f1_score, mean_absolute_error

@@ -215,21 +215,21 @@ Added comprehensive stability analysis section to the detailed quality report:
    Variance stability score: 0.756
    Entropy stability score: 0.891
    Stable features count: 45
-   
+
    Distribution stability score: 0.847
    Mean PSI: 0.156
    Stable distributions: 35
    Moderate shifts: 12
    Significant shifts: 3
    Mean entropy stability: 0.823
-   
+
    Importance stability score: 0.812
    Correlation stability: 0.834
    Mutual info stability: 0.789
    Variance stability: 0.812
    Entropy importance stability: 0.867
    Stable importance features: 42
-   
+
    Overall stability score: 0.827
    ✅ EXCELLENT - Features are very stable over time
 ```

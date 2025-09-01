@@ -110,13 +110,13 @@ SHORT_BLANK_LOOKBACK_DAYS: Final[int] = LIGHT_MODE.lookback_days  # Alias for ba
 def get_training_mode_config(mode: str) -> TrainingModeConfig:
     """
     Get the configuration for a specific training mode.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
-        
+
     Returns:
         TrainingModeConfig for the specified mode
-        
+
     Raises:
         ValueError: If the mode is not supported
     """
@@ -128,15 +128,15 @@ def get_training_mode_config(mode: str) -> TrainingModeConfig:
 def get_training_config_dict(mode: str) -> Dict[str, Any]:
     """
     Get the training configuration dictionary for a specific mode.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
-        
+
     Returns:
         Dictionary containing the training configuration
     """
     config = get_training_mode_config(mode)
-    
+
     return {
         "enhanced_training_manager": {
             "enhanced_training_interval": config.enhanced_training_interval,
@@ -163,18 +163,18 @@ def get_training_config_dict(mode: str) -> Dict[str, Any]:
 def get_training_input_dict(mode: str, symbol: str, exchange: str, **kwargs) -> Dict[str, Any]:
     """
     Get the training input dictionary for a specific mode.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
         symbol: Trading symbol
         exchange: Exchange name
         **kwargs: Additional parameters to override defaults
-        
+
     Returns:
         Dictionary containing the training input configuration
     """
     config = get_training_mode_config(mode)
-    
+
     base_input = {
         "enhanced_training_type": f"{mode}_training",
         "model_architecture": "enhanced_ensemble",
@@ -188,17 +188,17 @@ def get_training_input_dict(mode: str, symbol: str, exchange: str, **kwargs) -> 
         "computational_intensity": config.computational_intensity,
         "estimated_duration_minutes": config.estimated_duration_minutes,
     }
-    
+
     # Override with any provided kwargs
     base_input.update(kwargs)
-    
+
     return base_input
 
 
 def list_available_modes() -> Dict[str, str]:
     """
     Get a list of available training modes with their descriptions.
-    
+
     Returns:
         Dictionary mapping mode names to descriptions
     """
@@ -208,17 +208,17 @@ def list_available_modes() -> Dict[str, str]:
 def validate_mode_parameters(mode: str, **kwargs) -> bool:
     """
     Validate that the provided parameters are appropriate for the specified mode.
-    
+
     Args:
         mode: The training mode to validate
         **kwargs: Parameters to validate
-        
+
     Returns:
         True if parameters are valid, False otherwise
     """
     try:
         config = get_training_mode_config(mode)
-        
+
         # Validate lookback_days if provided
         if "lookback_days" in kwargs:
             provided_lookback = kwargs["lookback_days"]
@@ -228,7 +228,7 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
                 return False
             if mode == "full" and provided_lookback < 365:  # Full mode should be substantial
                 return False
-        
+
         # Validate max_trials if provided
         if "max_trials" in kwargs:
             provided_max_trials = kwargs["max_trials"]
@@ -236,7 +236,7 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
                 return False
             if mode == "light" and provided_max_trials > 5:  # Light mode should be quick
                 return False
-        
+
         # Validate n_trials if provided
         if "n_trials" in kwargs:
             provided_n_trials = kwargs["n_trials"]
@@ -244,9 +244,9 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
                 return False
             if mode == "light" and provided_n_trials > 5:  # Light mode should be quick
                 return False
-        
+
         return True
-        
+
     except ValueError:
         return False
 
@@ -254,12 +254,12 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
 def calculate_intensity_percentage(base_value: int, percentage: float, minimum: int = 3) -> int:
     """
     Calculate a percentage of a base value with a minimum threshold.
-    
+
     Args:
         base_value: The base value to calculate percentage from
         percentage: The percentage to apply (0.0 to 1.0)
         minimum: The minimum value to return
-        
+
     Returns:
         The calculated value, never less than the minimum
     """
@@ -270,13 +270,13 @@ def calculate_intensity_percentage(base_value: int, percentage: float, minimum: 
 def get_intensity_percentage(mode: str) -> float:
     """
     Get the intensity percentage for a specific mode.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
-        
+
     Returns:
         The intensity percentage as a float (0.0 to 1.0)
-        
+
     Raises:
         ValueError: If the mode is not supported
     """
@@ -288,17 +288,17 @@ def get_intensity_percentage(mode: str) -> float:
 def get_intensity_comparison() -> Dict[str, Dict[str, int]]:
     """
     Get a comparison of training parameters across all modes.
-    
+
     Returns:
         Dictionary with parameter comparisons
     """
     full_config = get_training_mode_config("full")
-    
+
     comparison = {}
     for mode in TRAINING_MODES.keys():
         config = get_training_mode_config(mode)
         percentage = get_intensity_percentage(mode)
-        
+
         comparison[mode] = {
             "intensity_percentage": percentage,
             "max_trials": config.max_trials,
@@ -307,14 +307,14 @@ def get_intensity_comparison() -> Dict[str, Dict[str, int]]:
             "estimated_duration_minutes": config.estimated_duration_minutes,
             "computational_intensity": config.computational_intensity,
         }
-    
+
     return comparison
 
 
 def get_mode_recommendations() -> Dict[str, str]:
     """
     Get recommendations for when to use each mode.
-    
+
     Returns:
         Dictionary with mode recommendations
     """
@@ -328,17 +328,17 @@ def get_mode_recommendations() -> Dict[str, str]:
 def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
     """
     Get step-specific parameters based on the training mode.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
         step_name: The name of the pipeline step
-        
+
     Returns:
         Dictionary containing step-specific parameters
     """
     config = get_training_mode_config(mode)
     percentage = get_intensity_percentage(mode)
-    
+
     # Base parameters that apply to most steps
     base_params = {
         "max_trials": config.max_trials,
@@ -350,8 +350,6 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
         "training_mode": mode,
         "intensity_percentage": percentage,
     }
-    
-    # Step-specific computational parameter overrides (only trials, jobs, iterations)
     step_overrides = {
         # Step 17: Final Parameters Optimization - reduce only computational parameters
         "step17_final_parameters_optimization": {
@@ -405,29 +403,29 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "ab_test_trials": max(3, int(20 * percentage)),
         },
     }
-    
+
     # Merge base parameters with step-specific overrides
     step_params = base_params.copy()
     if step_name in step_overrides:
         step_params.update(step_overrides[step_name])
-    
+
     return step_params
 
 
 def get_optimization_parameters(mode: str, optimization_type: str = "default") -> Dict[str, Any]:
     """
     Get optimization parameters based on the training mode and optimization type.
-    
+
     Args:
         mode: The training mode ("light", "blank", or "full")
         optimization_type: The type of optimization ("default", "hyperparameter", "ensemble", etc.)
-        
+
     Returns:
         Dictionary containing optimization parameters
     """
     config = get_training_mode_config(mode)
     percentage = get_intensity_percentage(mode)
-    
+
     # Base optimization parameters
     base_params = {
         "n_trials": config.n_trials,
@@ -436,7 +434,7 @@ def get_optimization_parameters(mode: str, optimization_type: str = "default") -
         "pruning_enabled": True,
         "early_stopping_patience": max(3, int(10 * percentage)),
     }
-    
+
     # Optimization type-specific parameters
     type_overrides = {
         "hyperparameter": {
@@ -464,29 +462,29 @@ def get_optimization_parameters(mode: str, optimization_type: str = "default") -
             "timeout": max(300, int(1500 * percentage)),
         },
     }
-    
+
     # Merge base parameters with type-specific overrides
     opt_params = base_params.copy()
     if optimization_type in type_overrides:
         opt_params.update(type_overrides[optimization_type])
-    
+
     return opt_params
 
 
 def apply_mode_parameters_to_config(config: Dict[str, Any], mode: str, step_name: str = None) -> Dict[str, Any]:
     """
     Apply training mode parameters to an existing configuration dictionary.
-    
+
     Args:
         config: The existing configuration dictionary
         mode: The training mode ("light", "blank", or "full")
         step_name: Optional step name for step-specific parameters
-        
+
     Returns:
         Updated configuration dictionary with mode parameters applied
     """
     mode_config = get_training_mode_config(mode)
-    
+
     # Apply base mode parameters
     config.update({
         "max_trials": mode_config.max_trials,
@@ -498,10 +496,10 @@ def apply_mode_parameters_to_config(config: Dict[str, Any], mode: str, step_name
         "training_mode": mode,
         "intensity_percentage": get_intensity_percentage(mode),
     })
-    
+
     # Apply step-specific parameters if step name is provided
     if step_name:
         step_params = get_step_specific_parameters(mode, step_name)
         config.update(step_params)
-    
+
     return config

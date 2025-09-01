@@ -9,7 +9,7 @@
 # Use efficient data types
 data = data.astype({
     'open': 'float32',
-    'high': 'float32', 
+    'high': 'float32',
     'low': 'float32',
     'close': 'float32',
     'volume': 'float32'
@@ -32,7 +32,7 @@ def process_in_chunks(data: pd.DataFrame, chunk_size: int = 10000):
 @lru_cache(maxsize=1000)
 def cached_indicator_calculation(data_hash: str, indicator: str, period: int):
     # Cache expensive calculations
-    
+
 # Redis caching for distributed systems
 import redis
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
@@ -79,10 +79,10 @@ def vectorized_rsi(prices: np.ndarray, period: int) -> np.ndarray:
     deltas = np.diff(prices, prepend=prices[0])
     gains = np.where(deltas > 0, deltas, 0)
     losses = np.where(deltas < 0, -deltas, 0)
-    
+
     avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
     avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
-    
+
     rs = avg_gains / (avg_losses + 1e-8)
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -152,13 +152,13 @@ def select_features_mi(features: pd.DataFrame, target: pd.Series, threshold: flo
 def fast_correlation_matrix(features: pd.DataFrame, method: str = 'pearson'):
     # Use pandas optimized correlation
     corr_matrix = features.corr(method=method)
-    
+
     # Use sparse matrices for large datasets
     if len(features) > 10000:
         from scipy.sparse import csr_matrix
         sparse_corr = csr_matrix(corr_matrix.values)
         return sparse_corr
-    
+
     return corr_matrix
 ```
 
@@ -172,7 +172,7 @@ class FeatureService:
         self.momentum_service = MomentumFeatureService()
         self.volatility_service = VolatilityFeatureService()
         self.liquidity_service = LiquidityFeatureService()
-    
+
     async def generate_all_features(self, data: pd.DataFrame):
         # Parallel service calls
         tasks = [
@@ -192,7 +192,7 @@ class LoadBalancer:
     def __init__(self, services: List[str]):
         self.services = services
         self.current_index = 0
-    
+
     def get_next_service(self):
         service = self.services[self.current_index]
         self.current_index = (self.current_index + 1) % len(self.services)
@@ -210,20 +210,20 @@ import logging
 class PerformanceMonitor:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
+
     def monitor_execution(self, func):
         def wrapper(*args, **kwargs):
             start_time = time.time()
             start_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-            
+
             result = func(*args, **kwargs)
-            
+
             end_time = time.time()
             end_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-            
+
             execution_time = end_time - start_time
             memory_used = end_memory - start_memory
-            
+
             self.logger.info(f"{func.__name__}: {execution_time:.2f}s, {memory_used:.2f}MB")
             return result
         return wrapper
@@ -235,10 +235,10 @@ class PerformanceMonitor:
 def track_resource_usage():
     cpu_percent = psutil.cpu_percent(interval=1)
     memory_percent = psutil.virtual_memory().percent
-    
+
     if cpu_percent > 80 or memory_percent > 80:
         logging.warning(f"High resource usage: CPU {cpu_percent}%, Memory {memory_percent}%")
-    
+
     return cpu_percent, memory_percent
 ```
 
@@ -287,14 +287,14 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time = None
         self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
-    
+
     def call(self, func, *args, **kwargs):
         if self.state == 'OPEN':
             if time.time() - self.last_failure_time > self.timeout:
                 self.state = 'HALF_OPEN'
             else:
                 raise Exception("Circuit breaker is OPEN")
-        
+
         try:
             result = func(*args, **kwargs)
             if self.state == 'HALF_OPEN':
@@ -304,10 +304,10 @@ class CircuitBreaker:
         except Exception as e:
             self.failure_count += 1
             self.last_failure_time = time.time()
-            
+
             if self.failure_count >= self.failure_threshold:
                 self.state = 'OPEN'
-            
+
             raise e
 ```
 
@@ -392,20 +392,20 @@ import time
 async def load_test_feature_service(url: str, num_requests: int = 1000):
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
-        
+
         tasks = []
         for i in range(num_requests):
             task = session.post(url, json={'data': generate_test_data()})
             tasks.append(task)
-        
+
         responses = await asyncio.gather(*tasks)
-        
+
         end_time = time.time()
         total_time = end_time - start_time
-        
+
         successful_requests = sum(1 for r in responses if r.status == 200)
         avg_response_time = total_time / num_requests
-        
+
         print(f"Requests: {num_requests}")
         print(f"Successful: {successful_requests}")
         print(f"Average response time: {avg_response_time:.3f}s")

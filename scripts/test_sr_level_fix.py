@@ -6,7 +6,6 @@ Verifies that support_levels_count and resistance_levels_count are no longer con
 
 # ruff: noqa: I001, C901, PLR0915
 
-from __future__ import annotations
 
 from pathlib import Path
 import sys

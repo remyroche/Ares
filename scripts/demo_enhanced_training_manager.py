@@ -27,7 +27,7 @@ from src.utils.logger import system_logger
 
 async def load_config() -> Dict[str, Any]:
     """Load configuration for the enhanced training manager."""
-    
+
     # Try to load from config file first
     config_path = Path("config/enhanced_reporting_config.yaml")
     if config_path.exists():
@@ -58,24 +58,24 @@ async def load_config() -> Dict[str, Any]:
             }
         }
         system_logger.info("📋 Using default configuration")
-    
+
     return config
 
 
 async def demonstrate_enhanced_training_manager():
     """Demonstrate the enhanced training manager with existing decorators."""
-    
+
     system_logger.info("🚀 Starting Enhanced Training Manager Demonstration")
     system_logger.info("=" * 80)
-    
+
     try:
         # Load configuration
         config = await load_config()
-        
+
         # Create enhanced training manager
         system_logger.info("🔧 Creating Enhanced Training Manager with Reporting...")
         manager = await create_enhanced_training_manager_with_reporting(config)
-        
+
         # Prepare training input
         training_input = {
             "symbol": "BTCUSDT",
@@ -86,7 +86,7 @@ async def demonstrate_enhanced_training_manager():
             "start_step": "step1_data_collection",
             "end_step": "step15_saving"
         }
-        
+
         system_logger.info("📊 Training Input Configuration:")
         system_logger.info(f"   Symbol: {training_input['symbol']}")
         system_logger.info(f"   Exchange: {training_input['exchange']}")
@@ -95,7 +95,7 @@ async def demonstrate_enhanced_training_manager():
         system_logger.info(f"   Training Mode: {training_input['training_mode']}")
         system_logger.info(f"   Start Step: {training_input['start_step']}")
         system_logger.info(f"   End Step: {training_input['end_step']}")
-        
+
         # Execute enhanced training pipeline
         system_logger.info("🚀 Executing Enhanced Training Pipeline...")
         system_logger.info("   This will demonstrate:")
@@ -103,34 +103,34 @@ async def demonstrate_enhanced_training_manager():
         system_logger.info("   2. Detailed reports upon completion")
         system_logger.info("   3. Consistent storage in centralized location")
         system_logger.info("=" * 80)
-        
+
         success = await manager.execute_enhanced_training(training_input)
-        
+
         if success:
             system_logger.info("✅ Enhanced Training Pipeline completed successfully!")
             system_logger.info("📊 Reports have been generated and stored.")
-            
+
             # Show report locations
             reports_dir = Path("reports/enhanced_training_pipeline")
             if reports_dir.exists():
                 report_files = list(reports_dir.glob("*.json"))
                 summary_files = list(reports_dir.glob("*_summary.txt"))
-                
+
                 system_logger.info("📁 Generated Reports:")
                 system_logger.info(f"   📊 JSON Reports: {len(report_files)}")
                 system_logger.info(f"   📋 Summary Reports: {len(summary_files)}")
                 system_logger.info(f"   📂 Reports Directory: {reports_dir.absolute()}")
-                
+
                 # Show latest report
                 if report_files:
                     latest_report = max(report_files, key=lambda x: x.stat().st_mtime)
                     system_logger.info(f"   📄 Latest Report: {latest_report.name}")
-                    
+
                     # Show report content summary
                     try:
                         with open(latest_report, 'r', encoding='utf-8') as f:
                             report_data = json.load(f)
-                        
+
                         system_logger.info("📊 Report Summary:")
                         system_logger.info(f"   Pipeline Success: {report_data.get('overall_success', 'N/A')}")
                         system_logger.info(f"   Start Time: {report_data.get('pipeline_start_time', 'N/A')}")
@@ -138,17 +138,17 @@ async def demonstrate_enhanced_training_manager():
                         system_logger.info(f"   Errors: {len(report_data.get('errors', []))}")
                         system_logger.info(f"   Warnings: {len(report_data.get('warnings', []))}")
                         system_logger.info(f"   Recommendations: {len(report_data.get('recommendations', []))}")
-                        
+
                     except Exception as e:
                         system_logger.warning(f"⚠️ Could not read report content: {e}")
-                
+
         else:
             system_logger.error("❌ Enhanced Training Pipeline failed!")
             system_logger.info("📊 Check the reports directory for error details.")
-        
+
         system_logger.info("=" * 80)
         system_logger.info("🎉 Enhanced Training Manager Demonstration Complete!")
-        
+
     except Exception as e:
         system_logger.error(f"💥 Demonstration failed: {e}")
         system_logger.exception("Full error details:")
@@ -157,31 +157,31 @@ async def demonstrate_enhanced_training_manager():
 
 async def demonstrate_individual_steps():
     """Demonstrate individual step execution with decorators."""
-    
+
     system_logger.info("🔧 Demonstrating Individual Step Execution with Decorators")
     system_logger.info("=" * 80)
-    
+
     try:
         # Load configuration
         config = await load_config()
-        
+
         # Create enhanced training manager
         manager = await create_enhanced_training_manager_with_reporting(config)
-        
+
         # Demonstrate a few key steps
         steps_to_demo = [
             ("step1_data_collection", "Data Collection"),
             ("step2_feature_engineering", "Feature Engineering"),
             ("step3_hmm_regime_discovery", "HMM Regime Discovery")
         ]
-        
+
         for step_method_name, step_description in steps_to_demo:
             system_logger.info(f"🔄 Demonstrating {step_description}...")
-            
+
             try:
                 # Get the step method
                 step_method = getattr(manager, f"_execute_{step_method_name}_enhanced")
-                
+
                 # Execute with decorators
                 result = await step_method(
                     symbol="BTCUSDT",
@@ -192,20 +192,20 @@ async def demonstrate_individual_steps():
                     feature_config={"vectorized_advanced_features": {}} if "feature_engineering" in step_method_name else None,
                     lookback_days=7 if "hmm" in step_method_name else None
                 )
-                
+
                 if result:
                     system_logger.info(f"✅ {step_description} completed successfully")
                 else:
                     system_logger.warning(f"⚠️ {step_description} completed with warnings")
-                    
+
             except Exception as e:
                 system_logger.error(f"❌ {step_description} failed: {e}")
                 # Continue with next step
                 continue
-        
+
         system_logger.info("=" * 80)
         system_logger.info("🎉 Individual Step Demonstration Complete!")
-        
+
     except Exception as e:
         system_logger.error(f"💥 Individual step demonstration failed: {e}")
         system_logger.exception("Full error details:")
@@ -213,16 +213,16 @@ async def demonstrate_individual_steps():
 
 async def show_decorator_capabilities():
     """Show the capabilities of the existing decorators."""
-    
+
     system_logger.info("🔍 Decorator Capabilities Overview")
     system_logger.info("=" * 80)
-    
+
     system_logger.info("📋 Available Decorators:")
     system_logger.info("   1. @handle_errors - Comprehensive error handling and recovery")
     system_logger.info("   2. @monitor_pipeline_step - Step monitoring and validation")
     system_logger.info("   3. @validate_pipeline_input - Input validation and resource checks")
     system_logger.info("   4. @monitor_pipeline_performance - Performance monitoring")
-    
+
     system_logger.info("")
     system_logger.info("🎯 Decorator Features:")
     system_logger.info("   ✅ Error handling with automatic retry and recovery")
@@ -232,7 +232,7 @@ async def show_decorator_capabilities():
     system_logger.info("   ✅ Resource availability checks")
     system_logger.info("   ✅ Performance threshold warnings")
     system_logger.info("   ✅ Comprehensive logging and reporting")
-    
+
     system_logger.info("")
     system_logger.info("📊 Pipeline Stages Supported:")
     system_logger.info("   📥 DATA_COLLECTION - Data gathering and ingestion")
@@ -242,40 +242,40 @@ async def show_decorator_capabilities():
     system_logger.info("   ✅ VALIDATION - Model validation and testing")
     system_logger.info("   ⚙️ OPTIMIZATION - Hyperparameter optimization")
     system_logger.info("   🚀 DEPLOYMENT - Model deployment and saving")
-    
+
     system_logger.info("")
     system_logger.info("🔧 Validation Levels:")
     system_logger.info("   🟢 WARNING - Log issues but continue execution")
     system_logger.info("   🟡 STRICT - Stop on critical issues")
     system_logger.info("   🔵 SILENT - Only log summary information")
     system_logger.info("   📊 MONITOR - Monitor performance only")
-    
+
     system_logger.info("=" * 80)
 
 
 async def main():
     """Main demonstration function."""
-    
+
     system_logger.info("🎯 Enhanced Training Manager with Existing Decorators")
     system_logger.info("=" * 80)
     system_logger.info("This demonstration shows how the enhanced training manager")
     system_logger.info("integrates existing decorators for comprehensive monitoring,")
     system_logger.info("detailed reporting, and consistent storage.")
     system_logger.info("=" * 80)
-    
+
     # Show decorator capabilities
     await show_decorator_capabilities()
-    
+
     # Ask user what to demonstrate
     print("\nWhat would you like to demonstrate?")
     print("1. Full pipeline execution with decorators")
     print("2. Individual step execution with decorators")
     print("3. Both")
     print("4. Exit")
-    
+
     try:
         choice = input("Enter your choice (1-4): ").strip()
-        
+
         if choice == "1":
             await demonstrate_enhanced_training_manager()
         elif choice == "2":
@@ -290,13 +290,13 @@ async def main():
         else:
             system_logger.warning("⚠️ Invalid choice, running full demonstration...")
             await demonstrate_enhanced_training_manager()
-            
+
     except KeyboardInterrupt:
         system_logger.info("\n👋 Demonstration interrupted by user")
     except Exception as e:
         system_logger.error(f"💥 Demonstration failed: {e}")
         system_logger.exception("Full error details:")
-    
+
     system_logger.info("=" * 80)
     system_logger.info("🎉 Demonstration Complete!")
     system_logger.info("📁 Check the reports directory for generated reports")

@@ -7,9 +7,9 @@ This document summarizes the comprehensive profit-based feature engineering syst
 
 ### 1. Long/Short Trading Compatibility
 - **Updated Terminology**: Changed from buy/sell to long/short positions
-- **Proper Position Logic**: 
+- **Proper Position Logic**:
   - LONG (1): Price moved up, take profit
-  - SHORT (-1): Price moved down, take profit  
+  - SHORT (-1): Price moved down, take profit
   - HOLD (0): No position taken
 - **Consistent Implementation**: All components updated to use long/short terminology
 
@@ -140,7 +140,7 @@ This document summarizes the comprehensive profit-based feature engineering syst
 - **LONG Positions**: 250 samples, avg profit: 0.0051
 - **SHORT Positions**: 250 samples, avg profit: -0.0051
 - **Position Distribution**: Perfect balance between long and short
-- **Profit Distribution**: 
+- **Profit Distribution**:
   - LONG: Primarily Large Profit (131) and Small Profit (69)
   - SHORT: Primarily Large Loss (132) and Medium Loss (64)
 
@@ -172,9 +172,9 @@ summary = feature_eng.get_feature_summary(result_data)
 
 # Select important features
 selected_features = feature_eng.select_features(
-    result_data, 
-    method="correlation", 
-    threshold=0.01, 
+    result_data,
+    method="correlation",
+    threshold=0.01,
     max_features=20
 )
 ```
@@ -183,7 +183,7 @@ selected_features = feature_eng.select_features(
 ```python
 # Apply specific feature categories
 result_data = feature_eng.apply_all_features(
-    data, 
+    data,
     feature_categories=["basic_profit", "risk_reward", "momentum"]
 )
 

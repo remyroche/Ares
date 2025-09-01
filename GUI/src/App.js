@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-import { 
-  ChevronDown, ChevronUp, PlusCircle, Trash2, Play, Settings, Bot, 
-  AreaChart as AreaChartIcon, TestTube2, GitCompare, LayoutDashboard, 
+import {
+  ChevronDown, ChevronUp, PlusCircle, Trash2, Play, Settings, Bot,
+  AreaChart as AreaChartIcon, TestTube2, GitCompare, LayoutDashboard,
   SlidersHorizontal, AlertTriangle, Power, PowerOff, Shield, ShieldOff,
   TrendingUp, TrendingDown, Activity, BarChart3, PieChart as PieChartIcon,
   Target, Zap, Clock, DollarSign, Percent, Users, Database, Cpu,
@@ -103,7 +103,7 @@ const Sidebar = ({ activePage, setActivePage, killSwitchStatus }) => {
         </div>
         <h1 className="text-2xl font-bold text-white hidden sm:block">Ares</h1>
       </div>
-      
+
       <nav className="flex flex-col gap-2 flex-1">
         {navItems.map(item => (
           <button
@@ -120,7 +120,7 @@ const Sidebar = ({ activePage, setActivePage, killSwitchStatus }) => {
           </button>
         ))}
       </nav>
-      
+
       <div className="mt-auto hidden sm:block">
         <div className="p-4 bg-gray-800/50 rounded-lg text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
@@ -171,7 +171,7 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
     const changePercent = startValue !== 0 ? (change / startValue) * 100 : 0;
     return { change: change.toFixed(2), changePercent: changePercent.toFixed(2) };
   }, [dashboardData]);
-  
+
   if (error) return <ErrorMessage message="Failed to load dashboard. Is the API server running?" details={error} />;
   if (isLoading && !dashboardData) return <LoadingSpinner />;
 
@@ -215,11 +215,11 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
             <p className="text-sm text-gray-400">${performanceMetrics.change}</p>
           </div>
         </div>
-        
+
         {/* Performance Chart */}
-        <PerformanceChart 
-          data={dashboardData?.performanceCurve} 
-          title="Portfolio Performance Over Time" 
+        <PerformanceChart
+          data={dashboardData?.performanceCurve}
+          title="Portfolio Performance Over Time"
         />
       </Card>
 
@@ -254,11 +254,11 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
                 </p>
               </div>
             </div>
-            
+
             {/* Attribution Chart */}
-            <AttributionChart 
-              data={dashboardData?.attribution} 
-              title="Performance Attribution Breakdown" 
+            <AttributionChart
+              data={dashboardData?.attribution}
+              title="Performance Attribution Breakdown"
             />
           </div>
         </Card>
@@ -292,11 +292,11 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
                 </p>
               </div>
             </div>
-            
+
             {/* Risk Chart */}
-            <RiskMetricsChart 
-              data={dashboardData?.risk_metrics} 
-              title="Risk Metrics Over Time" 
+            <RiskMetricsChart
+              data={dashboardData?.risk_metrics}
+              title="Risk Metrics Over Time"
             />
           </div>
         </Card>
@@ -327,15 +327,15 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
           </div>
         </div>
       </Card>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title="Open Positions">
           <Table
             columns={[
-              { header: 'Pair', accessor: 'pair' }, 
-              { header: 'Side', accessor: 'side' }, 
-              { header: 'Size', accessor: 'size' }, 
-              { header: 'Entry', accessor: 'entryPrice' }, 
+              { header: 'Pair', accessor: 'pair' },
+              { header: 'Side', accessor: 'side' },
+              { header: 'Size', accessor: 'size' },
+              { header: 'Entry', accessor: 'entryPrice' },
               { header: 'PnL ($)', accessor: 'pnl' }
             ]}
             data={dashboardData.openPositions}
@@ -350,8 +350,8 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
         <Card title="Last 10 Trades">
           <Table
             columns={[
-              { header: 'Pair', accessor: 'pair' }, 
-              { header: 'PnL ($)', accessor: 'pnl' }, 
+              { header: 'Pair', accessor: 'pair' },
+              { header: 'PnL ($)', accessor: 'pnl' },
               { header: 'Date', accessor: 'date' }
             ]}
             data={dashboardData.lastTrades}
@@ -370,8 +370,8 @@ const Dashboard = ({ killSwitchStatus, systemStatus }) => {
 // Kill Switch Indicator Component
 const KillSwitchIndicator = ({ active }) => (
   <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-    active 
-      ? 'bg-red-500/20 text-red-300 border-red-500/30' 
+    active
+      ? 'bg-red-500/20 text-red-300 border-red-500/30'
       : 'bg-green-500/20 text-green-300 border-green-500/30'
   }`}>
     {active ? <Shield size={20} /> : <ShieldOff size={20} />}
@@ -401,7 +401,7 @@ const SystemManagement = ({ killSwitchStatus, setKillSwitchStatus }) => {
       alert('Please provide a reason for activating the kill switch');
       return;
     }
-    
+
     setIsLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/kill-switch/activate`, {
@@ -409,9 +409,9 @@ const SystemManagement = ({ killSwitchStatus, setKillSwitchStatus }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: killSwitchReason, emergency: true })
       });
-      
+
       if (!response.ok) throw new Error('Failed to activate kill switch');
-      
+
       setKillSwitchStatus(true);
       setKillSwitchReason('');
       alert('Kill switch activated successfully');
@@ -428,9 +428,9 @@ const SystemManagement = ({ killSwitchStatus, setKillSwitchStatus }) => {
       const response = await fetch(`${API_BASE_URL}/api/kill-switch/deactivate`, {
         method: 'POST'
       });
-      
+
       if (!response.ok) throw new Error('Failed to deactivate kill switch');
-      
+
       setKillSwitchStatus(false);
       alert('Kill switch deactivated successfully');
     } catch (error) {
@@ -458,8 +458,8 @@ const SystemManagement = ({ killSwitchStatus, setKillSwitchStatus }) => {
         <Card title="Kill Switch Control">
           <div className="space-y-4">
             <div className={`p-4 rounded-lg border ${
-              killSwitchStatus 
-                ? 'bg-red-500/20 border-red-500/30' 
+              killSwitchStatus
+                ? 'bg-red-500/20 border-red-500/30'
                 : 'bg-green-500/20 border-green-500/30'
             }`}>
               <div className="flex items-center gap-2 mb-2">
@@ -527,7 +527,7 @@ const SystemManagement = ({ killSwitchStatus, setKillSwitchStatus }) => {
                   <p className="text-lg font-bold text-white">{systemStatus.memory_usage?.percent?.toFixed(1) || 0}%</p>
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Status:</span>
@@ -592,20 +592,20 @@ const InputGroup = ({ label, ...props }) => (
     <label htmlFor={props.id || props.name} className="block text-sm font-medium text-gray-300 mb-1">
       {label}
     </label>
-    <input 
-      {...props} 
-      className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500 transition" 
+    <input
+      {...props}
+      className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500 transition"
     />
   </div>
 );
 
 const RadioInput = ({ name, label, ...props }) => (
   <div className="flex items-center">
-    <input 
-      name={name} 
-      type="radio" 
-      {...props} 
-      className="h-4 w-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500" 
+    <input
+      name={name}
+      type="radio"
+      {...props}
+      className="h-4 w-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500"
     />
     <label htmlFor={props.id} className="ml-2 block text-sm text-gray-300">{label}</label>
   </div>
@@ -627,9 +627,9 @@ const CollapsibleSection = ({ title, children }) => {
   const [isOpen, setIsOpen] = useState(false);
   return (
     <div className="border border-gray-700 rounded-lg">
-      <button 
-        type="button" 
-        onClick={() => setIsOpen(!isOpen)} 
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
         className="w-full flex justify-between items-center p-3 text-left font-semibold text-gray-200 hover:bg-gray-700/50"
       >
         {title}
@@ -664,7 +664,7 @@ const ErrorMessage = ({ message, details }) => (
 // Advanced Chart Components
 const PerformanceChart = ({ data, title }) => {
   if (!data || data.length === 0) return <div className="text-gray-400">No data available</div>;
-  
+
   return (
     <div className="space-y-4">
       <h4 className="text-white font-medium">{title}</h4>
@@ -681,7 +681,7 @@ const PerformanceChart = ({ data, title }) => {
 
 const AttributionChart = ({ data, title }) => {
   if (!data || Object.keys(data).length === 0) return <div className="text-gray-400">No attribution data available</div>;
-  
+
   return (
     <div className="space-y-4">
       <h4 className="text-white font-medium">{title}</h4>
@@ -698,7 +698,7 @@ const AttributionChart = ({ data, title }) => {
 
 const RiskMetricsChart = ({ data, title }) => {
   if (!data || Object.keys(data).length === 0) return <div className="text-gray-400">No risk data available</div>;
-  
+
   return (
     <div className="space-y-4">
       <h4 className="text-white font-medium">{title}</h4>

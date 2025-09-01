@@ -5,7 +5,6 @@ Regime and Support/Resistance Tracker (minimal scaffold)
 Scaffolding for regime detection and S/R tracking.
 """
 
-from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict
@@ -15,7 +14,7 @@ from src.utils.logger import system_logger
 
 
 class RegimeType(Enum):
-    BULL_TREND = "bull_trend"
+    BULL_TREND , "bull_trend"
     BEAR_TREND = "bear_trend"
     SIDEWAYS = "sideways"
     HIGH_VOLATILITY = "high_volatility"
@@ -30,11 +29,11 @@ class RegimeSRTracker:
         self.logger = system_logger.getChild("RegimeSRTracker")
 
     @handle_specific_errors(
-        error_handlers={
+        error_handlers, {
             ValueError: (False, "Invalid regime tracker configuration"),
             AttributeError: (False, "Missing regime tracker parameters"),
         },
-        default_return=False,
+        default_return, False,
         context="regime_sr_tracker.initialize",
     )
     async def initialize(self) -> bool:

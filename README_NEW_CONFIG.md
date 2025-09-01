@@ -212,7 +212,7 @@ The new configuration structure is fully integrated with step12 optimization:
 # Categories optimized in step12
 categories = [
     "confidence",           # 19 parameters
-    "position_sizing",      # 27 parameters  
+    "position_sizing",      # 27 parameters
     "leverage",             # 14 parameters
     "tpsl",                # 36 parameters
     "ensemble",             # 16 parameters
@@ -348,7 +348,7 @@ The following parameters have been removed as they were based on strategies we d
 
 #### **Two-Tier Configuration:**
 - ❌ `momentum_breakout_threshold`
-- ❌ `mean_reversion_threshold` 
+- ❌ `mean_reversion_threshold`
 - ❌ `trend_following_threshold`
 - ❌ Strategy-specific confidence thresholds
 - ❌ Strategy-specific position multipliers

@@ -16,7 +16,6 @@ ENHANCED FEATURES:
 - Centralized configuration support
 """
 
-from __future__ import annotations
 
 import functools
 import inspect
@@ -49,7 +48,6 @@ from src.utils.domain_errors import (
     SchemaValidationError,
     VectorizationError,
 )
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.structured_logging import ensure_correlation_id, get_correlation_id
 
 # Import enhanced system components (optional to avoid circular imports)
@@ -139,68 +137,68 @@ def _apply_caching(wrapper_func: Callable, cache_size: int, ttl_seconds: int) ->
     """Apply caching to a wrapper function."""
     if not _should_enable_caching():
         return wrapper_func
-    
+
     cache = {}
-    
+
     @functools.wraps(wrapper_func)
     def cached_wrapper(*args, **kwargs):
         cache_key = _create_cache_key(wrapper_func, args, kwargs)
         current_time = time.time()
-        
+
         # Check cache
         if cache_key in cache:
             cache_entry = cache[cache_key]
             if current_time - cache_entry['timestamp'] < ttl_seconds:
                 logger.debug(f"Cache hit for {wrapper_func.__name__}")
                 return cache_entry['result']
-        
+
         # Execute and cache
         result = wrapper_func(*args, **kwargs)
         cache[cache_key] = {
             'result': result,
             'timestamp': current_time
         }
-        
+
         # Maintain cache size
         if len(cache) > cache_size:
             oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
             del cache[oldest_key]
-        
+
         logger.debug(f"Cached result for {wrapper_func.__name__}")
         return result
-    
+
     return cached_wrapper
 
 def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") -> Callable:
     """Apply performance monitoring to a wrapper function."""
     if not _should_enable_performance_monitoring():
         return wrapper_func
-    
+
     @functools.wraps(wrapper_func)
     def monitored_wrapper(*args, **kwargs):
         start_time = time.time()
         start_memory = _get_memory_usage() if level in ["detailed", "profiling"] else 0
-        
+
         try:
             result = wrapper_func(*args, **kwargs)
             return result
         finally:
             end_time = time.time()
             execution_time = end_time - start_time
-            
+
             metrics = {
                 'function': wrapper_func.__name__,
                 'execution_time': execution_time,
                 'timestamp': time.time()
             }
-            
+
             if level in ["detailed", "profiling"]:
                 end_memory = _get_memory_usage()
                 metrics['memory_delta_mb'] = end_memory - start_memory
                 metrics['peak_memory_mb'] = end_memory
-            
+
             _log_performance_metrics(metrics, level)
-    
+
     return monitored_wrapper
 
 def _get_memory_usage() -> float:
@@ -237,7 +235,7 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
 
     Falls back to beartype or typeguard if pydantic is unavailable.
     If none are available, acts as a no-op decorator.
-    
+
     ENHANCED FEATURES:
     - Automatic caching for expensive validation operations
     - Performance monitoring and metrics
@@ -254,12 +252,12 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
             validated_func = cast("F", _typechecked(func))
         else:
             validated_func = func
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         validated_func = _apply_caching(validated_func, cache_size, ttl_seconds)
         validated_func = _apply_performance_monitoring(validated_func, "basic")
-        
+
         return validated_func
 
     return decorator
@@ -294,12 +292,12 @@ def pa_check_input(
                 df_arg_index=arg_index,
                 strict=strict,
             )(func)
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_decorator = _apply_caching(base_decorator, cache_size, ttl_seconds)
         enhanced_decorator = _apply_performance_monitoring(enhanced_decorator, "basic")
-        
+
         return enhanced_decorator
 
     return decorator
@@ -327,12 +325,12 @@ def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
         else:
             # Fallback to lightweight validation
             base_decorator = pa_check_io(output_schema=schema, strict=strict)(func)
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_decorator = _apply_caching(base_decorator, cache_size, ttl_seconds)
         enhanced_decorator = _apply_performance_monitoring(enhanced_decorator, "basic")
-        
+
         return enhanced_decorator
 
     return decorator
@@ -445,12 +443,12 @@ def pa_check_io(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -524,7 +522,7 @@ def enforce_ndarray(
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -562,7 +560,7 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -680,7 +678,7 @@ def guard_array_nan_inf(
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -720,7 +718,7 @@ def guard_dataframe_nulls(
                 )
             selected = df if columns is None else df[columns]
             num_nan = int(selected.isna().sum().sum())
-            
+
             # Safely check for infinite values only on numeric columns
             num_inf = 0
             try:
@@ -744,7 +742,7 @@ def guard_dataframe_nulls(
                     except (ValueError, TypeError, AttributeError):
                         # Skip non-numeric columns or columns with conversion issues
                         continue
-            
+
             if num_nan or num_inf:
                 msg = f"DataFrame has {num_nan} NaN and {num_inf} Inf values in {func.__name__}"
                 if mode == "raise":
@@ -796,12 +794,12 @@ def guard_dataframe_nulls(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -912,12 +910,12 @@ def normalize_errors(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -1090,12 +1088,12 @@ def with_tracing_span(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "detailed")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator

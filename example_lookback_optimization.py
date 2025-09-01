@@ -14,32 +14,32 @@ from src.config.feature_engineering_optimization_config import get_feature_engin
 
 async def demonstrate_lookback_optimization():
     """Demonstrate lookback period optimization for each feature."""
-    
+
     print("🔧 FEATURE LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION")
     print("=" * 60)
-    
+
     # 1. Initialize the optimizer
     config = get_feature_engineering_optimization_config()
     optimizer = FeatureEngineeringOptimizer(config)
-    
+
     # 2. Show the parameter ranges being optimized
     print("\n📊 PARAMETER RANGES BEING OPTIMIZED:")
     print("-" * 40)
-    
+
     for feature_name, params in optimizer.feature_params.items():
         print(f"\n{feature_name}:")
         for param_name, param_values in params.items():
             print(f"  {param_name}: {param_values}")
-    
+
     # 3. Create sample data
     print("\n📈 CREATING SAMPLE DATA...")
     dates = pd.date_range('2023-01-01', periods=1000, freq='1min')
     np.random.seed(42)
-    
+
     # Generate realistic price data
     returns = np.random.normal(0, 0.001, 1000)  # 0.1% average return
     prices = 1000 * np.exp(np.cumsum(returns))  # Starting at $1000
-    
+
     data = pd.DataFrame({
         'timestamp': dates,
         'open': prices * (1 + np.random.normal(0, 0.0005, 1000)),
@@ -49,36 +49,36 @@ async def demonstrate_lookback_optimization():
         'volume': np.random.uniform(1000, 10000, 1000)
     })
     data.set_index('timestamp', inplace=True)
-    
+
     # Create target variable (next period returns)
     data['returns'] = data['close'].pct_change().shift(-1)
-    
+
     print(f"✅ Created sample data with {len(data)} rows")
     print(f"   Columns: {list(data.columns)}")
-    
+
     # 4. Demonstrate optimization for each feature
     print("\n🎯 OPTIMIZING LOOKBACK PERIODS FOR EACH FEATURE:")
     print("-" * 50)
-    
+
     # Test each feature individually
     for feature_name in optimizer.feature_params.keys():
         print(f"\n🔍 Optimizing {feature_name}...")
-        
+
         # Get parameter combinations for this feature
         param_combinations = optimizer._generate_param_combinations(
             optimizer.feature_params[feature_name]
         )
-        
+
         print(f"   Testing {len(param_combinations)} parameter combinations...")
-        
+
         # Test a few combinations to show the process
         feature_scores = []
         for i, params in enumerate(param_combinations[:5]):  # Show first 5 combinations
             print(f"   Combination {i+1}: {params}")
-            
+
             # Generate feature with these parameters
             feature_values = optimizer._generate_synthetic_feature(data, feature_name, params)
-            
+
             if feature_values is not None:
                 # Calculate importance score (simplified for demo)
                 importance_score = np.random.uniform(0.1, 0.9)  # Simulated SHAP score
@@ -90,18 +90,18 @@ async def demonstrate_lookback_optimization():
                 print(f"     → Importance Score: {importance_score:.3f}")
             else:
                 print(f"     → Failed to generate feature")
-        
+
         # Show top 3 parameters
         if feature_scores:
             feature_scores.sort(key=lambda x: x["importance"], reverse=True)
             print(f"\n   🏆 TOP 3 PARAMETER COMBINATIONS FOR {feature_name}:")
             for i, score in enumerate(feature_scores[:3]):
                 print(f"   {i+1}. {score['params']} (Score: {score['importance']:.3f})")
-    
+
     # 5. Show the complete optimization process
     print("\n🚀 COMPLETE OPTIMIZATION PROCESS:")
     print("-" * 40)
-    
+
     print("1. For each feature (RSI, MACD, Bollinger Bands, etc.):")
     print("   - Generate all parameter combinations")
     print("   - Calculate the actual technical indicator with each combination")
@@ -109,20 +109,20 @@ async def demonstrate_lookback_optimization():
     print("   - Consider correlation with other features")
     print("   - Consider mutual information with target")
     print("   - Select top 3 parameter combinations")
-    
+
     print("\n2. For each HMM regime:")
     print("   - Repeat the same process with regime-specific data")
     print("   - Optimize parameters for each regime separately")
-    
+
     print("\n3. Final selection:")
     print("   - Combine global and regime-specific results")
     print("   - Apply correlation penalties and MI bonuses")
     print("   - Select final top 3 parameters per feature")
-    
+
     # 6. Show example output structure
     print("\n📋 EXAMPLE OUTPUT STRUCTURE:")
     print("-" * 35)
-    
+
     example_output = {
         "RSI": [
             {
@@ -149,14 +149,14 @@ async def demonstrate_lookback_optimization():
             }
         ]
     }
-    
+
     for feature, results in example_output.items():
         print(f"\n{feature}:")
         for i, result in enumerate(results):
             print(f"  {i+1}. {result['params']}")
             print(f"     Importance: {result['importance']:.3f}")
             print(f"     Final Score: {result['comprehensive_score']:.3f}")
-    
+
     print("\n✅ LOOKBACK PERIOD OPTIMIZATION DEMONSTRATION COMPLETE!")
     print("\n💡 KEY POINTS:")
     print("- Lookback periods are optimized for each feature individually")

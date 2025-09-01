@@ -90,7 +90,7 @@ labeler = create_regime_aware_labeler_from_optimization_results(results)
 
 # Apply regime-aware labeling
 labeled_data = labeler.apply_regime_aware_triple_barrier_labeling(
-    data, 
+    data,
     regime_column="composite_cluster_id"
 )
 
@@ -172,7 +172,7 @@ config = RegimeTripleBarrierConfig()
 # Set regime mapping
 regime_mapping = {
     0: "BULL_TREND",
-    1: "BEAR_TREND", 
+    1: "BEAR_TREND",
     2: "SIDEWAYS_RANGE",
     3: "HIGH_VOLATILITY",
     4: "LOW_VOLATILITY"
@@ -194,7 +194,7 @@ labeler = RegimeAwareTripleBarrierLabeling(config)
 ```python
 # Get performance summary by regime
 performance_summary = labeler.get_regime_performance_summary(
-    labeled_data, 
+    labeled_data,
     regime_column="composite_cluster_id"
 )
 
@@ -214,16 +214,16 @@ for regime_name, metrics in performance_summary.items():
 async def execute_triple_barrier_method(self, symbol, exchange, timeframe, data_dir):
     # Load data with regime information
     data = self._load_data_with_regimes(data_dir, symbol, exchange, timeframe)
-    
+
     # Check if regime-specific optimization results exist
     optimization_results = self._load_optimization_results(symbol, exchange, timeframe)
-    
+
     if optimization_results:
         # Use regime-aware labeling
         from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
             apply_regime_aware_triple_barrier_labeling
         )
-        
+
         labeled_data = apply_regime_aware_triple_barrier_labeling(
             data=data,
             optimization_results=optimization_results,
@@ -232,7 +232,7 @@ async def execute_triple_barrier_method(self, symbol, exchange, timeframe, data_
     else:
         # Fallback to standard labeling
         labeled_data = self._apply_standard_labeling(data)
-    
+
     return labeled_data
 ```
 
@@ -267,9 +267,9 @@ The optimizer explores the following parameter space for each regime:
 The optimizer maximizes a composite score:
 
 ```
-Score = w1 * normalized_sharpe_ratio + 
-        w2 * normalized_win_rate + 
-        w3 * normalized_profit_factor + 
+Score = w1 * normalized_sharpe_ratio +
+        w2 * normalized_win_rate +
+        w3 * normalized_profit_factor +
         w4 * normalized_regime_accuracy
 ```
 
@@ -405,7 +405,7 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
 async def main():
     # Load data
     data = pd.read_parquet("data_with_regimes.parquet")
-    
+
     # Configure optimization
     config = {
         "regime_specific_optimization": {
@@ -419,24 +419,24 @@ async def main():
             }
         }
     }
-    
+
     # Run optimization
     results = await optimize_regime_triple_barrier_parameters(
         data=data,
         config=config,
         regime_column="composite_cluster_id"
     )
-    
+
     # Apply regime-aware labeling
     labeled_data = apply_regime_aware_triple_barrier_labeling(
         data=data,
         optimization_results=results,
         regime_column="composite_cluster_id"
     )
-    
+
     # Save results
     labeled_data.to_parquet("regime_aware_labeled_data.parquet")
-    
+
     # Print summary
     for regime_name, result in results.items():
         print(f"{regime_name}: Sharpe={result.sharpe_ratio:.4f}, "

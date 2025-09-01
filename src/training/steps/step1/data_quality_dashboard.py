@@ -58,13 +58,13 @@ class DataQualityDashboard:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
         self.config = config or DashboardConfig()
-        
+
         # Initialize components
         self.quality_manager = None
         self.monitor = None
         self.app = None
         self.websocket_connections: List[WebSocket] = []
-        
+
         self._initialize_components()
 
     def _initialize_components(self) -> None:
@@ -95,10 +95,10 @@ class DataQualityDashboard:
             description="Real-time data quality monitoring and management",
             version="1.0.0"
         )
-        
+
         # Add routes
         self._add_routes()
-        
+
         # Add static files
         static_dir = self.data_cache_path / "dashboard_static"
         static_dir.mkdir(exist_ok=True)
@@ -106,7 +106,7 @@ class DataQualityDashboard:
 
     def _add_routes(self) -> None:
         """Add API routes to the FastAPI app."""
-        
+
         @self.app.get("/", response_class=HTMLResponse)
         async def dashboard_home():
             """Main dashboard page."""
@@ -365,7 +365,7 @@ class DataQualityDashboard:
 
     <script>
         let refreshInterval;
-        
+
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {{
             refreshDashboard();
@@ -749,21 +749,21 @@ class DataQualityDashboard:
                 while True:
                     # Send periodic updates
                     await asyncio.sleep(5)
-                    
+
                     if not self.monitor:
                         continue
 
                     # Get latest metrics
                     metrics = await self._get_quality_metrics()
                     alerts = await self._get_alerts(limit=5)
-                    
+
                     update = {
                         "type": "update",
                         "timestamp": datetime.now().isoformat(),
                         "metrics": metrics,
                         "recent_alerts": alerts
                     }
-                    
+
                     await websocket.send_text(json.dumps(update))
 
             except WebSocketDisconnect:
@@ -788,7 +788,7 @@ class DataQualityDashboard:
 
         try:
             logger.info(f"🚀 Starting data quality dashboard on {self.config.host}:{self.config.port}")
-            
+
             # Start monitoring if monitor is available
             if self.monitor:
                 await self.monitor.start_monitoring(
@@ -814,7 +814,7 @@ class DataQualityDashboard:
         try:
             if self.monitor:
                 await self.monitor.stop_monitoring()
-            
+
             logger.info("🛑 Data quality dashboard stopped")
 
         except Exception as e:
@@ -830,10 +830,10 @@ async def start_data_quality_dashboard(
     """Start the data quality dashboard with default configuration."""
     config = DashboardConfig(host=host, port=port)
     dashboard = DataQualityDashboard(data_cache_path, config)
-    
+
     logger.info(f"🚀 Starting data quality dashboard on http://{host}:{port}")
     await dashboard.start_dashboard()
-    
+
     return dashboard
 
 
@@ -842,7 +842,7 @@ if __name__ == "__main__":
 
     async def main():
         dashboard = await start_data_quality_dashboard()
-        
+
         try:
             # Keep the dashboard running
             await asyncio.sleep(float('inf'))

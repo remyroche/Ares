@@ -32,11 +32,11 @@ else:
 
 **Problem**: Too many features had zero variance (constant values), particularly HMM cluster features.
 
-**Root Cause**: 
+**Root Cause**:
 1. HMM cluster features were being generated for all possible cluster IDs (0-19), even if some clusters didn't exist in the data
 2. The constant feature detection was using `nunique()` which doesn't work well with categorical data
 
-**Solution**: 
+**Solution**:
 1. **Fixed HMM cluster generation** to only create intensity features for clusters that actually exist in the data
 2. **Improved constant feature detection** to handle different data types properly
 

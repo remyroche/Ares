@@ -187,7 +187,7 @@ class DataValidator(ValidatableData):
     def validate(self) -> bool:
         # Custom validation logic
         return True
-    
+
     def get_validation_errors(self) -> List[str]:
         # Return validation errors
         return []
@@ -235,7 +235,7 @@ from src.utils.decorator_compatibility import (
     validate_call,      # Maps to validate_call_or_runtime_types
     check_input,        # Maps to pa_check_input
     check_output,       # Maps to pa_check_output
-    
+
     # Enhanced decorator aliases
     smart_recovery,     # Alias for smart_error_recovery
     cached,             # Alias for cached_validation

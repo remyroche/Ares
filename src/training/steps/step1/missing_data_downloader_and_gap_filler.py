@@ -44,7 +44,7 @@ except ImportError as e:
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
     system_logger.warning(f"⚠️ Some imports failed: {e}")
-    
+
     # Fallback decorators
     def handle_errors(*args, **kwargs):
         def decorator(func):
@@ -256,7 +256,7 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data)
-                    
+
                     # Standardize column names
                     column_mapping = {
                         "a": "agg_trade_id",
@@ -267,7 +267,7 @@ class MissingDataDownloaderAndGapFiller:
                         "T": "timestamp",
                         "m": "is_buyer_maker",
                     }
-                    
+
                     if list(df.columns) != list(column_mapping.values()):
                         df = df.rename(columns=column_mapping)
 
@@ -276,7 +276,7 @@ class MissingDataDownloaderAndGapFiller:
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -295,12 +295,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -418,13 +418,13 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
-                    
+
                     # Convert timestamp
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -443,12 +443,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -565,17 +565,17 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data)
-                    
+
                     # Ensure required columns
                     if "timestamp" not in df.columns and "fundingTime" in df.columns:
                         df["timestamp"] = df["fundingTime"]
-                    
+
                     # Convert timestamp
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -594,12 +594,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"futures_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -626,7 +626,7 @@ class MissingDataDownloaderAndGapFiller:
 
         """
         download_start = datetime.now()
-        
+
         if end_date is None:
             end_date = datetime.now()
             logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
@@ -675,7 +675,7 @@ class MissingDataDownloaderAndGapFiller:
 
         download_end = datetime.now()
         download_time = download_end - download_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 COMPREHENSIVE DOWNLOAD SUMMARY")
         logger.info(f"⏱️  Total download time: {download_time}")
@@ -683,22 +683,22 @@ class MissingDataDownloaderAndGapFiller:
         logger.info(f"📅 Period: {start_date.date()} to {end_date.date()}")
         logger.info(f"✅ Success: {results['success']}")
         logger.info(f"❌ Errors: {len(results['errors'])}")
-        
+
         # Log individual download results
         for data_type, download_result in results["download_results"].items():
             if download_result.get("success"):
                 logger.info(f"✅ {data_type.title()}: Downloaded successfully")
             else:
                 logger.error(f"❌ {data_type.title()}: Download failed")
-        
+
         if results["errors"]:
             logger.error("❌ DOWNLOAD ERRORS:")
             for i, error in enumerate(results["errors"], 1):
                 logger.error(f"  {i}. {error}")
-        
+
         if results["success"]:
             logger.info("🎉 COMPREHENSIVE DOWNLOAD COMPLETED SUCCESSFULLY!")
         else:
             logger.error("❌ COMPREHENSIVE DOWNLOAD COMPLETED WITH ERRORS!")
-        
+
         return results

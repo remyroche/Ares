@@ -58,7 +58,7 @@ class FinalRegimeClusteringStep:
             # Load optimized parameters from step3
             self._load_optimized_parameters()
             self.logger.info("✅ Final regime clustering components initialized successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize regime clustering components: {e}")
             raise
@@ -99,7 +99,7 @@ class FinalRegimeClusteringStep:
             self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
             self.logger.info("✅ Final regime clustering step initialized successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize regime clustering step: {e}")
             return False
@@ -117,33 +117,33 @@ class FinalRegimeClusteringStep:
         try:
             self.logger.info("🎯 Starting final regime clustering with advanced reporting...")
             self.start_time = time.time()
-            
+
             # Step 1: Load and prepare data
             data_loaded = await self._load_and_prepare_data()
             if not data_loaded.get("success", False):
                 self.logger.error("Failed to load and prepare data")
                 return False
-            
+
             # Step 2: Perform HMM regime discovery
             hmm_results = await self._perform_hmm_regime_discovery(data_loaded["data"])
-            
+
             # Step 3: Perform final clustering
             clustering_results = await self._perform_final_clustering(data_loaded["data"], hmm_results)
-            
+
             # Step 4: Analyze regime characteristics
             regime_analysis = await self._analyze_regime_characteristics(clustering_results, data_loaded["data"])
-            
+
             # Step 5: Generate comprehensive reports
             reports = await self._generate_comprehensive_reports(clustering_results, regime_analysis)
-            
+
             # Step 6: Save final results
             await self._save_final_results(clustering_results, regime_analysis, reports)
-            
+
             execution_time = time.time() - self.start_time
             self.logger.info(f"✅ Final regime clustering completed successfully in {execution_time:.2f}s")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to execute regime clustering: {e}")
             return False
@@ -159,38 +159,38 @@ class FinalRegimeClusteringStep:
         """Load and prepare data for regime clustering."""
         try:
             self.logger.info("📊 Loading and preparing data for regime clustering...")
-            
+
             # Get data parameters from config
             symbol = self.config.get("SYMBOL", "ETHUSDT")
             exchange = self.config.get("EXCHANGE", "BINANCE")
             timeframe = self.config.get("TIMEFRAME", "1m")
             data_dir = self.config.get("DATA_DIR", "data_cache")
-            
+
             # Load klines data
             klines_path = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-            
+
             if not klines_path.exists():
                 self.logger.error(f"❌ Klines file not found: {klines_path}")
                 return {
                     "success": False,
                     "error": f"Klines file not found: {klines_path}"
                 }
-            
+
             # Load data
             df = pd.read_parquet(klines_path)
-            
+
             if df.empty:
                 self.logger.error("❌ Data is empty")
                 return {
                     "success": False,
                     "error": "Data is empty"
                 }
-            
+
             # Prepare features using optimized parameters
             features = await self._prepare_features_with_optimized_params(df)
-            
+
             self.logger.info(f"✅ Data loaded and prepared: {len(df):,} rows, {len(features.columns)} features")
-            
+
             return {
                 "success": True,
                 "data": df,
@@ -204,7 +204,7 @@ class FinalRegimeClusteringStep:
                     }
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load and prepare data: {e}")
             return {"success": False, "error": str(e)}
@@ -220,14 +220,14 @@ class FinalRegimeClusteringStep:
         """Prepare features using optimized parameters from step3."""
         try:
             self.logger.info("🔧 Preparing features with optimized parameters...")
-            
+
             # Ensure timestamp is datetime
             if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
-            
+
             # Sort by timestamp
             df = df.sort_values("timestamp").reset_index(drop=True)
-            
+
             # Get optimized parameters
             momentum_window = self.optimized_params.get("momentum_window", 15)
             volatility_window = self.optimized_params.get("volatility_window", 20)
@@ -236,41 +236,41 @@ class FinalRegimeClusteringStep:
             macd_fast = self.optimized_params.get("macd_fast", 12)
             macd_slow = self.optimized_params.get("macd_slow", 26)
             atr_window = self.optimized_params.get("atr_window", 14)
-            
+
             # Calculate features with optimized parameters
             features = pd.DataFrame()
             features["timestamp"] = df["timestamp"]
-            
+
             # Price-based features
             features["price_momentum"] = df["close"].pct_change(momentum_window)
             features["price_momentum_short"] = df["close"].pct_change(5)
             features["price_momentum_long"] = df["close"].pct_change(30)
-            
+
             # Volatility features
             features["volatility"] = df["close"].pct_change().rolling(window=volatility_window).std()
             features["volatility_short"] = df["close"].pct_change().rolling(window=10).std()
             features["volatility_long"] = df["close"].pct_change().rolling(window=50).std()
-            
+
             # Volume features
             features["volume_ratio"] = df["volume"] / df["volume"].rolling(window=volume_window).mean()
             features["volume_momentum"] = df["volume"].pct_change(volume_window)
-            
+
             # Technical indicators
             features["rsi"] = self._calculate_rsi(df["close"], rsi_window)
             features["macd"] = self._calculate_macd(df["close"], macd_fast, macd_slow)
             features["atr"] = self._calculate_atr(df, atr_window)
-            
+
             # Additional features
             features["price_position"] = (df["close"] - df["close"].rolling(20).min()) / (df["close"].rolling(20).max() - df["close"].rolling(20).min())
             features["volume_price_trend"] = (df["close"] - df["close"].shift(1)) * df["volume"]
-            
+
             # Remove timestamp and handle NaN values
             clustering_features = features.drop("timestamp", axis=1)
             clustering_features = clustering_features.fillna(0)
-            
+
             self.logger.info(f"✅ Features prepared with optimized parameters: {len(clustering_features.columns)} features")
             return clustering_features
-            
+
         except Exception as e:
             self.logger.error(f"Failed to prepare features: {e}")
             return pd.DataFrame()
@@ -286,29 +286,29 @@ class FinalRegimeClusteringStep:
         """Perform HMM regime discovery using optimized parameters."""
         try:
             self.logger.info("🧠 Performing HMM regime discovery...")
-            
+
             # Get optimized HMM parameters
             n_components = self.optimized_params.get("n_components", 4)
             covariance_type = self.optimized_params.get("covariance_type", "full")
             n_iter = self.optimized_params.get("n_iter", 100)
             random_state = self.optimized_params.get("random_state", 42)
-            
+
             # Prepare features for HMM
             features = await self._prepare_features_with_optimized_params(data)
-            
+
             if features.empty:
                 self.logger.error("No features available for HMM analysis")
                 return {}
-            
+
             # Try to import hmmlearn
             try:
                 from hmmlearn import hmm
                 from sklearn.preprocessing import StandardScaler
-                
+
                 # Scale features
                 scaler = StandardScaler()
                 features_scaled = scaler.fit_transform(features)
-                
+
                 # Train HMM
                 hmm_model = hmm.GaussianHMM(
                     n_components=n_components,
@@ -316,13 +316,13 @@ class FinalRegimeClusteringStep:
                     n_iter=n_iter,
                     random_state=random_state
                 )
-                
+
                 hmm_model.fit(features_scaled)
-                
+
                 # Get state sequence and probabilities
                 state_sequence = hmm_model.predict(features_scaled)
                 state_probs = hmm_model.predict_proba(features_scaled)
-                
+
                 hmm_results = {
                     "model": hmm_model,
                     "scaler": scaler,
@@ -331,14 +331,14 @@ class FinalRegimeClusteringStep:
                     "n_components": n_components,
                     "score": hmm_model.score(features_scaled)
                 }
-                
+
                 self.logger.info(f"✅ HMM regime discovery completed: {n_components} states")
                 return hmm_results
-                
+
             except ImportError:
                 self.logger.warning("⚠️ hmmlearn not available, using simple regime detection")
                 return await self._perform_simple_regime_detection(features)
-                
+
         except Exception as e:
             self.logger.error(f"Failed to perform HMM regime discovery: {e}")
             return {}
@@ -353,21 +353,21 @@ class FinalRegimeClusteringStep:
         """Perform simple regime detection as fallback."""
         try:
             self.logger.info("📊 Performing simple regime detection...")
-            
+
             # Use volatility and momentum for regime classification
             volatility = features.get("volatility", pd.Series([0] * len(features)))
             momentum = features.get("price_momentum", pd.Series([0] * len(features)))
-            
+
             # Fill NaN values
             volatility = volatility.fillna(0)
             momentum = momentum.fillna(0)
-            
+
             # Classify regimes
             regimes = []
             for i in range(len(features)):
                 vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
                 mom = momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
-                
+
                 if vol > 0.02:  # High volatility
                     if mom > 0.001:
                         regime = 0  # High volatility bull
@@ -382,19 +382,19 @@ class FinalRegimeClusteringStep:
                         regime = 4  # Low volatility bear
                     else:
                         regime = 5  # Low volatility neutral
-                
+
                 regimes.append(regime)
-            
+
             simple_results = {
                 "state_sequence": np.array(regimes),
                 "state_probs": np.eye(6)[regimes],  # One-hot encoding
                 "n_components": 6,
                 "method": "simple_classification"
             }
-            
+
             self.logger.info(f"✅ Simple regime detection completed: {len(set(regimes))} regimes")
             return simple_results
-            
+
         except Exception as e:
             self.logger.error(f"Failed to perform simple regime detection: {e}")
             return {}
@@ -410,36 +410,36 @@ class FinalRegimeClusteringStep:
         """Perform final clustering using HMM results and optimized parameters."""
         try:
             self.logger.info("🎯 Performing final clustering...")
-            
+
             # Get optimized clustering parameters
             n_clusters = self.optimized_params.get("n_clusters", 20)
             method = self.optimized_params.get("method", "kmeans")
             random_state = self.optimized_params.get("random_state", 42)
-            
+
             # Prepare features
             features = await self._prepare_features_with_optimized_params(data)
-            
+
             if features.empty:
                 self.logger.error("No features available for clustering")
                 return {}
-            
+
             # Create composite features with HMM states
             if hmm_results and "state_sequence" in hmm_results:
                 composite_features = features.copy()
                 composite_features["hmm_state"] = hmm_results["state_sequence"]
                 composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis=1)
-                
+
                 # Add HMM state interactions
                 for col in features.columns:
                     composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
             else:
                 composite_features = features
-            
+
             # Scale features
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(composite_features)
-            
+
             # Perform clustering
             if method == "kmeans":
                 from sklearn.cluster import KMeans
@@ -460,7 +460,7 @@ class FinalRegimeClusteringStep:
                 )
                 cluster_labels = clustering.fit_predict(features_scaled)
                 clustering_model = clustering
-            
+
             clustering_results = {
                 "model": clustering_model,
                 "scaler": scaler,
@@ -470,10 +470,10 @@ class FinalRegimeClusteringStep:
                 "hmm_results": hmm_results,
                 "composite_features": composite_features
             }
-            
+
             self.logger.info(f"✅ Final clustering completed: {n_clusters} clusters")
             return clustering_results
-            
+
         except Exception as e:
             self.logger.error(f"Failed to perform final clustering: {e}")
             return {}
@@ -488,14 +488,14 @@ class FinalRegimeClusteringStep:
         """Analyze regime characteristics and patterns."""
         try:
             self.logger.info("🔍 Analyzing regime characteristics...")
-            
+
             if not clustering_results or "cluster_labels" not in clustering_results:
                 self.logger.error("No clustering results available for analysis")
                 return {}
-            
+
             cluster_labels = clustering_results["cluster_labels"]
             features = clustering_results.get("composite_features", pd.DataFrame())
-            
+
             analysis = {
                 "cluster_statistics": {},
                 "regime_transitions": {},
@@ -503,15 +503,15 @@ class FinalRegimeClusteringStep:
                 "regime_characteristics": {},
                 "market_conditions": {}
             }
-            
+
             # Analyze each cluster
             unique_clusters = np.unique(cluster_labels)
-            
+
             for cluster_id in unique_clusters:
                 cluster_mask = cluster_labels == cluster_id
                 cluster_data = data[cluster_mask]
                 cluster_features = features[cluster_mask] if not features.empty else pd.DataFrame()
-                
+
                 # Basic statistics
                 cluster_stats = {
                     "size": len(cluster_data),
@@ -521,7 +521,7 @@ class FinalRegimeClusteringStep:
                         "end": cluster_data["timestamp"].max().isoformat()
                     }
                 }
-                
+
                 # Price characteristics
                 if not cluster_data.empty:
                     cluster_stats["price_stats"] = {
@@ -529,25 +529,25 @@ class FinalRegimeClusteringStep:
                         "price_volatility": float(cluster_data["close"].pct_change().std()),
                         "price_momentum": float(cluster_data["close"].pct_change().mean())
                     }
-                
+
                 # Volume characteristics
                 if not cluster_data.empty:
                     cluster_stats["volume_stats"] = {
                         "mean_volume": float(cluster_data["volume"].mean()),
                         "volume_volatility": float(cluster_data["volume"].pct_change().std())
                     }
-                
+
                 analysis["cluster_statistics"][f"cluster_{cluster_id}"] = cluster_stats
-            
+
             # Analyze regime transitions
             analysis["regime_transitions"] = self._analyze_regime_transitions(cluster_labels)
-            
+
             # Analyze regime persistence
             analysis["regime_persistence"] = self._analyze_regime_persistence(cluster_labels)
-            
+
             self.logger.info(f"✅ Regime characteristics analyzed: {len(unique_clusters)} clusters")
             return analysis
-            
+
         except Exception as e:
             self.logger.error(f"Failed to analyze regime characteristics: {e}")
             return {}
@@ -561,27 +561,27 @@ class FinalRegimeClusteringStep:
         """Analyze regime transition patterns."""
         try:
             transitions = {}
-            
+
             for i in range(len(cluster_labels) - 1):
                 current_regime = cluster_labels[i]
                 next_regime = cluster_labels[i + 1]
-                
+
                 if current_regime not in transitions:
                     transitions[current_regime] = {}
-                
+
                 if next_regime not in transitions[current_regime]:
                     transitions[current_regime][next_regime] = 0
-                
+
                 transitions[current_regime][next_regime] += 1
-            
+
             # Convert to probabilities
             for current_regime in transitions:
                 total = sum(transitions[current_regime].values())
                 for next_regime in transitions[current_regime]:
                     transitions[current_regime][next_regime] /= total
-            
+
             return transitions
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to analyze regime transitions: {e}")
             return {}
@@ -597,7 +597,7 @@ class FinalRegimeClusteringStep:
             persistence = {}
             current_regime = cluster_labels[0]
             current_duration = 1
-            
+
             for i in range(1, len(cluster_labels)):
                 if cluster_labels[i] == current_regime:
                     current_duration += 1
@@ -607,12 +607,12 @@ class FinalRegimeClusteringStep:
                     persistence[current_regime].append(current_duration)
                     current_regime = cluster_labels[i]
                     current_duration = 1
-            
+
             # Handle last regime
             if current_regime not in persistence:
                 persistence[current_regime] = []
             persistence[current_regime].append(current_duration)
-            
+
             # Calculate statistics
             persistence_stats = {}
             for regime, durations in persistence.items():
@@ -623,9 +623,9 @@ class FinalRegimeClusteringStep:
                     "min_duration": np.min(durations),
                     "total_periods": len(durations)
                 }
-            
+
             return persistence_stats
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to analyze regime persistence: {e}")
             return {}
@@ -640,14 +640,14 @@ class FinalRegimeClusteringStep:
         """Generate comprehensive reports for regime clustering."""
         try:
             self.logger.info("📋 Generating comprehensive reports...")
-            
+
             reports = {
                 "clustering_summary": {},
                 "regime_analysis": {},
                 "performance_metrics": {},
                 "recommendations": {}
             }
-            
+
             # Clustering summary
             if clustering_results:
                 reports["clustering_summary"] = {
@@ -656,7 +656,7 @@ class FinalRegimeClusteringStep:
                     "total_samples": len(clustering_results.get("cluster_labels", [])),
                     "clustering_score": getattr(clustering_results.get("model"), "inertia_", 0) if clustering_results.get("model") else 0
                 }
-            
+
             # Regime analysis summary
             if regime_analysis:
                 reports["regime_analysis"] = {
@@ -664,14 +664,14 @@ class FinalRegimeClusteringStep:
                     "regime_transitions_analyzed": len(regime_analysis.get("regime_transitions", {})),
                     "persistence_analyzed": len(regime_analysis.get("regime_persistence", {}))
                 }
-            
+
             # Performance metrics
             reports["performance_metrics"] = {
                 "clustering_quality": "high" if clustering_results else "unknown",
                 "regime_stability": "stable" if regime_analysis.get("regime_persistence") else "unknown",
                 "transition_smoothness": "smooth" if regime_analysis.get("regime_transitions") else "unknown"
             }
-            
+
             # Recommendations
             reports["recommendations"] = [
                 "Use identified regimes for trading strategy development",
@@ -679,10 +679,10 @@ class FinalRegimeClusteringStep:
                 "Validate regime stability with out-of-sample data",
                 "Consider regime-specific parameter optimization"
             ]
-            
+
             self.logger.info("✅ Comprehensive reports generated")
             return reports
-            
+
         except Exception as e:
             self.logger.error(f"Failed to generate comprehensive reports: {e}")
             return {}
@@ -697,15 +697,15 @@ class FinalRegimeClusteringStep:
         """Save final regime clustering results."""
         try:
             self.logger.info("💾 Saving final regime clustering results...")
-            
+
             # Create results directory
             results_dir = Path("data/regime_clustering")
             results_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Create reports directory
             reports_dir = Path("reports/regime_clustering")
             reports_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Save clustering results
             clustering_file = results_dir / "final_clustering_results.json"
             with open(clustering_file, 'w') as f:
@@ -715,19 +715,19 @@ class FinalRegimeClusteringStep:
                     serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
                 if "state_sequence" in serializable_results.get("hmm_results", {}):
                     serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
-                
+
                 json.dump(serializable_results, f, indent=2, default=str)
-            
+
             # Save regime analysis
             analysis_file = results_dir / "regime_analysis_results.json"
             with open(analysis_file, 'w') as f:
                 json.dump(regime_analysis, f, indent=2, default=str)
-            
+
             # Save reports
             reports_file = reports_dir / "comprehensive_regime_reports.json"
             with open(reports_file, 'w') as f:
                 json.dump(reports, f, indent=2, default=str)
-            
+
             # Generate summary report
             summary_report = {
                 "execution_summary": {
@@ -746,11 +746,11 @@ class FinalRegimeClusteringStep:
                     "Validate regime stability over time"
                 ]
             }
-            
+
             summary_file = reports_dir / "regime_clustering_summary.json"
             with open(summary_file, 'w') as f:
                 json.dump(summary_report, f, indent=2, default=str)
-            
+
             # Log summary
             self.logger.info("=" * 80)
             self.logger.info("📊 FINAL REGIME CLUSTERING SUMMARY")
@@ -761,11 +761,11 @@ class FinalRegimeClusteringStep:
             self.logger.info(f"📈 Clustering quality: {reports.get('performance_metrics', {}).get('clustering_quality', 'N/A')}")
             self.logger.info(f"📋 Recommendations: {len(reports.get('recommendations', []))}")
             self.logger.info("=" * 80)
-            
+
             self.logger.info(f"✅ Final results saved to {results_dir}")
             self.logger.info(f"✅ Reports saved to {reports_dir}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save final results: {e}")
             return False
@@ -807,11 +807,11 @@ class FinalRegimeClusteringStep:
         high = df["high"]
         low = df["low"]
         close = df["close"]
-        
+
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
-        
+
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(window=window).mean()
         return atr
@@ -828,7 +828,7 @@ class FinalRegimeClusteringStep:
             self.logger.info("🧹 Cleaning up regime clustering resources...")
             self.logger.info("✅ Regime clustering cleanup completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to cleanup regime clustering: {e}")
             return False
@@ -844,28 +844,28 @@ async def run_step(config: dict[str, Any]) -> bool:
     """Run the final regime clustering step."""
     try:
         logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
-        
+
         # Create and initialize the step
         step = FinalRegimeClusteringStep(config)
-        
+
         # Initialize the step
         if not await step.initialize():
             logger.error("Failed to initialize regime clustering step")
             return False
-        
+
         # Execute the step
         success = await step.execute()
-        
+
         # Cleanup
         await step.cleanup()
-        
+
         if success:
             logger.info("✅ Step 3.5: Final Regime Clustering completed successfully")
         else:
             logger.error("❌ Step 3.5: Final Regime Clustering failed")
-        
+
         return success
-        
+
     except Exception as e:
         logger.error(f"Failed to run regime clustering step: {e}")
         return False
@@ -874,7 +874,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
-    
+
     # Load test configuration
     test_config = {
         "SYMBOL": "ETHUSDT",
@@ -887,7 +887,7 @@ if __name__ == "__main__":
             "enable_transition_analysis": True
         }
     }
-    
+
     # Run the step
     success = asyncio.run(run_step(test_config))
     print(f"Step execution {'successful' if success else 'failed'}")

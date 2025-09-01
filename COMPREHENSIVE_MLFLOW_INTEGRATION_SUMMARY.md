@@ -195,7 +195,7 @@ artifacts/
 
 Every model and artifact is now automatically associated with:
 - **Asset** (e.g., "ETHUSDT")
-- **Exchange** (e.g., "BINANCE") 
+- **Exchange** (e.g., "BINANCE")
 - **Lookback Period** (e.g., "2_years")
 - **Project Version** (from `ARES_VERSION`)
 - **Date** (automatically set to current timestamp)

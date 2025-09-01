@@ -6,7 +6,6 @@ optimizer that uses optimized lookback periods from the matrix optimization syst
 """
 
 from typing import Dict, List, Any
-from dataclasses import dataclass
 
 def get_enhanced_multi_timeframe_config() -> Dict[str, Any]:
     """Get configuration for enhanced multi-timeframe optimization."""
@@ -226,7 +225,7 @@ def get_regime_specific_config() -> Dict[str, Any]:
             "use_regime_specific_periods": True,
             "regime_feature_prefix": "regime_",
             "regime_specific_indicators": [
-                "RSI", "MACD_fast", "Bollinger_Bands", "SMA", "EMA", 
+                "RSI", "MACD_fast", "Bollinger_Bands", "SMA", "EMA",
                 "ATR", "VWAP", "VWAP_Momentum", "VWAP_Volatility"
             ]
         },

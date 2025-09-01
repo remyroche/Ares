@@ -8,12 +8,10 @@ using Optuna for Bayesian optimization.
 
 import optuna
 import numpy as np
-import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 import asyncio
 import json
-import os
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -28,20 +26,20 @@ class TradingParameterOptimizer:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ParameterOptimizer")
-        
+
         # Optimization configuration
         self.n_trials = config.get("optimization", {}).get("n_trials", 100)
         self.timeout = config.get("optimization", {}).get("timeout", 3600)  # 1 hour
         self.study_name = config.get("optimization", {}).get("study_name", "trading_parameters")
-        
+
         # Performance tracking
         self.optimization_history = []
         self.best_params = {}
         self.best_score = float('-inf')
-        
+
         # Parameter bounds and constraints
         self.parameter_bounds = self._define_parameter_bounds()
-        
+
     def _define_parameter_bounds(self) -> Dict[str, Dict[str, Any]]:
         """Define parameter bounds and constraints for optimization."""
         return {
@@ -98,12 +96,12 @@ class TradingParameterOptimizer:
     async def optimize_parameters(self) -> Dict[str, Any]:
         """
         Run comprehensive parameter optimization using Optuna.
-        
+
         Returns:
             Dict containing optimized parameters and performance metrics
         """
         self.logger.info("🚀 Starting comprehensive parameter optimization...")
-        
+
         # Create Optuna study
         study = optuna.create_study(
             direction="maximize",
@@ -111,11 +109,11 @@ class TradingParameterOptimizer:
             sampler=optuna.samplers.TPESampler(seed=42),
             pruner=optuna.pruners.MedianPruner()
         )
-        
+
         # Define objective function
         def objective(trial):
             return asyncio.run(self._evaluate_parameters(trial))
-        
+
         # Run optimization
         study.optimize(
             objective,
@@ -123,16 +121,16 @@ class TradingParameterOptimizer:
             timeout=self.timeout,
             show_progress_bar=True
         )
-        
+
         # Store results
         self.best_params = study.best_params
         self.best_score = study.best_value
-        
+
         # Generate optimization report
         optimization_report = self._generate_optimization_report(study)
-        
+
         self.logger.info(f"✅ Optimization completed. Best score: {self.best_score:.4f}")
-        
+
         return {
             "optimized_parameters": self.best_params,
             "best_score": self.best_score,
@@ -143,23 +141,23 @@ class TradingParameterOptimizer:
     async def _evaluate_parameters(self, trial: optuna.Trial) -> float:
         """
         Evaluate a set of parameters using backtesting simulation.
-        
+
         Args:
             trial: Optuna trial object
-            
+
         Returns:
             float: Performance score (higher is better)
         """
         # Suggest parameters for this trial
         params = self._suggest_parameters(trial)
-        
+
         # Validate parameter constraints
         if not self._validate_parameter_constraints(params):
             return float('-inf')
-        
+
         # Simulate trading performance with these parameters
         performance_score = await self._simulate_trading_performance(params)
-        
+
         # Store trial results
         self.optimization_history.append({
             "trial_number": trial.number,
@@ -167,13 +165,13 @@ class TradingParameterOptimizer:
             "score": performance_score,
             "timestamp": datetime.now().isoformat()
         })
-        
+
         return performance_score
 
     def _suggest_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest parameters for the current trial."""
         params = {}
-        
+
         for param_name, bounds in self.parameter_bounds.items():
             if bounds["type"] == "float":
                 params[param_name] = trial.suggest_float(
@@ -192,7 +190,7 @@ class TradingParameterOptimizer:
                     param_name,
                     bounds["choices"]
                 )
-        
+
         return params
 
     def _validate_parameter_constraints(self, params: Dict[str, Any]) -> bool:
@@ -205,7 +203,7 @@ class TradingParameterOptimizer:
                     if "low" in bounds and "high" in bounds:
                         if not (bounds["low"] <= value <= bounds["high"]):
                             return False
-            
+
             # Relationship constraints
             if params["min_weight"] >= params["max_weight"]:
                 return False
@@ -222,13 +220,13 @@ class TradingParameterOptimizer:
                 return False
             if params["volume_ratio_low"] >= params["volume_ratio_high"]:
                 return False
-            
+
             # Leverage weights sum constraint (position weights removed by request)
             if params["leverage_ml_weight"] + params["liquidation_weight"] > 1.0:
                 return False
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Parameter validation error: {e}")
             return False
@@ -236,22 +234,22 @@ class TradingParameterOptimizer:
     async def _simulate_trading_performance(self, params: Dict[str, Any]) -> float:
         """
         Simulate trading performance with given parameters using backtesting.
-        
+
         Args:
             params: Parameter dictionary
-            
+
         Returns:
             float: Performance score (Sharpe ratio, profit factor, etc.)
         """
         try:
             # Import backtesting evaluator
             from src.optimization.backtesting_evaluator import evaluate_parameters_with_backtesting
-            
+
             # Use backtesting evaluator for realistic performance simulation
             score = await evaluate_parameters_with_backtesting(params, self.config)
-            
+
             return score
-            
+
         except Exception as e:
             self.logger.error(f"Performance simulation error: {e}")
             return 0.0
@@ -283,7 +281,7 @@ class TradingParameterOptimizer:
     def _analyze_parameter_distributions(self, study: optuna.Study) -> Dict[str, Any]:
         """Analyze parameter value distributions across trials."""
         analysis = {}
-        
+
         for param_name in self.parameter_bounds.keys():
             values = [trial.params.get(param_name) for trial in study.trials if param_name in trial.params]
             if values:
@@ -294,27 +292,27 @@ class TradingParameterOptimizer:
                     "max": np.max(values),
                     "median": np.median(values)
                 }
-        
+
         return analysis
 
     def _analyze_convergence(self, study: optuna.Study) -> Dict[str, Any]:
         """Analyze optimization convergence."""
         values = [trial.value for trial in study.trials if trial.value is not None]
-        
+
         if len(values) < 2:
             return {"converged": False, "reason": "Insufficient trials"}
-        
+
         # Check if optimization has converged
         recent_values = values[-10:]  # Last 10 trials
         if len(recent_values) >= 5:
             recent_std = np.std(recent_values)
             recent_mean = np.mean(recent_values)
             cv = recent_std / recent_mean if recent_mean != 0 else float('inf')
-            
+
             converged = cv < 0.05  # 5% coefficient of variation threshold
         else:
             converged = False
-        
+
         return {
             "converged": converged,
             "total_trials": len(values),
@@ -334,12 +332,12 @@ class TradingParameterOptimizer:
                 "optimization_history": self.optimization_history,
                 "parameter_bounds": self.parameter_bounds
             }
-            
+
             with open(output_path, 'w') as f:
                 json.dump(results, f, indent=2)
-            
+
             self.logger.info(f"✅ Optimization results saved to {output_path}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save optimization results: {e}")
 
@@ -400,24 +398,24 @@ class TradingParameterOptimizer:
 async def run_parameter_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main function to run parameter optimization.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         Dict containing optimization results
     """
     optimizer = TradingParameterOptimizer(config)
-    
+
     # Run optimization
     results = await optimizer.optimize_parameters()
-    
+
     # Save results
     optimizer.save_optimization_results()
-    
+
     # Generate config update
     config_update = optimizer.generate_config_update()
-    
+
     return {
         "optimization_results": results,
         "config_update": config_update,
@@ -434,6 +432,6 @@ if __name__ == "__main__":
             "study_name": "trading_parameters_v1"
         }
     }
-    
+
     # Run optimization
     asyncio.run(run_parameter_optimization(config))

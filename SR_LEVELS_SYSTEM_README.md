@@ -170,21 +170,21 @@ async def main():
             "min_sr_strength": 0.3
         }
     }
-    
+
     # Initialize manager
     sr_manager = await create_sr_levels_manager(config)
-    
+
     # Calculate SR levels from backtesting data (comprehensive)
     market_data = load_your_market_data()
     sr_levels = await sr_manager.calculate_sr_levels_from_backtest(market_data, "1m")
-    
+
     print(f"Found {len(sr_levels['support_levels'])} support levels")
     print(f"Found {len(sr_levels['resistance_levels'])} resistance levels")
-    
+
     # Calculate SR levels with specific method
     fractal_levels = await sr_manager.calculate_sr_levels_with_method(market_data, "fractal", "both")
     volume_levels = await sr_manager.calculate_sr_levels_with_method(market_data, "volume", "both")
-    
+
     print(f"Fractal method: {len(fractal_levels['support_levels'])} support, {len(fractal_levels['resistance_levels'])} resistance")
     print(f"Volume method: {len(volume_levels['support_levels'])} support, {len(volume_levels['resistance_levels'])} resistance")
 
@@ -199,17 +199,17 @@ from src.trading.sr_trading_intelligence import create_sr_trading_intelligence
 async def trading_example():
     # Initialize trading intelligence
     intelligence = await create_sr_trading_intelligence(config)
-    
+
     # Get SR levels for current price
     current_price = 100.0
     trading_data = intelligence.get_sr_levels_for_trading(current_price)
-    
+
     # Analyze trading intelligence
     ti = trading_data["trading_intelligence"]
     print(f"Market position: {ti['market_position']}")
     print(f"Trend direction: {ti['trend_direction']}")
     print(f"Risk level: {ti['risk_level']}")
-    
+
     # Get position recommendations
     recommendations = trading_data["position_recommendations"]
     for rec in recommendations:
@@ -223,12 +223,12 @@ async def trading_example():
 ```python
 # Create sample levels for comparison
 price_levels = [
-    SRLevel(price=100.0, level_type="support", method="fractal", 
+    SRLevel(price=100.0, level_type="support", method="fractal",
             data_source="price", timestamp=datetime.now(), strength=0.8)
 ]
 
 vwap_levels = [
-    SRLevel(price=100.2, level_type="support", method="fractal", 
+    SRLevel(price=100.2, level_type="support", method="fractal",
             data_source="vwap", timestamp=datetime.now(), strength=0.9)
 ]
 

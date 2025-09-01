@@ -27,7 +27,7 @@ from src.utils.warning_symbols import (
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -1253,41 +1253,41 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
             # Simulate enhanced prediction performance evaluation
             base_performance = 0.6
-            
+
             # Enhanced prediction confidence threshold impact
             confidence_threshold = params.get("enhanced_prediction_confidence_threshold", 0.7)
             confidence_factor = confidence_threshold * 0.2
-            
+
             # Price prediction threshold impact
             price_threshold = params.get("enhanced_prediction_price_threshold", 0.6)
             price_factor = price_threshold * 0.15
-            
+
             # ML weight balance between different ML model types
             analyst_ml_weight = params.get("analyst_ml_weight", 0.6)
             tactician_ml_weight = params.get("tactician_ml_weight", 0.4)
             weight_balance = min(analyst_ml_weight, tactician_ml_weight) * 0.1
-            
+
             # Position sizing enhancement
             position_multiplier = params.get("position_sizing_confidence_multiplier", 1.5)
             position_factor = min(position_multiplier, 2.0) * 0.05
-            
+
             # Leverage sizing enhancement
             leverage_multiplier = params.get("leverage_sizing_risk_multiplier", 1.0)
             leverage_factor = (2.0 - leverage_multiplier) * 0.05  # Lower risk = better
-            
+
             # Base position and leverage sizes
             base_position = params.get("base_position_size", 0.1)
             max_position = params.get("max_position_size", 0.2)
             base_leverage = params.get("base_leverage", 50.0)
             max_leverage = params.get("max_leverage", 100.0)
-            
+
             size_factor = (base_position + max_position) * 0.1
             leverage_factor += (base_leverage + max_leverage) / 200.0 * 0.05
-            
+
             total_performance = base_performance + confidence_factor + price_factor + weight_balance + position_factor + leverage_factor + size_factor
-            
+
             return min(0.95, max(0.3, total_performance))
-            
+
         except Exception:
             self.print(error("Error evaluating enhanced prediction performance: {e}"))
             return 0.6
@@ -1649,10 +1649,10 @@ def __init__(self, config: dict[str, Any]) -> None:
             drawdown = cum - np.maximum.accumulate(cum)
             max_drawdown = float(-drawdown.min()) if len(drawdown) else 0.0
             sharpe = float(pnl.mean() / (pnl.std() + 1e-9))
-            
+
             # Add enhanced prediction performance evaluation
             enhanced_prediction_performance = self._evaluate_enhanced_prediction_performance(params, calibration_results)
-            
+
             return {
                 "accuracy": acc,
                 "win_rate": win_rate,

@@ -1,13 +1,10 @@
 # src/analyst/meta_labeling_system.py
 
-import os
-from datetime import datetime
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.config import CONFIG
 from src.utils.error_handler import (
     handle_errors,
 )
@@ -784,16 +781,16 @@ class MetaLabelingSystem:
             current_price = data["close"].iloc[-1]
             vwap = data["close"].rolling(window=20).mean().iloc[-1]
             price_vwap_ratio = current_price / vwap if vwap > 0 else 1.0
-            
+
             # Calculate momentum
             momentum = (data["close"].iloc[-1] - data["close"].iloc[-6]) / data["close"].iloc[-6] if len(data) >= 6 else 0
-            
+
             # Calculate volume spike
             volume_spike = volume_data["volume"].iloc[-1] / volume_data["volume"].rolling(window=20).mean().iloc[-1] if len(volume_data) >= 20 else 1.0
-            
+
             # Calculate recent high
             recent_high = data["high"].rolling(window=20).max().iloc[-1]
-            
+
             # VWAP reversion entry
             is_vwap_reversion = abs(price_vwap_ratio - 1.0) < 0.01
             signals["VWAP_REVERSION_ENTRY"] = 1 if is_vwap_reversion else 0

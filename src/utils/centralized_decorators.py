@@ -6,7 +6,6 @@ This module centralizes all decorators used throughout the codebase for easy imp
 import asyncio
 import functools
 import logging
-import time
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from pathlib import Path
 
@@ -135,7 +134,7 @@ def validate_data_quality(
 ):
     """
     Comprehensive data quality validation decorator.
-    
+
     Args:
         validation_level: Validation level ("WARNING", "ERROR", "INFO")
         required_columns: List of required columns
@@ -156,7 +155,7 @@ def validate_data_quality(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"DataQuality.{context}")
-            
+
             # Validate input data
             input_issues = _validate_data_quality_internal(
                 args, kwargs, "input", logger, validation_level,
@@ -164,19 +163,19 @@ def validate_data_quality(
                 check_timestamps, check_nan, check_infinite, check_constant,
                 check_correlation, max_correlation_threshold, min_unique_values
             )
-            
+
             if input_issues and validation_level == "ERROR":
                 raise ValueError(f"Input data quality validation failed: {input_issues}")
             elif input_issues and validation_level == "WARNING":
                 logger.warning(f"⚠️ Input data quality issues: {input_issues}")
-            
+
             # Execute the function
             try:
                 result = await func(*args, **kwargs)
             except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
-            
+
             # Validate output data
             if result is not None:
                 output_issues = _validate_data_quality_internal(
@@ -185,18 +184,18 @@ def validate_data_quality(
                     check_timestamps, check_nan, check_infinite, check_constant,
                     check_correlation, max_correlation_threshold, min_unique_values
                 )
-                
+
                 if output_issues and validation_level == "ERROR":
                     raise ValueError(f"Output data quality validation failed: {output_issues}")
                 elif output_issues and validation_level == "WARNING":
                     logger.warning(f"⚠️ Output data quality issues: {output_issues}")
-            
+
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"DataQuality.{context}")
-            
+
             # Validate input data
             input_issues = _validate_data_quality_internal(
                 args, kwargs, "input", logger, validation_level,
@@ -204,19 +203,19 @@ def validate_data_quality(
                 check_timestamps, check_nan, check_infinite, check_constant,
                 check_correlation, max_correlation_threshold, min_unique_values
             )
-            
+
             if input_issues and validation_level == "ERROR":
                 raise ValueError(f"Input data quality validation failed: {input_issues}")
             elif input_issues and validation_level == "WARNING":
                 logger.warning(f"⚠️ Input data quality issues: {input_issues}")
-            
+
             # Execute the function
             try:
                 result = func(*args, **kwargs)
             except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
-            
+
             # Validate output data
             if result is not None:
                 output_issues = _validate_data_quality_internal(
@@ -225,16 +224,16 @@ def validate_data_quality(
                     check_timestamps, check_nan, check_infinite, check_constant,
                     check_correlation, max_correlation_threshold, min_unique_values
                 )
-                
+
                 if output_issues and validation_level == "ERROR":
                     raise ValueError(f"Output data quality validation failed: {output_issues}")
                 elif output_issues and validation_level == "WARNING":
                     logger.warning(f"⚠️ Output data quality issues: {output_issues}")
-            
+
             return result
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 
@@ -258,23 +257,23 @@ def _validate_data_quality_internal(
 ) -> List[str]:
     """Internal data quality validation function."""
     issues = []
-    
+
     # Check if pandas is available
     if not PANDAS_AVAILABLE:
         issues.append(f"{data_type}: Pandas not available for validation")
         return issues
-    
+
     # Extract DataFrames from args and kwargs
     dataframes = []
-    
+
     for i, arg in enumerate(args):
         if isinstance(arg, pd.DataFrame):
             dataframes.append((f"{data_type}_arg_{i}", arg))
-    
+
     for key, value in kwargs.items():
         if isinstance(value, pd.DataFrame):
             dataframes.append((f"{data_type}_kwarg_{key}", value))
-    
+
     # Validate each DataFrame
     for df_name, df in dataframes:
         df_issues = _validate_single_dataframe(
@@ -284,7 +283,7 @@ def _validate_data_quality_internal(
             min_unique_values
         )
         issues.extend(df_issues)
-    
+
     return issues
 
 
@@ -307,26 +306,26 @@ def _validate_single_dataframe(
 ) -> List[str]:
     """Validate a single DataFrame."""
     issues = []
-    
+
     # Check if pandas is available
     if not PANDAS_AVAILABLE:
         issues.append(f"{df_name}: Pandas not available for validation")
         return issues
-    
+
     if df.empty:
         issues.append(f"{df_name}: DataFrame is empty")
         return issues
-    
+
     # Check minimum rows
     if len(df) < min_rows:
         issues.append(f"{df_name}: Insufficient rows ({len(df)} < {min_rows})")
-    
+
     # Check required columns
     if required_columns:
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
             issues.append(f"{df_name}: Missing required columns: {list(missing_columns)}")
-    
+
     # Check for NaN values
     if check_nan:
         nan_counts = df.isnull().sum()
@@ -336,7 +335,7 @@ def _validate_single_dataframe(
             high_nan_features = [f for f, ratio in zip(nan_features, nan_ratios) if ratio > max_null_ratio]
             if high_nan_features:
                 issues.append(f"{df_name}: Features with high NaN ratio: {high_nan_features}")
-    
+
     # Check for infinite values
     if check_infinite and NUMPY_AVAILABLE:
         infinite_features = []
@@ -345,7 +344,7 @@ def _validate_single_dataframe(
                 infinite_features.append(col)
         if infinite_features:
             issues.append(f"{df_name}: Features with infinite values: {infinite_features}")
-    
+
     # Check for constant features
     if check_constant:
         constant_features = []
@@ -355,13 +354,13 @@ def _validate_single_dataframe(
                 constant_features.append(col)
         if constant_features:
             issues.append(f"{df_name}: Constant features: {constant_features}")
-    
+
     # Check for duplicates
     if check_duplicates:
         duplicate_count = df.duplicated().sum()
         if duplicate_count > 0:
             issues.append(f"{df_name}: {duplicate_count} duplicate rows found")
-    
+
     # Check timestamp consistency
     if check_timestamps and isinstance(df.index, pd.DatetimeIndex):
         time_diffs = df.index.to_series().diff().dropna()
@@ -372,7 +371,7 @@ def _validate_single_dataframe(
             irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > tolerance]
             if len(irregular_intervals) > 0:
                 issues.append(f"{df_name}: {len(irregular_intervals)} irregular time intervals detected")
-    
+
     # Check for high correlations
     if check_correlation and NUMPY_AVAILABLE:
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -385,7 +384,7 @@ def _validate_single_dataframe(
                         high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
             if high_corr_pairs:
                 issues.append(f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}")
-    
+
     return issues
 
 
@@ -393,10 +392,10 @@ def _is_boolean_feature(series: Any) -> bool:
     """Check if a series represents a boolean feature."""
     if not PANDAS_AVAILABLE:
         return False
-    
+
     if pd.api.types.is_bool_dtype(series):
         return True
-    
+
     unique_values = series.dropna().unique()
     if len(unique_values) == 2:
         unique_set = set(unique_values)
@@ -406,7 +405,7 @@ def _is_boolean_feature(series: Any) -> bool:
             {'1', '0'}, {'yes', 'no'}, {'Y', 'N'}, {'y', 'n'}
         ]
         return any(unique_set == pattern for pattern in boolean_patterns)
-    
+
     return False
 
 
@@ -425,7 +424,7 @@ def quality_gate(
 ):
     """
     Quality gate decorator that enforces data quality standards.
-    
+
     Args:
         min_quality_score: Minimum acceptable quality score (0.0-1.0)
         max_correlation: Maximum allowed feature correlation
@@ -439,73 +438,73 @@ def quality_gate(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild("QualityGate")
-            
+
             # Execute the original function
             logger.info("🚀 Executing function with quality gate...")
             result = await func(*args, **kwargs)
-            
+
             # Extract DataFrame from result
             df = _extract_dataframe_from_result(result)
             if df is None:
                 logger.warning("No DataFrame found in result, skipping quality gate")
                 return result
-            
+
             # Perform quality validation
             logger.info("🔍 Applying quality gate validation...")
             quality_score, grade = _calculate_quality_score(df, validation_level)
-            
+
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, 
+                quality_score, grade, min_quality_score, max_correlation,
                 max_drift_psi, required_grade
             )
-            
+
             if not quality_gate_passed:
                 error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
                 logger.error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild("QualityGate")
-            
+
             # Execute the original function
             logger.info("🚀 Executing function with quality gate...")
             result = func(*args, **kwargs)
-            
+
             # Extract DataFrame from result
             df = _extract_dataframe_from_result(result)
             if df is None:
                 logger.warning("No DataFrame found in result, skipping quality gate")
                 return result
-            
+
             # Perform quality validation
             logger.info("🔍 Applying quality gate validation...")
             quality_score, grade = _calculate_quality_score(df, validation_level)
-            
+
             # Check quality gates
             quality_gate_passed = _check_quality_gates(
-                quality_score, grade, min_quality_score, max_correlation, 
+                quality_score, grade, min_quality_score, max_correlation,
                 max_drift_psi, required_grade
             )
-            
+
             if not quality_gate_passed:
                 error_msg = f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
                 logger.error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
             return result
-        
+
         # Return appropriate wrapper
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 
@@ -513,7 +512,7 @@ def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
     """Extract DataFrame from function result."""
     if not PANDAS_AVAILABLE:
         return None
-    
+
     if isinstance(result, pd.DataFrame):
         return result
     elif isinstance(result, dict):
@@ -533,20 +532,20 @@ def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str
     """Calculate quality score and grade for a DataFrame."""
     if not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
         return 0.5, "C"  # Default score when dependencies not available
-    
+
     if df.empty:
         return 0.0, "F"
-    
+
     scores = []
-    
+
     # Completeness score
     completeness = 1.0 - (df.isnull().sum().sum() / (len(df) * len(df.columns)))
     scores.append(completeness)
-    
+
     # Uniqueness score
     uniqueness = df.nunique().mean() / len(df)
     scores.append(min(uniqueness, 1.0))
-    
+
     # Consistency score (no infinite values)
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     if len(numeric_cols) > 0:
@@ -555,15 +554,15 @@ def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str
         scores.append(consistency)
     else:
         scores.append(1.0)
-    
+
     # Validity score (no duplicates)
     duplicate_ratio = df.duplicated().sum() / len(df)
     validity = 1.0 - duplicate_ratio
     scores.append(validity)
-    
+
     # Calculate overall score
     overall_score = np.mean(scores)
-    
+
     # Determine grade
     if overall_score >= 0.9:
         grade = "A"
@@ -575,7 +574,7 @@ def _calculate_quality_score(df: Any, validation_level: str) -> Tuple[float, str
         grade = "D"
     else:
         grade = "F"
-    
+
     return overall_score, grade
 
 
@@ -591,12 +590,12 @@ def _check_quality_gates(
     # Check quality score
     if quality_score < min_quality_score:
         return False
-    
+
     # Check grade
     grade_order = {"A": 5, "B": 4, "C": 3, "D": 2, "F": 1}
     if grade_order.get(grade, 0) < grade_order.get(required_grade, 0):
         return False
-    
+
     return True
 
 
@@ -607,7 +606,7 @@ def _check_quality_gates(
 def step_specific_ml_validation(step_name: str, **kwargs):
     """
     Step-specific ML validation decorator with predefined configurations.
-    
+
     Args:
         step_name: Name of the pipeline step
         **kwargs: Additional validation parameters
@@ -640,13 +639,13 @@ def step_specific_ml_validation(step_name: str, **kwargs):
             "validation_level": "comprehensive"
         }
     }
-    
+
     # Get step configuration
     step_config = step_configs.get(step_name, {})
-    
+
     # Merge with provided kwargs
     config = {**step_config, **kwargs}
-    
+
     return quality_gate(**config)
 
 
@@ -784,7 +783,7 @@ def auto_fix_data_quality_issues(
 ):
     """
     Decorator that automatically fixes data quality issues.
-    
+
     Args:
         fix_nan: Whether to fix NaN values
         fix_infinite: Whether to fix infinite values
@@ -796,31 +795,31 @@ def auto_fix_data_quality_issues(
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"AutoFix.{context}")
-            
+
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
                 args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
             )
-            
+
             # Execute function with fixed data
             result = await func(*fixed_args, **fixed_kwargs)
             return result
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             logger = system_logger.getChild(f"AutoFix.{context}")
-            
+
             # Extract and fix data
             fixed_args, fixed_kwargs = _auto_fix_data_quality(
                 args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
             )
-            
+
             # Execute function with fixed data
             result = func(*fixed_args, **fixed_kwargs)
             return result
-        
+
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    
+
     return decorator
 
 
@@ -836,12 +835,12 @@ def _auto_fix_data_quality(
     """Auto-fix data quality issues in arguments."""
     fixed_args = list(args)
     fixed_kwargs = kwargs.copy()
-    
+
     # Check if pandas is available
     if not PANDAS_AVAILABLE:
         logger.warning("Pandas not available, skipping data quality fixes")
         return tuple(fixed_args), fixed_kwargs
-    
+
     # Fix DataFrames in args
     for i, arg in enumerate(args):
         if isinstance(arg, pd.DataFrame):
@@ -849,7 +848,7 @@ def _auto_fix_data_quality(
                 arg, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
             )
             fixed_args[i] = fixed_df
-    
+
     # Fix DataFrames in kwargs
     for key, value in kwargs.items():
         if isinstance(value, pd.DataFrame):
@@ -857,7 +856,7 @@ def _auto_fix_data_quality(
                 value, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
             )
             fixed_kwargs[key] = fixed_df
-    
+
     return tuple(fixed_args), fixed_kwargs
 
 
@@ -873,9 +872,9 @@ def _fix_dataframe_quality(
     if not PANDAS_AVAILABLE:
         logger.warning("Pandas not available, returning original data")
         return df
-    
+
     fixed_df = df.copy()
-    
+
     if fix_nan:
         # Forward fill then backward fill for time series data
         if isinstance(fixed_df.index, pd.DatetimeIndex):
@@ -887,7 +886,7 @@ def _fix_dataframe_quality(
                 if fixed_df[col].isnull().any():
                     median_val = fixed_df[col].median()
                     fixed_df[col].fillna(median_val, inplace=True)
-    
+
     if fix_infinite and NUMPY_AVAILABLE:
         # Replace infinite values with NaN then fill
         numeric_cols = fixed_df.select_dtypes(include=[np.number]).columns
@@ -897,7 +896,7 @@ def _fix_dataframe_quality(
                 if fixed_df[col].isnull().any():
                     median_val = fixed_df[col].median()
                     fixed_df[col].fillna(median_val, inplace=True)
-    
+
     if fix_duplicates:
         # Remove duplicates
         initial_rows = len(fixed_df)
@@ -905,7 +904,7 @@ def _fix_dataframe_quality(
         removed_rows = initial_rows - len(fixed_df)
         if removed_rows > 0:
             logger.info(f"🔧 Removed {removed_rows} duplicate rows")
-    
+
     if fix_irregular_intervals and isinstance(fixed_df.index, pd.DatetimeIndex):
         # Resample to regular intervals if needed
         time_diffs = fixed_df.index.to_series().diff().dropna()
@@ -913,14 +912,14 @@ def _fix_dataframe_quality(
             expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
             tolerance = expected_interval * 0.1
             irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > tolerance]
-            
+
             if len(irregular_intervals) > 0:
                 logger.info(f"🔧 Detected {len(irregular_intervals)} irregular intervals, resampling...")
                 # Resample to regular intervals
                 freq = pd.infer_freq(fixed_df.index)
                 if freq:
                     fixed_df = fixed_df.resample(freq).mean()
-    
+
     return fixed_df
 
 
@@ -928,9 +927,9 @@ def _fix_dataframe_quality(
 __all__ = [
     # Error handling decorators
     "handle_errors",
-    "handle_specific_errors", 
+    "handle_specific_errors",
     "handle_file_operations",
-    
+
     # Training pipeline decorators
     "deterministic_seed",
     "idempotent_step",
@@ -946,7 +945,7 @@ __all__ = [
     "debug_training_step",
     "circuit_breaker_protection",
     "validate_step_output",
-    
+
     # Monitor decorators
     "monitor_feature_engineering",
     "monitor_data_collection",
@@ -955,13 +954,13 @@ __all__ = [
     "monitor_optimization",
     "monitor_step_execution",
     "secure_step_execution",
-    
+
     # Data quality decorators
     "validate_data_quality",
     "quality_gate",
     "step_specific_ml_validation",
     "auto_fix_data_quality_issues",
-    
+
     # Placeholder decorators for backward compatibility
     "validate_klines_data",
     "format_klines_data",
@@ -975,7 +974,7 @@ __all__ = [
     "validate_klines_data_quality",
     "validate_ml_data_quality_decorator",
     "continuous_quality_monitoring",
-    
+
     # General decorators
     "validate_call_or_runtime_types",
     "pa_check_input",
@@ -986,7 +985,7 @@ __all__ = [
     "guard_array_nan_inf",
     "guard_dataframe_nulls",
     "with_tracing_span",
-    
+
     # Enhanced data quality decorators
     "validate_constant_features",
     "validate_low_variance_features",
@@ -1001,7 +1000,7 @@ __all__ = [
     "validate_feature_engineering_pipeline",
     "validate_hmm_regime_discovery",
     "validate_multi_timeframe_processing",
-    
+
     # Advanced decorators
     "performance_monitor",
     "model_validation",

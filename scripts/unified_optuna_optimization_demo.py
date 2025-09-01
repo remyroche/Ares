@@ -19,7 +19,6 @@ Usage:
     python3 scripts/unified_optuna_optimization_demo.py --optimization-type sr_parameters --n-trials 100
 """
 
-from __future__ import annotations
 
 import argparse
 import asyncio

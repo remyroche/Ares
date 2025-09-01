@@ -17,19 +17,19 @@ sr_features = [
     "sr_proximity", "sr_outcome", "normalized_distance", "sr_proximity_score",
     "strength_score", "clarity_factor", "directional_pressure", "sr_score",
     "delta_sr_score", "isolation_score", "sr_level", "sr_multi_timeframe",
-    
+
     # Enhanced SR features (10+ features)
     "sr_enhanced_support_strength", "sr_enhanced_resistance_strength",
     "sr_clusters_detected", "sr_noise_points", "sr_clustering_quality",
     "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_poc",
     "sr_order_flow_hvns", "sr_order_flow_imbalances",
-    
+
     # SR Optimization features (10+ features)
     "sr_optimized_method_weights", "sr_optimized_strength_weights",
     "sr_optimized_dbscan_eps", "sr_optimized_dbscan_min_samples",
     "sr_optimized_fibonacci_sensitivity", "sr_optimized_elliott_confidence",
     "sr_optimized_order_flow_threshold", "sr_optimization_score",
-    
+
     # Additional SR features (15+ features)
     "sr_distance", "sr_proximity", "sr_zone_width", "sr_nearest_support",
     "sr_nearest_resistance", "sr_total_support_levels", "sr_total_resistance_levels",
@@ -83,25 +83,25 @@ step7_sr_features = [
     # Proximity Features (8 features)
     "sr_proximity", "support_proximity", "resistance_proximity", "sr_zone_width",
     "sr_distance", "normalized_distance", "sr_proximity_score", "sr_zone_position_pct",
-    
+
     # Strength Features (8 features)
     "sr_strength", "support_strength", "resistance_strength", "sr_enhanced_strength",
     "strength_score", "sr_enhanced_support_strength", "sr_enhanced_resistance_strength",
     "sr_optimized_strength_weights",
-    
+
     # Level Count Features (6 features)
     "sr_total_support_levels", "sr_total_resistance_levels", "sr_clusters_detected",
     "sr_noise_points", "sr_clustering_quality", "sr_level",
-    
+
     # Advanced Analysis Features (8 features)
     "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_poc",
     "sr_order_flow_hvns", "sr_order_flow_imbalances", "sr_optimized_fibonacci_sensitivity",
     "sr_optimized_elliott_confidence", "sr_optimized_order_flow_threshold",
-    
+
     # Historical Features (6 features)
     "sr_touch_count", "sr_bounce_rate", "sr_isolation_score", "sr_momentum_pct",
     "sr_volatility_pct", "sr_trend_pct",
-    
+
     # Optimization Features (6 features)
     "sr_optimization_score", "sr_optimized_method_weights", "sr_optimized_dbscan_eps",
     "sr_optimized_dbscan_min_samples", "delta_sr_score", "clarity_factor"
@@ -114,7 +114,7 @@ step7_sr_features = [
 # Convert SR levels to ML features
 def convert_sr_levels_to_features(sr_levels_result):
     features = {}
-    
+
     # Support level features
     support_levels = sr_levels_result.get("support_levels", [])
     features.update({
@@ -125,7 +125,7 @@ def convert_sr_levels_to_features(sr_levels_result):
         "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]),
         "sr_support_level_touches_avg": np.mean([level.get("touches", 0) for level in support_levels]),
     })
-    
+
     # Resistance level features
     resistance_levels = sr_levels_result.get("resistance_levels", [])
     features.update({
@@ -136,7 +136,7 @@ def convert_sr_levels_to_features(sr_levels_result):
         "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]),
         "sr_resistance_level_touches_avg": np.mean([level.get("touches", 0) for level in resistance_levels]),
     })
-    
+
     # Combined level features
     all_levels = support_levels + resistance_levels
     features.update({
@@ -146,7 +146,7 @@ def convert_sr_levels_to_features(sr_levels_result):
         "sr_level_volume_variance": np.var([level.get("volume", 0) for level in all_levels]),
         "sr_level_age_variance": np.var([level.get("age", 0) for level in all_levels]),
     })
-    
+
     return features
 ```
 
@@ -159,53 +159,53 @@ class EnhancedMultiOutputModelTrainer:
         self.config = config
         self.step7_features = []  # Features from step7
         self.step2_5_sr_levels = {}  # SR levels from step2_5
-        
+
     def load_step7_features(self, step7_output_path):
         """Load comprehensive SR features from step7."""
         # Load step7 matrix operations results
         step7_results = load_step7_results(step7_output_path)
-        
+
         # Extract all SR features
         self.step7_features = step7_results.get("sr_features", [])
         self.logger.info(f"Loaded {len(self.step7_features)} SR features from step7")
-        
+
     def load_step2_5_sr_levels(self, step2_5_output_path):
         """Load SR levels from step2_5."""
         # Load step2_5 SR optimization results
         step2_5_results = load_step2_5_results(step2_5_output_path)
-        
+
         # Extract SR levels
         self.step2_5_sr_levels = step2_5_results.get("sr_levels_result", {})
         self.logger.info(f"Loaded SR levels: {len(self.step2_5_sr_levels.get('support_levels', []))} support, {len(self.step2_5_sr_levels.get('resistance_levels', []))} resistance")
-        
+
     def prepare_comprehensive_features(self, market_data):
         """Prepare comprehensive feature set including step7 and step2_5 features."""
         features = {}
-        
+
         # 1. Basic market features
         features.update(self.extract_basic_features(market_data))
-        
+
         # 2. Step7 SR features
         features.update(self.extract_step7_sr_features(market_data))
-        
+
         # 3. Step2_5 SR level features
         features.update(self.convert_sr_levels_to_features(self.step2_5_sr_levels))
-        
+
         # 4. Combined SR features
         features.update(self.create_combined_sr_features(features))
-        
+
         return features
-        
+
     def train_with_comprehensive_features(self, X_train, y_train, X_test, y_test):
         """Train models with comprehensive feature set."""
         # Ensure all features are included
         required_features = self.step7_features + self.get_sr_level_feature_names()
-        
+
         # Validate feature availability
         missing_features = [f for f in required_features if f not in X_train.columns]
         if missing_features:
             self.logger.warning(f"Missing features: {missing_features}")
-            
+
         # Train models with full feature set
         return self.train_models(X_train, y_train, X_test, y_test)
 ```
@@ -225,7 +225,7 @@ def validate_feature_completeness(self, features_df):
             "sr_fibonacci_levels", "sr_elliott_waves", "sr_order_flow_imbalances",
             # ... (all 42 step7 features)
         ],
-        
+
         # Step2_5 SR level features (15 features)
         "step2_5_sr_level_features": [
             "sr_support_level_count", "sr_nearest_support_distance", "sr_support_level_strength_avg",
@@ -234,13 +234,13 @@ def validate_feature_completeness(self, features_df):
             # ... (all 15 step2_5 features)
         ]
     }
-    
+
     missing_features = {}
     for category, features in required_features.items():
         missing = [f for f in features if f not in features_df.columns]
         if missing:
             missing_features[category] = missing
-            
+
     return missing_features
 ```
 
@@ -287,10 +287,10 @@ def validate_feature_completeness(self, features_df):
 
 The current ML training pipeline needs to be enhanced to:
 
-✅ **Load and use ALL SR features from step7** (42+ features)  
-✅ **Convert and use SR levels from step2_5** (15+ features)  
-✅ **Ensure comprehensive feature integration** across all ML models  
-✅ **Validate feature completeness** and quality  
-✅ **Train models with full SR context** for better performance  
+✅ **Load and use ALL SR features from step7** (42+ features)
+✅ **Convert and use SR levels from step2_5** (15+ features)
+✅ **Ensure comprehensive feature integration** across all ML models
+✅ **Validate feature completeness** and quality
+✅ **Train models with full SR context** for better performance
 
 This will ensure that all ML models are trained on the complete feature set that includes both the extensive SR features from step7 and the optimized SR levels from step2_5, leading to significantly improved model performance and more accurate predictions.

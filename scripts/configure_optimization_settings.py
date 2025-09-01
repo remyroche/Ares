@@ -6,7 +6,6 @@ This script demonstrates how to use the new configuration sections
 in src/config.py for enhanced hyperparameter optimization and computational optimization.
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging

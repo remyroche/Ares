@@ -83,7 +83,7 @@ scenario_analysis:
 ```yaml
   # Time limit for scenario evaluation
   time_limit_minutes: 30
-  
+
   # Model configuration
   n_estimators: 100
   learning_rate: 0.1

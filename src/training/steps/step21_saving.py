@@ -53,14 +53,14 @@ class SavingStep:
         self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -265,7 +265,7 @@ from src.utils.enhanced_mlflow_integration import (
                 run_name=f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             ) as run:
                 run_id = run.info.run_id
-                
+
                 # Log enhanced training metadata with all required associations
                 log_enhanced_training_metadata(
                     asset=symbol,
@@ -299,7 +299,7 @@ from src.utils.enhanced_mlflow_integration import (
                     for metric_name, metric_value in training_summary["metrics"].items():
                         if isinstance(metric_value, (int, float)):
                             metrics[metric_name] = float(metric_value)
-                    
+
                     if metrics:
                         log_metrics_with_metadata(
                             metrics=metrics,
@@ -319,7 +319,7 @@ from src.utils.enhanced_mlflow_integration import (
                 ) as f:
                     json.dump(training_summary, f, indent=2, default=str)
                     temp_path = f.name
-                
+
                 # Log training summary with standardized naming
                 summary_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
@@ -331,7 +331,7 @@ from src.utils.enhanced_mlflow_integration import (
                     }
                 )
                 self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
-                
+
                 # Log comprehensive final report
                 final_report_data = {
                     "training_summary": training_summary,
@@ -345,7 +345,7 @@ from src.utils.enhanced_mlflow_integration import (
                     "execution_timestamp": datetime.now().isoformat(),
                     "pipeline_completion": True,
                 }
-                
+
                 report_name = log_step_report(
                     config=self.config,
                     step_name="step21_saving",
@@ -357,7 +357,7 @@ from src.utils.enhanced_mlflow_integration import (
                     }
                 )
                 self.logger.info(f"✅ Logged final training report: {report_name}")
-                
+
                 os.unlink(temp_path)
 
             self.logger.info(f"✅ Training results saved to MLflow successfully with enhanced metadata (Run ID: {run_id})")

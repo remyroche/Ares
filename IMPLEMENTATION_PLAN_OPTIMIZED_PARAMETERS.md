@@ -384,7 +384,7 @@ class Component:
         self.position_config = self.config_manager.get_optimizable_config("position_sizing")
         self.technical_config = self.config_manager.get_optimizable_config("technical_indicators")
         # ... load other configs as needed
-        
+
     def process(self, data):
         # Use optimized parameters
         threshold = self.confidence_config.base_entry_threshold
@@ -398,12 +398,12 @@ class Component:
 def validate_parameters(self):
     """Validate that all required parameters are loaded and within expected ranges."""
     required_configs = ["confidence", "position_sizing", "leverage", "tpsl", "technical_indicators"]
-    
+
     for config_name in required_configs:
         config = self.config_manager.get_optimizable_config(config_name)
         if config is None:
             raise ValueError(f"Required config {config_name} not loaded")
-        
+
         # Validate parameter ranges
         self._validate_config_ranges(config_name, config)
 ```
@@ -417,7 +417,7 @@ logger = logging.getLogger(__name__)
 def track_parameter_usage(self, config_name: str, parameter_name: str, value: Any):
     """Track parameter usage for monitoring and debugging."""
     logger.debug(f"Using {config_name}.{parameter_name} = {value}")
-    
+
     # Store usage in monitoring system
     self.parameter_monitor.record_usage(config_name, parameter_name, value)
 ```
@@ -428,9 +428,9 @@ def track_parameter_usage(self, config_name: str, parameter_name: str, value: An
 def classify_regime_series(df: pd.DataFrame, config_manager=None):
     if config_manager is None:
         config_manager = get_config_manager()
-    
+
     technical_config = config_manager.get_optimizable_config("technical_indicators")
-    
+
     return classify_regime_series(
         df,
         ema_fast=technical_config.ema_fast_period,

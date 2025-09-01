@@ -4,7 +4,6 @@ Data Optimizer for Ares Trading System.
 Enhances data processing efficiency and memory usage.
 """
 
-from __future__ import annotations
 
 import contextlib
 import gc
@@ -15,7 +14,6 @@ from typing import Any
 import pandas as pd
 
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, initialization_error, missing

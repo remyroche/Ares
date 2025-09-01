@@ -9,7 +9,6 @@ the SR calculation logic from sr_breakout_predictor.py
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -19,23 +18,22 @@ def validate_imports():
     """Validate that all required imports are working."""
     print("🔍 Validating SR Levels Manager Imports")
     print("=" * 50)
-    
+
     try:
         # Test 1: Import SRBreakoutPredictor
         print("\n📦 Test 1: Importing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
         print("✅ SRBreakoutPredictor imported successfully")
-        
+
         # Test 2: Import SRLevelsManager
         print("\n📦 Test 2: Importing SRLevelsManager")
-        from src.tactician.sr_levels_manager import SRLevelsManager, SRLevel
         print("✅ SRLevelsManager imported successfully")
-        
+
         # Test 3: Import SR Trading Intelligence
         print("\n📦 Test 3: Importing SR Trading Intelligence")
         from src.trading.sr_trading_intelligence import SRTradingIntelligence
         print("✅ SRTradingIntelligence imported successfully")
-        
+
         # Test 4: Check SRBreakoutPredictor methods
         print("\n🔧 Test 4: Checking SRBreakoutPredictor Methods")
         predictor_methods = [
@@ -53,13 +51,13 @@ def validate_imports():
             'cluster_sr_levels_dbscan',
             'calculate_comprehensive_strength'
         ]
-        
+
         for method in predictor_methods:
             if hasattr(SRBreakoutPredictor, method):
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
-        
+
         # Test 5: Check SRLevelsManager methods
         print("\n🔧 Test 5: Checking SRLevelsManager Methods")
         manager_methods = [
@@ -71,13 +69,13 @@ def validate_imports():
             '_create_sr_level_from_data',
             '_level_exists'
         ]
-        
+
         for method in manager_methods:
             if hasattr(SRLevelsManager, method):
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
-        
+
         # Test 6: Check SR Trading Intelligence methods
         print("\n🔧 Test 6: Checking SR Trading Intelligence Methods")
         intelligence_methods = [
@@ -88,16 +86,16 @@ def validate_imports():
             '_assess_risk',
             '_generate_position_recommendations'
         ]
-        
+
         for method in intelligence_methods:
             if hasattr(SRTradingIntelligence, method):
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
-        
+
         print("\n✅ All import validations completed successfully!")
         return True
-        
+
     except ImportError as e:
         print(f"❌ Import error: {e}")
         return False
@@ -109,7 +107,7 @@ async def validate_integration():
     """Validate that the integration between components works."""
     print("\n🔗 Validating SR Levels Manager Integration")
     print("=" * 50)
-    
+
     try:
         # Configuration
         config = {
@@ -124,7 +122,7 @@ async def validate_integration():
                 "min_sr_strength": 0.3
             }
         }
-        
+
         # Test 1: Initialize SRBreakoutPredictor
         print("\n🔧 Test 1: Initializing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -134,7 +132,7 @@ async def validate_integration():
         else:
             print("❌ SRBreakoutPredictor initialization failed")
             return False
-        
+
         # Test 2: Initialize SRLevelsManager
         print("\n🔧 Test 2: Initializing SRLevelsManager")
         from src.tactician.sr_levels_manager import create_sr_levels_manager
@@ -144,7 +142,7 @@ async def validate_integration():
         else:
             print("❌ SRLevelsManager initialization failed")
             return False
-        
+
         # Test 3: Check that SRLevelsManager has access to SRBreakoutPredictor
         print("\n🔧 Test 3: Checking SRBreakoutPredictor Access")
         if hasattr(sr_manager, 'sr_predictor') and sr_manager.sr_predictor is not None:
@@ -152,7 +150,7 @@ async def validate_integration():
         else:
             print("❌ SRLevelsManager does not have access to SRBreakoutPredictor")
             return False
-        
+
         # Test 4: Check that SRBreakoutPredictor methods are accessible
         print("\n🔧 Test 4: Checking Method Accessibility")
         required_methods = [
@@ -160,17 +158,17 @@ async def validate_integration():
             '_detect_resistance_levels',
             'get_sr_context'
         ]
-        
+
         for method in required_methods:
             if hasattr(sr_manager.sr_predictor, method):
                 print(f"✅ {method} - Accessible")
             else:
                 print(f"❌ {method} - Not accessible")
                 return False
-        
+
         print("\n✅ All integration validations completed successfully!")
         return True
-        
+
     except Exception as e:
         print(f"❌ Integration validation error: {e}")
         import traceback
@@ -181,14 +179,14 @@ async def main():
     """Main validation function."""
     print("🧪 SR Levels Manager Import Validation")
     print("=" * 60)
-    
+
     # Validate imports
     imports_ok = validate_imports()
-    
+
     if imports_ok:
         # Validate integration
         integration_ok = await validate_integration()
-        
+
         if integration_ok:
             print("\n🎉 All validations passed! SR Levels Manager is properly integrated.")
             print("\n📋 Summary:")
@@ -202,7 +200,7 @@ async def main():
     else:
         print("\n💥 Import validation failed.")
         return False
-    
+
     return True
 
 if __name__ == "__main__":

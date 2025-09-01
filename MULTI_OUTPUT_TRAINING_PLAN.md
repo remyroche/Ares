@@ -41,7 +41,7 @@ class MultiOutputProbabilityTrainer:
         self.config = config
         self.target_generator = ProbabilityTargetGenerator()
         self.multi_output_model = MultiOutputModel()
-    
+
     def prepare_multi_output_targets(self, X, y, market_data):
         """Generate 4 probability targets for training."""
         return {
@@ -50,11 +50,11 @@ class MultiOutputProbabilityTrainer:
             "magnitude": self.target_generator.generate_magnitude_targets(X, y, market_data),
             "barrier_avoidance": self.target_generator.generate_barrier_avoidance_targets(X, y, market_data)
         }
-    
+
     def train_multi_output_model(self, X_train, y_train_multi, X_val, y_val_multi):
         """Train model on all 4 probability targets."""
         return self.multi_output_model.fit(X_train, y_train_multi, X_val, y_val_multi)
-    
+
     def predict_probabilities(self, X_test, market_data):
         """Generate all 4 probability outputs."""
         return self.multi_output_model.predict_probabilities(X_test, market_data)
@@ -76,19 +76,19 @@ class ProbabilityTargetGenerator:
         # Calculate actual triple barrier outcomes
         # Convert to probability targets
         pass
-    
+
     def generate_direction_targets(self, X, y):
         """Generate direction probability targets."""
         # Calculate actual direction accuracy
         # Convert to probability targets
         pass
-    
+
     def generate_magnitude_targets(self, X, y, market_data):
         """Generate magnitude probability targets."""
         # Calculate actual magnitude outcomes
         # Convert to probability targets
         pass
-    
+
     def generate_barrier_avoidance_targets(self, X, y, market_data):
         """Generate barrier avoidance probability targets."""
         # Calculate actual avoidance outcomes
@@ -112,14 +112,14 @@ class MultiOutputModel:
         self.magnitude_model = None
         self.avoidance_model = None
         self.ensemble_weights = None
-    
+
     def fit(self, X_train, y_train_multi, X_val, y_val_multi):
         """Train all 4 probability models."""
         # Train each model on its specific target
         # Optimize ensemble weights
         # Calibrate probabilities
         pass
-    
+
     def predict_probabilities(self, X_test, market_data):
         """Generate all 4 probability outputs."""
         return {
@@ -138,16 +138,16 @@ class MultiOutputModel:
 def generate_triple_barrier_targets(self, X, y, market_data, profit_target=0.02, stop_loss=0.01):
     """Generate triple barrier probability targets."""
     targets = []
-    
+
     for i in range(len(X)):
         # Calculate actual triple barrier outcome
         entry_price = market_data['close'].iloc[i]
         future_prices = market_data['close'].iloc[i+1:i+21]  # Look ahead 20 periods
-        
+
         # Check if profit target or stop loss hit first
         profit_hit = any(future_prices >= entry_price * (1 + profit_target))
         stop_hit = any(future_prices <= entry_price * (1 - stop_loss))
-        
+
         if profit_hit and not stop_hit:
             target = 1.0  # Success
         elif stop_hit and not profit_hit:
@@ -155,9 +155,9 @@ def generate_triple_barrier_targets(self, X, y, market_data, profit_target=0.02,
         else:
             # Partial success or no clear outcome
             target = 0.5
-        
+
         targets.append(target)
-    
+
     return np.array(targets)
 ```
 
@@ -167,19 +167,19 @@ def generate_triple_barrier_targets(self, X, y, market_data, profit_target=0.02,
 def generate_direction_targets(self, X, y):
     """Generate direction probability targets."""
     targets = []
-    
+
     for i in range(len(X)):
         # Calculate actual direction accuracy
         predicted_direction = np.sign(y[i])
         actual_direction = np.sign(y[i])  # Assuming y contains actual price changes
-        
+
         if predicted_direction == actual_direction:
             target = 1.0  # Correct direction
         else:
             target = 0.0  # Wrong direction
-        
+
         targets.append(target)
-    
+
     return np.array(targets)
 ```
 
@@ -189,19 +189,19 @@ def generate_direction_targets(self, X, y):
 def generate_magnitude_targets(self, X, y, market_data, threshold_factor=0.8):
     """Generate magnitude probability targets."""
     targets = []
-    
+
     for i in range(len(X)):
         # Calculate actual magnitude outcome
         predicted_magnitude = abs(y[i])
         actual_magnitude = abs(market_data['close'].pct_change().iloc[i])
-        
+
         if predicted_magnitude >= actual_magnitude * threshold_factor:
             target = 1.0  # Magnitude prediction successful
         else:
             target = 0.0  # Magnitude prediction failed
-        
+
         targets.append(target)
-    
+
     return np.array(targets)
 ```
 
@@ -211,19 +211,19 @@ def generate_magnitude_targets(self, X, y, market_data, threshold_factor=0.8):
 def generate_barrier_avoidance_targets(self, X, y, market_data, adverse_threshold=0.01):
     """Generate barrier avoidance probability targets."""
     targets = []
-    
+
     for i in range(len(X)):
         # Calculate actual avoidance outcome
         future_returns = market_data['close'].pct_change().iloc[i+1:i+11]  # Look ahead 10 periods
         adverse_movements = abs(future_returns) > adverse_threshold
-        
+
         if not any(adverse_movements):
             target = 1.0  # Successfully avoided adverse movements
         else:
             target = 0.0  # Hit adverse movement
-        
+
         targets.append(target)
-    
+
     return np.array(targets)
 ```
 
@@ -238,13 +238,13 @@ class MultiOutputModel:
         self.models = {}
         self.ensemble_weights = None
         self.calibrators = {}
-        
+
         # Initialize individual models
         self.models['triple_barrier'] = self._create_model('triple_barrier')
         self.models['direction'] = self._create_model('direction')
         self.models['magnitude'] = self._create_model('magnitude')
         self.models['avoidance'] = self._create_model('avoidance')
-    
+
     def _create_model(self, output_type):
         """Create model for specific output type."""
         if self.config.get('use_lightgbm', True):
@@ -269,44 +269,44 @@ class MultiOutputModel:
 def fit(self, X_train, y_train_multi, X_val, y_val_multi):
     """Train all 4 probability models."""
     trained_models = {}
-    
+
     for output_type in ['triple_barrier', 'direction', 'magnitude', 'avoidance']:
         self.logger.info(f"Training {output_type} model...")
-        
+
         # Train individual model
         model = self.models[output_type]
         y_train_target = y_train_multi[output_type]
         y_val_target = y_val_multi[output_type]
-        
+
         # Handle class imbalance
         if output_type in ['triple_barrier', 'avoidance']:
             # These targets are often imbalanced
-            class_weights = compute_class_weight('balanced', 
-                                               classes=np.unique(y_train_target), 
+            class_weights = compute_class_weight('balanced',
+                                               classes=np.unique(y_train_target),
                                                y=y_train_target)
             sample_weights = class_weights[y_train_target.astype(int)]
         else:
             sample_weights = None
-        
+
         # Train model
         if hasattr(model, 'fit'):
             if sample_weights is not None:
                 model.fit(X_train, y_train_target, sample_weight=sample_weights)
             else:
                 model.fit(X_train, y_train_target)
-        
+
         # Calibrate probabilities
         calibrator = CalibratedClassifierCV(model, cv=5, method='isotonic')
         calibrator.fit(X_val, y_val_target)
         self.calibrators[output_type] = calibrator
-        
+
         trained_models[output_type] = calibrator
-    
+
     # Optimize ensemble weights
     self.ensemble_weights = self._optimize_ensemble_weights(
         trained_models, X_val, y_val_multi
     )
-    
+
     return trained_models
 ```
 
@@ -316,22 +316,22 @@ def fit(self, X_train, y_train_multi, X_val, y_val_multi):
 def _optimize_ensemble_weights(self, models, X_val, y_val_multi):
     """Optimize ensemble weights for better probability accuracy."""
     from scipy.optimize import minimize
-    
+
     def objective(weights):
         """Objective function to minimize."""
         total_loss = 0
-        
+
         for output_type in ['triple_barrier', 'direction', 'magnitude', 'avoidance']:
             model = models[output_type]
             y_true = y_val_multi[output_type]
             y_pred_proba = model.predict_proba(X_val)[:, 1]  # Probability of positive class
-            
+
             # Calculate Brier score (lower is better)
             brier_score = np.mean((y_pred_proba - y_true) ** 2)
             total_loss += brier_score * weights[output_type]
-        
+
         return total_loss
-    
+
     # Initial weights (equal)
     initial_weights = {
         'triple_barrier': 0.25,
@@ -339,7 +339,7 @@ def _optimize_ensemble_weights(self, models, X_val, y_val_multi):
         'magnitude': 0.25,
         'avoidance': 0.25
     }
-    
+
     # Optimize weights
     result = minimize(
         objective,
@@ -347,7 +347,7 @@ def _optimize_ensemble_weights(self, models, X_val, y_val_multi):
         method='L-BFGS-B',
         bounds=[(0.1, 0.4) for _ in range(4)]  # Constrain weights
     )
-    
+
     return dict(zip(initial_weights.keys(), result.x))
 ```
 
@@ -373,21 +373,21 @@ async def _train_lightgbm_model(self, data, timeframe):
     try:
         # Prepare features (same as before)
         X, y, scaler, label_encoder = self._prepare_features(data, self.specialist_features)
-        
+
         # Split data
         split_idx = int(0.8 * len(X))
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
-        
+
         # Create market data for target generation
         market_data = pd.DataFrame({
             'close': data.get('close', np.random.randn(len(data))),
             'volume': data.get('volume', np.random.randn(len(data)))
         })
-        
+
         # Initialize multi-output trainer
         multi_output_trainer = MultiOutputProbabilityTrainer(self.config)
-        
+
         # Generate multi-output targets
         y_train_multi = multi_output_trainer.prepare_multi_output_targets(
             X_train, y_train, market_data.iloc[:split_idx]
@@ -395,17 +395,17 @@ async def _train_lightgbm_model(self, data, timeframe):
         y_test_multi = multi_output_trainer.prepare_multi_output_targets(
             X_test, y_test, market_data.iloc[split_idx:]
         )
-        
+
         # Train multi-output model
         trained_models = multi_output_trainer.train_multi_output_model(
             X_train, y_train_multi, X_test, y_test_multi
         )
-        
+
         # Generate probability outputs
         price_action_probabilities = multi_output_trainer.predict_probabilities(
             X_test, market_data.iloc[split_idx:]
         )
-        
+
         # Save model with probabilities
         model_data = {
             "multi_output_models": trained_models,
@@ -414,14 +414,14 @@ async def _train_lightgbm_model(self, data, timeframe):
             "architecture": "MultiOutputLightGBM",
             # ... other metadata
         }
-        
+
         return {
             "architecture": "MultiOutputLightGBM",
             "model_data": model_data,
             "price_action_probabilities": price_action_probabilities,
             # ... other return data
         }
-        
+
     except Exception as e:
         self.logger.exception(f"❌ Multi-output LightGBM training failed: {e}")
         return None
@@ -444,30 +444,30 @@ async def _train_lightgbm(self, X_train, X_test, y_train, y_test, symbol, exchan
     try:
         # Initialize multi-output trainer
         multi_output_trainer = MultiOutputProbabilityTrainer(self.config)
-        
+
         # Generate multi-output targets
         market_data = pd.DataFrame({
             'close': np.random.randn(len(X_train) + len(X_test)),  # Placeholder
             'volume': np.random.randn(len(X_train) + len(X_test))
         })
-        
+
         y_train_multi = multi_output_trainer.prepare_multi_output_targets(
             X_train, y_train, market_data.iloc[:len(X_train)]
         )
         y_test_multi = multi_output_trainer.prepare_multi_output_targets(
             X_test, y_test, market_data.iloc[len(X_train):]
         )
-        
+
         # Train multi-output model
         trained_models = multi_output_trainer.train_multi_output_model(
             X_train, y_train_multi, X_test, y_test_multi
         )
-        
+
         # Generate probability outputs
         price_action_probabilities = multi_output_trainer.predict_probabilities(
             X_test, market_data.iloc[len(X_train):]
         )
-        
+
         return {
             "multi_output_models": trained_models,
             "multi_output_trainer": multi_output_trainer,
@@ -477,7 +477,7 @@ async def _train_lightgbm(self, X_train, X_test, y_train, y_test, symbol, exchan
             "price_action_probabilities": price_action_probabilities,
             # ... other return data
         }
-        
+
     except Exception as e:
         self.logger.exception(f"❌ Multi-output LightGBM training failed: {e}")
         return None
@@ -506,7 +506,7 @@ def save_multi_output_model_with_probabilities(
         # Extract multi-output components
         multi_output_trainer = model_data.get("multi_output_trainer")
         multi_output_models = model_data.get("multi_output_models")
-        
+
         # Generate probability outputs
         if multi_output_trainer and multi_output_models:
             # Use test data to generate probabilities
@@ -515,13 +515,13 @@ def save_multi_output_model_with_probabilities(
                 'close': np.random.randn(100),
                 'volume': np.random.randn(100)
             }))
-            
+
             price_action_probabilities = multi_output_trainer.predict_probabilities(
                 X_test, market_data
             )
         else:
             price_action_probabilities = model_data.get("price_action_probabilities", {})
-        
+
         # Create standardized model data structure
         standardized_model_data = {
             "model_type": "multi_output",
@@ -536,16 +536,16 @@ def save_multi_output_model_with_probabilities(
             "save_timestamp": datetime.now().isoformat(),
             "save_format": save_format
         }
-        
+
         # Save model
         if save_format.lower() == "joblib":
             joblib.dump(standardized_model_data, model_path)
         else:
             with open(model_path, 'wb') as f:
                 pickle.dump(standardized_model_data, f)
-        
+
         return standardized_model_data
-        
+
     except Exception as e:
         logger.error(f"Error saving multi-output model: {e}")
         raise
@@ -558,12 +558,12 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any
     """Load multi-output model with probability outputs."""
     try:
         model_data = load_model_with_probabilities(model_path)
-        
+
         # Check if it's a multi-output model
         if model_data.get("model_type") == "multi_output":
             multi_output_trainer = model_data.get("multi_output_trainer")
             multi_output_models = model_data.get("multi_output_models")
-            
+
             if multi_output_trainer and multi_output_models:
                 logger.info("✅ Loaded multi-output model successfully")
                 return model_data
@@ -573,7 +573,7 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any
         else:
             logger.info("ℹ️ Standard model loaded (not multi-output)")
             return model_data
-        
+
     except Exception as e:
         logger.error(f"Error loading multi-output model: {e}")
         raise
@@ -600,7 +600,7 @@ def test_multi_output_training():
         'close': np.random.randn(1000),
         'volume': np.random.randn(1000)
     })
-    
+
     # Initialize multi-output trainer
     config = {
         'use_lightgbm': True,
@@ -608,27 +608,27 @@ def test_multi_output_training():
         'learning_rate': 0.1
     }
     trainer = MultiOutputProbabilityTrainer(config)
-    
+
     # Generate targets
     y_multi = trainer.prepare_multi_output_targets(X, y, market_data)
-    
+
     # Split data
     X_train, X_test = X[:800], X[800:]
     y_train_multi = {k: v[:800] for k, v in y_multi.items()}
     y_test_multi = {k: v[800:] for k, v in y_multi.items()}
-    
+
     # Train model
     trained_models = trainer.train_multi_output_model(
         X_train, y_train_multi, X_test, y_test_multi
     )
-    
+
     # Generate predictions
     probabilities = trainer.predict_probabilities(X_test, market_data.iloc[800:])
-    
+
     # Validate outputs
     for prob_type, prob_value in probabilities.items():
         assert 0.0 <= prob_value <= 1.0, f"Invalid probability for {prob_type}: {prob_value}"
-    
+
     return probabilities
 ```
 

@@ -176,13 +176,13 @@ class StepOrchestrator:
 
             # Determine training mode and apply mode-specific parameters
             training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
-            
+
             # Apply mode-specific parameters to the configuration
             config = apply_mode_parameters_to_config(config, training_mode, step_name)
-            
+
             # Get step-specific parameters
             step_params = get_step_specific_parameters(training_mode, step_name)
-            
+
             # Prepare training input for enhanced training manager
             training_input = {
                 "symbol": self.symbol,
@@ -304,13 +304,13 @@ from src.config.training_modes import (
 
         # Determine training mode and apply mode-specific parameters
         training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
-        
+
         # Apply mode-specific parameters to the configuration
         config = apply_mode_parameters_to_config(config, training_mode, start_step)
-        
+
         # Get step-specific parameters
         step_params = get_step_specific_parameters(training_mode, start_step)
-        
+
         training_input = {
             "symbol": self.symbol,
             "exchange": self.exchange,

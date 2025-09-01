@@ -101,7 +101,7 @@ result = optimizer.optimize_with_surrogates(
 ```python
 def multi_objective_function(params):
     x, y = params['x'], params['y']
-    
+
     return {
         'performance': -(x**2 + y**2),  # Maximize
         'risk': -(abs(x) + abs(y)),     # Minimize (negative)
@@ -128,12 +128,12 @@ config = ComputationalOptimizationConfig(
     enable_surrogate_models=True,
     surrogate_model_type="gaussian_process",  # "gaussian_process", "random_forest", "xgboost", "neural_network"
     enable_surrogate_models_multi=False,
-    
+
     # Optimization settings
     expensive_trials=20,              # Initial expensive evaluations
     update_frequency=5,               # Model retraining frequency
     expensive_evaluation_ratio=0.3,   # Ratio of expensive evaluations
-    
+
     # Advanced settings
     update_frequency=5,
     expensive_evaluation_ratio=0.2,
@@ -153,14 +153,14 @@ parameter_space = {
         'min': 0.001,
         'max': 0.3
     },
-    
+
     # Integer parameters
     'n_estimators': {
         'type': 'int',
         'min': 50,
         'max': 500
     },
-    
+
     # Categorical parameters
     'algorithm': {
         'type': 'categorical',

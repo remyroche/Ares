@@ -115,12 +115,12 @@ The `get_sr_context()` method now includes advanced analysis:
 ```python
 context = {
     # ... existing context ...
-    
+
     # Advanced S/R Analysis
     "fibonacci_levels": fibonacci_levels,
     "elliott_wave_levels": elliott_wave_levels,
     "order_flow_analysis": order_flow_analysis,
-    
+
     # ... rest of context ...
 }
 ```
@@ -190,7 +190,7 @@ order_flow = sr_context['order_flow_analysis']
 ```python
 # Get comprehensive analysis with multi-timeframe data
 comprehensive = await sr_predictor.get_comprehensive_sr_analysis(
-    market_data, 
+    market_data,
     multi_timeframe_data
 )
 

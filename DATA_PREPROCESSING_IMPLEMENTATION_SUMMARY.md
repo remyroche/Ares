@@ -18,7 +18,7 @@ This document summarizes the implementation of comprehensive data preprocessing 
 - **Purpose**: Core preprocessing function to handle irregular intervals
 - **Methods Supported**:
   - `forward_fill`: Resample and forward-fill missing values
-  - `interpolate`: Resample and interpolate missing values  
+  - `interpolate`: Resample and interpolate missing values
   - `resample`: Simple resampling without filling
 - **Features**:
   - Automatic duplicate timestamp detection and removal
@@ -78,7 +78,7 @@ This document summarizes the implementation of comprehensive data preprocessing 
 
 #### Auto-Detection (`auto`)
 - **Use Case**: Automatic method selection
-- **Logic**: 
+- **Logic**:
   - < 1% irregular → forward_fill
   - 1-5% irregular → interpolate
   - > 5% irregular → resample

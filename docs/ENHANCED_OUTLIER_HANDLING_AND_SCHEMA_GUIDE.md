@@ -278,17 +278,17 @@ def load_trading_data(file_path: str) -> pd.DataFrame:
     """Load and validate trading data."""
     # Load data
     data = pd.read_csv(file_path)
-    
+
     # Validate schema
     validation_result = enhanced_outlier_handler.validate_data_schema(data, "klines")
     if not validation_result["valid"]:
         raise ValueError(f"Invalid data schema: {validation_result['errors']}")
-    
+
     # Detect outliers
     outliers = enhanced_outlier_handler.detect_outliers(
         data, method="zscore", threshold=3.0, raise_errors=True
     )
-    
+
     return data
 ```
 
@@ -301,16 +301,16 @@ def validate_realtime_data(data: pd.DataFrame) -> bool:
     if not schema_result["valid"]:
         logger.error(f"Schema validation failed: {schema_result['errors']}")
         return False
-    
+
     # Outlier detection
     outliers = enhanced_outlier_handler.detect_outliers(
         data, method="iqr", threshold=1.5, raise_errors=False
     )
-    
+
     if outliers:
         logger.warning(f"Detected {len(outliers)} outlier groups")
         return False
-    
+
     return True
 ```
 
@@ -322,7 +322,7 @@ def process_batch_data(data_batch: pd.DataFrame) -> pd.DataFrame:
     validation_result = enhanced_outlier_handler.validate_data_schema(data_batch, "features")
     if not validation_result["valid"]:
         raise ValueError(f"Batch validation failed: {validation_result['errors']}")
-    
+
     # Outlier detection with error raising
     try:
         outliers = enhanced_outlier_handler.detect_outliers(
@@ -332,7 +332,7 @@ def process_batch_data(data_batch: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Critical outliers detected: {e}")
         # Handle critical outliers (e.g., stop processing, alert)
         raise
-    
+
     return data_batch
 ```
 

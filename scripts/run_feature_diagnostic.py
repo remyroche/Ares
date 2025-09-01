@@ -6,7 +6,6 @@ Analyzes actual feature data to investigate the issues mentioned in the logs.
 
 # ruff: noqa: E501, C901, PLR2004, PLR0912, PLR0915
 
-from __future__ import annotations
 
 import sys
 import traceback

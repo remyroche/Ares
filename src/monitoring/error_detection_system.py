@@ -5,7 +5,6 @@ Error Detection and Alerting System (minimal scaffold)
 Provides scaffolding for error and anomaly detection.
 """
 
-from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict
@@ -15,7 +14,7 @@ from src.utils.logger import system_logger
 
 
 class AlertSeverity(Enum):
-    INFO = "info"
+    INFO , "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
@@ -34,7 +33,7 @@ class ErrorCategory(Enum):
 
 
 class AnomalyType(Enum):
-    PREDICTION_DRIFT = "prediction_drift"
+    PREDICTION_DRIFT , "prediction_drift"
     PERFORMANCE_DEGRADATION = "performance_degradation"
     VOLUME_SPIKE = "volume_spike"
     LATENCY_SPIKE = "latency_spike"
@@ -54,11 +53,11 @@ class ErrorDetectionSystem:
         self.logger = system_logger.getChild("ErrorDetectionSystem")
 
     @handle_specific_errors(
-        error_handlers={
+        error_handlers, {
             ValueError: (False, "Invalid error detection configuration"),
             AttributeError: (False, "Missing error detection parameters"),
         },
-        default_return=False,
+        default_return, False,
         context="error_detection_system.initialize",
     )
     async def initialize(self) -> bool:

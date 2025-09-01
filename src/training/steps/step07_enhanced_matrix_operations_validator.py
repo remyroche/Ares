@@ -35,7 +35,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # Check if step06_feature_engineering output exists
             step06_output_dir = Path("data/training")
             step06_files = list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
-            
+
             if not step06_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -79,7 +79,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # Check if all expected files exist
             missing_files = []
             existing_files = []
-            
+
             for filename in expected_files:
                 file_path = output_dir / filename
                 if file_path.exists():
@@ -101,15 +101,15 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                 file_validations = self._validate_file_contents(
                     output_dir, symbol, exchange, timeframe
                 )
-                
+
                 for file_validation in file_validations:
                     if not file_validation["valid"]:
                         validation_result["validation_passed"] = False
                         validation_result["errors"].extend(file_validation["errors"])
-                    
+
                     if file_validation["warnings"]:
                         validation_result["warnings"].extend(file_validation["warnings"])
-                    
+
                     validation_result["details"].update(file_validation["details"])
 
         except Exception as e:
@@ -119,10 +119,10 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         return validation_result
 
     def _validate_file_contents(
-        self, 
-        output_dir: Path, 
-        symbol: str, 
-        exchange: str, 
+        self,
+        output_dir: Path,
+        symbol: str,
+        exchange: str,
         timeframe: str
     ) -> List[Dict[str, Any]]:
         """Validate the content of matrix operations files."""
@@ -164,7 +164,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # Check required fields
             required_fields = [
                 "enable_gpu_acceleration",
-                "enable_sparse_optimizations", 
+                "enable_sparse_optimizations",
                 "enable_memory_optimization",
                 "enable_parallel_processing",
                 "condition_number_threshold",
@@ -198,12 +198,12 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             if "operations" in config:
                 expected_operations = [
                     "correlation_analysis",
-                    "condition_number_check", 
+                    "condition_number_check",
                     "eigenvalue_analysis",
                     "singular_value_decomposition",
                     "matrix_rank_analysis"
                 ]
-                
+
                 if not isinstance(config["operations"], list):
                     validation["valid"] = False
                     validation["errors"].append("operations must be a list")
@@ -241,7 +241,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             expected_operations = [
                 "correlation_analysis",
                 "condition_number_check",
-                "eigenvalue_analysis", 
+                "eigenvalue_analysis",
                 "singular_value_decomposition",
                 "matrix_rank_analysis"
             ]
@@ -250,13 +250,13 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             for operation in expected_operations:
                 if operation in results:
                     operations_found.append(operation)
-                    
+
                     # Validate specific operation results
                     op_validation = self._validate_operation_results(operation, results[operation])
                     if not op_validation["valid"]:
                         validation["valid"] = False
                         validation["errors"].extend(op_validation["errors"])
-                    
+
                     if op_validation["warnings"]:
                         validation["warnings"].extend(op_validation["warnings"])
 
@@ -346,7 +346,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # Check required fields
             required_fields = [
                 "timestamp",
-                "symbol", 
+                "symbol",
                 "exchange",
                 "timeframe",
                 "operations_performed",

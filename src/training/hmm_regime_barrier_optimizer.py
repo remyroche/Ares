@@ -45,13 +45,34 @@ class RegimeBarrierResult:
     optimal_upper_barrier: float
     optimal_lower_barrier: float
     
-    # Performance metrics
+    # Performance metrics - Combined
     total_profit: float
     total_trades: int
     win_rate: float
     avg_profit_per_trade: float
     max_profit: float
     max_loss: float
+    
+    # Performance metrics - Long positions
+    long_profit: float
+    long_trades: int
+    long_win_rate: float
+    long_avg_profit_per_trade: float
+    long_max_profit: float
+    long_max_loss: float
+    
+    # Performance metrics - Short positions
+    short_profit: float
+    short_trades: int
+    short_win_rate: float
+    short_avg_profit_per_trade: float
+    short_max_profit: float
+    short_max_loss: float
+    
+    # Long vs Short breakdown
+    long_short_ratio: float  # Ratio of long to short trades
+    long_short_profit_ratio: float  # Ratio of long to short profit
+    preferred_direction: str  # "long", "short", or "balanced"
     
     # Optimization metadata
     optimization_score: float
@@ -183,26 +204,35 @@ class HMMRegimeBarrierOptimizer:
                 if upper_barrier <= lower_barrier:
                     return -np.inf
                 
-                # Simulate trades with these barriers
+                # Simulate trades with these barriers (both long and short)
                 trades = self._simulate_trades_with_barriers(
                     regime_data, upper_barrier, lower_barrier
                 )
                 
+                # Compute per-side metrics
+                long_trades = [t for t in trades if t.get("side") == "long"]
+                short_trades = [t for t in trades if t.get("side") == "short"]
+                
+                long_metrics = self._compute_trade_metrics(long_trades)
+                short_metrics = self._compute_trade_metrics(short_trades)
+                
                 # Check minimum trades requirement
-                if len(trades) < self.min_trades_per_regime:
+                if (long_metrics["trades"] + short_metrics["trades"]) < self.min_trades_per_regime:
                     return -np.inf
                 
-                # Calculate total profit after fees
-                total_profit = self._calculate_total_profit(trades)
+                # Objective: maximize total profit after fees
+                total_profit = long_metrics["profit"] + short_metrics["profit"]
                 
                 # Store trial information
                 trial.set_user_attr("regime_name", regime_name)
                 trial.set_user_attr("upper_barrier", upper_barrier)
                 trial.set_user_attr("lower_barrier", lower_barrier)
-                trial.set_user_attr("total_trades", len(trades))
+                trial.set_user_attr("total_trades", long_metrics["trades"] + short_metrics["trades"]) 
                 trial.set_user_attr("total_profit", total_profit)
+                trial.set_user_attr("long_metrics", long_metrics)
+                trial.set_user_attr("short_metrics", short_metrics)
                 
-                return total_profit
+                return float(total_profit)
                 
             except Exception as e:
                 self.logger.warning(f"⚠️ Trial failed for regime {regime_name}: {e}")
@@ -217,7 +247,7 @@ class HMMRegimeBarrierOptimizer:
         lower_barrier: float
     ) -> List[Dict[str, Any]]:
         """
-        Simulate trades using given upper and lower barriers.
+        Simulate trades using given upper and lower barriers for both long and short sides.
         
         Args:
             data: OHLCV data for the regime
@@ -225,10 +255,23 @@ class HMMRegimeBarrierOptimizer:
             lower_barrier: Lower barrier limit (e.g., 0.002 for 0.2%)
             
         Returns:
-            List of trade dictionaries
+            List of trade dictionaries with 'side' in {"long", "short"}
         """
         
-        trades = []
+        long_trades = self._simulate_long_trades(data, upper_barrier, lower_barrier)
+        short_trades = self._simulate_short_trades(data, upper_barrier, lower_barrier)
+        
+        return long_trades + short_trades
+    
+    def _simulate_long_trades(
+        self,
+        data: pd.DataFrame,
+        upper_barrier: float,
+        lower_barrier: float
+    ) -> List[Dict[str, Any]]:
+        """Simulate long trades using upper (TP) and lower (SL) barriers."""
+        
+        trades: List[Dict[str, Any]] = []
         position_open = False
         entry_price = 0.0
         entry_time = None
@@ -241,45 +284,105 @@ class HMMRegimeBarrierOptimizer:
             current_time = data.index[i]
             
             if not position_open:
-                # Simple entry condition: price increase from previous close
+                # Simple long entry: upward close
                 if current_price > data.iloc[i - 1]["close"]:
                     position_open = True
                     entry_price = current_price
                     entry_time = current_time
                     entry_index = i
             else:
-                # Check if barriers are hit
-                upper_hit = high_price >= entry_price * (1 + upper_barrier)
-                lower_hit = low_price <= entry_price * (1 - lower_barrier)
+                # Long barriers
+                tp_hit = high_price >= entry_price * (1 + upper_barrier)
+                sl_hit = low_price <= entry_price * (1 - lower_barrier)
                 
-                if upper_hit or lower_hit:
-                    # Determine exit price and type
-                    if upper_hit:
+                if tp_hit or sl_hit:
+                    if tp_hit:
                         exit_price = entry_price * (1 + upper_barrier)
-                        trade_type = "upper_barrier"
                         profit_pct = upper_barrier
+                        exit_type = "upper_barrier"
                     else:
                         exit_price = entry_price * (1 - lower_barrier)
-                        trade_type = "lower_barrier"
                         profit_pct = -lower_barrier
+                        exit_type = "lower_barrier"
                     
-                    # Calculate profit after fees
                     gross_profit = profit_pct
-                    net_profit = gross_profit - (2 * self.trading_fee)  # Buy + sell fees
+                    net_profit = gross_profit - (2 * self.trading_fee)
                     
                     trades.append({
+                        "side": "long",
                         "entry_time": entry_time,
                         "exit_time": current_time,
                         "entry_price": entry_price,
                         "exit_price": exit_price,
                         "gross_profit_pct": gross_profit,
                         "net_profit_pct": net_profit,
-                        "trade_type": trade_type,
+                        "trade_type": exit_type,
                         "duration_bars": i - entry_index,
                         "upper_barrier": upper_barrier,
                         "lower_barrier": lower_barrier
                     })
+                    position_open = False
+        
+        return trades
+    
+    def _simulate_short_trades(
+        self,
+        data: pd.DataFrame,
+        upper_barrier: float,
+        lower_barrier: float
+    ) -> List[Dict[str, Any]]:
+        """Simulate short trades using upper (SL) and lower (TP) barriers."""
+        
+        trades: List[Dict[str, Any]] = []
+        position_open = False
+        entry_price = 0.0
+        entry_time = None
+        entry_index = 0
+        
+        for i in range(1, len(data)):
+            current_price = data.iloc[i]["close"]
+            high_price = data.iloc[i]["high"]
+            low_price = data.iloc[i]["low"]
+            current_time = data.index[i]
+            
+            if not position_open:
+                # Simple short entry: downward close
+                if current_price < data.iloc[i - 1]["close"]:
+                    position_open = True
+                    entry_price = current_price
+                    entry_time = current_time
+                    entry_index = i
+            else:
+                # For shorts, favorable move is down by upper_barrier; adverse move is up by lower_barrier
+                tp_hit = low_price <= entry_price * (1 - upper_barrier)
+                sl_hit = high_price >= entry_price * (1 + lower_barrier)
+                
+                if tp_hit or sl_hit:
+                    if tp_hit:
+                        exit_price = entry_price * (1 - upper_barrier)
+                        profit_pct = upper_barrier
+                        exit_type = "upper_barrier_short_tp"
+                    else:
+                        exit_price = entry_price * (1 + lower_barrier)
+                        profit_pct = -lower_barrier
+                        exit_type = "lower_barrier_short_sl"
                     
+                    gross_profit = profit_pct
+                    net_profit = gross_profit - (2 * self.trading_fee)
+                    
+                    trades.append({
+                        "side": "short",
+                        "entry_time": entry_time,
+                        "exit_time": current_time,
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "gross_profit_pct": gross_profit,
+                        "net_profit_pct": net_profit,
+                        "trade_type": exit_type,
+                        "duration_bars": i - entry_index,
+                        "upper_barrier": upper_barrier,
+                        "lower_barrier": lower_barrier
+                    })
                     position_open = False
         
         return trades
@@ -292,6 +395,29 @@ class HMMRegimeBarrierOptimizer:
         
         total_profit = sum(trade["net_profit_pct"] for trade in trades)
         return total_profit
+    
+    def _compute_trade_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Compute aggregate metrics for a list of trades."""
+        if not trades:
+            return {
+                "profit": 0.0,
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_profit": 0.0,
+                "max_profit": 0.0,
+                "max_loss": 0.0,
+            }
+        
+        profits = [t["net_profit_pct"] for t in trades]
+        wins = [p for p in profits if p > 0]
+        return {
+            "profit": float(np.sum(profits)),
+            "trades": len(trades),
+            "win_rate": float(len(wins) / len(trades)),
+            "avg_profit": float(np.mean(profits)),
+            "max_profit": float(np.max(profits)),
+            "max_loss": float(np.min(profits)),
+        }
     
     async def optimize_regime_barriers(
         self, 
@@ -389,12 +515,27 @@ class HMMRegimeBarrierOptimizer:
                 best_params["lower_barrier"]
             )
             
-            # Calculate performance metrics
+            # Calculate performance metrics (combined)
             total_profit = self._calculate_total_profit(best_trades)
             win_rate = len([t for t in best_trades if t["net_profit_pct"] > 0]) / len(best_trades) if best_trades else 0
             avg_profit = total_profit / len(best_trades) if best_trades else 0
             max_profit = max([t["net_profit_pct"] for t in best_trades]) if best_trades else 0
             max_loss = min([t["net_profit_pct"] for t in best_trades]) if best_trades else 0
+            
+            # Per-side metrics
+            long_trades = [t for t in best_trades if t.get("side") == "long"]
+            short_trades = [t for t in best_trades if t.get("side") == "short"]
+            long_metrics = self._compute_trade_metrics(long_trades)
+            short_metrics = self._compute_trade_metrics(short_trades)
+            
+            long_short_ratio = (long_metrics["trades"] / short_metrics["trades"]) if short_metrics["trades"] > 0 else float('inf')
+            long_short_profit_ratio = (long_metrics["profit"] / short_metrics["profit"]) if short_metrics["profit"] != 0 else float('inf')
+            if long_metrics["profit"] > short_metrics["profit"] * 1.05:
+                preferred_direction = "long"
+            elif short_metrics["profit"] > long_metrics["profit"] * 1.05:
+                preferred_direction = "short"
+            else:
+                preferred_direction = "balanced"
             
             # Create result object
             result = RegimeBarrierResult(
@@ -408,6 +549,21 @@ class HMMRegimeBarrierOptimizer:
                 avg_profit_per_trade=avg_profit,
                 max_profit=max_profit,
                 max_loss=max_loss,
+                long_profit=long_metrics["profit"],
+                long_trades=long_metrics["trades"],
+                long_win_rate=long_metrics["win_rate"],
+                long_avg_profit_per_trade=long_metrics["avg_profit"],
+                long_max_profit=long_metrics["max_profit"],
+                long_max_loss=long_metrics["max_loss"],
+                short_profit=short_metrics["profit"],
+                short_trades=short_metrics["trades"],
+                short_win_rate=short_metrics["win_rate"],
+                short_avg_profit_per_trade=short_metrics["avg_profit"],
+                short_max_profit=short_metrics["max_profit"],
+                short_max_loss=short_metrics["max_loss"],
+                long_short_ratio=long_short_ratio,
+                long_short_profit_ratio=long_short_profit_ratio,
+                preferred_direction=preferred_direction,
                 optimization_score=best_trial.value,
                 n_trials=len(study.trials),
                 optimization_time=optimization_time,
@@ -420,11 +576,10 @@ class HMMRegimeBarrierOptimizer:
             self.regime_results[regime_name] = result
             
             self.logger.info(f"✅ Optimized {regime_name}:")
-            self.logger.info(f"   Upper barrier: {best_params['upper_barrier']*100:.3f}%")
-            self.logger.info(f"   Lower barrier: {best_params['lower_barrier']*100:.3f}%")
-            self.logger.info(f"   Total profit: {total_profit*100:.3f}%")
-            self.logger.info(f"   Total trades: {len(best_trades)}")
-            self.logger.info(f"   Win rate: {win_rate*100:.1f}%")
+            self.logger.info(f"   Upper barrier: {best_params['upper_barrier']*100:.3f}% | Lower barrier: {best_params['lower_barrier']*100:.3f}%")
+            self.logger.info(f"   Total profit: {total_profit*100:.3f}% | Total trades: {len(best_trades)} | Win rate: {win_rate*100:.1f}%")
+            self.logger.info(f"   Long: profit {long_metrics['profit']*100:.3f}%, trades {long_metrics['trades']}, win {long_metrics['win_rate']*100:.1f}%")
+            self.logger.info(f"   Short: profit {short_metrics['profit']*100:.3f}%, trades {short_metrics['trades']}, win {short_metrics['win_rate']*100:.1f}%")
             
         except Exception as e:
             self.logger.exception(f"❌ Error optimizing regime {regime_name}: {e}")
@@ -480,6 +635,15 @@ class HMMRegimeBarrierOptimizer:
                         "total_trades": result.total_trades,
                         "win_rate_pct": result.win_rate * 100,
                         "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100,
+                        "long_profit_pct": result.long_profit * 100,
+                        "long_trades": result.long_trades,
+                        "long_win_rate_pct": result.long_win_rate * 100,
+                        "short_profit_pct": result.short_profit * 100,
+                        "short_trades": result.short_trades,
+                        "short_win_rate_pct": result.short_win_rate * 100,
+                        "long_short_ratio": result.long_short_ratio,
+                        "long_short_profit_ratio": result.long_short_profit_ratio,
+                        "preferred_direction": result.preferred_direction,
                         "optimization_score": result.optimization_score,
                         "n_trials": result.n_trials,
                         "optimization_time": result.optimization_time
@@ -512,8 +676,8 @@ class HMMRegimeBarrierOptimizer:
             output_dir.mkdir(exist_ok=True)
             
             # Create comprehensive visualization
-            fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-            fig.suptitle("HMM Regime Barrier Optimization Results", fontsize=16)
+            fig, axes = plt.subplots(3, 3, figsize=(22, 16))
+            fig.suptitle("HMM Regime Barrier Optimization Results (Long vs Short)", fontsize=18)
             
             # Extract data for plotting
             regime_names = list(self.regime_results.keys())
@@ -523,8 +687,14 @@ class HMMRegimeBarrierOptimizer:
             win_rates = [r.win_rate * 100 for r in self.regime_results.values()]
             total_trades = [r.total_trades for r in self.regime_results.values()]
             optimization_scores = [r.optimization_score * 100 for r in self.regime_results.values()]
+            long_profits = [r.long_profit * 100 for r in self.regime_results.values()]
+            short_profits = [r.short_profit * 100 for r in self.regime_results.values()]
+            long_trades = [r.long_trades for r in self.regime_results.values()]
+            short_trades = [r.short_trades for r in self.regime_results.values()]
+            long_win_rates = [r.long_win_rate * 100 for r in self.regime_results.values()]
+            short_win_rates = [r.short_win_rate * 100 for r in self.regime_results.values()]
             
-            # Plot 1: Upper Barriers
+            # Row 1
             axes[0, 0].bar(regime_names, upper_barriers, color='green', alpha=0.7)
             axes[0, 0].set_title("Optimal Upper Barriers")
             axes[0, 0].set_ylabel("Upper Barrier (%)")
@@ -533,7 +703,6 @@ class HMMRegimeBarrierOptimizer:
             axes[0, 0].axhline(y=self.max_barrier*100, color='red', linestyle='--', alpha=0.5, label=f'Max ({self.max_barrier*100:.1f}%)')
             axes[0, 0].legend()
             
-            # Plot 2: Lower Barriers
             axes[0, 1].bar(regime_names, lower_barriers, color='red', alpha=0.7)
             axes[0, 1].set_title("Optimal Lower Barriers")
             axes[0, 1].set_ylabel("Lower Barrier (%)")
@@ -541,7 +710,6 @@ class HMMRegimeBarrierOptimizer:
             axes[0, 1].axhline(y=self.min_barrier*100, color='red', linestyle='--', alpha=0.5)
             axes[0, 1].axhline(y=self.max_barrier*100, color='red', linestyle='--', alpha=0.5)
             
-            # Plot 3: Total Profits
             colors = ['green' if p > 0 else 'red' for p in total_profits]
             axes[0, 2].bar(regime_names, total_profits, color=colors, alpha=0.7)
             axes[0, 2].set_title("Total Profit After Fees")
@@ -549,25 +717,50 @@ class HMMRegimeBarrierOptimizer:
             axes[0, 2].tick_params(axis='x', rotation=45)
             axes[0, 2].axhline(y=0, color='black', linestyle='-', alpha=0.3)
             
-            # Plot 4: Win Rates
+            # Row 2
             axes[1, 0].bar(regime_names, win_rates, color='blue', alpha=0.7)
-            axes[1, 0].set_title("Win Rates")
+            axes[1, 0].set_title("Win Rates (Combined)")
             axes[1, 0].set_ylabel("Win Rate (%)")
             axes[1, 0].tick_params(axis='x', rotation=45)
             axes[1, 0].axhline(y=50, color='black', linestyle='--', alpha=0.5, label='50%')
             axes[1, 0].legend()
             
-            # Plot 5: Total Trades
-            axes[1, 1].bar(regime_names, total_trades, color='orange', alpha=0.7)
-            axes[1, 1].set_title("Total Trades")
-            axes[1, 1].set_ylabel("Number of Trades")
-            axes[1, 1].tick_params(axis='x', rotation=45)
+            width = 0.35
+            x = np.arange(len(regime_names))
+            axes[1, 1].bar(x - width/2, long_profits, width, label='Long', color='green', alpha=0.7)
+            axes[1, 1].bar(x + width/2, short_profits, width, label='Short', color='red', alpha=0.7)
+            axes[1, 1].set_xticks(x)
+            axes[1, 1].set_xticklabels(regime_names, rotation=45)
+            axes[1, 1].set_title("Profit by Side")
+            axes[1, 1].set_ylabel("Profit (%)")
+            axes[1, 1].legend()
             
-            # Plot 6: Optimization Scores
-            axes[1, 2].bar(regime_names, optimization_scores, color='purple', alpha=0.7)
-            axes[1, 2].set_title("Optimization Scores")
-            axes[1, 2].set_ylabel("Score (%)")
-            axes[1, 2].tick_params(axis='x', rotation=45)
+            axes[1, 2].bar(x - width/2, long_trades, width, label='Long', color='green', alpha=0.7)
+            axes[1, 2].bar(x + width/2, short_trades, width, label='Short', color='red', alpha=0.7)
+            axes[1, 2].set_xticks(x)
+            axes[1, 2].set_xticklabels(regime_names, rotation=45)
+            axes[1, 2].set_title("Trades by Side")
+            axes[1, 2].set_ylabel("Trades")
+            axes[1, 2].legend()
+            
+            # Row 3
+            axes[2, 0].bar(x - width/2, long_win_rates, width, label='Long', color='green', alpha=0.7)
+            axes[2, 0].bar(x + width/2, short_win_rates, width, label='Short', color='red', alpha=0.7)
+            axes[2, 0].set_xticks(x)
+            axes[2, 0].set_xticklabels(regime_names, rotation=45)
+            axes[2, 0].set_title("Win Rate by Side")
+            axes[2, 0].set_ylabel("Win Rate (%)")
+            axes[2, 0].legend()
+            
+            axes[2, 1].bar(regime_names, total_trades, color='orange', alpha=0.7)
+            axes[2, 1].set_title("Total Trades")
+            axes[2, 1].set_ylabel("Number of Trades")
+            axes[2, 1].tick_params(axis='x', rotation=45)
+            
+            axes[2, 2].bar(regime_names, optimization_scores, color='purple', alpha=0.7)
+            axes[2, 2].set_title("Optimization Scores")
+            axes[2, 2].set_ylabel("Score (%)")
+            axes[2, 2].tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
             plt.savefig(output_dir / "hmm_regime_barrier_optimization_results.png", dpi=300, bbox_inches='tight')

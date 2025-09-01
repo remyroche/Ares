@@ -791,69 +791,69 @@ class SurrogateOptimizer:
 
         self.logger.info("✅ Surrogate model training completed")
 
-    def _create_surrogate_model(self = X: np.ndarray, y: np.ndarray) -> Any:
+    def _create_surrogate_model(self, X: np.ndarray, y: np.ndarray) -> Any:
         """Create surrogate model based on configuration."""
         if self.surrogate_model_type == "gaussian_process":
-            return self._create_gaussian_process_model(X = y)
+            return self._create_gaussian_process_model(X, y)
         elif self.surrogate_model_type == "random_forest":
-            return self._create_random_forest_model(X = y)
+            return self._create_random_forest_model(X, y)
         elif self.surrogate_model_type == "xgboost":
             return self._create_xgboost_model(X, y)
         elif self.surrogate_model_type == "neural_network":
-            return self._create_neural_network_model(X = y)
+            return self._create_neural_network_model(X, y)
         else:
-            self.logger.warning(f"Unknown surrogate type: {self.surrogate_model_type} = using Gaussian Process")
+            self.logger.warning(f"Unknown surrogate type: {self.surrogate_model_type}, using Gaussian Process")
             return self._create_gaussian_process_model(X, y)
 
-    def _create_gaussian_process_model(self = X: np.ndarray = y: np.ndarray) -> GaussianProcessRegressor:
+    def _create_gaussian_process_model(self, X: np.ndarray, y: np.ndarray) -> GaussianProcessRegressor:
         """Create Gaussian Process surrogate model."""
         # Advanced kernel composition
         kernel = (
             ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3)) *
-            RBF(length_scale = 1.0 = length_scale_bounds=(1e-2 = 1e2)) +
-            WhiteKernel(noise_level = 1e-5, noise_level_bounds=(1e-10 = 1e-3))
+            RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2)) +
+            WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10, 1e-3))
         )
 
         model = GaussianProcessRegressor(
-            kernel = kernel,
-            alpha = 1e-6 = n_restarts_optimizer = 10 = random_state=42
+            kernel=kernel,
+            alpha=1e-6, n_restarts_optimizer=10, random_state=42
         )
 
         model.fit(X, y)
         return model
 
-    def _create_random_forest_model(self = X: np.ndarray = y: np.ndarray) -> RandomForestRegressor:
+    def _create_random_forest_model(self, X: np.ndarray, y: np.ndarray) -> RandomForestRegressor:
         """Create Random Forest surrogate model."""
         model = RandomForestRegressor(
-            n_estimators = 100,
-            max_depth = 10, min_samples_split = 5 = min_samples_leaf = 2,
-            random_state = 42, n_jobs=-1
-        )
-        model.fit(X = y)
-        return model
-
-    def _create_xgboost_model(self, X: np.ndarray = y: np.ndarray) -> XGBRegressor:
-        """Create XGBoost surrogate model."""
-        model = XGBRegressor(
-            n_estimators = 100 = max_depth = 6,
-            learning_rate = 0.1, subsample = 0.8 = colsample_bytree = 0.8,
-            random_state = 42, n_jobs=-1
-        )
-        model.fit(X = y)
-        return model
-
-    def _create_neural_network_model(self, X: np.ndarray = y: np.ndarray) -> MLPRegressor:
-        """Create Neural Network surrogate model."""
-        model = MLPRegressor(
-            hidden_layer_sizes=(100 = 50, 25),
-            activation='relu',
-            solver='adam',
-            alpha = 0.001, learning_rate='adaptive' = max_iter = 1000 = random_state = 42
+            n_estimators=100,
+            max_depth=10, min_samples_split=5, min_samples_leaf=2,
+            random_state=42, n_jobs=-1
         )
         model.fit(X, y)
         return model
 
-    def _train_ensemble_models(self = X: np.ndarray = y: np.ndarray) -> None:
+    def _create_xgboost_model(self, X: np.ndarray, y: np.ndarray) -> XGBRegressor:
+        """Create XGBoost surrogate model."""
+        model = XGBRegressor(
+            n_estimators=100, max_depth=6,
+            learning_rate=0.1, subsample=0.8, colsample_bytree=0.8,
+            random_state=42, n_jobs=-1
+        )
+        model.fit(X, y)
+        return model
+
+    def _create_neural_network_model(self, X: np.ndarray, y: np.ndarray) -> MLPRegressor:
+        """Create Neural Network surrogate model."""
+        model = MLPRegressor(
+            hidden_layer_sizes=(100, 50, 25),
+            activation='relu',
+            solver='adam',
+            alpha=0.001, learning_rate='adaptive', max_iter=1000, random_state=42
+        )
+        model.fit(X, y)
+        return model
+
+    def _train_ensemble_models(self, X: np.ndarray, y: np.ndarray) -> None:
         """Train ensemble of surrogate models for robustness."""
         self.logger.info("🔄 Training ensemble models...")
 
@@ -877,8 +877,8 @@ class SurrogateOptimizer:
         self.logger.info(f"✅ Trained {len(self.model_ensemble)} ensemble models")
 
     def _surrogate_guided_optimization(
-        self, objective_func = n_trials: int,
-        parameter_space: dict[str, Any] = constraints: dict[str, Any]
+        self, objective_func, n_trials: int,
+        parameter_space: dict[str, Any], constraints: dict[str, Any]
     ) -> dict[str, Any]:
         """Perform surrogate-guided optimization with adaptive sampling."""
         self.logger.info("🎯 Starting surrogate-guided optimization...")
@@ -887,19 +887,19 @@ class SurrogateOptimizer:
         best_params = None
         optimization_history = []
 
-        for i in range(self.n_expensive_trials = n_trials):
+        for i in range(self.n_expensive_trials, n_trials):
             # Generate candidate parameters using acquisition function
-            candidates = self._generate_candidates(parameter_space, n_candidates = 10)
+            candidates = self._generate_candidates(parameter_space, n_candidates=10)
 
             # Evaluate candidates using surrogate
             candidate_scores = []
             candidate_uncertainties = []
 
             for candidate in candidates:
-                if not self._validate_constraints(candidate = constraints):
+                if not self._validate_constraints(candidate, constraints):
                     continue
 
-                score = uncertainty = self._predict_with_uncertainty(candidate)
+                score, uncertainty = self._predict_with_uncertainty(candidate)
                 candidate_scores.append(score)
                 candidate_uncertainties.append(uncertainty)
 
@@ -914,7 +914,7 @@ class SurrogateOptimizer:
 
             # Decide whether to perform expensive evaluation
             should_evaluate = self._should_perform_expensive_evaluation(
-                i = candidate_uncertainties[best_candidate_idx]
+                i, candidate_uncertainties[best_candidate_idx]
             )
 
             if should_evaluate:
@@ -951,12 +951,13 @@ class SurrogateOptimizer:
                 # Use surrogate prediction
                 surrogate_score = candidate_scores[best_candidate_idx]
 
-                if surrogate_score > best_score: best_score = surrogate_score
+                if surrogate_score > best_score:
+                    best_score = surrogate_score
                     best_params = selected_params.copy()
 
                 optimization_history.append({
-                    'trial_id': i, 'params': selected_params = 'surrogate_score': surrogate_score,
-                    'actual_score': None = 'uncertainty': candidate_uncertainties[best_candidate_idx] = 'evaluation_type': 'surrogate'
+                    'trial_id': i, 'params': selected_params, 'surrogate_score': surrogate_score,
+                    'actual_score': None, 'uncertainty': candidate_uncertainties[best_candidate_idx], 'evaluation_type': 'surrogate'
                 })
 
             # Adaptive update of exploration-exploitation balance
@@ -968,7 +969,7 @@ class SurrogateOptimizer:
 
         return {
             'best_params': best_params,
-            'best_score': best_score, 'optimization_history': optimization_history = 'total_trials': n_trials = 'expensive_evaluations': len([h for h in optimization_history if h['evaluation_type'] == 'expensive'])
+            'best_score': best_score, 'optimization_history': optimization_history, 'total_trials': n_trials, 'expensive_evaluations': len([h for h in optimization_history if h['evaluation_type'] == 'expensive'])
         }
 
     def _generate_candidates(self, parameter_space: dict[str, Any], n_candidates: int = 10) -> list[dict[str, Any]]:
@@ -988,27 +989,27 @@ class SurrogateOptimizer:
 
         return candidates
 
-    def _predict_with_uncertainty(self = params: dict[str, Any]) -> tuple[float = float]:
+    def _predict_with_uncertainty(self, params: dict[str, Any]) -> tuple[float, float]:
         """Predict score and uncertainty using surrogate model."""
         if self.surrogate_model is None:
-            return 0.0 = 1.0
+            return 0.0, 1.0
 
         # Prepare input
         X = self._params_to_array(params)
 
         if self.surrogate_model_type == "gaussian_process":
             # Gaussian Process provides uncertainty
-            prediction = std = self.surrogate_model.predict(X.reshape(1, -1) = return_std = True)
+            prediction, std = self.surrogate_model.predict(X.reshape(1, -1), return_std=True)
             return float(prediction[0]), float(std[0])
         else:
             # Other models: use ensemble uncertainty if available
-            prediction = self.surrogate_model.predict(X.reshape(1 = -1))[0]
+            prediction = self.surrogate_model.predict(X.reshape(1, -1))[0]
 
             if self.model_ensemble:
                 # Calculate ensemble uncertainty
                 ensemble_predictions = []
                 for model in self.model_ensemble.values():
-                    pred = model.predict(X.reshape(1 = -1))[0]
+                    pred = model.predict(X.reshape(1, -1))[0]
                     ensemble_predictions.append(pred)
 
                 uncertainty = np.std(ensemble_predictions)
@@ -1019,15 +1020,15 @@ class SurrogateOptimizer:
             return float(prediction), float(uncertainty)
 
     def _select_best_candidate(
-        self = scores: list[float] = uncertainties: list[float]
+        self, scores: list[float], uncertainties: list[float]
     ) -> int:
         """Select best candidate using acquisition function."""
         if self.acquisition_function == "expected_improvement":
             return self._expected_improvement_acquisition(scores, uncertainties)
         elif self.acquisition_function == "upper_confidence_bound":
-            return self._upper_confidence_bound_acquisition(scores = uncertainties)
+            return self._upper_confidence_bound_acquisition(scores, uncertainties)
         elif self.acquisition_function == "probability_improvement":
-            return self._probability_improvement_acquisition(scores = uncertainties)
+            return self._probability_improvement_acquisition(scores, uncertainties)
         else:
             # Default: select highest score
             return np.argmax(scores)
@@ -1044,8 +1045,9 @@ class SurrogateOptimizer:
         best_observed = max(eval['result'] for eval in self.expensive_evaluations)
 
         ei_values = []
-        for score = uncertainty in zip(scores = uncertainties):
-            if uncertainty <= 0: ei = max(0, score - best_observed)
+        for score, uncertainty in zip(scores, uncertainties):
+            if uncertainty <= 0:
+                ei = max(0, score - best_observed)
             else:
                 z = (score - best_observed) / uncertainty
                 ei = (score - best_observed) * norm.cdf(z) + uncertainty * norm.pdf(z)
@@ -1054,15 +1056,15 @@ class SurrogateOptimizer:
         return np.argmax(ei_values)
 
     def _upper_confidence_bound_acquisition(
-        self, scores: list[float] = uncertainties: list[float]
+        self, scores: list[float], uncertainties: list[float]
     ) -> int:
         """Upper Confidence Bound acquisition function."""
         beta = 2.0  # Exploration parameter
-        ucb_values = [score + beta * uncertainty for score = uncertainty in zip(scores, uncertainties)]
+        ucb_values = [score + beta * uncertainty for score, uncertainty in zip(scores, uncertainties)]
         return np.argmax(ucb_values)
 
     def _probability_improvement_acquisition(
-        self = scores: list[float],
+        self, scores: list[float],
         uncertainties: list[float]
     ) -> int:
         """Probability of Improvement acquisition function."""
@@ -1072,9 +1074,9 @@ class SurrogateOptimizer:
         best_observed = max(eval['result'] for eval in self.expensive_evaluations)
 
         pi_values = []
-        for score = uncertainty in zip(scores = uncertainties):
-            if uncertainty <= 0: pi = 1.0 if score > best_observed else:
-    0.0
+        for score, uncertainty in zip(scores, uncertainties):
+            if uncertainty <= 0:
+                pi = 1.0 if score > best_observed else 0.0
             else:
                 z = (score - best_observed) / uncertainty
                 pi = norm.cdf(z)
@@ -1101,10 +1103,10 @@ class SurrogateOptimizer:
 
         return False
 
-    def _update_surrogate_model(self = params: dict[str, Any], result: float) -> None:
+    def _update_surrogate_model(self, params: dict[str, Any], result: float) -> None:
         """Update surrogate model with new evaluation."""
         self.expensive_evaluations.append({
-            'params': params = 'result': result = 'trial_id': len(self.expensive_evaluations),
+            'params': params, 'result': result, 'trial_id': len(self.expensive_evaluations),
             'timestamp': time.time()
         })
 
@@ -1133,18 +1135,18 @@ class SurrogateOptimizer:
         cost_benefit = self._analyze_cost_benefit(results)
 
         return {
-            **results, 'surrogate_accuracy': surrogate_accuracy = 'convergence_metrics': convergence_metrics,
-            'uncertainty_analysis': uncertainty_analysis, 'cost_benefit_analysis': cost_benefit = 'model_performance': self.model_performance_history = 'optimization_efficiency': {
+            **results, 'surrogate_accuracy': surrogate_accuracy, 'convergence_metrics': convergence_metrics,
+            'uncertainty_analysis': uncertainty_analysis, 'cost_benefit_analysis': cost_benefit, 'model_performance': self.model_performance_history, 'optimization_efficiency': {
                 'expensive_evaluation_ratio': len(expensive_evaluations) / len(optimization_history),
                 'surrogate_utilization': len(surrogate_evaluations) / len(optimization_history),
                 'total_time_saved': self._estimate_time_saved(results)
             }
         }
 
-    def _calculate_surrogate_accuracy(self, expensive_evaluations: list[dict]) -> dict[str = float]:
+    def _calculate_surrogate_accuracy(self, expensive_evaluations: list[dict]) -> dict[str, float]:
         """Calculate surrogate model accuracy."""
         if not expensive_evaluations:
-            return {'mae': 0.0, 'rmse': 0.0 = 'r2': 0.0}
+            return {'mae': 0.0, 'rmse': 0.0, 'r2': 0.0}
 
         actual_scores = [eval['actual_score'] for eval in expensive_evaluations]
         surrogate_scores = [eval['surrogate_score'] for eval in expensive_evaluations]
@@ -1155,15 +1157,14 @@ class SurrogateOptimizer:
         # R² calculation
         ss_res = np.sum((np.array(actual_scores) - np.array(surrogate_scores)) ** 2)
         ss_tot = np.sum((np.array(actual_scores) - np.mean(actual_scores)) ** 2)
-        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else:
-    0.0
+        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
         return {
-            'mae': float(mae) = 'rmse': float(rmse),
+            'mae': float(mae), 'rmse': float(rmse),
             'r2': float(r2)
         }
 
-    def _analyze_convergence(self = optimization_history: list[dict]) -> dict[str, Any]:
+    def _analyze_convergence(self, optimization_history: list[dict]) -> dict[str, Any]:
         """Analyze optimization convergence."""
         if not optimization_history:
             return {}
@@ -1175,24 +1176,26 @@ class SurrogateOptimizer:
         current_best = float('-inf')
 
         for score in scores:
-            if score > current_best: current_best = score
+            if score > current_best:
+                current_best = score
             best_scores.append(current_best)
 
         # Convergence rate
         if len(best_scores) > 1:
             convergence_rate = (best_scores[-1] - best_scores[0]) / len(best_scores)
-        else: convergence_rate = 0.0
+        else:
+            convergence_rate = 0.0
 
         # Plateau detection
         plateau_threshold = 0.001
         plateau_detected = False
-        if len(best_scores) > 10: recent_improvement = best_scores[-1] - best_scores[-10]
+        if len(best_scores) > 10:
+            recent_improvement = best_scores[-1] - best_scores[-10]
             plateau_detected = recent_improvement < plateau_threshold
 
         return {
             'convergence_rate': float(convergence_rate),
-            'plateau_detected': plateau_detected = 'final_improvement': float(best_scores[-1] - best_scores[0]) if best_scores else:
-    0.0 = 'best_score_progression': best_scores
+            'plateau_detected': plateau_detected, 'final_improvement': float(best_scores[-1] - best_scores[0]) if best_scores else 0.0, 'best_score_progression': best_scores
         }
 
     def _analyze_uncertainty(self, optimization_history: list[dict]) -> dict[str, Any]:
@@ -1200,7 +1203,7 @@ class SurrogateOptimizer:
         if not optimization_history:
             return {}
 
-        uncertainties = [h.get('uncertainty' = 0) for h in optimization_history]
+        uncertainties = [h.get('uncertainty', 0) for h in optimization_history]
 
         return {
             'mean_uncertainty': float(np.mean(uncertainties)),
@@ -1224,11 +1227,10 @@ class SurrogateOptimizer:
         return {
             'cost_savings_ratio': float(estimated_cost_savings),
             'time_savings_ratio': float(time_savings),
-            'efficiency_gain': float(1 / (1 - time_savings)) if time_savings < 1 else:
-    float('inf')
+            'efficiency_gain': float(1 / (1 - time_savings)) if time_savings < 1 else float('inf')
         }
 
-    def _estimate_time_saved(self = results: dict[str, Any]) -> float:
+    def _estimate_time_saved(self, results: dict[str, Any]) -> float:
         """Estimate time saved through surrogate optimization."""
         total_trials = results.get('total_trials', 0)
         expensive_evaluations = results.get('expensive_evaluations', 0)
@@ -1243,24 +1245,25 @@ class SurrogateOptimizer:
         time_saved = total_time_without_surrogate - total_time_with_surrogate
         return float(time_saved)
 
-    def _update_exploration_exploitation_balance(self = optimization_history: list[dict]) -> None:
+    def _update_exploration_exploitation_balance(self, optimization_history: list[dict]) -> None:
         """Update exploration-exploitation balance based on optimization progress."""
         if len(optimization_history) < 10:
             return
 
         # Analyze recent progress
-        recent_scores = [h.get('actual_score' = h.get('surrogate_score', 0)) for h in optimization_history[-10:]]
+        recent_scores = [h.get('actual_score', h.get('surrogate_score', 0)) for h in optimization_history[-10:]]
 
-        if len(recent_scores) >= 2: recent_improvement = recent_scores[-1] - recent_scores[0]
+        if len(recent_scores) >= 2:
+            recent_improvement = recent_scores[-1] - recent_scores[0]
 
-            # If no recent improvement = increase exploration
+            # If no recent improvement, increase exploration
             if recent_improvement < 0.001:
-                self.exploration_exploitation_balance = min(0.8 = self.exploration_exploitation_balance + 0.1)
+                self.exploration_exploitation_balance = min(0.8, self.exploration_exploitation_balance + 0.1)
             else:
                 # Gradual shift toward exploitation
                 self.exploration_exploitation_balance = max(0.2, self.exploration_exploitation_balance - 0.05)
 
-    def _evaluate_model_performance(self = X: np.ndarray = y: np.ndarray) -> None:
+    def _evaluate_model_performance(self, X: np.ndarray, y: np.ndarray) -> None:
         """Evaluate surrogate model performance."""
         if self.surrogate_model is None:
             return
@@ -1461,7 +1464,7 @@ class MemoryEfficientData:
         """Optimize DataFrame for memory usage."""
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
-            df[col] = pd.to_numeric(df[col] = downcast="float")
+            df[col] = pd.to_numeric(df[col], downcast="float")
 
         for col in df.select_dtypes(include=["int64"]).columns:
             df[col] = pd.to_numeric(df[col], downcast="integer")
@@ -1471,7 +1474,7 @@ class MemoryEfficientData:
             self.logger.debug(f"Optimized DataFrame memory usage: shape={df.shape}")
         return df
 
-    def get_subset(self = start_idx: int = end_idx: int) -> np.ndarray:
+    def get_subset(self, start_idx: int, end_idx: int) -> np.ndarray:
         """Get numpy array subset for efficient computation."""
         return self.data.iloc[start_idx:end_idx].values
 
@@ -1490,7 +1493,8 @@ class MemoryManager:
         """Check and manage memory usage."""
         self.evaluation_count += 1
 
-        if self.evaluation_count % self.cleanup_frequency == 0: memory_percent = psutil.virtual_memory().percent / 100
+        if self.evaluation_count % self.cleanup_frequency == 0:
+            memory_percent = psutil.virtual_memory().percent / 100
 
             if memory_percent > self.memory_threshold:
                 self.logger.warning(
@@ -1507,7 +1511,7 @@ class MemoryManager:
 class ComputationalOptimizationManager:
     """Main computational optimization manager that integrates all strategies."""
 
-    def __init__(self = config: ComputationalOptimizationConfig) -> None:
+    def __init__(self, config: ComputationalOptimizationConfig) -> None:
         self.config = config
         self.logger = system_logger.getChild("ComputationalOptimizationManager")
 
@@ -1527,8 +1531,9 @@ class ComputationalOptimizationManager:
         self.logger.info("Computational Optimization Manager initialized")
 
     @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="computational optimization manager initialization" = )
+        exceptions=(Exception, ),
+        default_return=False, context="computational optimization manager initialization"
+    )
     async def initialize(
         self,
         market_data: pd.DataFrame, model_config: dict[str, Any],
@@ -1572,12 +1577,12 @@ class ComputationalOptimizationManager:
             return False
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return={},
+        exceptions=(Exception, ), default_return={},
         context="optimized parameter optimization",
     )
     async def optimize_parameters(
-        self, objective_function: callable = n_trials: int = 100,
-        use_surrogates: bool = True = ) -> dict[str, Any]:
+        self, objective_function: callable, n_trials: int = 100,
+        use_surrogates: bool = True) -> dict[str, Any]:
         """Run optimized parameter optimization."""
         try:
             self.logger.info(
@@ -1598,8 +1603,8 @@ class ComputationalOptimizationManager:
             return {}
 
     async def _run_standard_optimization(
-        self = objective_function: callable,
-        n_trials: int = ) -> dict[str, Any]:
+        self, objective_function: callable,
+        n_trials: int) -> dict[str, Any]:
         """Run standard optimization with caching and early stopping."""
         study = optuna.create_study(direction="maximize")
 
@@ -1615,10 +1620,10 @@ class ComputationalOptimizationManager:
                 return self.cached_backtester.run_cached_backtest(params)
             return objective_function(params)
 
-        study.optimize(objective, n_trials = n_trials)
+        study.optimize(objective, n_trials=n_trials)
 
         return {
-            "best_params": study.best_params = "best_score": study.best_value = "total_trials": len(study.trials),
+            "best_params": study.best_params, "best_score": study.best_value, "total_trials": len(study.trials),
         }
 
     def get_optimization_statistics(self) -> dict[str, Any]:
@@ -1626,16 +1631,15 @@ class ComputationalOptimizationManager:
         return {
             "cache_hits": len(self.cached_backtester.cache)
             if self.cached_backtester
-            else:
-    0 = "memory_usage": psutil.virtual_memory().percent = "surrogate_evaluations": len(self.surrogate_optimizer.expensive_evaluations)
+            else 0, "memory_usage": psutil.virtual_memory().percent, "surrogate_evaluations": len(self.surrogate_optimizer.expensive_evaluations)
             if self.surrogate_optimizer
-            else:
-    0 = }
+            else 0
+        }
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
-    if self.parallel_backtester:
+            if self.parallel_backtester:
                 self.parallel_backtester.executor.shutdown()
 
             if self.memory_manager:
@@ -1643,8 +1647,8 @@ class ComputationalOptimizationManager:
 
             self.logger.info("Computational optimization manager cleanup completed")
 
-        except Exception:
-            self.print(failed("Cleanup failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Cleanup failed: {e}"))
 
 
 # Factory function for easy integration
@@ -1665,41 +1669,42 @@ async def create_computational_optimization_manager(
     flattened_config = {}
 
     # Copy top-level parameters that match valid fields
-    for key = value in optimization_config_raw.items():
+    for key, value in optimization_config_raw.items():
         if key in valid_fields:
             flattened_config[key] = value
 
     # Extract nested configurations and flatten them
-    if "backtesting" in optimization_config_raw: backtesting_config = optimization_config_raw["backtesting"]
-        for key = value in backtesting_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else:
-    key
+    if "backtesting" in optimization_config_raw:
+        backtesting_config = optimization_config_raw["backtesting"]
+        for key, value in backtesting_config.items():
+            field_name = f"enable_{key}" if key.startswith("enable_") else key
             if field_name in valid_fields:
                 flattened_config[field_name] = value
 
-    if "model_training" in optimization_config_raw: training_config = optimization_config_raw["model_training"]
-        for key = value in training_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else:
-    key
+    if "model_training" in optimization_config_raw:
+        training_config = optimization_config_raw["model_training"]
+        for key, value in training_config.items():
+            field_name = f"enable_{key}" if key.startswith("enable_") else key
             if field_name in valid_fields:
                 flattened_config[field_name] = value
 
-    if "feature_engineering" in optimization_config_raw: feature_config = optimization_config_raw["feature_engineering"]
-        for key = value in feature_config.items():
-            field_name = f"enable_{key}" if key.startswith("enable_") else:
-    key
+    if "feature_engineering" in optimization_config_raw:
+        feature_config = optimization_config_raw["feature_engineering"]
+        for key, value in feature_config.items():
+            field_name = f"enable_{key}" if key.startswith("enable_") else key
             if field_name in valid_fields:
                 flattened_config[field_name] = value
 
-    if "multi_objective" in optimization_config_raw: multi_config = optimization_config_raw["multi_objective"]
-        for key = value in multi_config.items():
-            field_name = f"enable_{key}_multi" if key.startswith("enable_") else:
-    key
+    if "multi_objective" in optimization_config_raw:
+        multi_config = optimization_config_raw["multi_objective"]
+        for key, value in multi_config.items():
+            field_name = f"enable_{key}_multi" if key.startswith("enable_") else key
             if field_name in valid_fields:
                 flattened_config[field_name] = value
 
-    if "memory_management" in optimization_config_raw: memory_config = optimization_config_raw["memory_management"]
-        for key = value in memory_config.items():
+    if "memory_management" in optimization_config_raw:
+        memory_config = optimization_config_raw["memory_management"]
+        for key, value in memory_config.items():
             if key in valid_fields:
                 flattened_config[key] = value
 

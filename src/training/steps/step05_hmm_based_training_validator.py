@@ -1,4 +1,4 @@
-# src/training/steps/step5_hmm_based_training_validator.py
+# src/training/steps/step05_hmm_based_training_validator.py
 
 """Validator for Step 5: HMM-Based Training."""
 
@@ -33,7 +33,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
     """Validator for Step 5: HMM-Based Training."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step5_hmm_based_training", config)
+        super().__init__("step05_hmm_based_training", config)
 
     async def validate(
         self,
@@ -684,7 +684,7 @@ async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step5_hmm_based_training validator.
+    """Run the step05_hmm_based_training validator.
 
     Args:
         training_input: Training input parameters
@@ -697,7 +697,7 @@ async def run_validator(
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step5_hmm_based_training",
+        "step_name": "step05_hmm_based_training",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0.0,  # Could be enhanced to track actual duration

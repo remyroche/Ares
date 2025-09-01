@@ -118,7 +118,7 @@ class ComprehensiveFileValidator:
                     "klines": r"klines_{exchange}_{symbol}_{timeframe}_consolidated\.parquet",
                     "aggtrades": r"aggtrades_{exchange}_{symbol}_consolidated\.parquet"
                 },
-                "step1_5": {
+                "step01_5": {
                     "unified_data": r"unified_{exchange}_{symbol}_{timeframe}\.parquet",
                     "config": r"unified_{exchange}_{symbol}_{timeframe}_config\.json"
                 },
@@ -679,7 +679,7 @@ def validate_step1_file(file_path: str) -> FileValidationResult:
 def validate_step1_5_file(file_path: str) -> FileValidationResult:
     """Validate file for step 1.5 (data conversion)."""
     validator = ComprehensiveFileValidator()
-    return validator.validate_file_format(file_path, expected_schema="klines", step_name="step1_5")
+    return validator.validate_file_format(file_path, expected_schema="klines", step_name="step01_5")
 
 
 def validate_step2_file(file_path: str) -> FileValidationResult:

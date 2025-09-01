@@ -1132,7 +1132,7 @@ from src.utils.enhanced_mlflow_integration import (
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step9_tactician_specialist_training")
+@idempotent_step(step_key="step09_tactician_specialist_training")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")

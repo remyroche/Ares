@@ -1,4 +1,4 @@
-# src/training/steps/step1_5_data_converter.py
+# src/training/steps/step01_5_data_converter.py
 
 import asyncio
 import contextlib
@@ -1772,14 +1772,14 @@ class UnifiedDataConverter:
 # ----------------------------------------------------------------------------
 # Public entry point
 # ----------------------------------------------------------------------------
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_5_data_converter")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step01_5_data_converter")
 @secure_data_processing
 @prevent_data_leakage
 @resource_monitor
 @memory_efficient
 @quality_gate
 @circuit_breaker_protection
-@handle_errors(exceptions=(Exception,), default_return=False, context="step1_5_data_converter main execution")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step01_5_data_converter main execution")
 async def run_step(
 	symbol: str,
 	exchange: str,

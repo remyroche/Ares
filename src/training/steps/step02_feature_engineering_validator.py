@@ -1,4 +1,4 @@
-# src/training/steps/step6_feature_engineering_validator.py
+# src/training/steps/step06_feature_engineering_validator.py
 
 """Validator for Step 2: Feature Engineering."""
 
@@ -24,7 +24,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
     """Validator for feature engineering (Step 2)."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step2_feature_engineering", config)
+        super().__init__("step02_feature_engineering", config)
         # Fine-tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_feature_count = 40  # Minimum 40 relevant features required
         self.max_feature_count = 1000  # Increased to allow more features
@@ -650,7 +650,7 @@ async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step2_feature_engineering",
+        "step_name": "step02_feature_engineering",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

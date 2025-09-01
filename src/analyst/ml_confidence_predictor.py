@@ -159,10 +159,10 @@ class MLConfidencePredictor:
         self.logger.info(
             "ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling"
         )
-        # HMM market regime labels - these are the cluster IDs found by step1_7
-        # The actual cluster names will be determined by the HMM model during step1_7
+        # HMM market regime labels - these are the cluster IDs found by step01_7
+        # The actual cluster names will be determined by the HMM model during step01_7
         self.analyst_labels: list[str] = [
-            "hmm_composite_cluster_id",  # The main cluster ID from step1_7
+            "hmm_composite_cluster_id",  # The main cluster ID from step01_7
             "intensity_cluster_0",  # Intensity scores for each cluster
             "intensity_cluster_1",
             "intensity_cluster_2",

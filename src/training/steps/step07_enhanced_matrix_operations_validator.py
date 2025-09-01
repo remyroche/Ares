@@ -1,4 +1,4 @@
-# src/training/steps/step7_enhanced_matrix_operations_validator.py
+# src/training/steps/step07_enhanced_matrix_operations_validator.py
 
 """Validator for Step 7: Enhanced Matrix Operations."""
 
@@ -19,7 +19,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator."""
-        super().__init__("step7_enhanced_matrix_operations", config)
+        super().__init__("step07_enhanced_matrix_operations", config)
         self.logger = system_logger.getChild("Step7EnhancedMatrixOperationsValidator")
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
@@ -32,18 +32,18 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-            # Check if step6_feature_engineering output exists
-            step6_output_dir = Path("data/training")
-            step6_files = list(step6_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
+            # Check if step06_feature_engineering output exists
+            step06_output_dir = Path("data/training")
+            step06_files = list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
             
-            if not step6_files:
+            if not step06_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
                     f"Step 6 feature engineering output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
-                validation_result["details"]["step6_files_found"] = len(step6_files)
-                validation_result["details"]["step6_files"] = [str(f) for f in step6_files]
+                validation_result["details"]["step06_files_found"] = len(step06_files)
+                validation_result["details"]["step06_files"] = [str(f) for f in step06_files]
 
             # Check if matrix operations directory exists
             matrix_ops_dir = Path("data/matrix_operations")
@@ -387,7 +387,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         output = self.validate_step_output(symbol, exchange, timeframe)
 
         return {
-            "step_name": "step7_enhanced_matrix_operations",
+            "step_name": "step07_enhanced_matrix_operations",
             "symbol": symbol,
             "exchange": exchange,
             "timeframe": timeframe,

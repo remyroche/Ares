@@ -5,7 +5,7 @@ This script demonstrates the comprehensive data quality management system that:
 - Detects and fills data gaps
 - Validates data quality and formatting
 - Ensures efficient processing with proper decorators
-- Integrates step1/step1_5 components with step3/step4
+- Integrates step1/step01_5 components with step3/step4
 - Provides automatic data preparation when gaps are detected
 """
 
@@ -74,7 +74,7 @@ class IntegratedDataQualityPipeline:
             exchange: Exchange name
             timeframe: Data timeframe
             run_step1: Whether to run step1 data collection
-            run_step1_5: Whether to run step1_5 data conversion
+            run_step1_5: Whether to run step01_5 data conversion
             run_step3: Whether to run step3 HMM regime discovery
             run_step4: Whether to run step4 processing labeling
             force_rerun: Whether to force re-run all steps
@@ -118,54 +118,54 @@ class IntegratedDataQualityPipeline:
             # Step 1: Data Collection (if requested)
             if run_step1:
                 logger.info("📊 Step 1: Data Collection...")
-                step1_result = await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
+                step01_result = await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
                 
-                if step1_result.get("success", False):
+                if step01_result.get("success", False):
                     logger.info("✅ Step 1: Data Collection completed successfully")
-                    results["steps_completed"].append("step1_data_collection")
+                    results["steps_completed"].append("step01_data_collection")
                 else:
                     logger.error("❌ Step 1: Data Collection failed")
-                    results["steps_failed"].append("step1_data_collection")
+                    results["steps_failed"].append("step01_data_collection")
                     results["success"] = False
 
             # Step 1.5: Data Conversion (if requested)
             if run_step1_5:
                 logger.info("🔄 Step 1.5: Data Conversion...")
-                step1_5_result = await self._run_step1_5_data_conversion(symbol, exchange, timeframe, force_rerun)
+                step01_5_result = await self._run_step1_5_data_conversion(symbol, exchange, timeframe, force_rerun)
                 
-                if step1_5_result.get("success", False):
+                if step01_5_result.get("success", False):
                     logger.info("✅ Step 1.5: Data Conversion completed successfully")
-                    results["steps_completed"].append("step1_5_data_conversion")
+                    results["steps_completed"].append("step01_5_data_conversion")
                 else:
                     logger.error("❌ Step 1.5: Data Conversion failed")
-                    results["steps_failed"].append("step1_5_data_conversion")
+                    results["steps_failed"].append("step01_5_data_conversion")
                     results["success"] = False
 
             # Step 3: HMM Regime Discovery (if requested)
             if run_step3:
                 logger.info("🔍 Step 3: HMM Regime Discovery...")
-                step3_result = await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
+                step03_result = await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
                 
-                if step3_result.get("success", False):
+                if step03_result.get("success", False):
                     logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
-                    results["steps_completed"].append("step3_hmm_discovery")
-                    results["quality_metrics"]["hmm_results"] = step3_result.get("metrics", {})
+                    results["steps_completed"].append("step03_hmm_discovery")
+                    results["quality_metrics"]["hmm_results"] = step03_result.get("metrics", {})
                 else:
                     logger.error("❌ Step 3: HMM Regime Discovery failed")
-                    results["steps_failed"].append("step3_hmm_discovery")
+                    results["steps_failed"].append("step03_hmm_discovery")
                     results["success"] = False
 
             # Step 4: Processing Labeling (if requested)
             if run_step4:
                 logger.info("🏷️ Step 4: Processing Labeling...")
-                step4_result = await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
+                step04_result = await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
                 
-                if step4_result.get("success", False):
+                if step04_result.get("success", False):
                     logger.info("✅ Step 4: Processing Labeling completed successfully")
-                    results["steps_completed"].append("step4_labeling")
+                    results["steps_completed"].append("step04_labeling")
                 else:
                     logger.error("❌ Step 4: Processing Labeling failed")
-                    results["steps_failed"].append("step4_labeling")
+                    results["steps_failed"].append("step04_labeling")
                     results["success"] = False
 
             # Final quality check
@@ -212,7 +212,7 @@ class IntegratedDataQualityPipeline:
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step1 data collection."""
         try:
-            from .step1_data_collection import run_step as run_step1
+            from .step01_data_collection import run_step as run_step1
             
             success = await run_step1(
                 symbol=symbol,
@@ -224,7 +224,7 @@ class IntegratedDataQualityPipeline:
             
             return {
                 "success": success,
-                "step": "step1_data_collection",
+                "step": "step01_data_collection",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe
@@ -235,9 +235,9 @@ class IntegratedDataQualityPipeline:
 
     @with_tracing_span("run_step1_5_data_conversion")
     async def _run_step1_5_data_conversion(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
-        """Run step1_5 data conversion."""
+        """Run step01_5 data conversion."""
         try:
-            from .step1_5_data_converter import run_step as run_step1_5
+            from .step01_5_data_converter import run_step as run_step1_5
             
             success = await run_step1_5(
                 symbol=symbol,
@@ -249,20 +249,20 @@ class IntegratedDataQualityPipeline:
             
             return {
                 "success": success,
-                "step": "step1_5_data_conversion",
+                "step": "step01_5_data_conversion",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step1_5 data conversion: {e}")
+            logger.exception(f"❌ Error in step01_5 data conversion: {e}")
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("run_step3_hmm_discovery")
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
         """Run step3 HMM regime discovery."""
         try:
-            from .step3_hmm_regime_discovery import run_step as run_step3
+            from .step03_hmm_regime_discovery import run_step as run_step3
             
             success = await run_step3(
                 symbol=symbol,
@@ -274,7 +274,7 @@ class IntegratedDataQualityPipeline:
             
             return {
                 "success": success,
-                "step": "step3_hmm_discovery",
+                "step": "step03_hmm_discovery",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe
@@ -305,7 +305,7 @@ class IntegratedDataQualityPipeline:
             
             return {
                 "success": True,
-                "step": "step4_labeling",
+                "step": "step04_labeling",
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe,

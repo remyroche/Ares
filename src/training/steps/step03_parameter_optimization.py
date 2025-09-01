@@ -539,7 +539,7 @@ class ParameterOptimizationStep:
                 "combined_parameters": optimization_results.get("combined_parameters", {}),
                 "recommendations": optimization_results.get("recommendations", []),
                 "next_steps": [
-                    "Proceed to step3_5 for final regime clustering",
+                    "Proceed to step03_5 for final regime clustering",
                     "Use optimized parameters in regime discovery",
                     "Validate parameters with out-of-sample data"
                 ]
@@ -635,7 +635,7 @@ class ParameterOptimizationStep:
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step3_parameter_optimization"
+    context="step03_parameter_optimization"
 )
 @secure_step_execution
 async def run_step(config: dict[str, Any]) -> bool:

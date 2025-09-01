@@ -61,7 +61,7 @@ class RegimeSpecificTPSLOptimizer:
         # Regime-specific parameters for HMM clusters (seeded defaults)
         # These will be dynamically updated based on actual HMM cluster analysis
         self.regime_parameters = {
-        # HMM Cluster 0 - will be characterized by step1_7 analysis
+        # HMM Cluster 0 - will be characterized by step01_7 analysis
             "hmm_cluster_0": {
                 "target_pct": 0.5,
                 "stop_pct": 0.2,
@@ -70,7 +70,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.0,
                 "frequency_score": 100.0,
             },
-        # HMM Cluster 1 - will be characterized by step1_7 analysis
+        # HMM Cluster 1 - will be characterized by step01_7 analysis
             "hmm_cluster_1": {
                 "target_pct": 0.4,
                 "stop_pct": 0.15,
@@ -79,7 +79,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.5,
                 "frequency_score": 80.0,
             },
-        # HMM Cluster 2 - will be characterized by step1_7 analysis
+        # HMM Cluster 2 - will be characterized by step01_7 analysis
             "hmm_cluster_2": {
                 "target_pct": 0.3,
                 "stop_pct": 0.2,
@@ -88,7 +88,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.5,
                 "frequency_score": 100.0,
             },
-        # HMM Cluster 3 - will be characterized by step1_7 analysis
+        # HMM Cluster 3 - will be characterized by step01_7 analysis
             "hmm_cluster_3": {
                 "target_pct": 0.6,
                 "stop_pct": 0.15,
@@ -97,7 +97,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 70.0,
             },
-        # HMM Cluster 4 - will be characterized by step1_7 analysis
+        # HMM Cluster 4 - will be characterized by step01_7 analysis
             "hmm_cluster_4": {
                 "target_pct": 0.35,
                 "stop_pct": 0.2,
@@ -106,7 +106,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 60.0,
             },
-        # HMM Cluster 5 - will be characterized by step1_7 analysis
+        # HMM Cluster 5 - will be characterized by step01_7 analysis
             "hmm_cluster_5": {
                 "target_pct": 0.5,
                 "stop_pct": 0.15,
@@ -115,7 +115,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 70.0,
             },
-        # HMM Cluster 6 - will be characterized by step1_7 analysis
+        # HMM Cluster 6 - will be characterized by step01_7 analysis
             "hmm_cluster_6": {
                 "target_pct": 0.25,
                 "stop_pct": 0.2,
@@ -124,7 +124,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 90.0,
             },
-        # HMM Cluster 7 - will be characterized by step1_7 analysis
+        # HMM Cluster 7 - will be characterized by step01_7 analysis
             "hmm_cluster_7": {
                 "target_pct": 0.5,
                 "stop_pct": 0.25,

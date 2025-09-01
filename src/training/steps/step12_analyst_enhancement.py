@@ -3535,7 +3535,7 @@ from src.utils.training_pipeline_decorators import (
 
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step7_analyst_enhancement")
+@idempotent_step(step_key="step07_analyst_enhancement")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")

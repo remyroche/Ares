@@ -28,7 +28,7 @@ class TwoTierConfig:
     tier2_timeframes: list[str] = None
     
     # Integration thresholds
-    step9_5_weight: float = 0.4
+    step09_5_weight: float = 0.4
     step10_weight: float = 0.3
     regime_expert_weight: float = 0.3
     

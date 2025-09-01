@@ -80,7 +80,7 @@ class SROptimizationValidator:
                 "valid": validation_passed,
                 "details": validation_details,
                 "timestamp": time.time(),
-                "step": "step2_5_sr_optimization"
+                "step": "step02_5_sr_optimization"
             }
             
             if validation_passed:
@@ -145,7 +145,7 @@ class SROptimizationValidator:
             # Validate metadata
             if "metadata" in results_data:
                 metadata = results_data["metadata"]
-                if "step" not in metadata or metadata["step"] != "step2_5_sr_optimization":
+                if "step" not in metadata or metadata["step"] != "step02_5_sr_optimization":
                     errors.append("Invalid step metadata")
                 if "timestamp" not in metadata:
                     errors.append("Missing timestamp in metadata")
@@ -349,7 +349,7 @@ class SROptimizationValidator:
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step2_5_sr_optimization_validation"
+    context="step02_5_sr_optimization_validation"
 )
 async def run_validation(config: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> bool:
     """Run validation for the S/R optimization step."""

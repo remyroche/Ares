@@ -68,7 +68,7 @@ async def run_validator(
         if not unified_data_path.exists():
             logger.error(f"❌ Unified data directory not found: {unified_data_path}")
             return {
-                "step_name": "step2_data_reading",
+                "step_name": "step02_data_reading",
                 "validation_passed": False,
                 "error": f"Unified data directory not found: {unified_data_path}",
             }
@@ -78,7 +78,7 @@ async def run_validator(
         if not data_files:
             logger.error(f"❌ No parquet files found in {unified_data_path}")
             return {
-                "step_name": "step2_data_reading",
+                "step_name": "step02_data_reading",
                 "validation_passed": False,
                 "error": f"No parquet files found in {unified_data_path}",
             }
@@ -99,7 +99,7 @@ async def run_validator(
             if len(data) == 0:
                 logger.error("❌ No data rows found")
                 return {
-                    "step_name": "step2_data_reading",
+                    "step_name": "step02_data_reading",
                     "validation_passed": False,
                     "error": "No data rows found",
                 }
@@ -111,7 +111,7 @@ async def run_validator(
             if missing_columns:
                 logger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
-                    "step_name": "step2_data_reading",
+                    "step_name": "step02_data_reading",
                     "validation_passed": False,
                     "error": f"Missing required columns: {missing_columns}",
                 }
@@ -135,7 +135,7 @@ async def run_validator(
             if negative_prices > 0:
                 logger.error(f"❌ Found {negative_prices} negative price values")
                 return {
-                    "step_name": "step2_data_reading",
+                    "step_name": "step02_data_reading",
                     "validation_passed": False,
                     "error": f"Found {negative_prices} negative price values",
                 }
@@ -193,7 +193,7 @@ async def run_validator(
             
             logger.info("✅ Step 2: Data Reading validation passed")
             return {
-                "step_name": "step2_data_reading",
+                "step_name": "step02_data_reading",
                 "validation_passed": True,
                 "data_file_path": str(latest_file),
                 "validation_report_path": str(validation_report_path) if validation_report_path.exists() else None,
@@ -209,7 +209,7 @@ async def run_validator(
         except Exception as e:
             logger.error(f"❌ Error reading data files: {e}")
             return {
-                "step_name": "step2_data_reading",
+                "step_name": "step02_data_reading",
                 "validation_passed": False,
                 "error": f"Error reading files: {e}",
             }
@@ -217,7 +217,7 @@ async def run_validator(
     except Exception as e:
         logger.exception(f"❌ Error in Step 2 validation: {e}")
         return {
-            "step_name": "step2_data_reading",
+            "step_name": "step02_data_reading",
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }

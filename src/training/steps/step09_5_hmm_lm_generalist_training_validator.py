@@ -1,4 +1,4 @@
-# src/training/steps/step9_5_hmm_lm_generalist_training_validator.py
+# src/training/steps/step09_5_hmm_lm_generalist_training_validator.py
 
 import json
 import os
@@ -167,7 +167,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
 
 @validate_step2_operation
-def step9_5_hmm_lm_generalist_training_validator(
+def step09_5_hmm_lm_generalist_training_validator(
     symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]
 ) -> bool:
     """Step 9.5: HMM LM Generalist Training Validator.

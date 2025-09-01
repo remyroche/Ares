@@ -109,7 +109,7 @@ class EnhancedMatrixOperations:
         self.operation_results = {}
         
         # Feature selection configuration
-        self.target_features = config.get("feature_reduction", {}).get("step2_target_features", 100)
+        self.target_features = config.get("feature_reduction", {}).get("step02_target_features", 100)
         self.variance_threshold = config.get("feature_reduction", {}).get("variance_threshold", 0.01)
         self.correlation_threshold = config.get("feature_reduction", {}).get("correlation_threshold", 0.95)
         self.mutual_info_threshold = config.get("feature_reduction", {}).get("mutual_info_threshold", 0.01)

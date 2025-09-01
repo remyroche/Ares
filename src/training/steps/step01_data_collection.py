@@ -106,7 +106,7 @@ class DataCollectionStep:
         self.logger.info("Initializing Data Collection Step...")
         self.logger.info("Data Collection Step initialized successfully")
 
-    @with_enhanced_mlflow_logging("step1_data_collection")
+    @with_enhanced_mlflow_logging("step01_data_collection")
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
@@ -205,7 +205,7 @@ class DataCollectionStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 step_data=pipeline_state,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -217,7 +217,7 @@ class DataCollectionStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 report_data=report_data,
                 report_type="data_collection_report",
                 additional_metadata={
@@ -234,7 +234,7 @@ class DataCollectionStep:
             # Log data quality summary
             quality_report_name = log_step_report(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 report_data={
                     "quality_check_passed": pipeline_state.get("quality_check_passed", False),
                     "data_collection_completed": pipeline_state.get("data_collection_completed", False),
@@ -254,7 +254,7 @@ class DataCollectionStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step1_data_collection",
+                step_name="step01_data_collection",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "data_collection_performance",
@@ -830,7 +830,7 @@ class DataCollectionStep:
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step1_data_collection",
+    context="step01_data_collection",
 )
 async def run_step(
     symbol: str,
@@ -989,8 +989,8 @@ if __name__ == "__main__":
             data_dir = sys.argv[4] if len(sys.argv) > 4 else "data_cache"
             force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == "true"
         else:
-            print("Usage: python step1_data_collection.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
-            print("Example: python step1_data_collection.py ETHUSDT BINANCE 1m data_cache true")
+            print("Usage: python step01_data_collection.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
+            print("Example: python step01_data_collection.py ETHUSDT BINANCE 1m data_cache true")
             return
 
         success = await run_step(

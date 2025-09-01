@@ -84,7 +84,7 @@ async def create_sample_data() -> pd.DataFrame:
     default_return=False,
     context="feature precomputation",
 )
-async def step1_precompute_features(config: dict) -> bool | None:
+async def step01_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
         logger = system_logger.getChild("WaveletWorkflow")
@@ -129,7 +129,7 @@ async def step1_precompute_features(config: dict) -> bool | None:
         return False
 
 
-async def step2_run_backtests(config: dict) -> bool | None:
+async def step02_run_backtests(config: dict) -> bool | None:
     """Step 2: Run backtests using cached features."""
     try:
         logger = system_logger.getChild("WaveletWorkflow")
@@ -186,7 +186,7 @@ async def step2_run_backtests(config: dict) -> bool | None:
         return False
 
 
-async def step3_performance_comparison(config: dict) -> bool | None:
+async def step03_performance_comparison(config: dict) -> bool | None:
     """Step 3: Compare performance with and without caching."""
     try:
         logger = system_logger.getChild("WaveletWorkflow")
@@ -235,7 +235,7 @@ async def step3_performance_comparison(config: dict) -> bool | None:
         return False
 
 
-async def step4_cache_management(config: dict) -> bool | None:
+async def step04_cache_management(config: dict) -> bool | None:
     """Step 4: Demonstrate cache management features."""
     try:
         logger = system_logger.getChild("WaveletWorkflow")
@@ -291,26 +291,26 @@ async def main() -> None:
             config = await load_config(config_path)
 
         # Step 1: Pre-compute features
-        step1_success = await step1_precompute_features(config)
-        if not step1_success:
+        step01_success = await step01_precompute_features(config)
+        if not step01_success:
             logger.error("Step 1 failed. Aborting workflow.")
             return
 
         # Step 2: Run backtests
-        step2_success = await step2_run_backtests(config)
-        if not step2_success:
+        step02_success = await step02_run_backtests(config)
+        if not step02_success:
             logger.error("Step 2 failed. Aborting workflow.")
             return
 
         # Step 3: Performance comparison
-        step3_success = await step3_performance_comparison(config)
-        if not step3_success:
+        step03_success = await step03_performance_comparison(config)
+        if not step03_success:
             logger.error("Step 3 failed. Aborting workflow.")
             return
 
         # Step 4: Cache management
-        step4_success = await step4_cache_management(config)
-        if not step4_success:
+        step04_success = await step04_cache_management(config)
+        if not step04_success:
             logger.error("Step 4 failed.")
             return
 

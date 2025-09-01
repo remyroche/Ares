@@ -364,7 +364,7 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "timing_trials": max(3, int(30 * percentage)),
         },
         # Step 6: Analyst Enhancement - has multiple model training sections
-        "step6_analyst_enhancement": {
+        "step06_analyst_enhancement": {
             "lightgbm_trials": max(3, int(50 * percentage)),
             "xgboost_trials": max(3, int(50 * percentage)),
             "svm_trials": max(3, int(30 * percentage)),
@@ -374,7 +374,7 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "logistic_trials": max(3, int(25 * percentage)),
         },
         # Step 5.5: Unified Regime Intelligence
-        "step5_5_unified_regime_intelligence": {
+        "step05_5_unified_regime_intelligence": {
             "hpo_trials": max(3, int(20 * percentage)),
             "hpo_timeout": max(300, int(900 * percentage)),  # Minimum 5 minutes
         },

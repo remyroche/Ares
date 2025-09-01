@@ -5013,7 +5013,7 @@ class TransformerTrainer:
         """Apply feature pruning logic from step5 to remove redundant/irrelevant features."""
         try:
             # Remove highly correlated features (VIF filtering)
-            # This uses the same logic as in step5_hmm_based_training.py
+            # This uses the same logic as in step05_hmm_based_training.py
 
             # Remove features with too many NaN values
             nan_threshold = 0.5,

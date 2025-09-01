@@ -3,9 +3,9 @@
 Coordinates data collection processes for step1. This orchestrator focuses on:
 1. Detecting missing data gaps (aggtrades, klines, futures)
 2. Validating data quality and format
-3. Preparing data for step1_5_data_converter.py processing
+3. Preparing data for step01_5_data_converter.py processing
 
-Note: Data conversion and formatting is handled by step1_5_data_converter.py
+Note: Data conversion and formatting is handled by step01_5_data_converter.py
 """
 
 import asyncio
@@ -63,7 +63,7 @@ class Step1Orchestrator:
             "success": False,
             "errors": ["Step1 orchestration failed"],
             "warnings": [],
-            "step1_5_ready": False,
+            "step01_5_ready": False,
         },
         context="step1_orchestrator.run_complete_step1"
     )
@@ -73,7 +73,7 @@ class Step1Orchestrator:
         """Run complete step1 data collection process including:
         1. Detect missing data gaps (aggtrades, klines, futures)
         2. Validate data quality and format
-        3. Prepare data for step1_5_data_converter.py processing.
+        3. Prepare data for step01_5_data_converter.py processing.
 
         Args:
             symbol: Trading symbol
@@ -101,7 +101,7 @@ class Step1Orchestrator:
             "success": True,
             "errors": [],
             "warnings": [],
-            "step1_5_ready": False,
+            "step01_5_ready": False,
         }
 
         # Step 1.1: Comprehensive Gap Detection and Filling
@@ -244,11 +244,11 @@ class Step1Orchestrator:
                 logger.warning("⚠️ Resampling encountered issues")
                 results["warnings"].append("Resampling incomplete")
 
-            # Step 6.5: Prepare data for step1_5 processing
+            # Step 6.5: Prepare data for step01_5 processing
             logger.info("📊 STEP 1.6.5: PREPARING DATA FOR STEP1_5 PROCESSING")
             logger.info("-" * 60)
 
-            preparation_results = self.data_preparation.prepare_for_step1_5(
+            preparation_results = self.data_preparation.prepare_for_step01_5(
                 symbol, exchange,
             )
             results["data_preparation"] = preparation_results
@@ -259,17 +259,17 @@ class Step1Orchestrator:
                 logger.warning("⚠️ Data preparation encountered issues")
                 results["warnings"].append("Data preparation incomplete")
 
-            # Step 7: Validate step1_5 readiness
+            # Step 7: Validate step01_5 readiness
             logger.info("📊 STEP 1.7: VALIDATING STEP1_5 READINESS")
             logger.info("-" * 60)
 
-            step1_5_readiness = self.validate_step1_5_readiness(symbol, exchange)
-            results["step1_5_readiness"] = step1_5_readiness
-            results["step1_5_ready"] = step1_5_readiness["ready"]
+            step01_5_readiness = self.validate_step01_5_readiness(symbol, exchange)
+            results["step01_5_readiness"] = step01_5_readiness
+            results["step01_5_ready"] = step01_5_readiness["ready"]
 
-            if not step1_5_readiness["ready"]:
+            if not step01_5_readiness["ready"]:
                 results["warnings"].append("Step1_5 data preparation incomplete")
-                logger.warning("⚠️ Data not fully ready for step1_5 processing")
+                logger.warning("⚠️ Data not fully ready for step01_5 processing")
 
             # Step 8: Generate comprehensive report
             logger.info("📊 STEP 1.8: GENERATING COMPREHENSIVE REPORT")
@@ -290,7 +290,7 @@ class Step1Orchestrator:
             logger.info(f"✅ Success: {results['success']}")
             logger.info(f"❌ Errors: {len(results['errors'])}")
             logger.info(f"⚠️  Warnings: {len(results['warnings'])}")
-            logger.info(f"🎯 Step1_5 ready: {results['step1_5_ready']}")
+            logger.info(f"🎯 Step1_5 ready: {results['step01_5_ready']}")
             
             if results["errors"]:
                 logger.error("❌ ERRORS ENCOUNTERED:")
@@ -304,7 +304,7 @@ class Step1Orchestrator:
             
             if results["success"]:
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
-                logger.info(f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}")
+                logger.info(f"📈 Ready for step01_5: {'Yes' if results['step01_5_ready'] else 'No'}")
             else:
                 logger.error("❌ STEP1 PROCESS COMPLETED WITH ERRORS!")
                 logger.error("🔍 Please review the errors above and fix issues before proceeding")
@@ -319,7 +319,7 @@ class Step1Orchestrator:
             results["errors"].append(f"Critical error: {str(e)}")
             return results
 
-    @with_tracing_span("validate_step1_5_readiness")
+    @with_tracing_span("validate_step01_5_readiness")
     @handle_errors(
         exceptions=(
             OSError,
@@ -335,10 +335,10 @@ class Step1Orchestrator:
             "required_files": [],
             "missing_files": [],
         },
-        context="step1_orchestrator.validate_step1_5_readiness"
+        context="step1_orchestrator.validate_step01_5_readiness"
     )
-    def validate_step1_5_readiness(self, symbol: str, exchange: str) -> dict:
-        """Validate that the data is ready for step1_5_data_converter.py processing.
+    def validate_step01_5_readiness(self, symbol: str, exchange: str) -> dict:
+        """Validate that the data is ready for step01_5_data_converter.py processing.
 
         Args:
             symbol: Trading symbol
@@ -348,7 +348,7 @@ class Step1Orchestrator:
             Dictionary with readiness results
 
         """
-        logger.info(f"🔍 Validating step1_5 compatibility for {exchange}_{symbol}")
+        logger.info(f"🔍 Validating step01_5 compatibility for {exchange}_{symbol}")
 
         readiness_result = {
             "ready": True,
@@ -375,7 +375,7 @@ class Step1Orchestrator:
         else:
             readiness_result["required_files"].extend([f.name for f in klines_files])
 
-        # Check for basic data quality (step1_5 will handle resampling)
+        # Check for basic data quality (step01_5 will handle resampling)
         # We only need to ensure raw data is available and properly formatted
         for file_path in aggtrades_files:
             validation_result = self.aggtrades_validator.validate_file_format(file_path)
@@ -498,9 +498,9 @@ class Step1Orchestrator:
 • Partitioned Datasets: {len(results.get('resampling', {}).get('partitioned_datasets', {}))}
 
 🔍 STEP1_5 COMPATIBILITY:
-• Compatible: {'✅ YES' if results['step1_5_ready'] else '❌ NO'}
-• Required Files: {len(results.get('step1_5_readiness', {}).get('required_files', []))}
-• Missing Files: {len(results.get('step1_5_readiness', {}).get('missing_files', []))}
+• Compatible: {'✅ YES' if results['step01_5_ready'] else '❌ NO'}
+• Required Files: {len(results.get('step01_5_readiness', {}).get('required_files', []))}
+• Missing Files: {len(results.get('step01_5_readiness', {}).get('missing_files', []))}
 
 """
 

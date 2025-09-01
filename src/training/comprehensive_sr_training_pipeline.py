@@ -43,13 +43,13 @@ class ComprehensiveSRTrainingPipeline:
         self.model_trainer = MultiOutputModelTrainer(MultiOutputModelConfig())
         
         # Pipeline state
-        self.step7_features_loaded = False
-        self.step2_5_sr_levels_loaded = False
+        self.step07_features_loaded = False
+        self.step02_5_sr_levels_loaded = False
         self.training_data_prepared = False
         
         # Output paths
-        self.step7_output_path = config.get("step7_output_path", "data/matrix_operations")
-        self.step2_5_output_path = config.get("step2_5_output_path", "data/sr_optimization")
+        self.step07_output_path = config.get("step07_output_path", "data/matrix_operations")
+        self.step02_5_output_path = config.get("step02_5_output_path", "data/sr_optimization")
         self.training_output_path = config.get("training_output_path", "data/training")
         
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
@@ -85,13 +85,13 @@ class ComprehensiveSRTrainingPipeline:
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
             
             # Step 1: Load step7 features
-            step7_success = await self._load_step7_features()
-            if not step7_success:
+            step07_success = await self._load_step7_features()
+            if not step07_success:
                 self.logger.warning("⚠️ Step7 features not loaded, continuing with available features")
             
-            # Step 2: Load step2_5 SR levels
-            step2_5_success = await self._load_step2_5_sr_levels()
-            if not step2_5_success:
+            # Step 2: Load step02_5 SR levels
+            step02_5_success = await self._load_step2_5_sr_levels()
+            if not step02_5_success:
                 self.logger.warning("⚠️ Step2_5 SR levels not loaded, continuing with available features")
             
             # Step 3: Prepare comprehensive training data
@@ -111,8 +111,8 @@ class ComprehensiveSRTrainingPipeline:
             return {
                 "success": True,
                 "execution_time": execution_time.total_seconds(),
-                "step7_features_loaded": step7_success,
-                "step2_5_sr_levels_loaded": step2_5_success,
+                "step07_features_loaded": step07_success,
+                "step02_5_sr_levels_loaded": step02_5_success,
                 "training_results": training_results,
                 "validation_results": validation_results,
                 "comprehensive_data_info": {
@@ -131,11 +131,11 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("📊 Loading step7 enhanced matrix operations features...")
             
-            success = await self.model_trainer.load_step7_features(self.step7_output_path)
+            success = await self.model_trainer.load_step7_features(self.step07_output_path)
             
             if success:
-                self.step7_features_loaded = True
-                self.logger.info(f"✅ Step7 features loaded: {len(self.model_trainer.step7_features)} features")
+                self.step07_features_loaded = True
+                self.logger.info(f"✅ Step7 features loaded: {len(self.model_trainer.step07_features)} features")
             else:
                 self.logger.warning("⚠️ Step7 features not available")
             
@@ -146,16 +146,16 @@ class ComprehensiveSRTrainingPipeline:
             return False
 
     async def _load_step2_5_sr_levels(self) -> bool:
-        """Load step2_5 SR optimization levels."""
+        """Load step02_5 SR optimization levels."""
         try:
-            self.logger.info("📊 Loading step2_5 SR optimization levels...")
+            self.logger.info("📊 Loading step02_5 SR optimization levels...")
             
-            success = await self.model_trainer.load_step2_5_sr_levels(self.step2_5_output_path)
+            success = await self.model_trainer.load_step2_5_sr_levels(self.step02_5_output_path)
             
             if success:
-                self.step2_5_sr_levels_loaded = True
-                support_levels = self.model_trainer.step2_5_sr_levels.get("support_levels", [])
-                resistance_levels = self.model_trainer.step2_5_sr_levels.get("resistance_levels", [])
+                self.step02_5_sr_levels_loaded = True
+                support_levels = self.model_trainer.step02_5_sr_levels.get("support_levels", [])
+                resistance_levels = self.model_trainer.step02_5_sr_levels.get("resistance_levels", [])
                 self.logger.info(f"✅ Step2_5 SR levels loaded: {len(support_levels)} support, {len(resistance_levels)} resistance")
             else:
                 self.logger.warning("⚠️ Step2_5 SR levels not available")
@@ -163,7 +163,7 @@ class ComprehensiveSRTrainingPipeline:
             return success
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading step2_5 SR levels: {e}")
+            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
     async def _prepare_comprehensive_training_data(self, training_data: pd.DataFrame) -> pd.DataFrame:
@@ -292,8 +292,8 @@ class ComprehensiveSRTrainingPipeline:
                     "validation_results": validation_results,
                     "training_results": training_results,
                     "pipeline_state": {
-                        "step7_features_loaded": self.step7_features_loaded,
-                        "step2_5_sr_levels_loaded": self.step2_5_sr_levels_loaded,
+                        "step07_features_loaded": self.step07_features_loaded,
+                        "step02_5_sr_levels_loaded": self.step02_5_sr_levels_loaded,
                         "training_data_prepared": self.training_data_prepared
                     }
                 }, f, indent=2)
@@ -309,15 +309,15 @@ class ComprehensiveSRTrainingPipeline:
         """Get comprehensive feature summary."""
         try:
             summary = {
-                "step7_features": {
-                    "loaded": self.step7_features_loaded,
-                    "count": len(self.model_trainer.step7_features),
-                    "features": self.model_trainer.step7_features
+                "step07_features": {
+                    "loaded": self.step07_features_loaded,
+                    "count": len(self.model_trainer.step07_features),
+                    "features": self.model_trainer.step07_features
                 },
-                "step2_5_sr_levels": {
-                    "loaded": self.step2_5_sr_levels_loaded,
-                    "support_levels": len(self.model_trainer.step2_5_sr_levels.get("support_levels", [])),
-                    "resistance_levels": len(self.model_trainer.step2_5_sr_levels.get("resistance_levels", []))
+                "step02_5_sr_levels": {
+                    "loaded": self.step02_5_sr_levels_loaded,
+                    "support_levels": len(self.model_trainer.step02_5_sr_levels.get("support_levels", [])),
+                    "resistance_levels": len(self.model_trainer.step02_5_sr_levels.get("resistance_levels", []))
                 },
                 "sr_feature_columns": {
                     "count": len(self.model_trainer.sr_feature_columns),

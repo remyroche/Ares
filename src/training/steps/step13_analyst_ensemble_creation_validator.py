@@ -187,7 +187,7 @@ class Step7AnalystEnsembleCreationValidator:
         self.logger.info(message)
 
 
-def step7_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
+def step07_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
     """Step 7: Analyst Ensemble Creation Validator.
 
     Args:

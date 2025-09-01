@@ -2,7 +2,7 @@
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
-data quality checks and automatic data preparation using step1/step1_5 components.
+data quality checks and automatic data preparation using step1/step01_5 components.
 """
 
 import asyncio
@@ -209,7 +209,7 @@ class HMMRegimeDiscoveryStep:
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step3_hmm_regime_discovery")
+    @with_enhanced_mlflow_logging("step03_hmm_regime_discovery")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
@@ -325,7 +325,7 @@ class HMMRegimeDiscoveryStep:
                 self._log_regime_discovery_results(regime_results)
                 
                 # Log artifacts to MLflow
-                await self._log_step3_artifacts_to_mlflow(regime_results, training_input)
+                await self._log_step03_artifacts_to_mlflow(regime_results, training_input)
                 
                 # Step 5: Perform SR Context Analysis
                 self.logger.info("=" * 60)
@@ -390,7 +390,7 @@ class HMMRegimeDiscoveryStep:
 
         return pipeline_state
 
-    async def _log_step3_artifacts_to_mlflow(self, regime_results: dict[str, Any], training_input: dict[str, Any]) -> None:
+    async def _log_step03_artifacts_to_mlflow(self, regime_results: dict[str, Any], training_input: dict[str, Any]) -> None:
         """Log step 3 artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -403,7 +403,7 @@ class HMMRegimeDiscoveryStep:
                 composite_df = regime_results["composite_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     df=composite_df,
                     artifact_type="composite_clusters",
                     additional_metadata={
@@ -420,7 +420,7 @@ class HMMRegimeDiscoveryStep:
                 intensity_df = regime_results["intensity_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     df=intensity_df,
                     artifact_type="intensity_clusters",
                     additional_metadata={
@@ -447,7 +447,7 @@ class HMMRegimeDiscoveryStep:
                 
                 report_name = log_step_report(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     report_data=report_data,
                     report_type="regime_discovery_report",
                     additional_metadata={
@@ -465,12 +465,12 @@ class HMMRegimeDiscoveryStep:
                 numeric_metrics = {}
                 for key, value in metrics.items():
                     if isinstance(value, (int, float)):
-                        numeric_metrics[f"step3_{key}"] = float(value)
+                        numeric_metrics[f"step03_{key}"] = float(value)
                 
                 if numeric_metrics:
                     log_step_metrics(
                         config=self.config,
-                        step_name="step3_hmm_regime_discovery",
+                        step_name="step03_hmm_regime_discovery",
                         metrics=numeric_metrics,
                         additional_metadata={
                             "metrics_type": "regime_discovery",
@@ -484,7 +484,7 @@ class HMMRegimeDiscoveryStep:
                 hmm_model = regime_results["hmm_model"]
                 log_step_model(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     model=hmm_model,
                     model_name="hmm_regime_model",
                     model_type="hmm",
@@ -501,7 +501,7 @@ class HMMRegimeDiscoveryStep:
                 kmeans_model = regime_results["kmeans_model"]
                 log_step_model(
                     config=self.config,
-                    step_name="step3_hmm_regime_discovery",
+                    step_name="step03_hmm_regime_discovery",
                     model=kmeans_model,
                     model_name="kmeans_clustering_model",
                     model_type="clustering",
@@ -567,7 +567,7 @@ class HMMRegimeDiscoveryStep:
 
             # Get data ready for step3/step4 (which includes HMM)
             self.logger.info("📋 Requesting data from quality manager...")
-            data_results = await self.data_quality_manager.get_data_for_step3_step4(
+            data_results = await self.data_quality_manager.get_data_for_step03_step4(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe
@@ -585,7 +585,7 @@ class HMMRegimeDiscoveryStep:
                 error = data_results.get("error", "Unknown error")
                 self.logger.error(f"   Error: {error}")
                 
-                # Try to fix missing data using step1/step1_5 components
+                # Try to fix missing data using step1/step01_5 components
                 self.logger.info("🔄 Attempting to fix missing data...")
                 fix_results = await self._fix_missing_data(training_input)
                 
@@ -613,7 +613,7 @@ class HMMRegimeDiscoveryStep:
         context="fix_missing_data"
     )
     async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
-        """Fix missing data using step1 and step1_5 components."""
+        """Fix missing data using step1 and step01_5 components."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
@@ -622,60 +622,60 @@ class HMMRegimeDiscoveryStep:
             self.logger.info(f"🔄 Fixing missing data for {symbol} on {exchange} ({timeframe})...")
 
             # Try step1 data collection
-            step1_success = False
+            step01_success = False
             try:
                 self.logger.info("📥 Attempting step1 data collection...")
-                from .step1_data_collection import run_step as run_step1
-                step1_success = await run_step1(
+                from .step01_data_collection import run_step as run_step1
+                step01_success = await run_step1(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     force_rerun=True
                 )
-                if step1_success:
+                if step01_success:
                     self.logger.info("✅ Step1 data collection completed successfully")
                 else:
                     self.logger.warning("⚠️ Step1 data collection failed")
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not run step1: {e}")
 
-            # Try step1_5 data conversion
-            step1_5_success = False
+            # Try step01_5 data conversion
+            step01_5_success = False
             try:
-                self.logger.info("🔄 Attempting step1_5 data conversion...")
-                from .step1_5_data_converter import run_step as run_step1_5
-                step1_5_success = await run_step1_5(
+                self.logger.info("🔄 Attempting step01_5 data conversion...")
+                from .step01_5_data_converter import run_step as run_step1_5
+                step01_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     force_rerun=True
                 )
-                if step1_5_success:
+                if step01_5_success:
                     self.logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
                     self.logger.warning("⚠️ Step1_5 data conversion failed")
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not run step1_5: {e}")
+                self.logger.warning(f"⚠️ Could not run step01_5: {e}")
 
             # Check if data is now ready
             if self.data_quality_manager:
                 self.logger.info("🔍 Re-checking data quality after fixes...")
-                data_results = await self.data_quality_manager.get_data_for_step3_step4(
+                data_results = await self.data_quality_manager.get_data_for_step03_step4(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe
                 )
                 return {
                     "success": data_results.get("success", False),
-                    "step1_success": step1_success,
-                    "step1_5_success": step1_5_success,
+                    "step01_success": step01_success,
+                    "step01_5_success": step01_5_success,
                     "quality_check_result": data_results
                 }
             else:
                 return {
-                    "success": step1_success and step1_5_success,
-                    "step1_success": step1_success,
-                    "step1_5_success": step1_5_success
+                    "success": step01_success and step01_5_success,
+                    "step01_success": step01_success,
+                    "step01_5_success": step01_5_success
                 }
 
         except Exception as e:
@@ -2217,7 +2217,7 @@ class HMMRegimeDiscoveryStep:
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step3_hmm_regime_discovery",
+    context="step03_hmm_regime_discovery",
 )
 async def run_step(
     symbol: str, 
@@ -3194,7 +3194,7 @@ async def run_step(
         
         try:
             # Try to load from configuration file
-            config_file = Path(__file__).parent / "step3_optimization_config.json"
+            config_file = Path(__file__).parent / "step03_optimization_config.json"
             if config_file.exists():
                 import json
                 with open(config_file, 'r') as f:
@@ -3337,8 +3337,8 @@ if __name__ == "__main__":
             data_dir = sys.argv[4] if len(sys.argv) > 4 else "data_cache"
             force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == "true"
         else:
-            print("Usage: python step3_hmm_regime_discovery.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
-            print("Example: python step3_hmm_regime_discovery.py ETHUSDT BINANCE 1m data_cache true")
+            print("Usage: python step03_hmm_regime_discovery.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]")
+            print("Example: python step03_hmm_regime_discovery.py ETHUSDT BINANCE 1m data_cache true")
             return
 
         print("=" * 80)

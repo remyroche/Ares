@@ -1,4 +1,4 @@
-# src/training/steps/step6_feature_engineering.py
+# src/training/steps/step06_feature_engineering.py
 
 """Step 6: Complete Feature Engineering with Standardized Data Quality Management.
 This step creates comprehensive features including both basic and advanced features,
@@ -188,11 +188,11 @@ else:
     },
     validation_timeout=600,
 )
-@with_enhanced_mlflow_logging("step6_feature_engineering")
+@with_enhanced_mlflow_logging("step06_feature_engineering")
 @handle_errors(
     exceptions=(Exception,),
     default_return=False,
-    context="step6_feature_engineering",
+    context="step06_feature_engineering",
 )
 async def run_step(
     symbol: str,
@@ -251,8 +251,8 @@ async def run_step(
             logger.info("🔧 No existing artifacts found - generating features")
             logger.info("🆕 Starting fresh feature engineering pipeline")
 
-        # 1) Load unified data from step1_5
-        logger.info("📊 Loading unified data from step1_5...")
+        # 1) Load unified data from step01_5
+        logger.info("📊 Loading unified data from step01_5...")
         unified_data = await _load_unified_data(symbol, exchange, timeframe, data_dir)
         if unified_data is None or unified_data.empty:
             logger.error("❌ Failed to load unified data")
@@ -378,7 +378,7 @@ def _categorize_features(feature_columns: List[str]) -> dict:
 
 
 async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
-    """Load unified data from step1_5."""
+    """Load unified data from step01_5."""
     try:
         from src.training.steps.unified_data_loader import load_unified_data
         
@@ -1207,7 +1207,7 @@ async def _save_feature_artifacts(
             # Log training features DataFrame with standardized naming
             train_artifact_name = log_step_dataframe_with_standardized_name(
                 config=config,
-                step_name="step6_feature_engineering",
+                step_name="step06_feature_engineering",
                 df=features_result["features_train"],
                 artifact_type="features_train",
                 additional_metadata={
@@ -1222,7 +1222,7 @@ async def _save_feature_artifacts(
             # Log validation features DataFrame with standardized naming
             val_artifact_name = log_step_dataframe_with_standardized_name(
                 config=config,
-                step_name="step6_feature_engineering",
+                step_name="step06_feature_engineering",
                 df=features_result["features_val"],
                 artifact_type="features_val",
                 additional_metadata={
@@ -1237,7 +1237,7 @@ async def _save_feature_artifacts(
             # Log feature metadata with standardized naming
             metadata_artifact_name = log_step_artifact_with_standardized_name(
                 config=config,
-                step_name="step6_feature_engineering",
+                step_name="step06_feature_engineering",
                 artifact_path=str(metadata_file_path),
                 artifact_type="feature_metadata",
                 additional_metadata={
@@ -1268,7 +1268,7 @@ async def _save_feature_artifacts(
             
             report_name = log_step_report(
                 config=config,
-                step_name="step6_feature_engineering",
+                step_name="step06_feature_engineering",
                 report_data=report_data,
                 report_type="feature_engineering_report",
                 additional_metadata={
@@ -1285,12 +1285,12 @@ async def _save_feature_artifacts(
                 numeric_metrics = {}
                 for key, value in metrics.items():
                     if isinstance(value, (int, float)):
-                        numeric_metrics[f"step6_{key}"] = float(value)
+                        numeric_metrics[f"step06_{key}"] = float(value)
                 
                 if numeric_metrics:
                     log_step_metrics(
                         config=config,
-                        step_name="step6_feature_engineering",
+                        step_name="step06_feature_engineering",
                         metrics=numeric_metrics,
                         additional_metadata={
                             "metrics_type": "feature_engineering",

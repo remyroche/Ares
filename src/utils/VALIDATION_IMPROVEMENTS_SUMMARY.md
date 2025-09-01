@@ -20,7 +20,7 @@ class Step3_5FinalRegimeClusteringValidator:
 ```python
 class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_5_final_regime_clustering", config)
+        super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
 ```
 
@@ -87,35 +87,35 @@ def validate_file_exists(self, file_path: str) -> bool:
 
 ### **✅ Completed Updates:**
 
-1. **`step3_5_final_regime_clustering_validator.py`**
+1. **`step03_5_final_regime_clustering_validator.py`**
    - ✅ Inherits from BaseValidator
    - ✅ Uses `@validate_step3_5_comprehensive` decorator
    - ✅ Implements smart caching for file validation (5 min TTL)
    - ✅ Implements smart caching for analysis reports (10 min TTL)
    - ✅ Uses BaseValidator methods for file and DataFrame validation
 
-2. **`step3_parameter_optimization_validator.py`**
+2. **`step03_parameter_optimization_validator.py`**
    - ✅ Inherits from BaseValidator
    - ✅ Uses `@validate_step3_comprehensive` decorator
    - ✅ Implements smart caching for optimization results (10 min TTL)
    - ✅ Implements smart caching for config and logs (5-10 min TTL)
    - ✅ Uses BaseValidator methods for comprehensive validation
 
-3. **`step4_regime_data_splitting_validator.py`**
+3. **`step04_regime_data_splitting_validator.py`**
    - ✅ Inherits from BaseValidator
    - ✅ Uses `@validate_step4_comprehensive` decorator
    - ✅ Implements smart caching for regime files (5 min TTL)
    - ✅ Implements smart caching for statistics (10 min TTL)
    - ✅ Uses BaseValidator methods for file and DataFrame validation
 
-4. **`step5_labeling_validator.py`**
+4. **`step05_labeling_validator.py`**
    - ✅ Inherits from BaseValidator
    - ✅ Uses `@validate_step5_comprehensive` decorator
    - ✅ Implements smart caching for labeled files (5 min TTL)
    - ✅ Implements smart caching for metadata (10 min TTL)
    - ✅ Uses BaseValidator methods for comprehensive validation
 
-5. **`step6_feature_engineering_validator.py`**
+5. **`step06_feature_engineering_validator.py`**
    - ✅ Inherits from BaseValidator
    - ✅ Uses `@validate_step6_comprehensive` decorator
    - ✅ Implements smart caching for feature files (5 min TTL)
@@ -123,11 +123,11 @@ def validate_file_exists(self, file_path: str) -> bool:
 
 ### **🔄 Already Updated (Inherit from BaseValidator):**
 
-- `step1_data_collection_validator.py` ✅
-- `step1_5_data_converter_validator.py` ✅
-- `step2_feature_engineering_validator.py` ✅
-- `step5_regime_data_splitting_validator.py` ✅
-- `step7_enhanced_matrix_operations_validator.py` ✅
+- `step01_data_collection_validator.py` ✅
+- `step01_5_data_converter_validator.py` ✅
+- `step02_feature_engineering_validator.py` ✅
+- `step05_regime_data_splitting_validator.py` ✅
+- `step07_enhanced_matrix_operations_validator.py` ✅
 
 ## 🛠️ **Enhanced Validation Decorators Available**
 
@@ -196,7 +196,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
     
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_5_final_regime_clustering", config)
+        super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
     
     @validate_step3_5_comprehensive
@@ -258,13 +258,13 @@ def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Di
 ```python
 # Example validation metrics output
 {
-    "step_name": "step3_5_final_regime_clustering",
+    "step_name": "step03_5_final_regime_clustering",
     "validation_passed": True,
     "prerequisites": {
         "validation_passed": True,
         "warnings": [],
         "errors": [],
-        "details": {"step3_files_found": 5}
+        "details": {"step03_files_found": 5}
     },
     "step_execution": True,
     "outputs": {

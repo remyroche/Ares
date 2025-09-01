@@ -62,7 +62,7 @@ class DynamicRegimeMapper:
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="regime discovery from step1_7",
+        context="regime discovery from step01_7",
     )
     async def _discover_regimes_from_step1_7(self) -> bool:
         """Discover regimes by reading Step 1.7 HMM clustering results."""

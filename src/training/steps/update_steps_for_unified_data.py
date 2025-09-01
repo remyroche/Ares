@@ -12,14 +12,14 @@ from typing import Any, Dict, List
 
 # List of all training steps that need to be updated
 TRAINING_STEPS: List[str] = [
-    "step2_market_regime_classification",
-    "step3_regime_data_splitting",
-    "step4_analyst_labeling_feature_engineering",
-    "step5_hmm_based_training",
-    "step6_analyst_enhancement",
-    "step7_analyst_ensemble_creation",
-    "step8_tactician_labeling",
-    "step9_tactician_specialist_training",
+    "step02_market_regime_classification",
+    "step03_regime_data_splitting",
+    "step04_analyst_labeling_feature_engineering",
+    "step05_hmm_based_training",
+    "step06_analyst_enhancement",
+    "step07_analyst_ensemble_creation",
+    "step08_tactician_labeling",
+    "step09_tactician_specialist_training",
     "step10_tactician_ensemble_creation",
     "step11_confidence_calibration",
             "step17_final_parameters_optimization",
@@ -100,42 +100,42 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     # High complexity areas that need special attention
 
     guidance: Dict[str, Any] = {
-        "step2_market_regime_classification": {
+        "step02_market_regime_classification": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1h",  # Regime classification typically uses 1h
             "notes": "May need to resample data to 1h timeframe for regime classification",
         },
-        "step3_regime_data_splitting": {
+        "step03_regime_data_splitting": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses regime classification results from step2",
         },
-        "step4_analyst_labeling_feature_engineering": {
+        "step04_analyst_labeling_feature_engineering": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Needs both OHLCV data and regime labels",
         },
-        "step5_hmm_based_training": {
+        "step05_hmm_based_training": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses labeled data from step4",
         },
-        "step6_analyst_enhancement": {
+        "step06_analyst_enhancement": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses trained models from step5",
         },
-        "step7_analyst_ensemble_creation": {
+        "step07_analyst_ensemble_creation": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Creates ensemble from step6 models",
         },
-        "step8_tactician_labeling": {
+        "step08_tactician_labeling": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Needs both OHLCV data and analyst predictions",
         },
-        "step9_tactician_specialist_training": {
+        "step09_tactician_specialist_training": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
             "notes": "Uses labeled data from step8",
@@ -220,15 +220,15 @@ def generate_step_update_template(step_name: str) -> str:
 def main() -> None:
     """Main function to generate update guidance."""
     high_complexity_areas = {
-        "step1_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
-        "step4_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
-        "step5_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
-        "step7_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
-        "step6_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step9_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step3_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
-        "step2_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
-        "step8_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
+        "step01_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D-23), run_step (C-18)",
+        "step04_main_model_training": "❌ HIGH COMPLEXITY - run_step (C-13)",
+        "step05_multi_stage_hpo": "⚠️  MEDIUM COMPLEXITY - run_step (B-9)",
+        "step07_monte_carlo_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-7)",
+        "step06_walk_forward_validation": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step09_save_results": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step03_coarse_optimization": "⚠️  MEDIUM COMPLEXITY - run_step (B-6)",
+        "step02_preliminary_optimization": "✅ LOW COMPLEXITY - run_step (A-5)",
+        "step08_ab_testing_setup": "✅ LOW COMPLEXITY - run_step (A-2)",
     }
 
     for i, step in enumerate(TRAINING_STEPS, 1):

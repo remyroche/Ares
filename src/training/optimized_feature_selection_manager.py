@@ -64,7 +64,7 @@ class OptimizedFeatureSelectionManager:
                 "neural_networks": 80,
                 "linear_models": 60,
                 "ensemble_models": 90,
-                "step2_general": 100,
+                "step02_general": 100,
             },
             "vif_threshold": 10.0,
             "correlation_threshold": 0.95,
@@ -185,14 +185,14 @@ class OptimizedFeatureSelectionManager:
 
         # Backward compatibility for step2 vs step02 keys
         if step_name in ("step2", "step02", "step02_feature_engineering"):
-            return target_config.get("step2_general", target_config.get("step02_general", 100))
+            return target_config.get("step02_general", target_config.get("step02_general", 100))
         if model_type == "neural_networks":
             return target_config.get("neural_networks", 80)
         if model_type == "linear_models":
             return target_config.get("linear_models", 60)
         if model_type == "ensemble_models":
             return target_config.get("ensemble_models", 90)
-        return target_config.get("step2_general", 100)
+        return target_config.get("step02_general", 100)
 
     def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 1: Fast data quality filtering."""

@@ -371,7 +371,7 @@ def smart_validation_cache(
 def validate_step1_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 1: Data Collection."""
     return comprehensive_step_validation(
-        "step1_data_collection",
+        "step01_data_collection",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -382,7 +382,7 @@ def validate_step1_comprehensive(func: Callable) -> Callable:
 def validate_step1_5_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 1.5: Data Converter."""
     return comprehensive_step_validation(
-        "step1_5_data_converter",
+        "step01_5_data_converter",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -393,7 +393,7 @@ def validate_step1_5_comprehensive(func: Callable) -> Callable:
 def validate_step2_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 2: Data Reading."""
     return comprehensive_step_validation(
-        "step2_data_reading",
+        "step02_data_reading",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -404,7 +404,7 @@ def validate_step2_comprehensive(func: Callable) -> Callable:
 def validate_step3_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 3: HMM Regime Discovery."""
     return comprehensive_step_validation(
-        "step3_hmm_regime_discovery",
+        "step03_hmm_regime_discovery",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -415,7 +415,7 @@ def validate_step3_comprehensive(func: Callable) -> Callable:
 def validate_step4_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 4: Regime Data Splitting."""
     return comprehensive_step_validation(
-        "step4_regime_data_splitting",
+        "step04_regime_data_splitting",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -426,7 +426,7 @@ def validate_step4_comprehensive(func: Callable) -> Callable:
 def validate_step5_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 5: Labeling."""
     return comprehensive_step_validation(
-        "step5_labeling",
+        "step05_labeling",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -437,7 +437,7 @@ def validate_step5_comprehensive(func: Callable) -> Callable:
 def validate_step6_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 6: Feature Engineering."""
     return comprehensive_step_validation(
-        "step6_feature_engineering",
+        "step06_feature_engineering",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,
@@ -448,7 +448,7 @@ def validate_step6_comprehensive(func: Callable) -> Callable:
 def validate_step7_comprehensive(func: Callable) -> Callable:
     """Comprehensive validation for Step 7: Enhanced Matrix Operations."""
     return comprehensive_step_validation(
-        "step7_enhanced_matrix_operations",
+        "step07_enhanced_matrix_operations",
         validate_prerequisites=True,
         validate_inputs=True,
         validate_outputs=True,

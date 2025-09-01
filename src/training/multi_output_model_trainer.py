@@ -38,7 +38,7 @@ except ImportError:
 
 # Import existing model architectures from step6
 try:
-    from .steps.step9_hmm_based_training import (
+    from .steps.step09_hmm_based_training import (
         CNNModel, CNNTrainer,
         TCNModel, TCNTrainer,
         TransformerModel, TransformerTrainer
@@ -56,7 +56,7 @@ from sklearn.multioutput import MultiOutputRegressor, MultiOutputClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
 from src.utils.centralized_decorators import (
@@ -216,8 +216,8 @@ class MultiOutputModelTrainer:
         )
         
         # NEW: SR Feature Integration
-        self.step7_features = []  # Features from step7
-        self.step2_5_sr_levels = {}  # SR levels from step2_5
+        self.step07_features = []  # Features from step7
+        self.step02_5_sr_levels = {}  # SR levels from step02_5
         self.sr_feature_columns = []  # All SR feature column names
         self.comprehensive_sr_features = {}  # Combined SR features
         
@@ -248,54 +248,54 @@ class MultiOutputModelTrainer:
     @handle_errors(
         exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
         default_return=False,
-        context="step7_features_loading"
+        context="step07_features_loading"
     )
-    async def load_step7_features(self, step7_output_path: str) -> bool:
+    async def load_step7_features(self, step07_output_path: str) -> bool:
         """
         Load comprehensive SR features from step7 enhanced matrix operations.
         
         Args:
-            step7_output_path: Path to step7 output directory
+            step07_output_path: Path to step7 output directory
             
         Returns:
             bool: True if features loaded successfully
         """
         try:
-            self.logger.info(f"📊 Loading step7 SR features from: {step7_output_path}")
+            self.logger.info(f"📊 Loading step7 SR features from: {step07_output_path}")
             
             # Load step7 matrix operations results
-            step7_results_path = Path(step7_output_path) / "matrix_operations_results.json"
-            if not step7_results_path.exists():
-                self.logger.warning(f"⚠️ Step7 results not found at: {step7_results_path}")
+            step07_results_path = Path(step07_output_path) / "matrix_operations_results.json"
+            if not step07_results_path.exists():
+                self.logger.warning(f"⚠️ Step7 results not found at: {step07_results_path}")
                 return False
             
-            with open(step7_results_path, 'r') as f:
-                step7_results = json.load(f)
+            with open(step07_results_path, 'r') as f:
+                step07_results = json.load(f)
             
             # Extract SR features from step7 results
-            sr_analysis = step7_results.get("sr_analysis", {})
-            sr_enhanced_analysis = step7_results.get("sr_enhanced_analysis", {})
-            sr_optimization_analysis = step7_results.get("sr_optimization_analysis", {})
+            sr_analysis = step07_results.get("sr_analysis", {})
+            sr_enhanced_analysis = step07_results.get("sr_enhanced_analysis", {})
+            sr_optimization_analysis = step07_results.get("sr_optimization_analysis", {})
             
             # Collect all SR features
-            self.step7_features = []
+            self.step07_features = []
             
             # Basic SR features
             basic_sr_features = sr_analysis.get("sr_features", [])
-            self.step7_features.extend(basic_sr_features)
+            self.step07_features.extend(basic_sr_features)
             
             # Enhanced SR features
             enhanced_sr_features = sr_enhanced_analysis.get("enhanced_sr_features", [])
-            self.step7_features.extend(enhanced_sr_features)
+            self.step07_features.extend(enhanced_sr_features)
             
             # Optimization SR features
             optimization_sr_features = sr_optimization_analysis.get("optimization_features", [])
-            self.step7_features.extend(optimization_sr_features)
+            self.step07_features.extend(optimization_sr_features)
             
             # Remove duplicates and sort
-            self.step7_features = sorted(list(set(self.step7_features)))
+            self.step07_features = sorted(list(set(self.step07_features)))
             
-            self.logger.info(f"✅ Loaded {len(self.step7_features)} SR features from step7")
+            self.logger.info(f"✅ Loaded {len(self.step07_features)} SR features from step7")
             self.logger.info(f"   - Basic SR features: {len(basic_sr_features)}")
             self.logger.info(f"   - Enhanced SR features: {len(enhanced_sr_features)}")
             self.logger.info(f"   - Optimization SR features: {len(optimization_sr_features)}")
@@ -309,49 +309,49 @@ class MultiOutputModelTrainer:
     @handle_errors(
         exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
         default_return=False,
-        context="step2_5_sr_levels_loading"
+        context="step02_5_sr_levels_loading"
     )
-    async def load_step2_5_sr_levels(self, step2_5_output_path: str) -> bool:
+    async def load_step2_5_sr_levels(self, step02_5_output_path: str) -> bool:
         """
-        Load SR levels from step2_5 SR optimization.
+        Load SR levels from step02_5 SR optimization.
         
         Args:
-            step2_5_output_path: Path to step2_5 output directory
+            step02_5_output_path: Path to step02_5 output directory
             
         Returns:
             bool: True if SR levels loaded successfully
         """
         try:
-            self.logger.info(f"📊 Loading step2_5 SR levels from: {step2_5_output_path}")
+            self.logger.info(f"📊 Loading step02_5 SR levels from: {step02_5_output_path}")
             
-            # Load step2_5 SR optimization results
-            step2_5_results_path = Path(step2_5_output_path) / "sr_optimization_results.json"
-            if not step2_5_results_path.exists():
-                self.logger.warning(f"⚠️ Step2_5 results not found at: {step2_5_results_path}")
+            # Load step02_5 SR optimization results
+            step02_5_results_path = Path(step02_5_output_path) / "sr_optimization_results.json"
+            if not step02_5_results_path.exists():
+                self.logger.warning(f"⚠️ Step2_5 results not found at: {step02_5_results_path}")
                 return False
             
-            with open(step2_5_results_path, 'r') as f:
-                step2_5_results = json.load(f)
+            with open(step02_5_results_path, 'r') as f:
+                step02_5_results = json.load(f)
             
             # Extract SR levels
-            self.step2_5_sr_levels = step2_5_results.get("sr_levels_result", {})
+            self.step02_5_sr_levels = step02_5_results.get("sr_levels_result", {})
             
-            support_levels = self.step2_5_sr_levels.get("support_levels", [])
-            resistance_levels = self.step2_5_sr_levels.get("resistance_levels", [])
+            support_levels = self.step02_5_sr_levels.get("support_levels", [])
+            resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
             
-            self.logger.info(f"✅ Loaded SR levels from step2_5:")
+            self.logger.info(f"✅ Loaded SR levels from step02_5:")
             self.logger.info(f"   - Support levels: {len(support_levels)}")
             self.logger.info(f"   - Resistance levels: {len(resistance_levels)}")
             
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading step2_5 SR levels: {e}")
+            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
     def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
         """
-        Convert SR levels from step2_5 to ML features.
+        Convert SR levels from step02_5 to ML features.
         
         Args:
             current_price: Current market price
@@ -363,7 +363,7 @@ class MultiOutputModelTrainer:
             features = {}
             
             # Support level features
-            support_levels = self.step2_5_sr_levels.get("support_levels", [])
+            support_levels = self.step02_5_sr_levels.get("support_levels", [])
             features.update({
                 "sr_support_level_count": len(support_levels),
                 "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels, current_price),
@@ -374,7 +374,7 @@ class MultiOutputModelTrainer:
             })
             
             # Resistance level features
-            resistance_levels = self.step2_5_sr_levels.get("resistance_levels", [])
+            resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
             features.update({
                 "sr_resistance_level_count": len(resistance_levels),
                 "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels, current_price),
@@ -444,7 +444,7 @@ class MultiOutputModelTrainer:
         try:
             required_features = {
                 # Step7 SR features (42 features)
-                "step7_sr_features": [
+                "step07_sr_features": [
                     "sr_proximity", "support_proximity", "resistance_proximity", "sr_zone_width",
                     "sr_strength", "support_strength", "resistance_strength", "sr_enhanced_strength",
                     "sr_total_support_levels", "sr_total_resistance_levels", "sr_clusters_detected",
@@ -460,7 +460,7 @@ class MultiOutputModelTrainer:
                 ],
                 
                 # Step2_5 SR level features (15 features)
-                "step2_5_sr_level_features": [
+                "step02_5_sr_level_features": [
                     "sr_support_level_count", "sr_nearest_support_distance", "sr_support_level_strength_avg",
                     "sr_resistance_level_count", "sr_nearest_resistance_distance", "sr_resistance_level_strength_avg",
                     "sr_total_levels", "sr_level_density", "sr_level_strength_variance",
@@ -489,7 +489,7 @@ class MultiOutputModelTrainer:
 
     async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Add comprehensive SR features from step7 and step2_5 to the dataset.
+        Add comprehensive SR features from step7 and step02_5 to the dataset.
         
         Args:
             data: Input DataFrame
@@ -504,19 +504,19 @@ class MultiOutputModelTrainer:
             data_with_sr = data.copy()
             
             # Add step7 SR features if available
-            if self.step7_features:
-                self.logger.info(f"📊 Adding {len(self.step7_features)} step7 SR features...")
+            if self.step07_features:
+                self.logger.info(f"📊 Adding {len(self.step07_features)} step7 SR features...")
                 
                 # Initialize step7 features with default values
-                for feature in self.step7_features:
+                for feature in self.step07_features:
                     if feature not in data_with_sr.columns:
                         data_with_sr[feature] = 0.5  # Default neutral value
                 
-                self.logger.info(f"✅ Added step7 SR features: {len(self.step7_features)} features")
+                self.logger.info(f"✅ Added step7 SR features: {len(self.step07_features)} features")
             
-            # Add step2_5 SR level features
-            if self.step2_5_sr_levels:
-                self.logger.info("📊 Adding step2_5 SR level features...")
+            # Add step02_5 SR level features
+            if self.step02_5_sr_levels:
+                self.logger.info("📊 Adding step02_5 SR level features...")
                 
                 # Get current prices for SR level feature calculation
                 if 'close' in data_with_sr.columns:
@@ -535,7 +535,7 @@ class MultiOutputModelTrainer:
                 sr_level_df = pd.DataFrame(sr_level_features_list, index=data_with_sr.index)
                 data_with_sr = pd.concat([data_with_sr, sr_level_df], axis=1)
                 
-                self.logger.info(f"✅ Added step2_5 SR level features: {len(sr_level_df.columns)} features")
+                self.logger.info(f"✅ Added step02_5 SR level features: {len(sr_level_df.columns)} features")
             
             # Create combined SR features
             data_with_sr = self._create_combined_sr_features(data_with_sr)
@@ -697,16 +697,16 @@ class MultiOutputModelTrainer:
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
             try:
-                from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
+                from src.training.steps.step09_hmm_based_training import HMMBasedTrainingStep
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
                 # Create step6 instance for feature selection
-                step6_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
-                step6_instance = Step6HMMBasedTraining(step6_config)
+                step06_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
+                step06_instance = Step6HMMBasedTraining(step06_config)
                 
                 # Use the enhanced pre-filtering method
-                selected_features = await step6_instance._pre_filter_features(
+                selected_features = await step06_instance._pre_filter_features(
                     X=data_with_sr_features,
                     feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column, profit_column]]
                 )

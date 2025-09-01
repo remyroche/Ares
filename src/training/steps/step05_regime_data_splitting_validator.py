@@ -19,7 +19,7 @@ from src.utils.logger import system_logger
 # Validator for Step 5: Regime Data Splitting
 class Step5RegimeDataSplittingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step5_regime_data_splitting", config)
+        super().__init__("step05_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step5Split")
 
     async def validate(
@@ -63,7 +63,7 @@ async def run_validator(
 ) -> dict[str, Any]:
     v = Step5RegimeDataSplittingValidator({})
     ok = await v.validate(training_input, pipeline_state)
-    return {"step_name": "step5_regime_data_splitting", "validation_passed": ok}
+    return {"step_name": "step05_regime_data_splitting", "validation_passed": ok}
 
 
 if __name__ == "__main__":

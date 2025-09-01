@@ -25,7 +25,7 @@ class Step5LabelingValidator(BaseValidator):
     """Validator for Step 5: Labeling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step5_labeling", config)
+        super().__init__("step05_labeling", config)
         self.logger = system_logger.getChild("Validator.Step5")
 
     @validate_step5_comprehensive
@@ -80,7 +80,7 @@ class Step5LabelingValidator(BaseValidator):
 
         except Exception as e:
             error_context = {
-                "step": "step5_labeling",
+                "step": "step05_labeling",
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
@@ -205,24 +205,24 @@ class Step5LabelingValidator(BaseValidator):
         }
 
         try:
-            # Check if step4_regime_data_splitting output exists using BaseValidator
-            step4_output_dir = Path("data/training/regime_splits")
-            step4_files = list(step4_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
+            # Check if step04_regime_data_splitting output exists using BaseValidator
+            step04_output_dir = Path("data/training/regime_splits")
+            step04_files = list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
             
-            if not step4_files:
+            if not step04_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
                     f"Step 4 regime data splitting output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
                 # Validate each file using BaseValidator
-                for file_path in step4_files:
+                for file_path in step04_files:
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step4 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 
-                validation_result["details"]["step4_files_found"] = len(step4_files)
-                validation_result["details"]["step4_files"] = [str(f) for f in step4_files]
+                validation_result["details"]["step04_files_found"] = len(step04_files)
+                validation_result["details"]["step04_files"] = [str(f) for f in step04_files]
 
         except Exception as e:
             validation_result["validation_passed"] = False
@@ -337,7 +337,7 @@ async def run_validator(
         )
         
         return {
-            "step_name": "step5_labeling",
+            "step_name": "step05_labeling",
             "validation_passed": validation_passed,
             "prerequisites": prereq_result,
             "step_execution": step_result,
@@ -348,7 +348,7 @@ async def run_validator(
         
     except Exception as e:
         error_context = {
-            "step": "step5_labeling",
+            "step": "step05_labeling",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
@@ -357,7 +357,7 @@ async def run_validator(
         }
         logger.exception(f"❌ Step 5 validation failed: {error_context}")
         return {
-            "step_name": "step5_labeling",
+            "step_name": "step05_labeling",
             "validation_passed": False,
             "error": str(e),
             "error_context": error_context

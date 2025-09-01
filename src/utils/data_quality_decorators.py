@@ -516,7 +516,7 @@ def _is_boolean_feature(series: pd.Series) -> bool:
 def validate_step1_quality(func: Callable) -> Callable:
     """Decorator specifically for Step1 data quality validation."""
     return validate_data_quality_at_step(
-        "step1_data_collection",
+        "step01_data_collection",
         validate_input=True,
         validate_output=True,
         check_nan=True,
@@ -531,7 +531,7 @@ def validate_step1_quality(func: Callable) -> Callable:
 def validate_step1_5_quality(func: Callable) -> Callable:
     """Decorator specifically for Step1.5 data quality validation."""
     return validate_data_quality_at_step(
-        "step1_5_data_converter",
+        "step01_5_data_converter",
         validate_input=True,
         validate_output=True,
         check_nan=True,
@@ -546,7 +546,7 @@ def validate_step1_5_quality(func: Callable) -> Callable:
 def validate_step2_quality(func: Callable) -> Callable:
     """Decorator specifically for Step2 data quality validation with special attention to features."""
     return validate_data_quality_at_step(
-        "step2_feature_engineering",
+        "step02_feature_engineering",
         validate_input=True,
         validate_output=True,
         check_nan=True,

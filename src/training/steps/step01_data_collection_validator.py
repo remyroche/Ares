@@ -22,7 +22,7 @@ class Step1DataCollectionValidator(BaseValidator):
 	"""Validator for Step 1: Data Collection."""
 
 	def __init__(self, config: Dict[str, Any]) -> None:
-		super().__init__("step1_data_collection", config)
+		super().__init__("step01_data_collection", config)
 		self.logger = system_logger.getChild("Validator.Step1")
 		# Fine-tuned parameters for ML training (more lenient to avoid stopping training)
 		self.min_records = 500  # Reduced from 1000 to allow smaller datasets
@@ -57,7 +57,7 @@ class Step1DataCollectionValidator(BaseValidator):
 
 		validation_result = {
 			"validation_passed": False,
-			"step_name": "step1_data_collection",
+			"step_name": "step01_data_collection",
 			"validation_results": {},
 			"critical_issues": [],
 			"warnings": [],
@@ -407,7 +407,7 @@ async def run_validator(
 	validation_passed = await validator.validate(training_input, pipeline_state)
 
 	return {
-		"step_name": "step1_data_collection",
+		"step_name": "step01_data_collection",
 		"validation_passed": validation_passed,
 		"validation_results": validator.validation_results,
 		"duration": 0,  # Could be enhanced to track actual duration

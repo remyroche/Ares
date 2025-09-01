@@ -67,7 +67,7 @@ class ComprehensiveParameterIntegration:
         """
         
         return {
-            "step9_hmm_based_training": {
+            "step09_hmm_based_training": {
                 "model_architecture": {
                     "model_type": ["random_forest", "xgboost", "lightgbm", "catboost", "neural_network"],
                     "ensemble_size": (1, 20),

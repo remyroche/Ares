@@ -70,7 +70,7 @@ class ComprehensiveDataQualityValidator:
         self.logger.info("🔍 Validating Step1 data collection quality...")
         
         results = {
-            "step": "step1_data_collection",
+            "step": "step01_data_collection",
             "timestamp": datetime.now().isoformat(),
             "symbol": symbol,
             "exchange": exchange,
@@ -134,7 +134,7 @@ class ComprehensiveDataQualityValidator:
         self.logger.info("🔍 Validating Step1.5 data converter quality...")
         
         results = {
-            "step": "step1_5_data_converter",
+            "step": "step01_5_data_converter",
             "timestamp": datetime.now().isoformat(),
             "symbol": symbol,
             "exchange": exchange,
@@ -185,7 +185,7 @@ class ComprehensiveDataQualityValidator:
             results["issues"].append(f"Validation error: {str(e)}")
             results["validation_passed"] = False
             
-        self.validation_results["step1_5"] = results
+        self.validation_results["step01_5"] = results
         return results
     
     def validate_step2_data_quality(self, symbol: str, exchange: str, data_dir: str = "data/training") -> Dict[str, Any]:
@@ -203,7 +203,7 @@ class ComprehensiveDataQualityValidator:
         self.logger.info("🔍 Validating Step2 feature engineering quality...")
         
         results = {
-            "step": "step2_feature_engineering",
+            "step": "step02_feature_engineering",
             "timestamp": datetime.now().isoformat(),
             "symbol": symbol,
             "exchange": exchange,

@@ -25,7 +25,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     """Validator for Step 4: Regime Data Splitting."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step4_regime_data_splitting", config)
+        super().__init__("step04_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
 
     @validate_step4_comprehensive
@@ -80,7 +80,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         except Exception as e:
             error_context = {
-                "step": "step4_regime_data_splitting",
+                "step": "step04_regime_data_splitting",
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
@@ -201,24 +201,24 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         }
 
         try:
-            # Check if step3_hmm_regime_discovery output exists using BaseValidator
-            step3_output_dir = Path("data/training")
-            step3_files = list(step3_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
+            # Check if step03_hmm_regime_discovery output exists using BaseValidator
+            step03_output_dir = Path("data/training")
+            step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
             
-            if not step3_files:
+            if not step03_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
                     f"Step 3 HMM regime discovery output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
                 # Validate each file using BaseValidator
-                for file_path in step3_files:
+                for file_path in step03_files:
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step3 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 
-                validation_result["details"]["step3_files_found"] = len(step3_files)
-                validation_result["details"]["step3_files"] = [str(f) for f in step3_files]
+                validation_result["details"]["step03_files_found"] = len(step03_files)
+                validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
 
         except Exception as e:
             validation_result["validation_passed"] = False
@@ -333,7 +333,7 @@ async def run_validator(
         )
         
         return {
-            "step_name": "step4_regime_data_splitting",
+            "step_name": "step04_regime_data_splitting",
             "validation_passed": validation_passed,
             "prerequisites": prereq_result,
             "step_execution": step_result,
@@ -344,7 +344,7 @@ async def run_validator(
         
     except Exception as e:
         error_context = {
-            "step": "step4_regime_data_splitting",
+            "step": "step04_regime_data_splitting",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
@@ -353,7 +353,7 @@ async def run_validator(
         }
         logger.exception(f"❌ Step 4 validation failed: {error_context}")
         return {
-            "step_name": "step4_regime_data_splitting",
+            "step_name": "step04_regime_data_splitting",
             "validation_passed": False,
             "error": str(e),
             "error_context": error_context

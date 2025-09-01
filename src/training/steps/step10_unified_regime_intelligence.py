@@ -9,12 +9,12 @@ This unified step consolidates:
 4. Position logic based on confidence and current position
 5. Integration with existing SRBreakoutPredictor for S/R analysis
 
-Replaces step9_5 and step10 with a single, efficient model.
-Integrates intensity-based transition detection from step1_7.
+Replaces step09_5 and step10 with a single, efficient model.
+Integrates intensity-based transition detection from step01_7.
 Uses existing S/R system for coherence.
 
 Key Features:
-- Dynamic regime count based on step1_7 data (not hard-coded)
+- Dynamic regime count based on step01_7 data (not hard-coded)
 - Long/short only trading signals (no "hold" as separate class)
 - Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
 """
@@ -249,7 +249,7 @@ class UnifiedRegimeIntelligenceStep:
         )  # Less noisy for regime detection
         self.hmm_states_per_tf = config.get("hmm_states_per_tf", 5)
         self.sequence_length = config.get("sequence_length", 20)
-        self.num_regimes = None  # Will be determined dynamically from step1_7 data
+        self.num_regimes = None  # Will be determined dynamically from step01_7 data
 
         # Training configuration
         self.learning_rate = config.get("learning_rate", 0.0001)
@@ -291,7 +291,7 @@ class UnifiedRegimeIntelligenceStep:
             try:
                 self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
                 # Note: initialize() will be called later in an async context
-                self.logger.info("✅ Enhanced LM optimizer created for step6_5")
+                self.logger.info("✅ Enhanced LM optimizer created for step06_5")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
@@ -384,7 +384,7 @@ class UnifiedRegimeIntelligenceStep:
         try:
             self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
-            # Enhanced optimization for step6_5
+            # Enhanced optimization for step06_5
             if self.enhanced_lm_optimizer is None:
                 raise RuntimeError("Enhanced LM optimizer is required but not initialized")
 
@@ -400,14 +400,14 @@ class UnifiedRegimeIntelligenceStep:
                 raise RuntimeError("Failed to prepare optimization data")
 
             optimization_results = await self.enhanced_lm_optimizer.optimize_lm_model(
-                step_name="step6_5",
+                step_name="step06_5",
                 features_df=optimization_data["features"],
                 target=optimization_data["target"],
                 model_type="classification",
                 architecture="Transformer",
             )
 
-            self.logger.info("✅ Enhanced optimization completed for step6_5")
+            self.logger.info("✅ Enhanced optimization completed for step06_5")
             # Store optimization results
             if not hasattr(self, "enhancement_results"):
                 self.enhancement_results = {}
@@ -566,7 +566,7 @@ class UnifiedRegimeIntelligenceStep:
                     self.model.d_model, self.num_regimes,
                 )
 
-            # Load intensity data from step1_7
+            # Load intensity data from step01_7
             intensity_data: dict[str, pd.DataFrame] = {}
             for tf in self.timeframes:
                 intensity_file = (
@@ -1977,7 +1977,7 @@ from src.utils.enhanced_mlflow_integration import (
 
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step5_5_unified_regime_intelligence")
+@idempotent_step(step_key="step05_5_unified_regime_intelligence")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
@@ -2047,7 +2047,7 @@ async def run_step(
     - Support/Resistance level detection
     - Expert activation logic
 
-    Replaces step9_5 and step10 with a single, efficient model.
+    Replaces step09_5 and step10 with a single, efficient model.
     """
     # Log step parameters for debugging
     logger.info("=" * 80)

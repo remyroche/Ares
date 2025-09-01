@@ -5,7 +5,7 @@ This script demonstrates how to use the step1 module to:
 1. Detect missing data gaps
 2. Validate and fix aggtrades format
 3. Resample data to multiple timeframes
-4. Ensure step1_5 compatibility
+4. Ensure step01_5 compatibility
 """
 
 import argparse
@@ -140,8 +140,8 @@ def main() -> None:
         # Run preparation only
         preparation = DataPreparation()
 
-        # Prepare data for step1_5
-        preparation_results = preparation.prepare_for_step1_5(args.symbol, args.exchange)
+        # Prepare data for step01_5
+        preparation_results = preparation.prepare_for_step01_5(args.symbol, args.exchange)
 
         if preparation_results["ready"]:
             print("✅ Data preparation completed successfully")

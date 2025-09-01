@@ -50,7 +50,7 @@ class FeatureInteractionEngine:
         self.logger = logger
         
         # Load interaction configuration
-        step6_config = config.get("step6_feature_interaction_engineering", {})
+        step06_config = config.get("step06_feature_interaction_engineering", {})
         
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
@@ -140,54 +140,54 @@ class FeatureInteractionEngine:
         self.interaction_patterns = {
             "momentum_volume": {
                 "features": ["RSI_7", "RSI_21", "MACD_12_26", "Volume_Ratio"],
-                "weight": step6_config.get("momentum_volume_weight", 1.5),
-                "enabled": step6_config.get("momentum_volume_enabled", True)
+                "weight": step06_config.get("momentum_volume_weight", 1.5),
+                "enabled": step06_config.get("momentum_volume_enabled", True)
             },
             "trend_volatility": {
                 "features": ["SMA_5", "SMA_100", "BB_Position_20", "ATR_14"],
-                "weight": step6_config.get("trend_volatility_weight", 1.8),
-                "enabled": step6_config.get("trend_volatility_enabled", True)
+                "weight": step06_config.get("trend_volatility_weight", 1.8),
+                "enabled": step06_config.get("trend_volatility_enabled", True)
             },
             "oscillator_trend": {
                 "features": ["RSI_7", "Williams_R_14", "CCI_20", "EMA_21"],
-                "weight": step6_config.get("oscillator_trend_weight", 1.3),
-                "enabled": step6_config.get("oscillator_trend_enabled", True)
+                "weight": step06_config.get("oscillator_trend_weight", 1.3),
+                "enabled": step06_config.get("oscillator_trend_enabled", True)
             },
             "volume_price": {
                 "features": ["OBV_20", "MFI_14", "Price_Momentum", "Volume_Ratio"],
-                "weight": step6_config.get("volume_price_weight", 1.6),
-                "enabled": step6_config.get("volume_price_enabled", True)
+                "weight": step06_config.get("volume_price_weight", 1.6),
+                "enabled": step06_config.get("volume_price_enabled", True)
             },
             "volatility_regime": {
                 "features": ["ATR_7", "BB_Squeeze_20", "Volatility", "Market_Regime"],
-                "weight": step6_config.get("volatility_regime_weight", 1.4),
-                "enabled": step6_config.get("volatility_regime_enabled", True)
+                "weight": step06_config.get("volatility_regime_weight", 1.4),
+                "enabled": step06_config.get("volatility_regime_enabled", True)
             },
             "cross_timeframe": {
                 "features": ["RSI_7", "RSI_50", "MACD_12_26", "MACD_20_40"],
-                "weight": step6_config.get("cross_timeframe_weight", 1.2),
-                "enabled": step6_config.get("cross_timeframe_enabled", True)
+                "weight": step06_config.get("cross_timeframe_weight", 1.2),
+                "enabled": step06_config.get("cross_timeframe_enabled", True)
             },
             "regime_dependent": {
                 "features": ["Trend_Strength", "Volatility_Regime", "Volume_Regime", "Momentum_Regime"],
-                "weight": step6_config.get("regime_dependent_weight", 1.7),
-                "enabled": step6_config.get("regime_dependent_enabled", True)
+                "weight": step06_config.get("regime_dependent_weight", 1.7),
+                "enabled": step06_config.get("regime_dependent_enabled", True)
             }
         }
         
         # Interaction strength thresholds
         self.interaction_thresholds = {
-            "strong": step6_config.get("strong_interaction_threshold", 0.7),
-            "medium": step6_config.get("medium_interaction_threshold", 0.5),
-            "weak": step6_config.get("weak_interaction_threshold", 0.3)
+            "strong": step06_config.get("strong_interaction_threshold", 0.7),
+            "medium": step06_config.get("medium_interaction_threshold", 0.5),
+            "weak": step06_config.get("weak_interaction_threshold", 0.3)
         }
         
         # Feature selection parameters
         self.selection_params = {
-            "max_interactions": step6_config.get("max_interactions", 100),
-            "min_importance": step6_config.get("min_importance", 0.01),
-            "correlation_threshold": step6_config.get("correlation_threshold", 0.8),
-            "mutual_info_threshold": step6_config.get("mutual_info_threshold", 0.05)
+            "max_interactions": step06_config.get("max_interactions", 100),
+            "min_importance": step06_config.get("min_importance", 0.01),
+            "correlation_threshold": step06_config.get("correlation_threshold", 0.8),
+            "mutual_info_threshold": step06_config.get("mutual_info_threshold", 0.05)
         }
         
         # Performance tracking

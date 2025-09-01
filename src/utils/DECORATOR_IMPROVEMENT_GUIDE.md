@@ -38,7 +38,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
     
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_5_final_regime_clustering", config)
+        super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
 ```
 
@@ -91,7 +91,7 @@ except Exception as e:
 ```python
 except Exception as e:
     error_context = {
-        "step": "step3_5_final_regime_clustering",
+        "step": "step03_5_final_regime_clustering",
         "symbol": symbol,
         "exchange": exchange,
         "data_dir": data_dir,
@@ -114,7 +114,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
     
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_5_final_regime_clustering", config)
+        super().__init__("step03_5_final_regime_clustering", config)
         self.logger = system_logger.getChild("Validator.Step3_5")
     
     @validate_step3_5_comprehensive
@@ -142,7 +142,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
     """Validator for Step 3: Parameter Optimization."""
     
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step3_parameter_optimization", config)
+        super().__init__("step03_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
     
     @smart_validation_cache(ttl_seconds=600)  # Cache for 10 minutes
@@ -159,7 +159,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
     """Validator for Step 4: Regime Data Splitting."""
     
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step4_regime_data_splitting", config)
+        super().__init__("step04_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
     
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
@@ -173,17 +173,17 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         
         try:
             # Use BaseValidator's file validation
-            step3_output_dir = Path("data/training")
-            step3_files = list(step3_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
+            step03_output_dir = Path("data/training")
+            step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
             
-            if not step3_files:
+            if not step03_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
                     f"Step 3 HMM regime discovery output not found for {exchange}_{symbol}_{timeframe}"
                 )
             else:
                 # Use BaseValidator's DataFrame validation for each file
-                for file_path in step3_files:
+                for file_path in step03_files:
                     try:
                         df = pd.read_parquet(file_path)
                         file_valid, file_metrics = self.validate_dataframe_quality(
@@ -194,8 +194,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                     except Exception as e:
                         validation_result["warnings"].append(f"Could not read {file_path.name}: {e}")
                 
-                validation_result["details"]["step3_files_found"] = len(step3_files)
-                validation_result["details"]["step3_files"] = [str(f) for f in step3_files]
+                validation_result["details"]["step03_files_found"] = len(step03_files)
+                validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
         
         except Exception as e:
             validation_result["validation_passed"] = False

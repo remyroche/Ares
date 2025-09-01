@@ -480,7 +480,7 @@ class DataQualityMonitor:
         """Get required keys for a specific step."""
         key_requirements = {
             "step1": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step1_5": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step01_5": ["symbol", "exchange", "timeframe", "data_dir"],
             "step2": ["symbol", "exchange", "timeframe", "data_dir"],
             "step3": ["symbol", "exchange", "timeframe", "data_dir"],
             "step4": ["symbol", "exchange", "timeframe", "data_dir"],
@@ -583,7 +583,7 @@ class DataQualityMonitor:
         """Get required columns for a specific step."""
         column_requirements = {
             "step1": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step1_5": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step01_5": ["timestamp", "open", "high", "low", "close", "volume"],
             "step2": ["timestamp", "open", "high", "low", "close", "volume"],
             "step3": ["timestamp", "open", "high", "low", "close", "volume"],
             "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],

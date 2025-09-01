@@ -1,4 +1,4 @@
-# src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py
+# src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
 """Step 9.5: Multi-Timeframe HMM Ensemble Training.
 
@@ -99,7 +99,7 @@ from src.utils.enhanced_mlflow_integration import (
     enable_debug_logging=True,
     save_intermediate_results=True,
     enable_profiling=True,
-    debug_output_dir="debug_output/step9_5",
+    debug_output_dir="debug_output/step09_5",
 )
 @monitor_feature_engineering(
     track_feature_importance=True,

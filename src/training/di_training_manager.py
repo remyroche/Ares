@@ -122,16 +122,16 @@ class DITrainingManager(InjectableBase):
     async def _initialize_training_steps(self) -> None:
         """Initialize training steps with dependency injection."""
         step_classes = [
-            "step1_data_collection",
-            "step2_data_validation",
-            "step2_5_sr_optimization",
-            "step3_hmm_regime_discovery",
-            "step4_data_preprocessing",
-            "step5_model_training",
-            "step6_model_validation",
-            "step7_hyperparameter_optimization",
-            "step8_ensemble_creation",
-            "step9_model_evaluation",
+            "step01_data_collection",
+            "step02_data_validation",
+            "step02_5_sr_optimization",
+            "step03_hmm_regime_discovery",
+            "step04_data_preprocessing",
+            "step05_model_training",
+            "step06_model_validation",
+            "step07_hyperparameter_optimization",
+            "step08_ensemble_creation",
+            "step09_model_evaluation",
             "step10_tactician_ensemble_creation",
             "step11_confidence_calibration",
             "step17_final_parameters_optimization",
@@ -143,7 +143,7 @@ class DITrainingManager(InjectableBase):
                 module_path = f"src.training.steps.{step_name}"
                 module = __import__(module_path, fromlist=[step_name])
 
-                # Convert step name to class name (e.g., step1_data_collection -> Step1DataCollection)
+                # Convert step name to class name (e.g., step01_data_collection -> Step1DataCollection)
                 class_name = "".join(
                     [word.capitalize() for word in step_name.split("_")],
                 )
@@ -268,15 +268,15 @@ class DITrainingManager(InjectableBase):
 
             # Execute all training steps
             pipeline_steps = [
-                "step1_data_collection",
-                "step2_data_validation",
-                "step3_hmm_regime_discovery",
-                "step4_data_preprocessing",
-                "step5_model_training",
-                "step6_model_validation",
-                "step7_hyperparameter_optimization",
-                "step8_ensemble_creation",
-                "step9_model_evaluation",
+                "step01_data_collection",
+                "step02_data_validation",
+                "step03_hmm_regime_discovery",
+                "step04_data_preprocessing",
+                "step05_model_training",
+                "step06_model_validation",
+                "step07_hyperparameter_optimization",
+                "step08_ensemble_creation",
+                "step09_model_evaluation",
                 "step10_tactician_ensemble_creation",
                 "step11_confidence_calibration",
                 "step17_final_parameters_optimization",
@@ -314,11 +314,11 @@ class DITrainingManager(InjectableBase):
         try:
             # Execute subset of steps for incremental training
             incremental_steps = [
-                "step1_data_collection",
-                "step3_hmm_regime_discovery",
-                "step5_model_training",
-                "step6_model_validation",
-                "step9_model_evaluation",
+                "step01_data_collection",
+                "step03_hmm_regime_discovery",
+                "step05_model_training",
+                "step06_model_validation",
+                "step09_model_evaluation",
             ]
 
             for step_name in incremental_steps:
@@ -357,7 +357,7 @@ class DITrainingManager(InjectableBase):
 
             # Execute optimization steps
             optimization_steps = [
-                "step7_hyperparameter_optimization",
+                "step07_hyperparameter_optimization",
                 "step17_final_parameters_optimization",
             ]
 

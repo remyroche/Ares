@@ -39,7 +39,7 @@ class Steps1_7CompatibilityFramework:
     
     # Step definitions and their contracts
     STEP_CONTRACTS = {
-        "step1_data_collection": {
+        "step01_data_collection": {
             "inputs": {
                 "config": {"type": "dict", "required": True},
                 "symbol": {"type": "str", "required": True},
@@ -53,7 +53,7 @@ class Steps1_7CompatibilityFramework:
                 "metadata": {"type": "dict", "required": True}
             }
         },
-        "step1_5_data_converter": {
+        "step01_5_data_converter": {
             "inputs": {
                 "klines_data": {"type": "DataFrame", "required": True, "schema": "klines"},
                 "aggtrades_data": {"type": "DataFrame", "required": True, "schema": "aggtrades"},
@@ -64,7 +64,7 @@ class Steps1_7CompatibilityFramework:
                 "conversion_metadata": {"type": "dict", "required": True}
             }
         },
-        "step2_data_reading": {
+        "step02_data_reading": {
             "inputs": {
                 "unified_data": {"type": "DataFrame", "required": True, "schema": "unified"},
                 "config": {"type": "dict", "required": True}
@@ -75,7 +75,7 @@ class Steps1_7CompatibilityFramework:
                 "quality_metrics": {"type": "dict", "required": True}
             }
         },
-        "step3_hmm_regime_discovery": {
+        "step03_hmm_regime_discovery": {
             "inputs": {
                 "validated_data": {"type": "DataFrame", "required": True, "schema": "unified"},
                 "config": {"type": "dict", "required": True}
@@ -86,7 +86,7 @@ class Steps1_7CompatibilityFramework:
                 "regime_metadata": {"type": "dict", "required": True}
             }
         },
-        "step4_regime_data_splitting": {
+        "step04_regime_data_splitting": {
             "inputs": {
                 "validated_data": {"type": "DataFrame", "required": True, "schema": "unified"},
                 "regime_labels": {"type": "DataFrame", "required": True, "schema": "regime_labels"},
@@ -97,7 +97,7 @@ class Steps1_7CompatibilityFramework:
                 "splitting_metadata": {"type": "dict", "required": True}
             }
         },
-        "step5_labeling": {
+        "step05_labeling": {
             "inputs": {
                 "regime_datasets": {"type": "dict", "required": True},
                 "config": {"type": "dict", "required": True}
@@ -107,7 +107,7 @@ class Steps1_7CompatibilityFramework:
                 "labeling_metadata": {"type": "dict", "required": True}
             }
         },
-        "step6_feature_engineering": {
+        "step06_feature_engineering": {
             "inputs": {
                 "labeled_datasets": {"type": "dict", "required": True},
                 "config": {"type": "dict", "required": True}
@@ -118,7 +118,7 @@ class Steps1_7CompatibilityFramework:
                 "feature_importance": {"type": "dict", "required": True}
             }
         },
-        "step7_enhanced_matrix_operations": {
+        "step07_enhanced_matrix_operations": {
             "inputs": {
                 "feature_datasets": {"type": "dict", "required": True},
                 "config": {"type": "dict", "required": True}

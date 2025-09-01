@@ -160,7 +160,7 @@ class LabelingStep:
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step5_labeling")
+    @with_enhanced_mlflow_logging("step05_labeling")
     @comprehensive_data_validation
     @handle_errors
     @memory_efficient
@@ -309,7 +309,7 @@ class LabelingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -321,7 +321,7 @@ class LabelingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 report_data=report_data,
                 report_type="labeling_report",
                 additional_metadata={
@@ -339,7 +339,7 @@ class LabelingStep:
             if labeled_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step5_labeling",
+                    step_name="step05_labeling",
                     df=labeled_data,
                     artifact_type="labeled_data",
                     additional_metadata={
@@ -359,7 +359,7 @@ class LabelingStep:
             if metadata_path.exists():
                 metadata_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
-                    step_name="step5_labeling",
+                    step_name="step05_labeling",
                     artifact_path=str(metadata_path),
                     artifact_type="labeling_metadata",
                     additional_metadata={
@@ -376,7 +376,7 @@ class LabelingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "labeling_performance",

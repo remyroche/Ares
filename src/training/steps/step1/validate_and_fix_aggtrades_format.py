@@ -118,10 +118,10 @@ class AggtradesFormatValidator:
             "file_size": 0,
             "row_count": 0,
             "memory_usage_mb": 0.0,
-            "step1_5_compatible": False,
-            "step2_compatible": False,
-            "step3_compatible": False,
-            "step4_compatible": False,
+            "step01_5_compatible": False,
+            "step02_compatible": False,
+            "step03_compatible": False,
+            "step04_compatible": False,
         },
         context="aggtrades_format_validator.validate_file_format"
     )
@@ -144,10 +144,10 @@ class AggtradesFormatValidator:
             "file_size": 0,
             "row_count": 0,
             "memory_usage_mb": 0.0,
-            "step1_5_compatible": False,
-            "step2_compatible": False,
-            "step3_compatible": False,
-            "step4_compatible": False,
+            "step01_5_compatible": False,
+            "step02_compatible": False,
+            "step03_compatible": False,
+            "step04_compatible": False,
         }
         
         try:
@@ -191,20 +191,20 @@ class AggtradesFormatValidator:
                     result['issues'].append(f"Missing column: {col}")
             
             # Step 3: Step1_5 specific validation
-            step1_5_issues = self._validate_step1_5_requirements(df)
-            result['issues'].extend(step1_5_issues)
+            step01_5_issues = self._validate_step01_5_requirements(df)
+            result['issues'].extend(step01_5_issues)
             
             # Step 4: Step2 compatibility (feature engineering requirements)
-            step2_issues = self._validate_step2_compatibility(df)
-            result['issues'].extend(step2_issues)
+            step02_issues = self._validate_step02_compatibility(df)
+            result['issues'].extend(step02_issues)
             
             # Step 5: Step3 compatibility (regime discovery requirements)
-            step3_issues = self._validate_step3_compatibility(df)
-            result['issues'].extend(step3_issues)
+            step03_issues = self._validate_step03_compatibility(df)
+            result['issues'].extend(step03_issues)
             
             # Step 6: Step4 compatibility (labeling requirements)
-            step4_issues = self._validate_step4_compatibility(df)
-            result['issues'].extend(step4_issues)
+            step04_issues = self._validate_step04_compatibility(df)
+            result['issues'].extend(step04_issues)
             
             # Step 7: Data quality checks
             quality_issues = self._validate_data_quality(df)
@@ -215,10 +215,10 @@ class AggtradesFormatValidator:
             result['warnings'].extend(memory_warnings)
             
             # Determine compatibility
-            result['step1_5_compatible'] = len([i for i in result['issues'] if 'step1_5' in i.lower()]) == 0
-            result['step2_compatible'] = len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
-            result['step3_compatible'] = len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
-            result['step4_compatible'] = len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
+            result['step01_5_compatible'] = len([i for i in result['issues'] if 'step01_5' in i.lower()]) == 0
+            result['step02_compatible'] = len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
+            result['step03_compatible'] = len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
+            result['step04_compatible'] = len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
             
             # Overall validity
             result['valid'] = len(result['issues']) == 0
@@ -229,8 +229,8 @@ class AggtradesFormatValidator:
         return result
     
 
-    def _validate_step1_5_requirements(self, df: pd.DataFrame) -> List[str]:
-        """Validate step1_5 specific requirements"""
+    def _validate_step01_5_requirements(self, df: pd.DataFrame) -> List[str]:
+        """Validate step01_5 specific requirements"""
         issues = []
         
         if 'timestamp' in df.columns:
@@ -239,25 +239,25 @@ class AggtradesFormatValidator:
             max_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
             
             if df['timestamp'].min() < min_timestamp:
-                issues.append(f"step1_5: Timestamps before {min_timestamp} not supported")
+                issues.append(f"step01_5: Timestamps before {min_timestamp} not supported")
             
             if df['timestamp'].max() > max_timestamp:
-                issues.append(f"step1_5: Timestamps after {max_timestamp} not supported")
+                issues.append(f"step01_5: Timestamps after {max_timestamp} not supported")
             
             # Check timestamp ordering
             if not df['timestamp'].is_monotonic_increasing:
-                issues.append("step1_5: Timestamps not in ascending order")
+                issues.append("step01_5: Timestamps not in ascending order")
         
         # Check row count requirements
         if len(df) < self.STEP1_5_REQUIREMENTS['min_rows']:
-            issues.append(f"step1_5: Too few rows ({len(df)} < {self.STEP1_5_REQUIREMENTS['min_rows']})")
+            issues.append(f"step01_5: Too few rows ({len(df)} < {self.STEP1_5_REQUIREMENTS['min_rows']})")
         
         if len(df) > self.STEP1_5_REQUIREMENTS['max_rows']:
-            issues.append(f"step1_5: Too many rows ({len(df)} > {self.STEP1_5_REQUIREMENTS['max_rows']})")
+            issues.append(f"step01_5: Too many rows ({len(df)} > {self.STEP1_5_REQUIREMENTS['max_rows']})")
         
         return issues
 
-    def _validate_step2_compatibility(self, df: pd.DataFrame) -> List[str]:
+    def _validate_step02_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step2 feature engineering compatibility"""
         issues = []
         
@@ -283,7 +283,7 @@ class AggtradesFormatValidator:
         
         return issues
 
-    def _validate_step3_compatibility(self, df: pd.DataFrame) -> List[str]:
+    def _validate_step03_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step3 regime discovery compatibility"""
         issues = []
         
@@ -301,7 +301,7 @@ class AggtradesFormatValidator:
         
         return issues
 
-    def _validate_step4_compatibility(self, df: pd.DataFrame) -> List[str]:
+    def _validate_step04_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step4 labeling compatibility"""
         issues = []
         
@@ -556,10 +556,10 @@ class AggtradesFormatValidator:
 
         total_size = 0
         total_rows = 0
-        step1_5_compatible = 0
-        step2_compatible = 0
-        step3_compatible = 0
-        step4_compatible = 0
+        step01_5_compatible = 0
+        step02_compatible = 0
+        step03_compatible = 0
+        step04_compatible = 0
 
         for file_path in aggtrades_files:
             try:
@@ -575,14 +575,14 @@ class AggtradesFormatValidator:
                         report += f"  - Issue: {issue}\n"
 
                 total_rows += validation["row_count"]
-                if validation["step1_5_compatible"]:
-                    step1_5_compatible += 1
-                if validation["step2_compatible"]:
-                    step2_compatible += 1
-                if validation["step3_compatible"]:
-                    step3_compatible += 1
-                if validation["step4_compatible"]:
-                    step4_compatible += 1
+                if validation["step01_5_compatible"]:
+                    step01_5_compatible += 1
+                if validation["step02_compatible"]:
+                    step02_compatible += 1
+                if validation["step03_compatible"]:
+                    step03_compatible += 1
+                if validation["step04_compatible"]:
+                    step04_compatible += 1
 
             except Exception as e:
                 report += f"• {file_path.name}: ❌ ERROR ({e})\n"
@@ -594,10 +594,10 @@ class AggtradesFormatValidator:
 • Total Rows: {total_rows:,}
 
 🔧 PIPELINE COMPATIBILITY:
-• Step1_5 Compatible: {step1_5_compatible}/{len(aggtrades_files)}
-• Step2 Compatible: {step2_compatible}/{len(aggtrades_files)}
-• Step3 Compatible: {step3_compatible}/{len(aggtrades_files)}
-• Step4 Compatible: {step4_compatible}/{len(aggtrades_files)}
+• Step1_5 Compatible: {step01_5_compatible}/{len(aggtrades_files)}
+• Step2 Compatible: {step02_compatible}/{len(aggtrades_files)}
+• Step3 Compatible: {step03_compatible}/{len(aggtrades_files)}
+• Step4 Compatible: {step04_compatible}/{len(aggtrades_files)}
 
 {'='*80}
 """

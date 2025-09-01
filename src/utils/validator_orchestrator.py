@@ -44,7 +44,7 @@ class ValidatorOrchestrator:
         Run the validator for a specific step with enhanced validation levels.
 
         Args:
-            step_name: Name of the step (e.g., "step1_data_collection")
+            step_name: Name of the step (e.g., "step01_data_collection")
             training_input: Training input parameters
             pipeline_state: Current pipeline state
             config: Configuration dictionary
@@ -411,20 +411,20 @@ class ValidatorOrchestrator:
         """
         # Map step names to validator modules
             validator_mapping = {
-        "step1_data_collection": "step1_data_collection_validator",
-        "step1_5_data_converter": "step1_5_data_converter_validator",
-            "step2_data_reading": "step2_data_reading_validator",
-            "step2_5_sr_optimization": "step2_5_sr_optimization_validator",
-    "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
-        "step4_triple_barrier_method": "step4_triple_barrier_method_validator",
-        "step4_regime_data_splitting": "step4_regime_data_splitting_validator",
-        "step5_labeling": "step5_labeling_validator",
-            "step6_feature_engineering": "step6_feature_engineering_validator",
-    "step7_enhanced_matrix_operations": "step7_enhanced_matrix_operations_validator",
-        "step8_regime_data_splitting": "step8_regime_data_splitting_validator",
-        "step9_hmm_based_training": "step9_hmm_based_training_validator",
-    "step9_5_multi_timeframe_hmm_ensemble": "step9_5_multi_timeframe_hmm_ensemble_validator",
-        "step9_5_hmm_lm_generalist_training": "step9_5_hmm_lm_generalist_training_validator",
+        "step01_data_collection": "step01_data_collection_validator",
+        "step01_5_data_converter": "step01_5_data_converter_validator",
+            "step02_data_reading": "step02_data_reading_validator",
+            "step02_5_sr_optimization": "step02_5_sr_optimization_validator",
+    "step03_hmm_regime_discovery": "step03_hmm_regime_discovery_validator",
+        "step04_triple_barrier_method": "step04_triple_barrier_method_validator",
+        "step04_regime_data_splitting": "step04_regime_data_splitting_validator",
+        "step05_labeling": "step05_labeling_validator",
+            "step06_feature_engineering": "step06_feature_engineering_validator",
+    "step07_enhanced_matrix_operations": "step07_enhanced_matrix_operations_validator",
+        "step08_regime_data_splitting": "step08_regime_data_splitting_validator",
+        "step09_hmm_based_training": "step09_hmm_based_training_validator",
+    "step09_5_multi_timeframe_hmm_ensemble": "step09_5_multi_timeframe_hmm_ensemble_validator",
+        "step09_5_hmm_lm_generalist_training": "step09_5_hmm_lm_generalist_training_validator",
         "step10_unified_regime_intelligence": "step10_unified_regime_intelligence_validator",
         "step11_analyst_creation": "step11_analyst_creation_validator",
         "step12_analyst_enhancement": "step12_analyst_enhancement_validator",

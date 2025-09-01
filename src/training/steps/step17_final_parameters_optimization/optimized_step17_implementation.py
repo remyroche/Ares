@@ -582,30 +582,30 @@ class SmartParameterGrouper:
         
         return {
             OptimizationPhase.CORE_MODEL_ARCHITECTURE.value: [
-                "step9_hmm_based_training.model_type",
+                "step09_hmm_based_training.model_type",
                 "step15_tactician_specialist_training.model_type",
                 "step11_analyst_creation.model_type"
             ],
             OptimizationPhase.TREE_BASED_PARAMETERS.value: [
-                "step9_hmm_based_training.n_estimators",
-                "step9_hmm_based_training.max_depth",
+                "step09_hmm_based_training.n_estimators",
+                "step09_hmm_based_training.max_depth",
                 "step15_tactician_specialist_training.n_estimators",
                 "step15_tactician_specialist_training.max_depth",
                 "step11_analyst_creation.n_estimators",
                 "step11_analyst_creation.max_depth"
             ],
             OptimizationPhase.REGULARIZATION_PARAMETERS.value: [
-                "step9_hmm_based_training.reg_alpha",
-                "step9_hmm_based_training.reg_lambda",
+                "step09_hmm_based_training.reg_alpha",
+                "step09_hmm_based_training.reg_lambda",
                 "step15_tactician_specialist_training.reg_alpha",
                 "step15_tactician_specialist_training.reg_lambda",
                 "step11_analyst_creation.reg_alpha",
                 "step11_analyst_creation.reg_lambda"
             ],
             OptimizationPhase.ENSEMBLE_SETTINGS.value: [
-                "step9_hmm_based_training.ensemble_size",
-                "step9_hmm_based_training.stacking_enabled",
-                "step9_hmm_based_training.meta_learner",
+                "step09_hmm_based_training.ensemble_size",
+                "step09_hmm_based_training.stacking_enabled",
+                "step09_hmm_based_training.meta_learner",
                 "step12_analyst_enhancement.ensemble_size",
                 "step12_analyst_enhancement.stacking_enabled",
                 "step13_analyst_ensemble_creation.ensemble_size",
@@ -618,11 +618,11 @@ class SmartParameterGrouper:
                 "step16_confidence_calibration.uncertainty_estimation.confidence_level"
             ],
             OptimizationPhase.FINE_TUNING.value: [
-                "step9_hmm_based_training.subsample",
-                "step9_hmm_based_training.colsample_bytree",
+                "step09_hmm_based_training.subsample",
+                "step09_hmm_based_training.colsample_bytree",
                 "step15_tactician_specialist_training.subsample",
                 "step15_tactician_specialist_training.colsample_bytree",
-                "step9_hmm_based_training.learning_rate",
+                "step09_hmm_based_training.learning_rate",
                 "step15_tactician_specialist_training.learning_rate"
             ]
         }

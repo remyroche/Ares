@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Step 2: Data Reading and Validation.
 
-This module handles reading the unified data from step1_5 and performs comprehensive
+This module handles reading the unified data from step01_5 and performs comprehensive
 data quality validation before proceeding to HMM regime discovery.
 """
 
@@ -144,7 +144,7 @@ class DataReadingStep:
     @comprehensive_data_validation
     @memory_efficient
     async def read_unified_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
-        """Read unified data from step1_5 output with standardized validation."""
+        """Read unified data from step01_5 output with standardized validation."""
         step_start = time.time()
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
         
@@ -272,7 +272,7 @@ class DataReadingStep:
             
             # Prepare report data
             report_data = {
-                "step": "step2_data_reading",
+                "step": "step02_data_reading",
                 "timestamp": datetime.now().isoformat(),
                 "symbol": symbol,
                 "exchange": exchange,
@@ -293,7 +293,7 @@ class DataReadingStep:
             self.logger.exception(f"❌ Error saving validation report: {e}")
             return False
 
-    @with_enhanced_mlflow_logging("step2_data_reading")
+    @with_enhanced_mlflow_logging("step02_data_reading")
     @with_tracing_span("execute_data_reading_step")
     @handle_errors
     @resource_monitor
@@ -416,7 +416,7 @@ class DataReadingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -428,7 +428,7 @@ class DataReadingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 report_data=report_data,
                 report_type="data_reading_report",
                 additional_metadata={
@@ -446,7 +446,7 @@ class DataReadingStep:
             if unified_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step2_data_reading",
+                    step_name="step02_data_reading",
                     df=unified_data,
                     artifact_type="validated_data",
                     additional_metadata={
@@ -464,7 +464,7 @@ class DataReadingStep:
             # Log validation results
             validation_report_name = log_step_report(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 report_data=validation_results,
                 report_type="validation_results",
                 additional_metadata={
@@ -481,7 +481,7 @@ class DataReadingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step2_data_reading",
+                step_name="step02_data_reading",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "data_reading_performance",

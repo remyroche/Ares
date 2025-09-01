@@ -1,4 +1,4 @@
-# src/training/steps/step8_regime_data_splitting.py
+# src/training/steps/step08_regime_data_splitting.py
 
 import asyncio
 import json
@@ -126,8 +126,8 @@ class RegimeDataSplittingStep:
         else:
             self.logger.info("✅ All required dependencies available")
 
-    @with_tracing_span("step8_regime_splitting.initialize", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
+    @with_tracing_span("step08_regime_splitting.initialize", log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return=None, context="step08_initialization")
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
         self.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
@@ -138,8 +138,8 @@ class RegimeDataSplittingStep:
         self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
 
     @with_enhanced_mlflow_logging("step8")
-    @with_tracing_span("step8_regime_splitting.execute", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
+    @with_tracing_span("step08_regime_splitting.execute", log_args=False)
+    @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step08_execution")
     async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
         try:
@@ -172,14 +172,14 @@ class RegimeDataSplittingStep:
             if "composite_cluster_id" not in unified_data.columns:
                 self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
                 self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
-                self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+                self.logger.error("   Please ensure step03_hmm_regime_discovery completed successfully")
                 return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
 
             # Verify HMM composite clusters are not all null
             composite_clusters = unified_data["composite_cluster_id"].dropna()
             if composite_clusters.empty:
                 self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
-                self.logger.error("   This indicates step3_hmm_regime_discovery failed to generate valid clusters")
+                self.logger.error("   This indicates step03_hmm_regime_discovery failed to generate valid clusters")
                 return {"success": False, "error": "HMM composite_cluster_id contains only null values"}
 
             # Get unique HMM composite clusters
@@ -204,7 +204,7 @@ class RegimeDataSplittingStep:
             # Create regime summary
             summary = self._create_regime_summary(unified_data, unique_clusters)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"log/step8_regime_unified_{ts}.json", "w") as f:
+            with open(f"log/step08_regime_unified_{ts}.json", "w") as f:
                 json.dump(summary, f, indent=2)
 
             self.logger.info("✅ Unified HMM composite regime data creation completed successfully")
@@ -275,7 +275,7 @@ class RegimeDataSplittingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step8_regime_data_splitting",
+                step_name="step08_regime_data_splitting",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -287,7 +287,7 @@ class RegimeDataSplittingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step8_regime_data_splitting",
+                step_name="step08_regime_data_splitting",
                 report_data=report_data,
                 report_type="unified_regime_data_creation_report",
                 additional_metadata={
@@ -306,7 +306,7 @@ class RegimeDataSplittingStep:
             if summary:
                 summary_report_name = log_step_report(
                     config=self.config,
-                    step_name="step8_regime_data_splitting",
+                    step_name="step08_regime_data_splitting",
                     report_data=summary,
                     report_type="unified_regime_summary",
                     additional_metadata={
@@ -323,7 +323,7 @@ class RegimeDataSplittingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step8_regime_data_splitting",
+                step_name="step08_regime_data_splitting",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "unified_regime_creation_performance",
@@ -341,7 +341,7 @@ class RegimeDataSplittingStep:
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
 
-    @with_tracing_span("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
+    @with_tracing_span("step08_regime_splitting._save_unified_regime_dataset", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
@@ -445,7 +445,7 @@ class RegimeDataSplittingStep:
             self.logger.exception(f"❌ Error creating regime statistics: {e}")
             return {}
 
-    @with_tracing_span("step8_regime_splitting._create_regime_summary", log_args=False)
+    @with_tracing_span("step08_regime_splitting._create_regime_summary", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
@@ -478,7 +478,7 @@ class RegimeDataSplittingStep:
 
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step8_regime_data_splitting")
+@idempotent_step(step_key="step08_regime_data_splitting")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
@@ -541,7 +541,7 @@ class RegimeDataSplittingStep:
     validation_score_requirements={"creation_accuracy": 0.8},
 )
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step8_regime_data_splitting")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step08_regime_data_splitting")
 async def run_step(
     symbol: str, 
     exchange: str, 

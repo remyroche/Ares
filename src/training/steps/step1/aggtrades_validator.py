@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Aggtrades Validator for Step1.
 
-Validates and fixes aggtrades data format for step1_5_data_converter.py processing.
+Validates and fixes aggtrades data format for step01_5_data_converter.py processing.
 """
 
 import sys

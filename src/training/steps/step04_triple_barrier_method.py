@@ -77,7 +77,7 @@ class TripleBarrierMethodStep:
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
-            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+            from .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
@@ -110,7 +110,7 @@ class TripleBarrierMethodStep:
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step4_triple_barrier_method")
+    @with_enhanced_mlflow_logging("step04_triple_barrier_method")
     @comprehensive_data_validation
     @handle_errors
     @memory_efficient
@@ -258,7 +258,7 @@ class TripleBarrierMethodStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step4_triple_barrier_method",
+                step_name="step04_triple_barrier_method",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -270,7 +270,7 @@ class TripleBarrierMethodStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step4_triple_barrier_method",
+                step_name="step04_triple_barrier_method",
                 report_data=report_data,
                 report_type="triple_barrier_method_report",
                 additional_metadata={
@@ -288,7 +288,7 @@ class TripleBarrierMethodStep:
             if result_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step4_triple_barrier_method",
+                    step_name="step04_triple_barrier_method",
                     df=result_data,
                     artifact_type="triple_barrier_labels",
                     additional_metadata={
@@ -307,7 +307,7 @@ class TripleBarrierMethodStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step4_triple_barrier_method",
+                step_name="step04_triple_barrier_method",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "triple_barrier_performance",
@@ -335,7 +335,7 @@ class TripleBarrierMethodStep:
             max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
             # Create triple barrier labeler with configuration
-            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+            from .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
             

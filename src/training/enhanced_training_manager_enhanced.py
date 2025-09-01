@@ -287,7 +287,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             # Handle different types of quality metrics based on step
             step_name = step_report['step_name']
             
-            if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+            if step_name in ["step01_data_collection", "step01_5_data_converter"]:
                 if "data_quality" in quality_metrics:
                     data_quality = quality_metrics["data_quality"]
                     summary.append("  Data Quality:")
@@ -321,7 +321,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             for issue in volume_check['issues']:
                                 summary.append(f"      - {issue}")
             
-            elif step_name == "step2_feature_engineering":
+            elif step_name == "step02_feature_engineering":
                 if "feature_quality" in quality_metrics:
                     feature_quality = quality_metrics["feature_quality"]
                     summary.append("  Feature Quality:")
@@ -408,7 +408,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         if len(zero_var_features) > 10:
                             summary.append(f"      ... and {len(zero_var_features) - 10} more")
             
-            elif step_name == "step3_hmm_regime_discovery":
+            elif step_name == "step03_hmm_regime_discovery":
                 if "regime_analysis" in quality_metrics:
                     regime_analysis = quality_metrics["regime_analysis"]
                     summary.append("  Regime Analysis:")
@@ -423,7 +423,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    BIC Score: {validation_metrics.get('bic_score', 'N/A')}")
                     summary.append(f"    Model Complexity: {validation_metrics.get('model_complexity', 'N/A')}")
             
-            elif step_name == "step4_regime_data_splitting":
+            elif step_name == "step04_regime_data_splitting":
                 if "splitting_analysis" in quality_metrics:
                     splitting = quality_metrics["splitting_analysis"]
                     summary.append("  Splitting Analysis:")
@@ -466,7 +466,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             missing = regime_rep.get('missing_regimes_in_test', [])
                             summary.append(f"    Missing Regimes in Test: {missing}")
             
-            elif step_name == "step5_triple_barrier_method":
+            elif step_name == "step05_triple_barrier_method":
                 if "barrier_analysis" in quality_metrics:
                     barrier = quality_metrics["barrier_analysis"]
                     summary.append("  Barrier Analysis:")
@@ -561,7 +561,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             summary.append(f"    Majority Class: {balance.get('majority_class', 'N/A')}")
                             summary.append(f"    Minority Class: {balance.get('minority_class', 'N/A')}")
             
-            elif step_name == "step6_feature_generation":
+            elif step_name == "step06_feature_generation":
                 if "feature_generation_analysis" in quality_metrics:
                     generation = quality_metrics["feature_generation_analysis"]
                     summary.append("  Feature Generation Analysis:")
@@ -595,7 +595,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    Feature Correlations: {stats.get('feature_correlations', 'N/A')}")
                     summary.append(f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A'):.4f}" if isinstance(stats.get('feature_redundancy'), (int, float)) else f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A')}")
             
-            elif step_name == "step7_matrix_feature_selection":
+            elif step_name == "step07_matrix_feature_selection":
                 if "selection_analysis" in quality_metrics:
                     selection = quality_metrics["selection_analysis"]
                     summary.append("  Selection Analysis:")
@@ -682,7 +682,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_data_collection"
+        context="step01_data_collection"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_COLLECTION,
@@ -710,9 +710,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step1_data_collection
+            from src.training.steps import step01_data_collection
             
-            result = await step1_data_collection.run_step(
+            result = await step01_data_collection.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -722,7 +722,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 result,
                 step_start_time,
                 bool(result),
@@ -738,7 +738,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_data_collection",
+                "step01_data_collection",
                 None,
                 step_start_time,
                 False,
@@ -750,7 +750,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step1_5_data_converter"
+        context="step01_5_data_converter"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -778,9 +778,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            from src.training.steps.step01_5_data_converter import run_step as step01_5_run_step
             
-            result = await step1_5_run_step(
+            result = await step01_5_run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -790,7 +790,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 result,
                 step_start_time,
                 bool(result),
@@ -806,7 +806,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step1_5_data_converter",
+                "step01_5_data_converter",
                 None,
                 step_start_time,
                 False,
@@ -818,7 +818,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step2_feature_engineering"
+        context="step02_feature_engineering"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.FEATURE_ENGINEERING,
@@ -847,9 +847,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step2_feature_engineering
+            from src.training.steps import step02_feature_engineering
             
-            result = await step2_feature_engineering.run_step(
+            result = await step02_feature_engineering.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 data_dir=data_dir,
@@ -860,7 +860,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step2_feature_engineering",
+                "step02_feature_engineering",
                 result,
                 step_start_time,
                 bool(result),
@@ -876,7 +876,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step2_feature_engineering",
+                "step02_feature_engineering",
                 None,
                 step_start_time,
                 False,
@@ -888,7 +888,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step3_hmm_regime_discovery"
+        context="step03_hmm_regime_discovery"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -917,7 +917,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step3_hmm_regime_discovery as _step3
+            from src.training.steps import step03_hmm_regime_discovery as _step3
             
             result = await _step3.run_step_enhanced(
                 symbol=symbol,
@@ -930,7 +930,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 result,
                 step_start_time,
                 bool(result),
@@ -946,7 +946,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step3_hmm_regime_discovery",
+                "step03_hmm_regime_discovery",
                 None,
                 step_start_time,
                 False,
@@ -958,7 +958,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step4_regime_data_splitting"
+        context="step04_regime_data_splitting"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -980,9 +980,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step4_regime_data_splitting
+            from src.training.steps import step04_regime_data_splitting
             
-            result = await step4_regime_data_splitting.run_step(
+            result = await step04_regime_data_splitting.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -993,7 +993,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 result,
                 step_start_time,
                 bool(result),
@@ -1009,7 +1009,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step4_regime_data_splitting",
+                "step04_regime_data_splitting",
                 None,
                 step_start_time,
                 False,
@@ -1021,7 +1021,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step5_triple_barrier_method"
+        context="step05_triple_barrier_method"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -1043,9 +1043,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step5_triple_barrier_method
+            from src.training.steps import step05_triple_barrier_method
             
-            result = await step5_triple_barrier_method.run_step(
+            result = await step05_triple_barrier_method.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1056,7 +1056,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step5_triple_barrier_method",
+                "step05_triple_barrier_method",
                 result,
                 step_start_time,
                 bool(result),
@@ -1072,7 +1072,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step5_triple_barrier_method",
+                "step05_triple_barrier_method",
                 None,
                 step_start_time,
                 False,
@@ -1084,7 +1084,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step6_hmm_based_training"
+        context="step06_hmm_based_training"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1112,9 +1112,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step6_hmm_based_training
+            from src.training.steps import step06_hmm_based_training
             
-            result = await step6_hmm_based_training.run_step(
+            result = await step06_hmm_based_training.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1125,7 +1125,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step06_hmm_based_training",
                 result,
                 step_start_time,
                 bool(result),
@@ -1141,7 +1141,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step06_hmm_based_training",
                 None,
                 step_start_time,
                 False,
@@ -1153,7 +1153,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step7_analyst_enhancement"
+        context="step07_analyst_enhancement"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1175,9 +1175,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step7_analyst_enhancement
+            from src.training.steps import step07_analyst_enhancement
             
-            result = await step7_analyst_enhancement.run_step(
+            result = await step07_analyst_enhancement.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1188,7 +1188,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step07_analyst_enhancement",
                 result,
                 step_start_time,
                 bool(result),
@@ -1204,7 +1204,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step07_analyst_enhancement",
                 None,
                 step_start_time,
                 False,
@@ -1216,7 +1216,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step8_tactician_labeling"
+        context="step08_tactician_labeling"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.DATA_PREPROCESSING,
@@ -1238,9 +1238,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step8_tactician_labeling
+            from src.training.steps import step08_tactician_labeling
             
-            result = await step8_tactician_labeling.run_step(
+            result = await step08_tactician_labeling.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1251,7 +1251,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step8_tactician_labeling",
+                "step08_tactician_labeling",
                 result,
                 step_start_time,
                 bool(result),
@@ -1267,7 +1267,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step8_tactician_labeling",
+                "step08_tactician_labeling",
                 None,
                 step_start_time,
                 False,
@@ -1279,7 +1279,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step9_tactician_specialist_training"
+        context="step09_tactician_specialist_training"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1307,9 +1307,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step9_tactician_specialist_training
+            from src.training.steps import step09_tactician_specialist_training
             
-            result = await step9_tactician_specialist_training.run_step(
+            result = await step09_tactician_specialist_training.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1320,7 +1320,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step9_tactician_specialist_training",
+                "step09_tactician_specialist_training",
                 result,
                 step_start_time,
                 bool(result),
@@ -1336,7 +1336,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step9_tactician_specialist_training",
+                "step09_tactician_specialist_training",
                 None,
                 step_start_time,
                 False,
@@ -1849,25 +1849,25 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         """Get step-specific quality metrics and validation information."""
         
         try:
-            if step_name == "step1_data_collection":
+            if step_name == "step01_data_collection":
                 return await self._get_data_collection_metrics(step_result)
-            elif step_name == "step1_5_data_converter":
+            elif step_name == "step01_5_data_converter":
                 return await self._get_data_converter_metrics(step_result)
-            elif step_name == "step2_feature_engineering":
+            elif step_name == "step02_feature_engineering":
                 return await self._get_feature_engineering_metrics(step_result)
-            elif step_name == "step3_hmm_regime_discovery":
+            elif step_name == "step03_hmm_regime_discovery":
                 return await self._get_hmm_regime_metrics(step_result)
-            elif step_name == "step4_regime_data_splitting":
+            elif step_name == "step04_regime_data_splitting":
                 return await self._get_regime_splitting_metrics(step_result)
-            elif step_name == "step5_triple_barrier_method":
+            elif step_name == "step05_triple_barrier_method":
                 return await self._get_triple_barrier_metrics(step_result)
-            elif step_name == "step6_feature_generation":
+            elif step_name == "step06_feature_generation":
                 return await self._get_feature_generation_metrics(step_result)
-            elif step_name == "step7_matrix_feature_selection":
+            elif step_name == "step07_matrix_feature_selection":
                 return await self._get_matrix_feature_selection_metrics(step_result)
-            elif step_name == "step8_tactician_labeling":
+            elif step_name == "step08_tactician_labeling":
                 return await self._get_tactician_labeling_metrics(step_result)
-            elif step_name == "step9_tactician_specialist_training":
+            elif step_name == "step09_tactician_specialist_training":
                 return await self._get_tactician_training_metrics(step_result)
             elif step_name == "step10_confidence_calibration":
                 return await self._get_confidence_calibration_metrics(step_result)

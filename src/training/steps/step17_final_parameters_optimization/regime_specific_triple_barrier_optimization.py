@@ -452,7 +452,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         
         try:
             # Import the optimized triple barrier labeling
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+            from src.training.steps.step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
             )
             

@@ -261,21 +261,21 @@ def get_enhanced_training_pipeline_config() -> Dict[str, Any]:
         
         # Step-specific configurations
         "steps": {
-            "step4_triple_barrier_method": {
+            "step04_triple_barrier_method": {
                 "enable_multi_output_labeling": True,
                 "enable_direction_labeling": True,
                 "enable_profit_labeling": True,
             },
-            "step5_labeling": {
+            "step05_labeling": {
                 "enable_multi_output_targets": True,
                 "enable_direction_targets": True,
                 "enable_profit_targets": True,
             },
-            "step6_feature_engineering": {
+            "step06_feature_engineering": {
                 "enable_profit_based_features": True,
                 "enable_enhanced_features": True,
             },
-            "step8_enhanced_hmm_based_training": {
+            "step08_enhanced_hmm_based_training": {
                 "enable_multi_output_models": True,
                 "enable_regime_specific_models": True,
                 "enable_profit_based_training": True,

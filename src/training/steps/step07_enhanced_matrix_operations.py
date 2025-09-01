@@ -1,4 +1,4 @@
-# src/training/steps/step7_enhanced_matrix_operations.py
+# src/training/steps/step07_enhanced_matrix_operations.py
 
 """Step 7: Enhanced Matrix Operations with Standardized Data Quality Management.
 This step performs advanced matrix operations for comprehensive data analysis after feature engineering.
@@ -121,7 +121,7 @@ class Step7EnhancedMatrixOperations:
             self.matrix_ops = None
         
         # Step-specific configuration
-        self.step_config = config.get("step7_enhanced_matrix_operations", {})
+        self.step_config = config.get("step07_enhanced_matrix_operations", {})
         self.output_dir = Path(self.step_config.get("output_dir", "data/matrix_operations"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -150,7 +150,7 @@ class Step7EnhancedMatrixOperations:
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.95}
     )
-    @with_enhanced_mlflow_logging("step7_enhanced_matrix_operations")
+    @with_enhanced_mlflow_logging("step07_enhanced_matrix_operations")
     @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     async def execute(
         self,
@@ -300,7 +300,7 @@ class Step7EnhancedMatrixOperations:
             )
             
             # Update pipeline state
-            pipeline_state["step7_enhanced_matrix_operations"] = {
+            pipeline_state["step07_enhanced_matrix_operations"] = {
                 "status": "completed",
                 "start_time": start_time.isoformat(),
                 "end_time": datetime.now().isoformat(),
@@ -333,7 +333,7 @@ class Step7EnhancedMatrixOperations:
             
         except Exception as e:
             self.logger.error(f"❌ Step 7 failed: {str(e)}")
-            pipeline_state["step7_enhanced_matrix_operations"] = {
+            pipeline_state["step07_enhanced_matrix_operations"] = {
                 "status": "failed",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
@@ -362,7 +362,7 @@ class Step7EnhancedMatrixOperations:
                 "memory_usage_mb": 0.0,  # Will be calculated if available
                 "cpu_usage_percent": 0.0,  # Will be calculated if available
                 "data_quality_score": quality_metrics.get("overall_quality", 0.0),
-                "processing_efficiency": 1.0 if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
+                "processing_efficiency": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
             }
             
             # Collect artifacts generated
@@ -370,7 +370,7 @@ class Step7EnhancedMatrixOperations:
             
             # Collect metrics
             metrics_calculated = {
-                "matrix_operations_success": 1.0 if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
+                "matrix_operations_success": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0,
                 "matrix_operations_count": len(matrix_results) if matrix_results else 0,
                 "output_files_count": len(output_files) if output_files else 0,
                 "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
@@ -383,28 +383,28 @@ class Step7EnhancedMatrixOperations:
                 "matrix_results": matrix_results,
                 "output_files": output_files,
                 "quality_metrics": quality_metrics,
-                "matrix_config": pipeline_state.get("step7_enhanced_matrix_operations", {}).get("matrix_config", {}),
+                "matrix_config": pipeline_state.get("step07_enhanced_matrix_operations", {}).get("matrix_config", {}),
             }
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step7_enhanced_matrix_operations",
+                step_name="step07_enhanced_matrix_operations",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
                 artifacts_generated=artifacts_generated,
                 metrics_calculated=metrics_calculated,
-                errors_encountered=[] if pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed" else ["Matrix operations failed"]
+                errors_encountered=[] if pipeline_state.get("step07_enhanced_matrix_operations", {}).get("status") == "completed" else ["Matrix operations failed"]
             )
             
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step7_enhanced_matrix_operations",
+                step_name="step07_enhanced_matrix_operations",
                 report_data=report_data,
                 report_type="matrix_operations_report",
                 additional_metadata={
-                    "matrix_operations_success": pipeline_state.get("step7_enhanced_matrix_operations", {,
+                    "matrix_operations_success": pipeline_state.get("step07_enhanced_matrix_operations", {,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
@@ -419,7 +419,7 @@ class Step7EnhancedMatrixOperations:
             if matrix_results:
                 matrix_report_name = log_step_report(
                     config=self.config,
-                    step_name="step7_enhanced_matrix_operations",
+                    step_name="step07_enhanced_matrix_operations",
                     report_data=matrix_results,
                     report_type="matrix_results",
                     additional_metadata={
@@ -437,7 +437,7 @@ class Step7EnhancedMatrixOperations:
             if quality_metrics:
                 quality_report_name = log_step_report(
                     config=self.config,
-                    step_name="step7_enhanced_matrix_operations",
+                    step_name="step07_enhanced_matrix_operations",
                     report_data=quality_metrics,
                     report_type="quality_metrics",
                     additional_metadata={
@@ -454,7 +454,7 @@ class Step7EnhancedMatrixOperations:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step7_enhanced_matrix_operations",
+                step_name="step07_enhanced_matrix_operations",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "matrix_operations_performance",
@@ -2379,7 +2379,7 @@ async def run_step(
         result = await step.execute(training_input, pipeline_state)
         
         # Check if step was successful
-        step_result = result.get("step7_enhanced_matrix_operations", {})
+        step_result = result.get("step07_enhanced_matrix_operations", {})
         return step_result.get("status") == "completed"
         
     except Exception as e:

@@ -1,4 +1,4 @@
-# src/training/steps/step5_5_unified_regime_intelligence_validator.py
+# src/training/steps/step05_5_unified_regime_intelligence_validator.py
 
 """Step 5.5 Unified Regime Intelligence Validator.
 
@@ -681,7 +681,7 @@ class UnifiedRegimeIntelligenceValidator:
 
 			# Save report
 			report_path = (
-				"validation_reports/step5_5_unified_regime_intelligence_validation.json"
+				"validation_reports/step05_5_unified_regime_intelligence_validation.json"
 			)
 			os.makedirs("validation_reports", exist_ok=True)
 
@@ -695,7 +695,7 @@ class UnifiedRegimeIntelligenceValidator:
 
 
 @handle_errors(
-	exceptions=(Exception,), default_return=False, context="step5_5 validation",
+	exceptions=(Exception,), default_return=False, context="step05_5 validation",
 )
 async def run_step5_5_validation(
 	symbol: str,
@@ -703,7 +703,7 @@ async def run_step5_5_validation(
 	timeframe: str = "1m",
 	training_config: Dict[str, Any] | None = None,
 ) -> bool:
-	"""Run validation for step5_5_unified_regime_intelligence.
+	"""Run validation for step05_5_unified_regime_intelligence.
 
 	Args:
 		symbol: Trading symbol

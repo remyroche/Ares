@@ -322,7 +322,7 @@ class EnhancedDataQualityManager:
             missing = []
             ready = True
             
-            # Check for unified data (required by step1_5)
+            # Check for unified data (required by step01_5)
             unified_path = self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
             if not unified_path.exists():
                 missing.append("Unified data directory not found")
@@ -408,7 +408,7 @@ class EnhancedDataQualityManager:
             if not completeness_results.get("ready", False):
                 logger.warning("⚠️ Data not ready for step3/step4, attempting to fix...")
                 
-                # Try to use step1 and step1_5 components to get missing data
+                # Try to use step1 and step01_5 components to get missing data
                 fix_results = await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
                 
                 if not fix_results.get("success", False):
@@ -441,9 +441,9 @@ class EnhancedDataQualityManager:
 
     @with_tracing_span("fix_missing_data_for_steps")
     async def _fix_missing_data_for_steps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Use step1 and step1_5 components to fix missing data for step3/step4."""
+        """Use step1 and step01_5 components to fix missing data for step3/step4."""
         try:
-            logger.info("🔄 Attempting to fix missing data using step1/step1_5 components...")
+            logger.info("🔄 Attempting to fix missing data using step1/step01_5 components...")
             
             # Try to run step1 data collection if needed
             try:
@@ -464,24 +464,24 @@ class EnhancedDataQualityManager:
                 logger.warning(f"⚠️ Could not run step1: {e}")
                 step1_success = False
             
-            # Try to run step1_5 data conversion if needed
+            # Try to run step01_5 data conversion if needed
             try:
-                from ..step1_5_data_converter import run_step as run_step1_5
-                step1_5_success = await run_step1_5(
+                from ..step01_5_data_converter import run_step as run_step01_5
+                step01_5_success = await run_step01_5(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     force_rerun=True
                 )
                 
-                if step1_5_success:
+                if step01_5_success:
                     logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
                     logger.warning("⚠️ Step1_5 data conversion failed")
                     
             except Exception as e:
-                logger.warning(f"⚠️ Could not run step1_5: {e}")
-                step1_5_success = False
+                logger.warning(f"⚠️ Could not run step01_5: {e}")
+                step01_5_success = False
             
             # Check if data is now ready
             completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
@@ -489,7 +489,7 @@ class EnhancedDataQualityManager:
             return {
                 "success": completeness_results.get("ready", False),
                 "step1_success": step1_success,
-                "step1_5_success": step1_5_success,
+                "step01_5_success": step01_5_success,
                 "still_missing": completeness_results.get("missing", [])
             }
             

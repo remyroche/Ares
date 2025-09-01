@@ -9,18 +9,18 @@ This document provides a comprehensive overview of the validator coverage for st
 
 | Step | Main File | Validator File | Status |
 |------|-----------|----------------|---------|
-| **Step 1** | `step1_data_collection.py` | `step1_data_collection_validator.py` | ✅ **VALIDATED** |
-| **Step 1.5** | `step1_5_data_converter.py` | `step1_5_data_converter_validator.py` | ✅ **VALIDATED** |
-| **Step 2** | `step2_data_reading.py` | `step2_data_reading_validator.py` | ✅ **VALIDATED** |
-| **Step 2.5** | `step2_5_sr_optimization.py` | `step2_5_sr_optimization_validator.py` | ✅ **VALIDATED** |
-| **Step 3** | `step3_hmm_regime_discovery.py` | `step3_hmm_regime_discovery_validator.py` | ✅ **VALIDATED** |
-| **Step 3** | `step3_parameter_optimization.py` | `step3_parameter_optimization_validator.py` | ✅ **VALIDATED** |
-| **Step 3.5** | `step3_5_final_regime_clustering.py` | `step3_5_final_regime_clustering_validator.py` | ✅ **VALIDATED** |
-| **Step 4** | `step4_regime_data_splitting.py` | `step4_regime_data_splitting_validator.py` | ✅ **VALIDATED** |
-| **Step 4** | `step4_triple_barrier_method.py` | `step4_triple_barrier_method_validator.py` | ✅ **VALIDATED** |
-| **Step 5** | `step5_labeling.py` | `step5_labeling_validator.py` | ✅ **VALIDATED** |
-| **Step 6** | `step6_feature_engineering.py` | `step6_feature_engineering_validator.py` | ✅ **VALIDATED** |
-| **Step 7** | `step7_enhanced_matrix_operations.py` | `step7_enhanced_matrix_operations_validator.py` | ✅ **VALIDATED** |
+| **Step 1** | `step01_data_collection.py` | `step01_data_collection_validator.py` | ✅ **VALIDATED** |
+| **Step 1.5** | `step01_5_data_converter.py` | `step01_5_data_converter_validator.py` | ✅ **VALIDATED** |
+| **Step 2** | `step02_data_reading.py` | `step02_data_reading_validator.py` | ✅ **VALIDATED** |
+| **Step 2.5** | `step02_5_sr_optimization.py` | `step02_5_sr_optimization_validator.py` | ✅ **VALIDATED** |
+| **Step 3** | `step03_hmm_regime_discovery.py` | `step03_hmm_regime_discovery_validator.py` | ✅ **VALIDATED** |
+| **Step 3** | `step03_parameter_optimization.py` | `step03_parameter_optimization_validator.py` | ✅ **VALIDATED** |
+| **Step 3.5** | `step03_5_final_regime_clustering.py` | `step03_5_final_regime_clustering_validator.py` | ✅ **VALIDATED** |
+| **Step 4** | `step04_regime_data_splitting.py` | `step04_regime_data_splitting_validator.py` | ✅ **VALIDATED** |
+| **Step 4** | `step04_triple_barrier_method.py` | `step04_triple_barrier_method_validator.py` | ✅ **VALIDATED** |
+| **Step 5** | `step05_labeling.py` | `step05_labeling_validator.py` | ✅ **VALIDATED** |
+| **Step 6** | `step06_feature_engineering.py` | `step06_feature_engineering_validator.py` | ✅ **VALIDATED** |
+| **Step 7** | `step07_enhanced_matrix_operations.py` | `step07_enhanced_matrix_operations_validator.py` | ✅ **VALIDATED** |
 
 ## Validator Features
 
@@ -153,7 +153,7 @@ All validators support async execution for:
 
 ### Running Individual Validators
 ```python
-from src.training.steps.step1_data_collection_validator import run_validator
+from src.training.steps.step01_data_collection_validator import run_validator
 
 result = await run_validator(training_input, pipeline_state)
 if result["validation_passed"]:
@@ -166,14 +166,14 @@ else:
 ```python
 # Validate all steps 1-7
 validators = [
-    "step1_data_collection_validator",
-    "step1_5_data_converter_validator", 
-    "step2_data_reading_validator",
-    "step3_hmm_regime_discovery_validator",
-    "step4_regime_data_splitting_validator",
-    "step5_labeling_validator",
-    "step6_feature_engineering_validator",
-    "step7_enhanced_matrix_operations_validator"
+    "step01_data_collection_validator",
+    "step01_5_data_converter_validator", 
+    "step02_data_reading_validator",
+    "step03_hmm_regime_discovery_validator",
+    "step04_regime_data_splitting_validator",
+    "step05_labeling_validator",
+    "step06_feature_engineering_validator",
+    "step07_enhanced_matrix_operations_validator"
 ]
 
 for validator_name in validators:

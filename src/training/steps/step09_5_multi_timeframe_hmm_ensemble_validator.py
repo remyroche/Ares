@@ -1,4 +1,4 @@
-# src/training/steps/step9_5_multi_timeframe_hmm_ensemble_validator.py
+# src/training/steps/step09_5_multi_timeframe_hmm_ensemble_validator.py
 
 """Validator for Step 9.5: Multi-Timeframe HMM Ensemble Training.
 

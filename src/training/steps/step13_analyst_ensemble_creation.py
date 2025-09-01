@@ -163,7 +163,7 @@ class AnalystEnsembleCreationStep:
 
                     optimized_features, selection_metadata = (
                         optimized_feature_selection.select_features_optimized(
-                            features_df, target, model_type="ensemble_models", step_name="step7_ensemble"
+                            features_df, target, model_type="ensemble_models", step_name="step07_ensemble"
                         )
                     )
 
@@ -334,7 +334,7 @@ class AnalystEnsembleCreationStep:
             logger.exception(f"❌ Error saving ensemble summary: {e}")
 
 
-def step7_analyst_ensemble_creation(
+def step07_analyst_ensemble_creation(
     symbol: str,
     exchange: str,
     data_dir: str,

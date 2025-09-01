@@ -170,7 +170,7 @@ class ProblemAnalyzer:
 
         return sample_points_array, sample_values_array
 
-    def _detect_noise(self = values: np.ndarray) -> bool:
+    def _detect_noise(self, values: np.ndarray) -> bool:
         """Detect if the objective function is noisy."""
         if len(values) < 10:
             return False
@@ -187,13 +187,13 @@ class ProblemAnalyzer:
         # Calculate differences between consecutive values
         differences = np.diff(sorted_values)
 
-        # If there are many small differences = it might be noisy
+        # If there are many small differences, it might be noisy
         noise_threshold = np.std(valid_values) * 0.1
         noisy_ratio = np.sum(np.abs(differences) < noise_threshold) / len(differences)
 
         return noisy_ratio > 0.3
 
-    def _detect_multi_modality(self, points: np.ndarray = values: np.ndarray) -> bool:
+    def _detect_multi_modality(self, points: np.ndarray, values: np.ndarray) -> bool:
         """Detect if the problem has multiple local optima."""
         if len(values) < 20:
             return False
@@ -247,7 +247,7 @@ class ProblemAnalyzer:
     def _detect_constraints(self, parameter_space: Dict[str, Any]) -> bool:
         """Detect if the problem has constraints."""
         # Check for constraint-related parameters
-        constraint_indicators = ['constraint' = 'bound', 'limit', 'range']
+        constraint_indicators = ['constraint', 'bound', 'limit', 'range']
 
         for param_name in parameter_space.keys():
             if any(indicator in param_name.lower() for indicator in constraint_indicators):
@@ -255,33 +255,34 @@ class ProblemAnalyzer:
 
         # Check parameter space structure for constraints
         for param_config in parameter_space.values():
-            if isinstance(param_config = dict):
+            if isinstance(param_config, dict):
                 if 'constraints' in param_config or 'dependencies' in param_config:
                     return True
 
         return False
 
-    def _detect_multi_objective(self = values: np.ndarray) -> bool:
+    def _detect_multi_objective(self, values: np.ndarray) -> bool:
         """Detect if the problem is multi-objective."""
         # Check if values are arrays (multiple objectives)
         if values.ndim > 1 and values.shape[1] > 1:
             return True
 
         # Check if values are tuples or lists
-        if len(values) > 0: first_value = values[0]
+        if len(values) > 0:
+            first_value = values[0]
             if isinstance(first_value, (list, tuple)) and len(first_value) > 1:
                 return True
 
         return False
 
-    def _calculate_sparsity(self = points: np.ndarray) -> float:
+    def _calculate_sparsity(self, points: np.ndarray) -> float:
         """Calculate sparsity ratio of the parameter space."""
         if points.size == 0:
             return 0.0
 
         # Calculate how many parameters are effectively used
         # (have significant variation)
-        variances = np.var(points = axis = 0)
+        variances = np.var(points, axis=0)
         mean_variance = np.mean(variances)
 
         # Count parameters with variance above threshold
@@ -291,8 +292,8 @@ class ProblemAnalyzer:
         return active_params / points.shape[1]
 
     def _analyze_correlations(
-        self, points: np.ndarray = values: np.ndarray
-    ) -> Dict[str = float]:
+        self, points: np.ndarray, values: np.ndarray
+    ) -> Dict[str, float]:
         """Analyze correlations between parameters and objective values."""
         correlations = {}
 
@@ -308,35 +309,35 @@ class ProblemAnalyzer:
         for i in range(valid_points.shape[1]):
             try:
                 # Pearson correlation
-                pearson_corr = _ = pearsonr(valid_points[: = i], valid_values)
+                pearson_corr, _ = pearsonr(valid_points[:, i], valid_values)
                 correlations[f'pearson_param_{i}'] = pearson_corr
 
                 # Spearman correlation (for non-linear relationships)
-                spearman_corr = _ = spearmanr(valid_points[: = i], valid_values)
+                spearman_corr, _ = spearmanr(valid_points[:, i], valid_values)
                 correlations[f'spearman_param_{i}'] = spearman_corr
 
             except Exception as e:
-    self.logger.warning(f"Error calculating correlation for param {i}: {e}")
+                self.logger.warning(f"Error calculating correlation for param {i}: {e}")
 
         return correlations
 
     def _calculate_complexity_score(
-        self, dimensionality: int = is_noisy: bool,
-        is_multi_modal: bool = sparsity_ratio: float
+        self, dimensionality: int, is_noisy: bool,
+        is_multi_modal: bool, sparsity_ratio: float
     ) -> float:
         """Calculate overall problem complexity score."""
         score = 0.0
 
         # Dimensionality penalty
-        score += min(dimensionality / 10.0 = 1.0) * 0.3
+        score += min(dimensionality / 10.0, 1.0) * 0.3
 
         # Noise penalty
         if is_noisy:
-    score += 0.2
+            score += 0.2
 
         # Multi-modality penalty
         if is_multi_modal:
-    score += 0.3
+            score += 0.3
 
         # Sparsity penalty (low sparsity = high complexity)
         score += (1.0 - sparsity_ratio) * 0.2
@@ -344,23 +345,24 @@ class ProblemAnalyzer:
         return min(score, 1.0)
 
     def _determine_problem_type(
-        self, parameter_space: Dict[str = Any],
-        is_multi_objective: bool = has_constraints: bool
+        self, parameter_space: Dict[str, Any],
+        is_multi_objective: bool, has_constraints: bool
     ) -> ProblemType:
         """Determine the specific problem type."""
         if is_multi_objective:
-    return ProblemType.MULTI_OBJECTIVE
+            return ProblemType.MULTI_OBJECTIVE
         elif has_constraints:
-    return ProblemType.CONSTRAINED
+            return ProblemType.CONSTRAINED
 
         # Check for discrete parameters
         has_discrete = False
         for param_config in parameter_space.values():
-            if isinstance(param_config = dict) and 'choices' in param_config: has_discrete = True
+            if isinstance(param_config, dict) and 'choices' in param_config:
+                has_discrete = True
                 break
 
         if has_discrete:
-    return ProblemType.DISCRETE
+            return ProblemType.DISCRETE
         else:
             return ProblemType.CONTINUOUS
 
@@ -377,7 +379,7 @@ class ProblemAnalyzer:
 class BaseOptimizationStrategy(ABC):
     """Base class for optimization strategies."""
 
-    def __init__(self = config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild(self.__class__.__name__)
 
@@ -385,7 +387,7 @@ class BaseOptimizationStrategy(ABC):
     def adapt_optimization(
         self,
         problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Adapt optimization strategy based on problem characteristics."""
         pass
 
@@ -401,13 +403,13 @@ class ContinuousOptimizationStrategy(BaseOptimizationStrategy):
     def adapt_optimization(
         self,
         problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Adapt for continuous optimization."""
         adaptations = {
             'surrogate_model_type': 'gaussian_process',
             'acquisition_function': 'expected_improvement',
             'sampling_strategy': 'latin_hypercube',
-            'exploration_balance': 0.3 = 'uncertainty_threshold': 0.1
+            'exploration_balance': 0.3, 'uncertainty_threshold': 0.1
         }
 
         # Adapt based on dimensionality
@@ -435,17 +437,17 @@ class DiscreteOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for discrete optimization problems."""
 
     def adapt_optimization(
-        self = problem_characteristics: ProblemCharacteristics,
+        self, problem_characteristics: ProblemCharacteristics,
         surrogate_optimizer: Any
     ) -> Dict[str, Any]:
         """Adapt for discrete optimization."""
         adaptations = {
-            'surrogate_model_type': 'random_forest' = 'acquisition_function': 'probability_improvement',
+            'surrogate_model_type': 'random_forest', 'acquisition_function': 'probability_improvement',
             'sampling_strategy': 'random',
-            'exploration_balance': 0.4 = 'uncertainty_threshold': 0.15
+            'exploration_balance': 0.4, 'uncertainty_threshold': 0.15
         }
 
-        # For categorical variables = use tree-based models
+        # For categorical variables, use tree-based models
         adaptations['surrogate_model_type'] = 'random_forest'
 
         # Higher exploration for discrete spaces
@@ -463,13 +465,13 @@ class MultiObjectiveOptimizationStrategy(BaseOptimizationStrategy):
     def adapt_optimization(
         self,
         problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Adapt for multi-objective optimization."""
         adaptations = {
             'surrogate_model_type': 'ensemble',
             'acquisition_function': 'multi_objective_ei',
             'sampling_strategy': 'pareto_frontier',
-            'exploration_balance': 0.4, 'uncertainty_threshold': 0.2 = 'multi_objective_weights': [0.5 = 0.5]
+            'exploration_balance': 0.4, 'uncertainty_threshold': 0.2, 'multi_objective_weights': [0.5, 0.5]
         }
 
         # Use ensemble models for robustness
@@ -488,14 +490,14 @@ class ConstrainedOptimizationStrategy(BaseOptimizationStrategy):
     """Strategy for constrained optimization problems."""
 
     def adapt_optimization(
-        self, problem_characteristics: ProblemCharacteristics = surrogate_optimizer: Any
+        self, problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
     ) -> Dict[str, Any]:
         """Adapt for constrained optimization."""
         adaptations = {
             'surrogate_model_type': 'gaussian_process',
             'acquisition_function': 'constrained_ei',
             'sampling_strategy': 'feasible_latin_hypercube',
-            'exploration_balance': 0.3 = 'uncertainty_threshold': 0.15 = 'constraint_handling': 'penalty_method'
+            'exploration_balance': 0.3, 'uncertainty_threshold': 0.15, 'constraint_handling': 'penalty_method'
         }
 
         # Use GP for constraint modeling
@@ -516,13 +518,13 @@ class NoisyOptimizationStrategy(BaseOptimizationStrategy):
     def adapt_optimization(
         self,
         problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Adapt for noisy optimization."""
         adaptations = {
             'surrogate_model_type': 'random_forest',
             'acquisition_function': 'robust_ei',
             'sampling_strategy': 'noise_aware',
-            'exploration_balance': 0.4 = 'uncertainty_threshold': 0.25 = 'noise_handling': 'robust_estimation'
+            'exploration_balance': 0.4, 'uncertainty_threshold': 0.25, 'noise_handling': 'robust_estimation'
         }
 
         # Use robust models
@@ -543,13 +545,13 @@ class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
     def adapt_optimization(
         self,
         problem_characteristics: ProblemCharacteristics, surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Adapt for high-dimensional optimization."""
         adaptations = {
             'surrogate_model_type': 'random_forest',
             'acquisition_function': 'sparse_ei',
             'sampling_strategy': 'sparse_random',
-            'exploration_balance': 0.5, 'uncertainty_threshold': 0.2 = 'dimensionality_reduction': True = 'feature_selection': True
+            'exploration_balance': 0.5, 'uncertainty_threshold': 0.2, 'dimensionality_reduction': True, 'feature_selection': True
         }
 
         # Use tree-based models for high dimensions
@@ -567,7 +569,7 @@ class HighDimensionalOptimizationStrategy(BaseOptimizationStrategy):
 class StrategySelector:
     """Selects and applies appropriate optimization strategies."""
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("StrategySelector")
 
@@ -585,14 +587,14 @@ class StrategySelector:
         self.problem_analyzer = ProblemAnalyzer(config)
 
     def select_and_apply_strategy(
-        self, objective_function: Callable = parameter_space: Dict[str, Any],
+        self, objective_function: Callable, parameter_space: Dict[str, Any],
         surrogate_optimizer: Any
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Select and apply the best optimization strategy."""
 
         # Analyze the problem
         problem_characteristics = self.problem_analyzer.analyze_problem(
-            objective_function = parameter_space
+            objective_function, parameter_space
         )
 
         self.logger.info(f"Problem characteristics: {problem_characteristics}")
@@ -615,7 +617,7 @@ class StrategySelector:
         return adaptations
 
     def _select_primary_strategy(
-        self = problem_characteristics: ProblemCharacteristics
+        self, problem_characteristics: ProblemCharacteristics
     ) -> BaseOptimizationStrategy:
         """Select the primary optimization strategy."""
 
@@ -634,15 +636,15 @@ class StrategySelector:
             return self.strategies[ProblemType.CONTINUOUS]
 
     def _apply_secondary_strategies(
-        self = problem_characteristics: ProblemCharacteristics
-    ) -> Dict[str = Any]:
+        self, problem_characteristics: ProblemCharacteristics
+    ) -> Dict[str, Any]:
         """Apply secondary strategies for additional adaptations."""
         adaptations = {}
 
         # Apply noise handling if noisy
         if problem_characteristics.is_noisy:
             adaptations.update({
-                'noise_estimation': True, 'robust_kernel': True = 'multiple_evaluations': 3
+                'noise_estimation': True, 'robust_kernel': True, 'multiple_evaluations': 3
             })
 
         # Apply multi-modality handling
@@ -656,7 +658,7 @@ class StrategySelector:
         # Apply sparsity handling
         if problem_characteristics.sparsity_ratio < 0.5:
             adaptations.update({
-                'sparse_optimization': True, 'feature_importance': True = 'dimensionality_reduction': True
+                'sparse_optimization': True, 'feature_importance': True, 'dimensionality_reduction': True
             })
 
         return adaptations

@@ -1,0 +1,159 @@
+================================================================================
+CODE QUALITY ANALYSIS REPORT
+================================================================================
+Files analyzed: 8
+Unused imports found: 23
+Dead code issues found: 39
+Formatting issues found: 15
+
+
+File: src/training/optimization/cached_optimizer.py
+---------------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'typing', 'name': 'List', 'asname': None, 'lineno': 11, 'used_name': 'List'} (line 11)
+
+Dead Code:
+  - Function 'get_cache_statistics' appears to be unused (line 377)
+  - Function 'run_optimization_with_warm_start' appears to be unused (line 268)
+  - Function 'cleanup_expired_cache' appears to be unused (line 330)
+  - Function 'create_cached_optimizer' appears to be unused (line 411)
+
+File: src/training/optimization/progressive_optimizer.py
+--------------------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'typing', 'name': 'List', 'asname': None, 'lineno': 8, 'used_name': 'List'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'failed', 'asname': None, 'lineno': 15, 'used_name': 'failed'} (line 15)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'warning', 'asname': None, 'lineno': 15, 'used_name': 'warning'} (line 15)
+
+Dead Code:
+  - Function 'reset_optimization_history' appears to be unused (line 550)
+  - Function 'tier2_objective' appears to be unused (line 185)
+  - Function 'get_progressive_optimization_statistics' appears to be unused (line 513)
+  - Function 'tier3_objective' appears to be unused (line 269)
+  - Function 'run_progressive_optimization' appears to be unused (line 331)
+  - Function 'tier1_objective' appears to be unused (line 103)
+  - Function 'create_progressive_optimizer' appears to be unused (line 557)
+
+Formatting Issues:
+  - Line has trailing whitespace (line 384)
+  - Line has trailing whitespace (line 423)
+  - Line has trailing whitespace (line 468)
+
+File: src/training/optimization/problem_specific_strategies.py
+--------------------------------------------------------
+
+Dead Code:
+  - Function 'select_and_apply_strategy' appears to be unused (line 589)
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 554)
+
+File: src/training/optimization/parallel_optimizer.py
+-----------------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'failed', 'asname': None, 'lineno': 14, 'used_name': 'failed'} (line 14)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'warning', 'asname': None, 'lineno': 14, 'used_name': 'warning'} (line 14)
+
+Dead Code:
+  - Function 'create_parallel_optimizer' appears to be unused (line 384)
+  - Function 'confidence_objective' appears to be unused (line 111)
+  - Function 'optimize_parameters_in_parallel' appears to be unused (line 228)
+  - Function 'sizing_objective' appears to be unused (line 151)
+  - Function 'risk_objective' appears to be unused (line 193)
+  - Function 'get_optimization_statistics' appears to be unused (line 367)
+
+Formatting Issues:
+  - Line has trailing whitespace (line 238)
+  - Line has trailing whitespace (line 243)
+  - Line has trailing whitespace (line 248)
+  - Line has trailing whitespace (line 297)
+  - Line has trailing whitespace (line 320)
+  - Line has trailing whitespace (line 346)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 284)
+
+File: src/training/optimization/rollback_manager.py
+---------------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'failed', 'asname': None, 'lineno': 12, 'used_name': 'failed'} (line 12)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'missing', 'asname': None, 'lineno': 12, 'used_name': 'missing'} (line 12)
+
+Dead Code:
+  - Function 'create_rollback_manager' appears to be unused (line 471)
+  - Function 'get_rollback_point' appears to be unused (line 425)
+  - Function 'create_rollback_point' appears to be unused (line 97)
+  - Function 'load_rollback_points' appears to be unused (line 191)
+  - Function 'list_rollback_points' appears to be unused (line 393)
+  - Function 'execute_rollback' appears to be unused (line 341)
+  - Function 'get_rollback_statistics' appears to be unused (line 450)
+
+Formatting Issues:
+  - Line has trailing whitespace (line 319)
+  - Line has trailing whitespace (line 366)
+  - Line has trailing whitespace (line 369)
+  - Line has trailing whitespace (line 378)
+
+File: src/training/optimization/advanced_surrogate_models.py
+------------------------------------------------------
+
+Unused Imports:
+  - {'type': 'import', 'name': 'xgboost', 'asname': None, 'lineno': 34, 'used_name': 'xgboost'} (line 34)
+  - {'type': 'import', 'name': 'lightgbm', 'asname': None, 'lineno': 39, 'used_name': 'lightgbm'} (line 39)
+
+Dead Code:
+  - Function 'add_task' appears to be unused (line 475)
+  - Function 'load_model' appears to be unused (line 83)
+  - Function 'add_model' appears to be unused (line 103)
+  - Function 'save_model' appears to be unused (line 74)
+  - Function 'get_model_info' appears to be unused (line 70)
+
+Long Lines:
+  - Line is 168 characters (max 120) (line 383)
+  - Line is 176 characters (max 120) (line 462)
+  - Line is 135 characters (max 120) (line 567)
+
+File: src/training/optimization/adaptive_trial_allocator.py
+-----------------------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'typing', 'name': 'List', 'asname': None, 'lineno': 7, 'used_name': 'List'} (line 7)
+
+Dead Code:
+  - Function 'get_parameter_performance_summary' appears to be unused (line 385)
+  - Function 'get_allocation_statistics' appears to be unused (line 342)
+  - Function 'should_reallocate_trials' appears to be unused (line 267)
+  - Function 'track_parameter_performance' appears to be unused (line 246)
+  - Function 'create_adaptive_trial_allocator' appears to be unused (line 446)
+  - Function 'calculate_optimal_allocation' appears to be unused (line 301)
+  - Function 'reset_allocation_history' appears to be unused (line 438)
+  - Function 'validate_trial_allocation' appears to be unused (line 412)
+  - Function 'allocate_trials_adaptively' appears to be unused (line 175)
+
+Formatting Issues:
+  - Line has trailing whitespace (line 279)
+  - Line has trailing whitespace (line 289)
+
+Long Lines:
+  - Line is 136 characters (max 120) (line 428)
+
+File: src/training/optimization/__init__.py
+-------------------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'connection_error', 'asname': None, 'lineno': 8, 'used_name': 'connection_error'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'critical', 'asname': None, 'lineno': 8, 'used_name': 'critical'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'error', 'asname': None, 'lineno': 8, 'used_name': 'error'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'execution_error', 'asname': None, 'lineno': 8, 'used_name': 'execution_error'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'failed', 'asname': None, 'lineno': 8, 'used_name': 'failed'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'initialization_error', 'asname': None, 'lineno': 8, 'used_name': 'initialization_error'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'invalid', 'asname': None, 'lineno': 8, 'used_name': 'invalid'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'missing', 'asname': None, 'lineno': 8, 'used_name': 'missing'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'problem', 'asname': None, 'lineno': 8, 'used_name': 'problem'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'timeout', 'asname': None, 'lineno': 8, 'used_name': 'timeout'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'validation_error', 'asname': None, 'lineno': 8, 'used_name': 'validation_error'} (line 8)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'warning', 'asname': None, 'lineno': 8, 'used_name': 'warning'} (line 8)

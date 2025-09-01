@@ -33,38 +33,38 @@ class TrainingModeConfig:
 # Training Mode Configurations
 LIGHT_MODE = TrainingModeConfig(
     name="light",
-    description="Light training mode for quick testing - same data, reduced computational load",
-    lookback_days=730,  # Same data as full mode
-    max_trials=10,  # Reduced from 200 to 10 (5% of full)
-    n_trials=5,   # Reduced from 100 to 5 (5% of full)
+    description="Light training mode - 30 days data, same features, reduced computational load",
+    lookback_days=30,  # Less data for speed
+    max_trials=10,  # Reduced computational load (5% of 200)
+    n_trials=5,   # Reduced computational load (5% of 100)
     exclude_recent_days=2,  # Same as full mode
-    enable_advanced_model_training=True,  # Keep same features
-    enable_ensemble_training=True,  # Keep same features
-    enable_multi_timeframe_training=False,  # Disable only heavy multi-timeframe
-    enable_adaptive_training=False,  # Disable only heavy adaptive training
+    enable_advanced_model_training=True,  # Keep same features/algorithms
+    enable_ensemble_training=True,  # Keep same features/algorithms
+    enable_multi_timeframe_training=True,  # Keep same features/algorithms
+    enable_adaptive_training=True,  # Keep same features/algorithms
     enhanced_training_interval=1800,  # 30 minutes
-    max_enhanced_training_history=10,  # Reduced history for speed
-    min_data_points=500,  # Same as full mode
+    max_enhanced_training_history=10,  # Reduced for speed
+    min_data_points=50,  # Lower for 30 days
     computational_intensity="low",
-    estimated_duration_minutes=10  # Faster due to fewer trials
+    estimated_duration_minutes=10  # Faster due to less data + fewer trials
 )
 
 BLANK_MODE = TrainingModeConfig(
     name="blank",
-    description="Blank training mode for moderate testing - same data, moderate computational load",
-    lookback_days=730,  # Same data as full mode
-    max_trials=50,  # Reduced from 200 to 50 (25% of full)
-    n_trials=25,   # Reduced from 100 to 25 (25% of full)
+    description="Blank training mode - 180 days data, same features, moderate computational load",
+    lookback_days=180,  # Medium data amount
+    max_trials=50,  # Reduced computational load (25% of 200)
+    n_trials=25,   # Reduced computational load (25% of 100)
     exclude_recent_days=2,  # Same as full mode
-    enable_advanced_model_training=True,  # Keep same features
-    enable_ensemble_training=True,  # Keep same features
-    enable_multi_timeframe_training=False,  # Disable only heavy multi-timeframe
-    enable_adaptive_training=False,  # Disable only heavy adaptive training
+    enable_advanced_model_training=True,  # Keep same features/algorithms
+    enable_ensemble_training=True,  # Keep same features/algorithms
+    enable_multi_timeframe_training=True,  # Keep same features/algorithms
+    enable_adaptive_training=True,  # Keep same features/algorithms
     enhanced_training_interval=3600,  # 1 hour
     max_enhanced_training_history=50,  # Moderate history
-    min_data_points=500,  # Same as full mode
+    min_data_points=100,  # Medium for 180 days
     computational_intensity="medium",
-    estimated_duration_minutes=30  # Faster due to fewer trials
+    estimated_duration_minutes=30  # Faster due to medium data + fewer trials
 )
 
 FULL_MODE = TrainingModeConfig(

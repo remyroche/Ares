@@ -6,40 +6,52 @@ The Ares pipeline supports three training modes that automatically scale optimiz
 
 ### 💡 Light Mode (30 days)
 - **Purpose**: Quick testing and development
-- **Lookback**: 30 days (2% of full intensity)
-- **Max Trials**: 4 (minimum 3 for statistical validity)
-- **Duration**: ~5 minutes per step
+- **Lookback**: 30 days (less data for speed)
+- **Computational Load**: 5% (10 max trials vs 200)
+- **Features**: Same algorithms and features as full mode
+- **Duration**: ~10 minutes per step
 - **Use Case**: Rapid prototyping, code validation, CI/CD testing
 
 ### 🧪 Blank Mode (180 days)  
 - **Purpose**: Moderate testing and validation
-- **Lookback**: 180 days (10% of full intensity)
-- **Max Trials**: 20
-- **Duration**: ~15 minutes per step
+- **Lookback**: 180 days (medium data amount)
+- **Computational Load**: 25% (50 max trials vs 200)
+- **Features**: Same algorithms and features as full mode
+- **Duration**: ~30 minutes per step
 - **Use Case**: Feature validation, model testing, development validation
 
 ### 🚀 Full Mode (730 days)
 - **Purpose**: Production-ready models
-- **Lookback**: 730 days (100% intensity)
-- **Max Trials**: 200
+- **Lookback**: 730 days (full data)
+- **Computational Load**: 100% (200 max trials)
+- **Features**: All algorithms and features enabled
 - **Duration**: ~120 minutes per step
 - **Use Case**: Production deployment, final model training
 
 ## 📊 Parameter Scaling
 
-All optimization parameters automatically scale with the training mode:
+**Data Scaling**: Different lookback periods (30d → 180d → 730d)
+**Computational Scaling**: Only trials, jobs, iterations are reduced (same features/algorithms)
 
-| Parameter | Light (2%) | Blank (10%) | Full (100%) |
+| Parameter | Light (5%) | Blank (25%) | Full (100%) |
 |-----------|------------|-------------|-------------|
+| **Data Parameters** |
+| Lookback Days | 30 | 180 | 730 |
+| Min Data Points | 50 | 100 | 500 |
+| **Computational Parameters** |
+| Max Trials | 10 | 50 | 200 |
+| N Trials | 5 | 25 | 100 |
 | **Step 17 - Final Parameters Optimization** |
-| Confidence Threshold Trials | 3 | 4 | 40 |
-| Volatility Trials | 3 | 5 | 50 |
-| Position Sizing Trials | 3 | 6 | 60 |
-| Risk Management Trials | 3 | 5 | 50 |
-| **Step 6 - Analyst Enhancement** |
-| LightGBM Trials | 3 | 5 | 50 |
-| XGBoost Trials | 3 | 5 | 50 |
-| Neural Network Trials | 3 | 3 | 25 |
+| Confidence Threshold Trials | 3 | 10 | 40 |
+| Volatility Trials | 3 | 13 | 50 |
+| Position Sizing Trials | 3 | 15 | 60 |
+| Risk Management Trials | 3 | 13 | 50 |
+| Parallel Jobs | 1 | 1 | 4 |
+| **Step 12 - Analyst Enhancement** |
+| LightGBM Trials | 3 | 13 | 50 |
+| XGBoost Trials | 3 | 13 | 50 |
+| Neural Network Trials | 3 | 7 | 25 |
+| Parallel Jobs | 1 | 1 | 4 |
 
 ## 🚀 Usage
 

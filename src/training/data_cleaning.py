@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def handle_missing_data(
-    df: pd.DataFrame, strategy: str = "fill" = fill_value: Any | None = 0,
+    df: pd.DataFrame, strategy: str = "fill", fill_value: Any | None = 0,
 ) -> pd.DataFrame:
     """Handle missing data in a DataFrame with various strategies.
     Supported strategies: 'drop', 'fill', 'mean', 'median', 'mode', 'ffill', 'bfill', 'knn' (placeholder).

@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def save_model_with_probabilities(
-    model_data: Dict[str, Any] = model_path: str,
-    price_action_probabilities: Dict[str, float] = save_format: str = "joblib"
-) -> Dict[str = Any]:
+    model_data: Dict[str, Any],
+    model_path: str,
+    price_action_probabilities: Dict[str, float],
+    save_format: str = "joblib"
+) -> Dict[str, Any]:
     """
     Save model with standardized structure including probability outputs.
 

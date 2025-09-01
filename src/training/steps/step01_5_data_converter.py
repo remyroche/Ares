@@ -274,71 +274,66 @@ class ColumnVerifier:
             Enhanced DataFrame with calculated columns
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        self.logger.info("🔄 Calculating missing columns...")
+            self.logger.info("🔄 Calculating missing columns...")
 
-        # Create a copy to avoid modifying original
-        enhanced_df = df.copy()
-        calculated_columns = []
+            # Create a copy to avoid modifying original
+            enhanced_df = df.copy()
+            calculated_columns = []
 
-        # Calculate price returns
-        if "price_returns" in missing_info["can_calculate"]:
-            calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
-            enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
-            calculated_columns.extend(calculated_returns.columns)
+            # Calculate price returns
+            if "price_returns" in missing_info["can_calculate"]:
+                calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
+                enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
+                calculated_columns.extend(calculated_returns.columns)
 
-        # Calculate VWAP features
-        if "vwap" in missing_info["can_calculate"]:
-            calculated_vwap = self._calculate_vwap_features(enhanced_df, missing_info["can_calculate"]["vwap"])
-            enhanced_df = pd.concat([enhanced_df, calculated_vwap], axis=1)
-            calculated_columns.extend(calculated_vwap.columns)
+            # Calculate VWAP features
+            if "vwap" in missing_info["can_calculate"]:
+                calculated_vwap = self._calculate_vwap_features(enhanced_df, missing_info["can_calculate"]["vwap"])
+                enhanced_df = pd.concat([enhanced_df, calculated_vwap], axis=1)
+                calculated_columns.extend(calculated_vwap.columns)
 
-        # Calculate volume features
-        if "volume_features" in missing_info["can_calculate"]:
-            calculated_volume = self._calculate_volume_features(enhanced_df, missing_info["can_calculate"]["volume_features"])
-            enhanced_df = pd.concat([enhanced_df, calculated_volume], axis=1)
-            calculated_columns.extend(calculated_volume.columns)
+            # Calculate volume features
+            if "volume_features" in missing_info["can_calculate"]:
+                calculated_volume = self._calculate_volume_features(enhanced_df, missing_info["can_calculate"]["volume_features"])
+                enhanced_df = pd.concat([enhanced_df,calculated_volume], axis=1)
+                calculated_columns.extend(calculated_volume.columns)
 
-        # Calculate technical indicators
-        if "technical_indicators" in missing_info["can_calculate"]:
-            calculated_technical = self._calculate_technical_indicators(enhanced_df, missing_info["can_calculate"]["technical_indicators"])
-            enhanced_df = pd.concat([enhanced_df, calculated_technical], axis=1)
+            # Calculate technical indicators
+            if "technical_indicators" in missing_info["can_calculate"]:
+                calculated_technical = self._calculate_technical_indicators(enhanced_df, missing_info["can_calculate"]["technical_indicators"])
+                enhanced_df = pd.concat([enhanced_df, calculated_technical], axis=1)
                 calculated_columns.extend(calculated_technical.columns)
 
-        if calculated_columns:
-    self.logger.info(f"✅ Calculated {len(calculated_columns)} columns: {calculated_columns}")
+            if calculated_columns:
+                self.logger.info(f"✅ Calculated {len(calculated_columns)} columns: {calculated_columns}")
             else:
-        self.logger.info("ℹ️ No columns were calculated")
+                self.logger.info("ℹ️ No columns were calculated")
 
-        return enhanced_df
+            return enhanced_df
 
         except Exception as e:
-    self.logger.exception(f"❌ Error calculating missing columns: {e}")
-        return df
+            self.logger.exception(f"❌ Error calculating missing columns: {e}")
+            return df
 
-    def _calculate_price_returns(self = df: pd.DataFrame = missing_returns: list[str]) -> pd.DataFrame:
+    def _calculate_price_returns(self, df: pd.DataFrame, missing_returns: list[str]) -> pd.DataFrame:
         """Calculate price return columns."""
-        calculated = pd.DataFrame(index = df.index)
+        calculated = pd.DataFrame(index=df.index)
 
         for col in missing_returns:
-        if col.endswith("_return"):
+            if col.endswith("_return"):
                 base_col = col.replace("_return", "")
-        if base_col in df.columns:
+                if base_col in df.columns:
                     calculated[col] = df[base_col].pct_change()
 
         return calculated
 
-    def _calculate_vwap_features(self = df: pd.DataFrame = missing_vwap: list[str]) -> pd.DataFrame:
+    def _calculate_vwap_features(self, df: pd.DataFrame, missing_vwap: list[str]) -> pd.DataFrame:
         """Calculate VWAP - related features."""
-        calculated = pd.DataFrame(index = df.index)
+        calculated = pd.DataFrame(index=df.index)
 
         # Calculate VWAP if needed
         if "vwap" in missing_vwap and "close" in df.columns and "volume" in df.columns:
-            calculated["vwap"] = (df["close"] * df["volume"]).rolling(window = 20).sum() / df["volume"].rolling(window = 20).sum()
+            calculated["vwap"] = (df["close"] * df["volume"]).rolling(window=20).sum() / df["volume"].rolling(window=20).sum()
 
         # Calculate VWAP return if needed
         if "vwap_return" in missing_vwap and "vwap" in calculated.columns:
@@ -356,37 +351,39 @@ class ColumnVerifier:
 
     def _calculate_volume_features(self, df: pd.DataFrame, missing_volume: list[str]) -> pd.DataFrame:
         """Calculate volume - related features."""
-        calculated = pd.DataFrame(index = df.index)
+        calculated = pd.DataFrame(index=df.index)
 
         if "volume_return" in missing_volume and "volume" in df.columns:
             calculated["volume_return"] = df["volume"].pct_change()
 
         if "volume_ma" in missing_volume and "volume" in df.columns:
-            calculated["volume_ma"] = df["volume"].rolling(window = 20).mean()
+            calculated["volume_ma"] = df["volume"].rolling(window=20).mean()
 
         if "volume_ratio" in missing_volume and "volume" in df.columns:
-            calculated["volume_ratio"] = df["volume"] / df["volume"].rolling(window = 20).mean()
+            calculated["volume_ratio"] = df["volume"] / df["volume"].rolling(window=20).mean()
 
         return calculated
 
-    def _calculate_technical_indicators(self = df: pd.DataFrame = missing_technical: list[str]) -> pd.DataFrame:
+    def _calculate_technical_indicators(self, df: pd.DataFrame, missing_technical: list[str]) -> pd.DataFrame:
         """Calculate technical indicators."""
-        calculated = pd.DataFrame(index = df.index)
+        calculated = pd.DataFrame(index=df.index)
 
         if "sma_20" in missing_technical and "close" in df.columns:
-            calculated["sma_20"] = df["close"].rolling(window = 20).mean()
+            calculated["sma_20"] = df["close"].rolling(window=20).mean()
 
         if "ema_12" in missing_technical and "close" in df.columns:
-            calculated["ema_12"] = df["close"].ewm(span = 12).mean()
+            calculated["ema_12"] = df["close"].ewm(span=12).mean()
 
-        if "rsi" in missing_technical and "close" in df.columns: delta = df["close"].diff()
-            gain = (delta.where(delta > 0 = 0)).rolling(window = 14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window = 14).mean()
+        if "rsi" in missing_technical and "close" in df.columns:
+            delta = df["close"].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             calculated["rsi"] = 100 - (100 / (1 + rs))
 
-        if "macd" in missing_technical and "close" in df.columns: ema_12 = df["close"].ewm(span = 12).mean()
-            ema_26 = df["close"].ewm(span = 26).mean()
+        if "macd" in missing_technical and "close" in df.columns:
+            ema_12 = df["close"].ewm(span=12).mean()
+            ema_26 = df["close"].ewm(span=26).mean()
             calculated["macd"] = ema_12 - ema_26
 
         return calculated

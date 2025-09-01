@@ -409,123 +409,114 @@ class FinalRegimeClusteringStep:
     @resource_monitor
     @secure_data_processing
     async def _perform_final_clustering(self, data: pd.DataFrame, hmm_results: dict[str, Any]) -> dict[str, Any]:
-        """Perform final clustering using HMM results and optimized parameters."""
+        """Perform final clustering using enhanced regime clustering with quality-driven optimization."""
         try:
-        self.logger.info("🎯 Performing final clustering...")
+        self.logger.info("🎯 Performing enhanced final clustering...")
 
-        # Always use 20 clusters for discovery (proper regime discovery)
-        n_clusters_discovery = 20
-        method = self.optimized_params.get("method", "kmeans")
-        random_state = self.optimized_params.get("random_state", 42)
-        
-        # Get training mode to determine how many clusters to use after discovery
+        # Get training mode to determine target clusters
         import os
         light_mode = os.environ.get("LIGHT_TRAINING_MODE", "0") == "1"
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         
         if light_mode:
-            n_clusters_final = 2
-            self.logger.info(f"💡 LIGHT MODE: Using {n_clusters_final} biggest clusters from {n_clusters_discovery} discovered")
+            target_clusters = 2
+            self.logger.info(f"💡 LIGHT MODE: Target {target_clusters} clusters")
         elif blank_mode:
-            n_clusters_final = 4
-            self.logger.info(f"🧪 BLANK MODE: Using {n_clusters_final} biggest clusters from {n_clusters_discovery} discovered")
+            target_clusters = 4
+            self.logger.info(f"🧪 BLANK MODE: Target {target_clusters} clusters")
         else:
-            n_clusters_final = n_clusters_discovery
-            self.logger.info(f"📊 FULL MODE: Using all {n_clusters_final} discovered clusters")
+            target_clusters = 20
+            self.logger.info(f"📊 FULL MODE: Target {target_clusters} clusters")
 
         # Prepare features
-            features, await self._prepare_features_with_optimized_params(data)
+        features = await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
-        self.logger.error("No features available for clustering")
-        return {}
+            self.logger.error("No features available for clustering")
+            return {}
 
         # Create composite features with HMM states
         if hmm_results and "state_sequence" in hmm_results:
-                composite_features, features.copy()
-                composite_features["hmm_state"] = hmm_results["state_sequence"]
-                composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis = 1)
+            composite_features = features.copy()
+            composite_features["hmm_state"] = hmm_results["state_sequence"]
+            composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis=1)
 
-        # Add HMM state interactions
-        for col in features.columns:
-                    composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
-            else:
-                composite_features, features
+            # Add HMM state interactions
+            for col in features.columns:
+                composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
+        else:
+            composite_features = features
 
         # Scale features
-            from sklearn.preprocessing import StandardScaler
-            scaler, StandardScaler()
-            features_scaled, scaler.fit_transform(composite_features)
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(composite_features)
 
-        # Perform clustering with 20 clusters for discovery
-        if method == "kmeans":
-                from sklearn.cluster import KMeans
-                clustering, KMeans(
-                    n_clusters = n_clusters_discovery,
-                    random_state = random_state,
-                    n_init = 10
-                )
-                cluster_labels_full, clustering.fit_predict(features_scaled)
-                clustering_model, clustering
-            else:
-        # Default to K - means
-                from sklearn.cluster import KMeans
-                clustering, KMeans(
-                    n_clusters = n_clusters_discovery,
-                    random_state = random_state,
-                    n_init = 10
-                )
-                cluster_labels_full, clustering.fit_predict(features_scaled)
-                clustering_model, clustering
-
-        # Filter to use only the biggest clusters if in light/blank mode
-        if n_clusters_final < n_clusters_discovery:
-            # Calculate cluster sizes
-            unique_clusters, cluster_counts = np.unique(cluster_labels_full, return_counts=True)
-            
-            # Sort clusters by size (biggest first)
-            cluster_size_pairs = list(zip(unique_clusters, cluster_counts))
-            cluster_size_pairs.sort(key=lambda x: x[1], reverse=True)
-            
-            # Get the biggest clusters
-            biggest_clusters = [pair[0] for pair in cluster_size_pairs[:n_clusters_final]]
-            self.logger.info(f"🎯 Selected biggest clusters: {biggest_clusters} (sizes: {[pair[1] for pair in cluster_size_pairs[:n_clusters_final]]})")
-            
-            # Create mapping from original cluster IDs to new cluster IDs
-            cluster_mapping = {old_id: new_id for new_id, old_id in enumerate(biggest_clusters)}
-            
-            # Filter cluster labels to only include the biggest clusters
-            cluster_labels = np.full_like(cluster_labels_full, -1)  # Initialize with -1 (unassigned)
-            for old_id, new_id in cluster_mapping.items():
-                cluster_labels[cluster_labels_full == old_id] = new_id
-            
-            # Remove unassigned data points (those not in the biggest clusters)
-            valid_mask = cluster_labels != -1
-            cluster_labels = cluster_labels[valid_mask]
-            composite_features = composite_features[valid_mask]
-            features_scaled = features_scaled[valid_mask]
-            
-            self.logger.info(f"📊 Filtered data: {len(cluster_labels)} points from {len(cluster_labels_full)} total")
-        else:
-            cluster_labels = cluster_labels_full
-
+        # Initialize enhanced clustering
+        from src.training.steps.enhanced_regime_clustering import EnhancedRegimeClustering
+        
+        enhanced_config = {
+            "target_clusters": target_clusters,
+            "min_quality_threshold": 0.3,
+            "quality_drop_threshold": 0.8,
+            "max_iterations": 50,
+            "no_improvement_limit": 10,
+            "min_coverage_threshold": 0.98,
+            "bayesian_calls": 50  # Reduced for faster execution
+        }
+        
+        enhanced_clustering = EnhancedRegimeClustering(enhanced_config)
+        
+        # Run enhanced clustering
+        self.logger.info("🚀 Running enhanced regime clustering...")
+        results = enhanced_clustering.run_enhanced_clustering(
+            features_scaled, 
+            list(composite_features.columns)
+        )
+        
+        # Extract results
+        final_labels = results["final_labels"]
+        final_score_dict = results["final_score_dict"]
+        refinement_results = results["refinement_results"]
+        report = results["report"]
+        
+        # Save comprehensive report
+        report_path = Path("reports") / f"enhanced_clustering_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        report_path.parent.mkdir(exist_ok=True)
+        
+        with open(report_path, 'w') as f:
+            f.write(report)
+        
+        self.logger.info(f"📊 Comprehensive report saved to: {report_path}")
+        
+        # Create clustering model for compatibility
+        from sklearn.cluster import KMeans
+        clustering_model = KMeans(n_clusters=final_score_dict["n_clusters"], random_state=42)
+        clustering_model.fit(features_scaled)
+        
         clustering_results = {
             "model": clustering_model,
             "scaler": scaler,
-            "cluster_labels": cluster_labels,
-            "n_clusters": n_clusters_final,
-            "n_clusters_discovered": n_clusters_discovery,
-            "method": method,
+            "cluster_labels": final_labels,
+            "n_clusters": final_score_dict["n_clusters"],
+            "n_clusters_discovered": final_score_dict["n_clusters"],
+            "method": "enhanced_regime_clustering",
             "hmm_results": hmm_results,
             "composite_features": composite_features,
-            "filtered": n_clusters_final < n_clusters_discovery
+            "filtered": False,  # Enhanced clustering handles this internally
+            "enhanced_results": results,
+            "report_path": str(report_path)
         }
 
-        self.logger.info(f"✅ Final clustering completed: {n_clusters_final} clusters (from {n_clusters_discovery} discovered)")
+        self.logger.info(f"✅ Enhanced clustering completed: {final_score_dict['n_clusters']} clusters")
+        self.logger.info(f"   Composite Score: {final_score_dict['composite_score']:.4f}")
+        self.logger.info(f"   Coverage: {final_score_dict['coverage']:.3f}")
+        self.logger.info(f"   Quality Improvement: {refinement_results['quality_improvement']:.4f}")
+        
         return clustering_results
 
         except Exception as e:
-        self.logger.error(f"Failed to perform final clustering: {e}")
+        self.logger.error(f"Failed to perform enhanced final clustering: {e}")
         return {}
 
     @handle_errors(

@@ -1,0 +1,17 @@
+# Enhanced Regime Clustering Dependencies
+
+# Core clustering and ML libraries
+scikit-learn>=1.3.0
+scipy>=1.10.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Bayesian optimization (optional, falls back to grid search if not available)
+scikit-optimize>=0.9.0
+
+# Visualization (optional)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Additional utilities
+joblib>=1.3.0

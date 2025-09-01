@@ -58,25 +58,29 @@ The Ares pipeline supports three training modes that automatically scale optimiz
 ### Pipeline Script
 ```bash
 # Quick testing (30 days, ~2 hours total)
-./pipeline.sh light
+./pipeline.sh light                    # ETHUSDT/BINANCE (defaults)
+./pipeline.sh light BTCUSDT BINANCE    # Different symbol
+./pipeline.sh light ETHUSDT MEXC       # Different exchange
 
-# Moderate testing (180 days, ~5 hours total)  
-./pipeline.sh blank
+# Moderate testing (180 days, ~10 hours total)  
+./pipeline.sh blank ADAUSDT BINANCE    # Custom symbol/exchange
+./pipeline.sh blank                    # Use defaults (ETHUSDT/BINANCE)
 
 # Production training (730 days, ~40 hours total)
-./pipeline.sh full
+./pipeline.sh full SOLUSDT GATEIO      # Custom symbol/exchange
+./pipeline.sh full                     # Use defaults (ETHUSDT/BINANCE)
 ```
 
 ### Individual Steps
 ```bash
 # Light mode for quick feature testing
-python ares_launcher.py step6 --symbol ETHUSDT --exchange BINANCE --training-mode light
+python ares_launcher.py step6 --symbol BTCUSDT --exchange BINANCE --training-mode light
 
 # Blank mode for validation
-python ares_launcher.py step17 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+python ares_launcher.py step17 --symbol ADAUSDT --exchange MEXC --training-mode blank
 
-# Full mode for production
-python ares_launcher.py step17 --symbol ETHUSDT --exchange BINANCE --training-mode full
+# Full mode for production  
+python ares_launcher.py step17 --symbol SOLUSDT --exchange GATEIO --training-mode full
 ```
 
 ## ⚙️ Automatic Features

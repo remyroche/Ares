@@ -11,9 +11,7 @@ from src.utils.error_handler import (
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed,
     initialization_error,
-    missing,
 )
 
 
@@ -83,7 +81,9 @@ class RollbackManager:
             self.logger.info(f"📁 Rollback storage initialized at: {rollback_dir}")
 
         except Exception as e:
-            self.logger.error(initialization_error(f"Error initializing rollback storage: {e}"))
+            self.logger.error(
+                initialization_error(f"Error initializing rollback storage: {e}")
+            )
 
     @handle_specific_errors(
         error_handlers={
@@ -316,14 +316,14 @@ class RollbackManager:
 
             # Check if configuration is compatible
             rollback_point = self.rollback_points[target_point_id]
-            
+
             # Basic validation - check if required fields exist
             if not rollback_point.config_snapshot:
-                self.logger.warning(f"Invalid rollback point: missing config snapshot")
+                self.logger.warning("Invalid rollback point: missing config snapshot")
                 return False
 
             if not rollback_point.pipeline_state:
-                self.logger.warning(f"Invalid rollback point: missing pipeline state")
+                self.logger.warning("Invalid rollback point: missing pipeline state")
                 return False
 
             self.logger.info(f"✅ Rollback point validated: {target_point_id}")
@@ -363,10 +363,10 @@ class RollbackManager:
             # This is a simplified implementation
             # In production, you would need to carefully apply the configuration
             # and ensure system consistency
-            
+
             # Update current configuration with rollback snapshot
             self.config.update(rollback_point.config_snapshot)
-            
+
             # Record rollback operation
             rollback_operation = RollbackOperation(
                 timestamp=datetime.now(),
@@ -375,7 +375,7 @@ class RollbackManager:
                 parameters_changed=list(rollback_point.config_snapshot.keys()),
                 success=True,
             )
-            
+
             self.rollback_history.append(rollback_operation)
 
             self.logger.info(f"🔄 Rollback executed to: {target_point_id}")
@@ -403,8 +403,10 @@ class RollbackManager:
                 points[point_id] = {
                     "timestamp": rollback_point.timestamp.isoformat(),
                     "description": rollback_point.description,
-                    "has_performance_metrics": rollback_point.performance_metrics is not None,
-                    "has_optimization_results": rollback_point.optimization_results is not None,
+                    "has_performance_metrics": rollback_point.performance_metrics
+                    is not None,
+                    "has_optimization_results": rollback_point.optimization_results
+                    is not None,
                     "notes": rollback_point.notes,
                 }
 

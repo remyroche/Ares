@@ -4,7 +4,7 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -52,7 +52,8 @@ class AdaptiveTrialAllocator:
         context="parameter importance calculation",
     )
     def calculate_parameter_importance(
-        self, parameters: Dict[str, Any],
+        self,
+        parameters: Dict[str, Any],
     ) -> Dict[str, float]:
         """Calculate parameter importance based on various factors."""
         try:
@@ -126,7 +127,9 @@ class AdaptiveTrialAllocator:
             return 0.3
 
         except Exception as e:
-            self.logger.warning(warning(f"Error getting base importance for {param_path}: {e}"))
+            self.logger.warning(
+                warning(f"Error getting base importance for {param_path}: {e}")
+            )
             return 0.3
 
     def _get_performance_importance(self, param_path: str) -> float:
@@ -173,7 +176,8 @@ class AdaptiveTrialAllocator:
         context="trial allocation",
     )
     def allocate_trials_adaptively(
-        self, parameters: Dict[str, Any],
+        self,
+        parameters: Dict[str, Any],
     ) -> Dict[str, int]:
         """Allocate trials based on parameter importance."""
         try:
@@ -194,7 +198,9 @@ class AdaptiveTrialAllocator:
             # Allocate trials based on importance
             for param_path, importance in importance_scores.items():
                 # Calculate trials for this parameter
-                trials = int(importance * total_trials * 0.8)  # Reserve 20% for dynamic allocation
+                trials = int(
+                    importance * total_trials * 0.8
+                )  # Reserve 20% for dynamic allocation
                 trials = max(min_trials, min(trials, max_trials))
                 trials = min(trials, remaining_trials)
 
@@ -218,16 +224,20 @@ class AdaptiveTrialAllocator:
                         remaining_trials,
                         max_trials - allocation.get(param_path, 0),
                     )
-                    allocation[param_path] = allocation.get(param_path, 0) + additional_trials
+                    allocation[param_path] = (
+                        allocation.get(param_path, 0) + additional_trials
+                    )
                     remaining_trials -= additional_trials
 
             # Record allocation
-            self.allocation_history.append({
-                "timestamp": pd.Timestamp.now(),
-                "allocation": allocation.copy(),
-                "importance_scores": importance_scores.copy(),
-                "total_trials": total_trials,
-            })
+            self.allocation_history.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "allocation": allocation.copy(),
+                    "importance_scores": importance_scores.copy(),
+                    "total_trials": total_trials,
+                }
+            )
 
             self.logger.info(
                 f"Allocated {total_trials} trials across {len(allocation)} parameters",
@@ -244,7 +254,9 @@ class AdaptiveTrialAllocator:
         context="performance tracking",
     )
     def track_parameter_performance(
-        self, param_path: str, performance: float,
+        self,
+        param_path: str,
+        performance: float,
     ) -> None:
         """Track performance for a specific parameter."""
         try:
@@ -252,7 +264,9 @@ class AdaptiveTrialAllocator:
 
             # Keep only recent performance data (last 100 measurements)
             if len(self.parameter_performance[param_path]) > 100:
-                self.parameter_performance[param_path] = self.parameter_performance[param_path][-100:]
+                self.parameter_performance[param_path] = self.parameter_performance[
+                    param_path
+                ][-100:]
 
             self.logger.debug(f"Tracked performance for {param_path}: {performance}")
 
@@ -276,7 +290,7 @@ class AdaptiveTrialAllocator:
 
             # Compare current allocation with previous
             previous_allocation = self.allocation_history[-2]["allocation"]
-            
+
             # Calculate allocation difference
             total_diff = 0
             for param_path in current_allocation:
@@ -285,8 +299,10 @@ class AdaptiveTrialAllocator:
                 total_diff += abs(current_trials - previous_trials)
 
             # Check if difference exceeds threshold
-            threshold = self.allocation_config.reallocation_threshold * sum(current_allocation.values())
-            
+            threshold = self.allocation_config.reallocation_threshold * sum(
+                current_allocation.values()
+            )
+
             return total_diff > threshold
 
         except Exception as e:
@@ -299,7 +315,8 @@ class AdaptiveTrialAllocator:
         context="optimal allocation calculation",
     )
     def calculate_optimal_allocation(
-        self, parameters: Dict[str, Any],
+        self,
+        parameters: Dict[str, Any],
     ) -> Dict[str, int]:
         """Calculate optimal trial allocation based on historical performance."""
         try:
@@ -349,10 +366,12 @@ class AdaptiveTrialAllocator:
 
             # Calculate statistics
             total_allocations = len(self.allocation_history)
-            avg_trials_per_allocation = np.mean([
-                sum(allocation["allocation"].values())
-                for allocation in self.allocation_history
-            ])
+            avg_trials_per_allocation = np.mean(
+                [
+                    sum(allocation["allocation"].values())
+                    for allocation in self.allocation_history
+                ]
+            )
 
             # Parameter usage statistics
             param_usage = defaultdict(int)
@@ -360,16 +379,18 @@ class AdaptiveTrialAllocator:
                 for param_path in allocation["allocation"]:
                     param_usage[param_path] += 1
 
-            summary.update({
-                "total_allocations": total_allocations,
-                "avg_trials_per_allocation": avg_trials_per_allocation,
-                "most_used_parameters": dict(sorted(
-                    param_usage.items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )[:10]),
-                "parameter_performance_count": len(self.parameter_performance),
-            })
+            summary.update(
+                {
+                    "total_allocations": total_allocations,
+                    "avg_trials_per_allocation": avg_trials_per_allocation,
+                    "most_used_parameters": dict(
+                        sorted(param_usage.items(), key=lambda x: x[1], reverse=True)[
+                            :10
+                        ]
+                    ),
+                    "parameter_performance_count": len(self.parameter_performance),
+                }
+            )
 
             return summary
 
@@ -401,7 +422,9 @@ class AdaptiveTrialAllocator:
             return summary
 
         except Exception as e:
-            self.logger.error(error(f"Error getting parameter performance summary: {e}"))
+            self.logger.error(
+                error(f"Error getting parameter performance summary: {e}")
+            )
             return None
 
     @handle_errors(
@@ -443,7 +466,9 @@ class AdaptiveTrialAllocator:
         self.logger.info("Reset allocation history")
 
 
-def create_adaptive_trial_allocator(config: Optional[Dict[str, Any]] = None) -> AdaptiveTrialAllocator:
+def create_adaptive_trial_allocator(
+    config: Optional[Dict[str, Any]] = None,
+) -> AdaptiveTrialAllocator:
     """Create an adaptive trial allocator instance.
 
     Args:

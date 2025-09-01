@@ -9,9 +9,7 @@ Scaffolding for regime detection and S/R tracking.
 from enum import Enum
 
 
-
 class RegimeType(Enum):
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -28,15 +26,17 @@ class RegimeType(Enum):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
+
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize RegimeType."""
         self.config = config or {}
         self.logger = system_logger.getChild("RegimeType")
         self.is_initialized = False
-    passBULL_TREND , "bull_trend"
+
+    passBULL_TREND, "bull_trend"
+
+
 BEAR_TREND = "bear_trend"
 SIDEWAYS = "sideways"
 HIGH_VOLATILITY = "high_volatility"
 LOW_VOLATILITY = "low_volatility"
-
-

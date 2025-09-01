@@ -13,8 +13,6 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed,
-    warning,
 )
 
 
@@ -53,7 +51,8 @@ class ParallelParameterOptimizer:
         context="parameter grouping",
     )
     def group_parameters_by_optimization_type(
-        self, all_parameters: Dict[str, Any],
+        self,
+        all_parameters: Dict[str, Any],
     ) -> Dict[str, List[str]]:
         """Group parameters by optimization type for parallel processing."""
         try:
@@ -142,7 +141,8 @@ class ParallelParameterOptimizer:
         context="sizing parameters optimization",
     )
     async def optimize_sizing_parameters(
-        self, sizing_params: List[str],
+        self,
+        sizing_params: List[str],
     ) -> Optional[Dict[str, Any]]:
         """Optimize position sizing parameters."""
         try:
@@ -184,7 +184,8 @@ class ParallelParameterOptimizer:
         context="risk parameters optimization",
     )
     async def optimize_risk_parameters(
-        self, risk_params: List[str],
+        self,
+        risk_params: List[str],
     ) -> Optional[Dict[str, Any]]:
         """Optimize risk management parameters."""
         try:
@@ -226,7 +227,8 @@ class ParallelParameterOptimizer:
         context="parallel optimization",
     )
     async def optimize_parameters_in_parallel(
-        self, parameters: Dict[str, Any],
+        self,
+        parameters: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Optimize parameters in parallel."""
         try:
@@ -235,17 +237,21 @@ class ParallelParameterOptimizer:
 
             # Create optimization tasks
             tasks = []
-            
+
             if parameter_groups.get("confidence_parameters"):
                 tasks.append(
-                    self.optimize_confidence_parameters(parameter_groups["confidence_parameters"])
+                    self.optimize_confidence_parameters(
+                        parameter_groups["confidence_parameters"]
+                    )
                 )
-            
+
             if parameter_groups.get("sizing_parameters"):
                 tasks.append(
-                    self.optimize_sizing_parameters(parameter_groups["sizing_parameters"])
+                    self.optimize_sizing_parameters(
+                        parameter_groups["sizing_parameters"]
+                    )
                 )
-            
+
             if parameter_groups.get("risk_parameters"):
                 tasks.append(
                     self.optimize_risk_parameters(parameter_groups["risk_parameters"])
@@ -275,9 +281,13 @@ class ParallelParameterOptimizer:
 
             for result in results:
                 if result and isinstance(result, dict):
-                    combined_results["best_params"].update(result.get("best_params", {}))
+                    combined_results["best_params"].update(
+                        result.get("best_params", {})
+                    )
                     combined_results["best_value"] += result.get("best_value", 0.0)
-                    combined_results["parameter_types"].append(result.get("parameter_type", "unknown"))
+                    combined_results["parameter_types"].append(
+                        result.get("parameter_type", "unknown")
+                    )
                     combined_results["optimization_results"].append(result)
 
             self.logger.info(
@@ -294,7 +304,7 @@ class ParallelParameterOptimizer:
         try:
             # Simulate performance based on parameter values
             performance = 0.0
-            
+
             for param_name, param_value in params.items():
                 if "threshold" in param_name.lower():
                     # Higher thresholds generally lead to better precision but lower recall
@@ -317,7 +327,7 @@ class ParallelParameterOptimizer:
         try:
             # Simulate performance based on parameter values
             performance = 0.0
-            
+
             for param_name, param_value in params.items():
                 if "size" in param_name.lower():
                     # Position size affects risk and returns
@@ -343,7 +353,7 @@ class ParallelParameterOptimizer:
         try:
             # Simulate performance based on parameter values
             performance = 0.0
-            
+
             for param_name, param_value in params.items():
                 if "stop_loss" in param_name.lower():
                     # Stop loss affects risk management
@@ -381,7 +391,9 @@ class ParallelParameterOptimizer:
             return {}
 
 
-def create_parallel_optimizer(config: Optional[Dict[str, Any]] = None) -> ParallelParameterOptimizer:
+def create_parallel_optimizer(
+    config: Optional[Dict[str, Any]] = None,
+) -> ParallelParameterOptimizer:
     """Create a parallel optimizer instance.
 
     Args:

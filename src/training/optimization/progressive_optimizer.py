@@ -5,7 +5,7 @@
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import optuna
 import pandas as pd
@@ -14,8 +14,6 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed,
-    warning,
 )
 
 
@@ -92,7 +90,8 @@ class ProgressiveOptimizer:
         context="tier 1 optimization",
     )
     async def optimize_tier1_parameters(
-        self, initial_params: Optional[Dict[str, Any]] = None,
+        self,
+        initial_params: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Optimize critical parameters first (10% of time)."""
         try:
@@ -329,7 +328,8 @@ class ProgressiveOptimizer:
         context="progressive optimization",
     )
     async def run_progressive_optimization(
-        self, initial_params: Optional[Dict[str, Any]] = None,
+        self,
+        initial_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Run optimization in progressive stages."""
         try:
@@ -343,7 +343,9 @@ class ProgressiveOptimizer:
             tier2_results = await self.optimize_tier2_parameters(tier1_results)
 
             # Tier 3: Advanced parameters
-            tier3_results = await self.optimize_tier3_parameters(tier1_results, tier2_results)
+            tier3_results = await self.optimize_tier3_parameters(
+                tier1_results, tier2_results
+            )
 
             # Combine results from all tiers
             combined_results = {
@@ -357,15 +359,19 @@ class ProgressiveOptimizer:
             # Combine best parameters from all tiers
             for tier_result in [tier1_results, tier2_results, tier3_results]:
                 if tier_result:
-                    combined_results["best_params"].update(tier_result.get("best_params", {}))
+                    combined_results["best_params"].update(
+                        tier_result.get("best_params", {})
+                    )
                     combined_results["best_value"] += tier_result.get("best_value", 0.0)
 
             # Record in history
-            self.optimization_history.append({
-                "timestamp": pd.Timestamp.now(),
-                "combined_results": combined_results.copy(),
-                "total_time": combined_results["total_optimization_time"],
-            })
+            self.optimization_history.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "combined_results": combined_results.copy(),
+                    "total_time": combined_results["total_optimization_time"],
+                }
+            )
 
             self.logger.info(
                 f"Progressive optimization completed in {combined_results['total_optimization_time']:.2f}s",
@@ -381,10 +387,12 @@ class ProgressiveOptimizer:
         try:
             # Simulate performance based on critical parameters
             performance = 0.0
-            
+
             # Evaluate confidence thresholds
             if "base_entry_threshold" in str(params):
-                threshold = params.get("confidence_thresholds.base_entry_threshold", 0.7)
+                threshold = params.get(
+                    "confidence_thresholds.base_entry_threshold", 0.7
+                )
                 # Optimal range: 0.6-0.8
                 if 0.6 <= threshold <= 0.8:
                     performance += 0.3
@@ -402,7 +410,9 @@ class ProgressiveOptimizer:
 
             # Evaluate stop loss
             if "stop_loss_atr_multiplier" in str(params):
-                stop_loss = params.get("stop_loss_parameters.stop_loss_atr_multiplier", 2.0)
+                stop_loss = params.get(
+                    "stop_loss_parameters.stop_loss_atr_multiplier", 2.0
+                )
                 # Optimal range: 1.5-3.0
                 if 1.5 <= stop_loss <= 3.0:
                     performance += 0.4
@@ -420,10 +430,12 @@ class ProgressiveOptimizer:
         try:
             # Simulate performance based on important parameters
             performance = 0.0
-            
+
             # Evaluate volatility multiplier
             if "volatility_multiplier" in str(params):
-                vol_mult = params.get("volatility_parameters.volatility_multiplier", 1.0)
+                vol_mult = params.get(
+                    "volatility_parameters.volatility_multiplier", 1.0
+                )
                 # Optimal range: 0.8-1.5
                 if 0.8 <= vol_mult <= 1.5:
                     performance += 0.25
@@ -432,7 +444,9 @@ class ProgressiveOptimizer:
 
             # Evaluate profit taking
             if "pt1_target_atr_multiplier" in str(params):
-                pt_target = params.get("profit_taking_parameters.pt1_target_atr_multiplier", 2.5)
+                pt_target = params.get(
+                    "profit_taking_parameters.pt1_target_atr_multiplier", 2.5
+                )
                 # Optimal range: 2.0-3.5
                 if 2.0 <= pt_target <= 3.5:
                     performance += 0.25
@@ -441,7 +455,9 @@ class ProgressiveOptimizer:
 
             # Evaluate ensemble method
             if "ensemble_method" in str(params):
-                ensemble = params.get("ensemble_parameters.ensemble_method", "confidence_weighted")
+                ensemble = params.get(
+                    "ensemble_parameters.ensemble_method", "confidence_weighted"
+                )
                 # All methods are valid
                 performance += 0.25
 
@@ -465,10 +481,12 @@ class ProgressiveOptimizer:
         try:
             # Simulate performance based on advanced parameters
             performance = 0.0
-            
+
             # Evaluate regime constraints
             if "regime_specific_constraints" in str(params):
-                constraints = params.get("market_regime_parameters.regime_specific_constraints", 0.5)
+                constraints = params.get(
+                    "market_regime_parameters.regime_specific_constraints", 0.5
+                )
                 # Optimal range: 0.3-0.7
                 if 0.3 <= constraints <= 0.7:
                     performance += 0.25
@@ -477,13 +495,17 @@ class ProgressiveOptimizer:
 
             # Evaluate secondary objectives
             if "secondary_objectives" in str(params):
-                objective = params.get("optimization_parameters.secondary_objectives", "sharpe_ratio")
+                objective = params.get(
+                    "optimization_parameters.secondary_objectives", "sharpe_ratio"
+                )
                 # All objectives are valid
                 performance += 0.25
 
             # Evaluate feature selection threshold
             if "feature_selection_threshold" in str(params):
-                threshold = params.get("feature_engineering_parameters.feature_selection_threshold", 0.05)
+                threshold = params.get(
+                    "feature_engineering_parameters.feature_selection_threshold", 0.05
+                )
                 # Optimal range: 0.02-0.08
                 if 0.02 <= threshold <= 0.08:
                     performance += 0.25
@@ -492,7 +514,9 @@ class ProgressiveOptimizer:
 
             # Evaluate performance alert threshold
             if "performance_alert_threshold" in str(params):
-                alert = params.get("monitoring_parameters.performance_alert_threshold", 0.1)
+                alert = params.get(
+                    "monitoring_parameters.performance_alert_threshold", 0.1
+                )
                 # Optimal range: 0.05-0.15
                 if 0.05 <= alert <= 0.15:
                     performance += 0.25
@@ -520,9 +544,10 @@ class ProgressiveOptimizer:
 
             # Calculate statistics
             total_optimizations = len(self.optimization_history)
-            avg_optimization_time = sum(
-                opt["total_time"] for opt in self.optimization_history
-            ) / total_optimizations
+            avg_optimization_time = (
+                sum(opt["total_time"] for opt in self.optimization_history)
+                / total_optimizations
+            )
 
             # Tier-specific statistics
             tier_stats = {}
@@ -534,17 +559,25 @@ class ProgressiveOptimizer:
                         "n_trials": tier_result.get("n_trials", 0),
                     }
 
-            summary.update({
-                "total_optimizations": total_optimizations,
-                "avg_optimization_time": avg_optimization_time,
-                "tier_statistics": tier_stats,
-                "latest_optimization": self.optimization_history[-1] if self.optimization_history else None,
-            })
+            summary.update(
+                {
+                    "total_optimizations": total_optimizations,
+                    "avg_optimization_time": avg_optimization_time,
+                    "tier_statistics": tier_stats,
+                    "latest_optimization": (
+                        self.optimization_history[-1]
+                        if self.optimization_history
+                        else None
+                    ),
+                }
+            )
 
             return summary
 
         except Exception as e:
-            self.logger.error(error(f"Error getting progressive optimization statistics: {e}"))
+            self.logger.error(
+                error(f"Error getting progressive optimization statistics: {e}")
+            )
             return None
 
     def reset_optimization_history(self) -> None:
@@ -554,7 +587,9 @@ class ProgressiveOptimizer:
         self.logger.info("Reset progressive optimization history")
 
 
-def create_progressive_optimizer(config: Optional[Dict[str, Any]] = None) -> ProgressiveOptimizer:
+def create_progressive_optimizer(
+    config: Optional[Dict[str, Any]] = None,
+) -> ProgressiveOptimizer:
     """Create a progressive optimizer instance.
 
     Args:

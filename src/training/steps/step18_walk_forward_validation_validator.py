@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any = Tuple
+from typing import Any, Tuple
 
 import numpy as np
 

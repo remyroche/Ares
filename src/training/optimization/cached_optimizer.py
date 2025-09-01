@@ -8,7 +8,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import optuna
 
@@ -45,7 +45,8 @@ class CachedOptimizer:
 
         # Cache storage
         self.cache_metadata_file = os.path.join(
-            self.cache_config.cache_dir, "metadata.json",
+            self.cache_config.cache_dir,
+            "metadata.json",
         )
         self.cache_metadata = self._load_cache_metadata()
 
@@ -159,7 +160,8 @@ class CachedOptimizer:
         context="warm start parameters retrieval",
     )
     def get_warm_start_parameters(
-        self, optimization_config: Dict[str, Any],
+        self,
+        optimization_config: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         """Get warm start parameters from cached results."""
         try:
@@ -190,7 +192,8 @@ class CachedOptimizer:
             return None
 
     def _calculate_config_similarity(
-        self, config1: Dict[str, Any],
+        self,
+        config1: Dict[str, Any],
         config2: Dict[str, Any],
     ) -> float:
         """Calculate similarity between two optimization configurations."""
@@ -338,7 +341,9 @@ class CachedOptimizer:
             for filename in os.listdir(self.cache_config.cache_dir):
                 if filename.endswith(".pkl"):
                     file_path = os.path.join(self.cache_config.cache_dir, filename)
-                    file_age = current_time - datetime.fromtimestamp(os.path.getmtime(file_path))
+                    file_age = current_time - datetime.fromtimestamp(
+                        os.path.getmtime(file_path)
+                    )
 
                     # Remove expired files
                     if file_age > timedelta(hours=self.cache_config.cache_ttl_hours):
@@ -396,7 +401,9 @@ class CachedOptimizer:
             return {
                 "total_files": total_files,
                 "total_size_mb": total_size_mb,
-                "avg_cache_age_hours": sum(cache_ages) / len(cache_ages) if cache_ages else 0,
+                "avg_cache_age_hours": (
+                    sum(cache_ages) / len(cache_ages) if cache_ages else 0
+                ),
                 "oldest_cache_hours": max(cache_ages) if cache_ages else 0,
                 "newest_cache_hours": min(cache_ages) if cache_ages else 0,
                 "cache_dir": self.cache_config.cache_dir,

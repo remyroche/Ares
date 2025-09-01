@@ -18,7 +18,13 @@ import time
 
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel, Matern, RationalQuadratic
+from sklearn.gaussian_process.kernels import (
+    RBF,
+    ConstantKernel,
+    WhiteKernel,
+    Matern,
+    RationalQuadratic,
+)
 from sklearn.model_selection import cross_val_score
 
 # Advanced ML libraries
@@ -27,18 +33,24 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     from torch.utils.data import DataLoader, TensorDataset
+
     TORCH_AVAILABLE = True
-except ImportError: TORCH_AVAILABLE = False
+except ImportError:
+    TORCH_AVAILABLE = False
 
 try:
     import xgboost
+
     XGBOOST_AVAILABLE = True
-except ImportError: XGBOOST_AVAILABLE = False
+except ImportError:
+    XGBOOST_AVAILABLE = False
 
 try:
     import lightgbm
+
     LIGHTGBM_AVAILABLE = True
-except ImportError: LIGHTGBM_AVAILABLE = False
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
 
 # Utilities
 from src.utils.logger import system_logger
@@ -74,19 +86,24 @@ class BaseSurrogateModel(ABC):
     def save_model(self, filepath: str) -> None:
         """Save the model to disk."""
         if self.model is not None:
-            joblib.dump({
-                'model': self.model,
-                'scaler': self.scaler, 'config': self.config, 'training_time': self.training_time
-            }, filepath)
+            joblib.dump(
+                {
+                    "model": self.model,
+                    "scaler": self.scaler,
+                    "config": self.config,
+                    "training_time": self.training_time,
+                },
+                filepath,
+            )
             self.logger.info(f"Model saved to {filepath}")
 
     def load_model(self, filepath: str) -> None:
         """Load the model from disk."""
         data = joblib.load(filepath)
-        self.model = data['model']
-        self.scaler = data['scaler']
-        self.config = data['config']
-        self.training_time = data['training_time']
+        self.model = data["model"]
+        self.scaler = data["scaler"]
+        self.config = data["config"]
+        self.training_time = data["training_time"]
         self.is_fitted = True
         self.logger.info(f"Model loaded from {filepath}")
 
@@ -98,9 +115,11 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         super().__init__(config)
         self.models = {}
         self.weights = {}
-        self.ensemble_method = config.get('ensemble_method', 'weighted_average')
+        self.ensemble_method = config.get("ensemble_method", "weighted_average")
 
-    def add_model(self, name: str, model: BaseSurrogateModel, weight: float = 1.0) -> None:
+    def add_model(
+        self, name: str, model: BaseSurrogateModel, weight: float = 1.0
+    ) -> None:
         """Add a model to the ensemble."""
         self.models[name] = model
         self.weights[name] = weight
@@ -115,7 +134,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
             model.fit(X, y)
 
         # Optionally optimize weights based on cross-validation
-        if self.config.get('optimize_weights', False):
+        if self.config.get("optimize_weights", False):
             self._optimize_weights(X, y)
 
         self.training_time = time.time() - start_time
@@ -139,11 +158,13 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
             uncertainties[name] = unc
 
         # Combine predictions based on ensemble method
-        if self.ensemble_method == 'weighted_average':
-            final_pred, final_unc = self._weighted_average_ensemble(predictions, uncertainties)
-        elif self.ensemble_method == 'stacking':
+        if self.ensemble_method == "weighted_average":
+            final_pred, final_unc = self._weighted_average_ensemble(
+                predictions, uncertainties
+            )
+        elif self.ensemble_method == "stacking":
             final_pred, final_unc = self._stacking_ensemble(predictions, uncertainties)
-        elif self.ensemble_method == 'bagging':
+        elif self.ensemble_method == "bagging":
             final_pred, final_unc = self._bagging_ensemble(predictions, uncertainties)
         else:
             raise ValueError(f"Unknown ensemble method: {self.ensemble_method}")
@@ -152,8 +173,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         return final_pred, final_unc
 
     def _weighted_average_ensemble(
-        self,
-        predictions: Dict[str, np.ndarray], uncertainties: Dict[str, np.ndarray]
+        self, predictions: Dict[str, np.ndarray], uncertainties: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Weighted average ensemble method."""
         total_weight = sum(self.weights.values())
@@ -173,8 +193,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         return final_pred, final_unc
 
     def _stacking_ensemble(
-        self, predictions: Dict[str, np.ndarray],
-        uncertainties: Dict[str, np.ndarray]
+        self, predictions: Dict[str, np.ndarray], uncertainties: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Stacking ensemble method."""
         # For now, use simple weighted average
@@ -182,8 +201,7 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         return self._weighted_average_ensemble(predictions, uncertainties)
 
     def _bagging_ensemble(
-        self, predictions: Dict[str, np.ndarray],
-        uncertainties: Dict[str, np.ndarray]
+        self, predictions: Dict[str, np.ndarray], uncertainties: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Bagging ensemble method."""
         # Use mean and std of predictions
@@ -202,7 +220,9 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
 
         for name, model in self.models.items():
             try:
-                cv_score = cross_val_score(model.model, X, y, cv=5, scoring='neg_mean_squared_error')
+                cv_score = cross_val_score(
+                    model.model, X, y, cv=5, scoring="neg_mean_squared_error"
+                )
                 cv_scores[name] = -np.mean(cv_score)
             except Exception as e:
                 self.logger.warning(f"CV failed for model {name}: {e}")
@@ -218,12 +238,12 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
     def get_model_info(self) -> Dict[str, Any]:
         """Get ensemble model information."""
         return {
-            'ensemble_method': self.ensemble_method,
-            'num_models': len(self.models),
-            'model_names': list(self.models.keys()),
-            'weights': self.weights,
-            'training_time': self.training_time,
-            'prediction_time': self.prediction_time
+            "ensemble_method": self.ensemble_method,
+            "num_models": len(self.models),
+            "model_names": list(self.models.keys()),
+            "weights": self.weights,
+            "training_time": self.training_time,
+            "prediction_time": self.prediction_time,
         }
 
 
@@ -235,9 +255,9 @@ class DeepSurrogateModel(BaseSurrogateModel):
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for DeepSurrogateModel")
 
-        self.network_config = config.get('network', {})
-        self.training_config = config.get('training', {})
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.network_config = config.get("network", {})
+        self.training_config = config.get("training", {})
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = None
         self.optimizer = None
@@ -246,9 +266,9 @@ class DeepSurrogateModel(BaseSurrogateModel):
     def _build_network(self, input_dim: int) -> nn.Module:
         """Build the neural network architecture."""
         layers = []
-        hidden_dims = self.network_config.get('hidden_dims', [100, 50, 25])
-        dropout_rate = self.network_config.get('dropout_rate', 0.1)
-        activation = self.network_config.get('activation', 'relu')
+        hidden_dims = self.network_config.get("hidden_dims", [100, 50, 25])
+        dropout_rate = self.network_config.get("dropout_rate", 0.1)
+        activation = self.network_config.get("activation", "relu")
 
         # Input layer
         layers.append(nn.Linear(input_dim, hidden_dims[0]))
@@ -268,13 +288,13 @@ class DeepSurrogateModel(BaseSurrogateModel):
 
     def _get_activation(self, activation: str) -> nn.Module:
         """Get activation function."""
-        if activation == 'relu':
+        if activation == "relu":
             return nn.ReLU()
-        elif activation == 'tanh':
+        elif activation == "tanh":
             return nn.Tanh()
-        elif activation == 'sigmoid':
+        elif activation == "sigmoid":
             return nn.Sigmoid()
-        elif activation == 'leaky_relu':
+        elif activation == "leaky_relu":
             return nn.LeakyReLU()
         else:
             return nn.ReLU()
@@ -293,21 +313,21 @@ class DeepSurrogateModel(BaseSurrogateModel):
         # Setup training
         self.optimizer = optim.Adam(
             self.model.parameters(),
-            lr=self.training_config.get('learning_rate', 0.001),
-            weight_decay=self.training_config.get('weight_decay', 1e-5)
+            lr=self.training_config.get("learning_rate", 0.001),
+            weight_decay=self.training_config.get("weight_decay", 1e-5),
         )
 
         self.criterion = self._get_loss_function()
 
         # Training loop
-        epochs = self.training_config.get('epochs', 1000)
-        batch_size = self.training_config.get('batch_size', 32)
-        patience = self.training_config.get('patience', 50)
+        epochs = self.training_config.get("epochs", 1000)
+        batch_size = self.training_config.get("batch_size", 32)
+        patience = self.training_config.get("patience", 50)
 
         dataset = TensorDataset(X_tensor, y_tensor)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-        best_loss = float('inf')
+        best_loss = float("inf")
         patience_counter = 0
 
         for epoch in range(epochs):
@@ -365,13 +385,13 @@ class DeepSurrogateModel(BaseSurrogateModel):
 
     def _get_loss_function(self):
         """Get loss function for training."""
-        loss_type = self.training_config.get('loss', 'mse')
+        loss_type = self.training_config.get("loss", "mse")
 
-        if loss_type == 'mse':
+        if loss_type == "mse":
             return nn.MSELoss()
-        elif loss_type == 'mae':
+        elif loss_type == "mae":
             return nn.L1Loss()
-        elif loss_type == 'huber':
+        elif loss_type == "huber":
             return nn.HuberLoss()
         else:
             return nn.MSELoss()
@@ -379,8 +399,12 @@ class DeepSurrogateModel(BaseSurrogateModel):
     def get_model_info(self) -> Dict[str, Any]:
         """Get deep model information."""
         return {
-            'model_type': 'deep_neural_network', 'device': str(self.device),
-            'network_config': self.network_config, 'training_config': self.training_config, 'training_time': self.training_time, 'prediction_time': self.prediction_time
+            "model_type": "deep_neural_network",
+            "device": str(self.device),
+            "network_config": self.network_config,
+            "training_config": self.training_config,
+            "training_time": self.training_time,
+            "prediction_time": self.prediction_time,
         }
 
 
@@ -389,26 +413,26 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.kernel_config = config.get('kernel', {})
-        self.gp_config = config.get('gaussian_process', {})
+        self.kernel_config = config.get("kernel", {})
+        self.gp_config = config.get("gaussian_process", {})
 
     def _build_kernel(self, input_dim: int) -> Any:
         """Build advanced kernel based on configuration."""
-        kernel_type = self.kernel_config.get('type', 'rbf_constant_white')
+        kernel_type = self.kernel_config.get("type", "rbf_constant_white")
 
-        if kernel_type == 'rbf_constant_white':
-            return (
-                ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3)) *
-                RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2)) +
-                WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10, 1e-3))
-            )
-        elif kernel_type == 'matern':
-            nu = self.kernel_config.get('nu', 1.5)
+        if kernel_type == "rbf_constant_white":
+            return ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3)) * RBF(
+                length_scale=1.0, length_scale_bounds=(1e-2, 1e2)
+            ) + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10, 1e-3))
+        elif kernel_type == "matern":
+            nu = self.kernel_config.get("nu", 1.5)
             return Matern(length_scale=1.0, nu=nu, length_scale_bounds=(1e-2, 1e2))
-        elif kernel_type == 'rational_quadratic':
-            alpha = self.kernel_config.get('alpha', 1.0)
-            return RationalQuadratic(length_scale=1.0, alpha=alpha, length_scale_bounds=(1e-2, 1e2))
-        elif kernel_type == 'composite':
+        elif kernel_type == "rational_quadratic":
+            alpha = self.kernel_config.get("alpha", 1.0)
+            return RationalQuadratic(
+                length_scale=1.0, alpha=alpha, length_scale_bounds=(1e-2, 1e2)
+            )
+        elif kernel_type == "composite":
             return self._build_composite_kernel(input_dim)
         else:
             return RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
@@ -416,9 +440,8 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
     def _build_composite_kernel(self, input_dim: int) -> Any:
         """Build composite kernel for different input dimensions."""
         # This could be extended with domain-specific kernels
-        return (
-            ConstantKernel(1.0) * RBF(length_scale = 1.0) +
-            WhiteKernel(noise_level = 1e-5)
+        return ConstantKernel(1.0) * RBF(length_scale=1.0) + WhiteKernel(
+            noise_level=1e-5
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
@@ -430,14 +453,14 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
 
         # Create GP model
         self.model = GaussianProcessRegressor(
-            kernel = kernel,
-            alpha = self.gp_config.get('alpha', 1e-6),
-            n_restarts_optimizer = self.gp_config.get('n_restarts_optimizer', 10),
-            random_state = self.gp_config.get('random_state', 42)
+            kernel=kernel,
+            alpha=self.gp_config.get("alpha", 1e-6),
+            n_restarts_optimizer=self.gp_config.get("n_restarts_optimizer", 10),
+            random_state=self.gp_config.get("random_state", 42),
         )
 
         # Fit model
-        self.model.fit(X = y)
+        self.model.fit(X=y)
 
         self.training_time = time.time() - start_time
         self.is_fitted = True
@@ -458,8 +481,12 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
     def get_model_info(self) -> Dict[str, Any]:
         """Get advanced GP model information."""
         return {
-            'model_type': 'advanced_gaussian_process', 'kernel_config': self.kernel_config,
-            'gp_config': self.gp_config, 'kernel': str(self.model.kernel_) if self.model else None, 'training_time': self.training_time, 'prediction_time': self.prediction_time
+            "model_type": "advanced_gaussian_process",
+            "kernel_config": self.kernel_config,
+            "gp_config": self.gp_config,
+            "kernel": str(self.model.kernel_) if self.model else None,
+            "training_time": self.training_time,
+            "prediction_time": self.prediction_time,
         }
 
 
@@ -468,7 +495,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.task_config = config.get('multi_task', {})
+        self.task_config = config.get("multi_task", {})
         self.models = {}
         self.task_relationships = {}
 
@@ -477,11 +504,15 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
         self.models[task_name] = model
         self.logger.info(f"Added task '{task_name}' to multi-task model")
 
-    def set_task_relationship(self, task1: str, task2: str, relationship: float) -> None:
+    def set_task_relationship(
+        self, task1: str, task2: str, relationship: float
+    ) -> None:
         """Set relationship between tasks (0-1 = where 1 is highly related)."""
         self.task_relationships[(task1, task2)] = relationship
         self.task_relationships[(task2, task1)] = relationship
-        self.logger.info(f"Set relationship between {task1} and {task2}: {relationship}")
+        self.logger.info(
+            f"Set relationship between {task1} and {task2}: {relationship}"
+        )
 
     def fit(self, X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
         """Fit the multi-task surrogate model."""
@@ -521,7 +552,9 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
 
         return base_pred, base_unc
 
-    def _learn_task_relationships(self, X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
+    def _learn_task_relationships(
+        self, X: np.ndarray, y: np.ndarray, task_names: List[str]
+    ) -> None:
         """Learn relationships between tasks based on data."""
         # Simple correlation-based relationship learning
         for i, task1 in enumerate(task_names):
@@ -532,13 +565,14 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
                     pred2, _ = self.models[task2].predict(X)
 
                     correlation = np.corrcoef(pred1, pred2)[0, 1]
-                    relationship = abs(correlation) if not np.isnan(correlation) else 0.0
+                    relationship = (
+                        abs(correlation) if not np.isnan(correlation) else 0.0
+                    )
 
                     self.set_task_relationship(task1, task2, relationship)
 
     def _apply_task_relationships(
-        self, X: np.ndarray, base_pred: np.ndarray,
-        base_unc: np.ndarray, task_name: str
+        self, X: np.ndarray, base_pred: np.ndarray, base_unc: np.ndarray, task_name: str
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply task relationships to improve predictions."""
         # Simple weighted combination of related task predictions
@@ -554,16 +588,19 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
                     # Weighted combination
                     weight = relationship * 0.1  # Small weight for regularization
                     weighted_pred = (1 - weight) * weighted_pred + weight * other_pred
-                    weighted_unc = np.sqrt((1 - weight) * weighted_unc**2 + weight * other_unc**2)
+                    weighted_unc = np.sqrt(
+                        (1 - weight) * weighted_unc**2 + weight * other_unc**2
+                    )
 
         return weighted_pred, weighted_unc
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get multi-task model information."""
         return {
-            'model_type': 'multi_task_surrogate',
-            'num_tasks': len(self.models),
-            'task_names': list(self.models.keys()),
-            'task_relationships': self.task_relationships, 'training_time': self.training_time, 'prediction_time': self.prediction_time
+            "model_type": "multi_task_surrogate",
+            "num_tasks": len(self.models),
+            "task_names": list(self.models.keys()),
+            "task_relationships": self.task_relationships,
+            "training_time": self.training_time,
+            "prediction_time": self.prediction_time,
         }
-

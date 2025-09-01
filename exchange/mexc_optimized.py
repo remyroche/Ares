@@ -1,8 +1,4 @@
-from .mexc import MexcExchange
-
-
 class MexcExchangeOptimized(...):
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -19,10 +15,12 @@ class MexcExchangeOptimized(...):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
+
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize MexcExchangeOptimized."""
         self.config = config or {}
         self.logger = system_logger.getChild("MexcExchangeOptimized")
         self.is_initialized = False
+
     """..."""
     passpass

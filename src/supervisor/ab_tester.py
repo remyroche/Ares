@@ -7,23 +7,6 @@ import copy
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler,
-    supervisor_critical_error_handler,
-    supervisor_safe_error_handler,
-    supervisor_error_context,
-    handle_component_failure,
-    handle_portfolio_error,
-    handle_risk_error,
-    handle_performance_error,
-    handle_model_error,
-    handle_exchange_error,
-    ComponentFailureError,
-    PortfolioManagementError,
-    RiskManagementError,
-    PerformanceMonitoringError,
-    ModelManagementError,
-    ExchangeIntegrationError)
 
 class ABTester:
     """
@@ -44,7 +27,8 @@ class ABTester:
 
         # AB testing state
         self.champion_params_snapshot: dict[str, Any] = copy.deepcopy(
-            self.global_config["best_params"])
+            self.global_config["best_params"]
+        )
         self.challenger_params: dict[str, Any] | None = None
         self.ab_test_start_time: datetime | None = None
         self.ab_test_end_time: datetime | None = None
@@ -58,7 +42,8 @@ class ABTester:
             KeyError: (False, "Missing configuration keys"),
         },
         default_return=False,
-        context="AB test initialization")
+        context="AB test initialization",
+    )
     async def initialize_ab_test(self, challenger_params: dict[str, Any]) -> bool:
         """
         Initialize AB test with challenger parameters.
@@ -104,7 +89,8 @@ class ABTester:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="challenger parameter validation")
+        context="challenger parameter validation",
+    )
     def _validate_challenger_params(self, challenger_params: dict[str, Any]) -> bool:
         """
         Validate challenger parameters.
@@ -150,9 +136,11 @@ class ABTester:
             ValueError: (None, "Invalid AB test data"),
         },
         default_return=None,
-        context="AB test execution")
+        context="AB test execution",
+    )
     async def execute_ab_test(
-        self, test_duration_days: int = 7) -> dict[str, Any] | None:
+        self, test_duration_days: int = 7
+    ) -> dict[str, Any] | None:
         """
         Execute AB test for specified duration.
 
@@ -188,7 +176,8 @@ class ABTester:
                     "duration_days": test_duration_days,
                     "results": results,
                     "status": "completed",
-                })
+                }
+            )
 
             self.is_ab_test_active = False
 
@@ -202,7 +191,8 @@ class ABTester:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="champion phase execution")
+        context="champion phase execution",
+    )
     async def _execute_champion_phase(self) -> None:
         """Execute champion model phase."""
         try:
@@ -221,7 +211,8 @@ class ABTester:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="challenger phase execution")
+        context="challenger phase execution",
+    )
     async def _execute_challenger_phase(self) -> None:
         """Execute challenger model phase."""
         try:
@@ -240,7 +231,8 @@ class ABTester:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
-        context="AB test results analysis")
+        context="AB test results analysis",
+    )
     async def _analyze_ab_test_results(self) -> dict[str, Any] | None:
         """
         Analyze AB test results.
@@ -280,7 +272,8 @@ class ABTester:
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
-        context="model promotion")
+        context="model promotion",
+    )
     async def promote_challenger_if_superior(self) -> bool:
         """
         Promote challenger model if it performs better than champion.
@@ -291,7 +284,8 @@ class ABTester:
         try:
             if not self.ab_test_results.get("results"):
                 self.logger.warning(
-                    "No AB test results available for promotion decision")
+                    "No AB test results available for promotion decision"
+                )
                 return False
 
             results = self.ab_test_results["results"]
@@ -314,7 +308,8 @@ class ABTester:
                 return True
 
             self.logger.info(
-                "Challenger model not promoted (insufficient performance or significance)")
+                "Challenger model not promoted (insufficient performance or significance)"
+            )
             return False
 
         except Exception as e:
@@ -354,9 +349,8 @@ class ABTester:
         return copy.deepcopy(self.challenger_params) if self.challenger_params else None
 
     @handle_errors(
-        exceptions=(Exception),
-        default_return=None,
-        context="AB tester cleanup")
+        exceptions=(Exception), default_return=None, context="AB tester cleanup"
+    )
     async def stop(self) -> None:
         """Stop the AB tester component."""
         self.logger.info("🛑 Stopping AB Tester...")

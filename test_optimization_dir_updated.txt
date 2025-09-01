@@ -1,0 +1,194 @@
+====================================================================================================
+COMPREHENSIVE CODE QUALITY ANALYSIS REPORT
+====================================================================================================
+
+📊 SUMMARY STATISTICS:
+  Files analyzed: 10
+  Total issues found: 807
+  Syntax errors: 776
+  Syntax issues: 0
+  Linting issues: 0
+  Type errors: 1
+  Complexity issues: 0
+  Unused imports: 23
+  Dead code: 0
+  Formatting issues: 0
+  Placeholder issues: 7
+
+📁 PER DIRECTORY BREAKDOWN:
+
+  📂 Directory: src/training/optimization
+    📊 Summary: 10 files, 806 total issues
+    🔍 Issues by type:
+      • syntax_issues: 775
+      • unused_imports: 23
+      • placeholder_issues: 7
+      • syntax_errors: 1
+    📄 Files with issues:
+      📝 computational_optimization_manager.py: 224 issues
+        - syntax_issues: 224
+      📝 progressive_optimizer.py: 111 issues
+        - syntax_issues: 108
+        - unused_imports: 3
+      📝 rollback_manager.py: 104 issues
+        - syntax_issues: 102
+        - unused_imports: 2
+      📝 problem_specific_strategies.py: 97 issues
+        - syntax_issues: 94
+        - placeholder_issues: 3
+      📝 adaptive_trial_allocator.py: 82 issues
+        - syntax_issues: 81
+        - unused_imports: 1
+      📝 cached_optimizer.py: 67 issues
+        - syntax_issues: 66
+        - unused_imports: 1
+      📝 parallel_optimizer.py: 55 issues
+        - syntax_issues: 53
+        - unused_imports: 2
+      📝 advanced_surrogate_models.py: 47 issues
+        - syntax_issues: 41
+        - placeholder_issues: 4
+        - unused_imports: 2
+      📝 __init__.py: 18 issues
+        - unused_imports: 12
+        - syntax_issues: 6
+      📝 transfer_learning_system.py: 1 issues
+        - syntax_errors: 1
+
+  📂 Directory: 
+    📊 Summary: 1 files, 1 total issues
+    🔍 Issues by type:
+      • type_error: 1
+    📄 Files with issues:
+      📝 transfer_learning_system.py: 1 issues
+        - type_error: 1
+
+📄 DETAILED PER FILE BREAKDOWN:
+
+  📁 File: src/training/optimization/__init__.py
+  =====================================
+    🔍 Unused Imports: 12 issues
+      • [ast_analysis] Unused import: connection_error from src.utils.warning_symbols (line 8)
+      • [ast_analysis] Unused import: critical from src.utils.warning_symbols (line 8)
+      • [ast_analysis] Unused import: error from src.utils.warning_symbols (line 8)
+      ... and 9 more issues
+    🔍 Syntax Issues: 6 issues
+      • [ast_analysis] Unterminated string literal (line 3)
+      • [ast_analysis] Unterminated string literal (line 6)
+      • [ast_analysis] Unmatched parentheses detected (line 8)
+      ... and 3 more issues
+    📊 Total issues in file: 18
+
+  📁 File: src/training/optimization/adaptive_trial_allocator.py
+  =====================================================
+    🔍 Unused Imports: 1 issues
+      • [ast_analysis] Unused import: List from typing (line 7)
+    🔍 Syntax Issues: 81 issues
+      • [ast_analysis] Unmatched parentheses detected (line 14)
+      • [ast_analysis] Unmatched parentheses detected (line 17)
+      • [ast_analysis] Unmatched parentheses detected (line 40)
+      ... and 78 more issues
+    📊 Total issues in file: 82
+
+  📁 File: src/training/optimization/advanced_surrogate_models.py
+  ======================================================
+    🔍 Unused Imports: 2 issues
+      • [ast_analysis] Unused import: xgboost (line 34)
+      • [ast_analysis] Unused import: lightgbm (line 39)
+    🔍 Placeholder Issues: 4 issues
+      • [ast_analysis] TODO comment found (line 6)
+      • [ast_analysis] Pass statement (placeholder code) (line 62)
+      • [ast_analysis] Pass statement (placeholder code) (line 67)
+      ... and 1 more issues
+    🔍 Syntax Issues: 41 issues
+      • [ast_analysis] Unterminated string literal (line 2)
+      • [ast_analysis] Missing operator between expressions (line 3)
+      • [ast_analysis] Missing operator between expressions (line 5)
+      ... and 38 more issues
+    📊 Total issues in file: 47
+
+  📁 File: src/training/optimization/cached_optimizer.py
+  =============================================
+    🔍 Unused Imports: 1 issues
+      • [ast_analysis] Unused import: List from typing (line 11)
+    🔍 Syntax Issues: 66 issues
+      • [ast_analysis] Unmatched parentheses detected (line 17)
+      • [ast_analysis] Unmatched parentheses detected (line 20)
+      • [ast_analysis] Unmatched parentheses detected (line 47)
+      ... and 63 more issues
+    📊 Total issues in file: 67
+
+  📁 File: src/training/optimization/computational_optimization_manager.py
+  ===============================================================
+    🔍 Syntax Issues: 224 issues
+      • [ast_analysis] Unterminated string literal (line 3)
+      • [ast_analysis] Unterminated string literal (line 5)
+      • [ast_analysis] Unmatched parentheses detected (line 29)
+      ... and 221 more issues
+    📊 Total issues in file: 224
+
+  📁 File: src/training/optimization/parallel_optimizer.py
+  ===============================================
+    🔍 Unused Imports: 2 issues
+      • [ast_analysis] Unused import: failed from src.utils.warning_symbols (line 14)
+      • [ast_analysis] Unused import: warning from src.utils.warning_symbols (line 14)
+    🔍 Syntax Issues: 53 issues
+      • [ast_analysis] Unmatched parentheses detected (line 14)
+      • [ast_analysis] Unmatched parentheses detected (line 18)
+      • [ast_analysis] Unmatched parentheses detected (line 46)
+      ... and 50 more issues
+    📊 Total issues in file: 55
+
+  📁 File: src/training/optimization/problem_specific_strategies.py
+  ========================================================
+    🔍 Placeholder Issues: 3 issues
+      • [ast_analysis] TODO comment found (line 7)
+      • [ast_analysis] Pass statement (placeholder code) (line 392)
+      • [ast_analysis] Pass statement (placeholder code) (line 397)
+    🔍 Syntax Issues: 94 issues
+      • [ast_analysis] Unterminated string literal (line 2)
+      • [ast_analysis] Missing operator between expressions (line 5)
+      • [ast_analysis] Missing operator between expressions (line 6)
+      ... and 91 more issues
+    📊 Total issues in file: 97
+
+  📁 File: src/training/optimization/progressive_optimizer.py
+  ==================================================
+    🔍 Unused Imports: 3 issues
+      • [ast_analysis] Unused import: List from typing (line 8)
+      • [ast_analysis] Unused import: failed from src.utils.warning_symbols (line 15)
+      • [ast_analysis] Unused import: warning from src.utils.warning_symbols (line 15)
+    🔍 Syntax Issues: 108 issues
+      • [ast_analysis] Unmatched parentheses detected (line 15)
+      • [ast_analysis] Unmatched parentheses detected (line 19)
+      • [ast_analysis] Unmatched parentheses detected (line 57)
+      ... and 105 more issues
+    📊 Total issues in file: 111
+
+  📁 File: src/training/optimization/rollback_manager.py
+  =============================================
+    🔍 Unused Imports: 2 issues
+      • [ast_analysis] Unused import: failed from src.utils.warning_symbols (line 12)
+      • [ast_analysis] Unused import: missing from src.utils.warning_symbols (line 12)
+    🔍 Syntax Issues: 102 issues
+      • [ast_analysis] Unmatched parentheses detected (line 7)
+      • [ast_analysis] Unmatched parentheses detected (line 10)
+      • [ast_analysis] Unmatched parentheses detected (line 12)
+      ... and 99 more issues
+    📊 Total issues in file: 104
+
+  📁 File: src/training/optimization/transfer_learning_system.py
+  =====================================================
+    🔍 Syntax Errors: 1 issues
+      • [ast_analysis] Syntax error: unterminated string literal (detected at line 62) (<unknown>, line 62)
+    📊 Total issues in file: 1
+
+  📁 File: transfer_learning_system.py
+  ===========================
+    🔍 Type Error: 1 issues
+      • [mypy] error: Unterminated string literal (detected at line 62)  [syntax] (line 62)
+    📊 Total issues in file: 1
+
+🛠️  TOOL-SPECIFIC SUMMARIES:
+  MYPY: 1 issues found
+  AST_ANALYSIS: 19 issues found

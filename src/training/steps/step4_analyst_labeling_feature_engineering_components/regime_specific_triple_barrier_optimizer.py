@@ -60,7 +60,9 @@ class RegimeSpecificTripleBarrierOptimizer:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    pass"""
+    pass
+
+    """
     Regime - specific optimizer for triple barrier method parameters.
 
     Creates separate optimization spaces for each HMM regime = allowing

@@ -9,9 +9,7 @@ Scaffolding for monitoring trade conditions and decisions.
 from enum import Enum
 
 
-
 class TradeAction(Enum):
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -28,16 +26,18 @@ class TradeAction(Enum):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
+
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize TradeAction."""
         self.config = config or {}
         self.logger = system_logger.getChild("TradeAction")
         self.is_initialized = False
-    passENTER_LONG , "enter_long"
+
+    passENTER_LONG, "enter_long"
+
+
 ENTER_SHORT = "enter_short"
 EXIT_LONG = "exit_long"
 EXIT_SHORT = "exit_short"
 HOLD = "hold"
 CANCEL_ORDER = "cancel_order"
-
-

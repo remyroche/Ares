@@ -9,9 +9,7 @@ Provides scaffolding for comprehensive tracking.
 from enum import Enum
 
 
-
 class TrackingType(Enum):
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -28,15 +26,17 @@ class TrackingType(Enum):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
+
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize TrackingType."""
         self.config = config or {}
         self.logger = system_logger.getChild("TrackingType")
         self.is_initialized = False
-    passENSEMBLE_DECISION , "ensemble_decision"
+
+    passENSEMBLE_DECISION, "ensemble_decision"
+
+
 REGIME_ANALYSIS = "regime_analysis"
 FEATURE_IMPORTANCE = "feature_importance"
 DECISION_PATH = "decision_path"
 MODEL_BEHAVIOR = "model_behavior"
-
-

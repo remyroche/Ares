@@ -22,6 +22,7 @@ class MexcExchange(BaseExchange):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
+
     def __init__(
         self,
         api_key: str,
@@ -45,7 +46,9 @@ class MexcExchange(BaseExchange):
     async def _get_market_id(self, symbol: str) -> str:
         return symbol
 
-    async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+    async def _get_klines_raw(
+        self, symbol: str, interval: str, limit: int
+    ) -> list[dict[str, Any]]:
         return []
 
     async def _get_account_info_raw(self) -> dict[str, Any]:

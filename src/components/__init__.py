@@ -6,8 +6,8 @@ from .modular_supervisor import ModularSupervisor
 from .modular_tactician import ModularTactician
 
 __all__ = [
-"ModularAnalyst",
-"ModularStrategist",
-"ModularSupervisor",
-"ModularTactician",
+    "ModularAnalyst",
+    "ModularStrategist",
+    "ModularSupervisor",
+    "ModularTactician",
 ]

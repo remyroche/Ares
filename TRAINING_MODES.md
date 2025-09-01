@@ -12,7 +12,7 @@ The Ares pipeline supports three training modes that automatically scale optimiz
 - **Duration**: ~10 minutes per step
 - **Use Case**: Rapid prototyping, code validation, CI/CD testing
 
-### 🧪 Blank Mode (180 days)  
+### 🧪 Blank Mode (180 days)
 - **Purpose**: Moderate testing and validation
 - **Lookback**: 180 days (medium data amount)
 - **Computational Load**: 25% (50 max trials vs 200)
@@ -62,7 +62,7 @@ The Ares pipeline supports three training modes that automatically scale optimiz
 ./pipeline.sh light BTCUSDT BINANCE    # Different symbol
 ./pipeline.sh light ETHUSDT MEXC       # Different exchange
 
-# Moderate testing (180 days, ~10 hours total)  
+# Moderate testing (180 days, ~10 hours total)
 ./pipeline.sh blank ADAUSDT BINANCE    # Custom symbol/exchange
 ./pipeline.sh blank                    # Use defaults (ETHUSDT/BINANCE)
 
@@ -79,7 +79,7 @@ python ares_launcher.py step6 --symbol BTCUSDT --exchange BINANCE --training-mod
 # Blank mode for validation
 python ares_launcher.py step17 --symbol ADAUSDT --exchange MEXC --training-mode blank
 
-# Full mode for production  
+# Full mode for production
 python ares_launcher.py step17 --symbol SOLUSDT --exchange GATEIO --training-mode full
 ```
 

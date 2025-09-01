@@ -5,7 +5,6 @@
 This package contains optimization components for training processes.
 """
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,

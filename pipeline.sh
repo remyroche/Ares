@@ -49,7 +49,7 @@ case $TRAINING_MODE in
         echo "💡 LIGHT MODE: 30 days, 5% compute, ~10 min per step"
         VALIDATION_MODE="blank"  # Use blank for validation steps
         ;;
-    "blank") 
+    "blank")
         echo "🧪 BLANK MODE: 180 days, 25% compute, ~30 min per step"
         VALIDATION_MODE="blank"
         ;;
@@ -64,7 +64,7 @@ echo ""
 echo "📥 Step 1: Data Collection"
 python ares_launcher.py step1 --symbol $SYMBOL --exchange $EXCHANGE --training-mode $TRAINING_MODE --force
 
-# Step 1.5: Data Converter  
+# Step 1.5: Data Converter
 echo "🔄 Step 1.5: Data Converter"
 python ares_launcher.py step1_5 --symbol $SYMBOL --exchange $EXCHANGE --training-mode $TRAINING_MODE
 
@@ -73,7 +73,7 @@ echo "📊 Alternative: Load Data (Step 1 + 1.5)"
 python ares_launcher.py load --symbol $SYMBOL --exchange $EXCHANGE
 
 # Step 2: Data Reading
-echo "📖 Step 2: Data Reading" 
+echo "📖 Step 2: Data Reading"
 python ares_launcher.py step2 --symbol $SYMBOL --exchange $EXCHANGE --training-mode $TRAINING_MODE
 
 # Step 2.5: S/R Optimization

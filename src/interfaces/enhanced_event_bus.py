@@ -14,7 +14,6 @@ import uuid
 
 from src.utils.logger import system_logger
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
     error,
     failed,

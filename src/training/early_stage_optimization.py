@@ -15,8 +15,6 @@ These optimizations happen early in the pipeline to ensure:
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import warnings
 
@@ -51,7 +49,6 @@ except ImportError:
 
 # Import HMM regime barrier optimizer (focused upper/lower barriers)
 try:
-    from .hmm_regime_barrier_optimizer import (
         HMMRegimeBarrierOptimizer,
         optimize_hmm_regime_barriers,
     )

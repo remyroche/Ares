@@ -2,14 +2,12 @@
 
 
 from datetime import datetime
-from typing import Any, Iterable
 import json
 
 import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import error, failed, warning
 
 try:
     from src.database.influxdb_manager import InfluxDBManager

@@ -292,7 +292,7 @@ class PositionSizer:
                 adversarial_confidences=adversarial_confidences,
                 kelly_multiplier=self.kelly_multiplier,
             )
-            
+
             # The Kelly multiplier is already scaled by the conservative multiplier
             # and normalized to 0-1 range, so we can use it directly
             # Scale it to our position size range

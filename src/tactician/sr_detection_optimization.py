@@ -19,9 +19,7 @@ The optimized parameters are then used by the main S/R predictor.
 import json
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -41,9 +39,7 @@ except ImportError:
     print("Warning: sklearn not available, clustering optimization disabled")
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 
 
 @dataclass

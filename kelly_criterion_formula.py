@@ -24,15 +24,15 @@ def calculate_kelly_multiplier(
 ) -> float:
     """
     Calculate Kelly criterion multiplier based on win/loss probabilities.
-    
+
     This function implements the pure Kelly criterion formula and returns
     a multiplier that the Tactician can use to determine position sizing.
-    
+
     Args:
         price_target_confidences: Dict of confidence scores for price targets
         adversarial_confidences: Dict of confidence scores for adverse scenarios
         kelly_multiplier: Conservative multiplier for Kelly fraction (0-1)
-    
+
     Returns:
         float: Kelly multiplier (0-1) for position sizing
     """
@@ -102,14 +102,14 @@ def calculate_kelly_fraction(
 ) -> float:
     """
     Calculate the raw Kelly fraction without any multiplier.
-    
+
     This is the pure Kelly criterion result that can be used for analysis
     or when the caller wants to apply their own multiplier.
-    
+
     Args:
         price_target_confidences: Dict of confidence scores for price targets
         adversarial_confidences: Dict of confidence scores for adverse scenarios
-    
+
     Returns:
         float: Raw Kelly fraction (-1 to 1)
     """

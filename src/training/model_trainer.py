@@ -553,7 +553,7 @@ class RayModelTrainer:
                     return None
             data = handle_missing_data(data)
             FeatureGenerator()
-            
+
             # Check if we have multi-output targets (direction and profit)
             has_direction = "direction" in data.columns
             has_profit = "potential_profit_pct" in data.columns

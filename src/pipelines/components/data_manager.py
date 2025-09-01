@@ -2,7 +2,6 @@
 Data manager for pipeline data operations (minimal scaffold).
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict
 

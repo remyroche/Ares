@@ -7,7 +7,6 @@ position sizing, leverage, and confidence calculations are configurable by step1
 
 import pandas as pd
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor

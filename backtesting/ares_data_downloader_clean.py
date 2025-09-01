@@ -35,7 +35,6 @@ try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from src.config import CONFIG
     from src.utils.logger import get_logger
-    from src.utils.warning_symbols import (
         connection_error,
         critical,
         error,

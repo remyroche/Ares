@@ -7,10 +7,8 @@ Provides realistic performance evaluation during parameter optimization.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 
 
 class BacktestingEvaluator:

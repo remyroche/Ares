@@ -9,7 +9,6 @@ Usage:
     python scripts/validate_multicollinearity_fix.py
 """
 
-from typing import Dict, List, Tuple
 from training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering
 import asyncio
 from pathlib import Path

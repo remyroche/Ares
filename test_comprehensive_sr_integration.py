@@ -13,7 +13,6 @@ import numpy as np
 from pathlib import Path
 
 # Import the comprehensive training pipeline
-from src.training.comprehensive_sr_training_pipeline import ComprehensiveSRTrainingPipeline, run_comprehensive_sr_training
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 

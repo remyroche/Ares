@@ -2,11 +2,9 @@
 Lifecycle manager for pipeline components (minimal scaffold).
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict
 
-from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
     handle_errors,

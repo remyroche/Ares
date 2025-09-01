@@ -12,10 +12,10 @@ class TacticianPositionSizer:
     """
     Example Tactician position sizer that uses Kelly criterion multiplier.
     """
-    
+
     def __init__(self, account_balance: float = 10000.0):
         self.account_balance = account_balance
-    
+
     def calculate_position_size(
         self,
         price_target_confidences: dict[str, float],
@@ -25,34 +25,34 @@ class TacticianPositionSizer:
     ) -> dict[str, float]:
         """
         Calculate position size using Kelly criterion multiplier.
-        
+
         Args:
             price_target_confidences: Dict of confidence scores for price targets
             adversarial_confidences: Dict of confidence scores for adverse scenarios
             base_position_size: Base position size as fraction of account
             max_position_size: Maximum position size as fraction of account
-        
+
         Returns:
             dict: Position sizing information
         """
-        
+
         # Get Kelly multiplier from the Kelly criterion formula
         kelly_multiplier = calculate_kelly_multiplier(
             price_target_confidences=price_target_confidences,
             adversarial_confidences=adversarial_confidences,
             kelly_multiplier=0.25,  # Conservative multiplier
         )
-        
+
         # Calculate position size using Kelly multiplier
         # The Kelly multiplier acts as a risk adjustment factor
         position_size_fraction = base_position_size * kelly_multiplier
-        
+
         # Ensure position size is within bounds
         position_size_fraction = max(0.01, min(max_position_size, position_size_fraction))
-        
+
         # Calculate actual position size in currency
         position_size_currency = self.account_balance * position_size_fraction
-        
+
         return {
             "kelly_multiplier": kelly_multiplier,
             "position_size_fraction": position_size_fraction,
@@ -82,13 +82,13 @@ if __name__ == "__main__":
 
     # Create Tactician position sizer
     tactician = TacticianPositionSizer(account_balance=10000.0)
-    
+
     # Calculate position size
     result = tactician.calculate_position_size(
         price_target_confidences=price_target_confidences,
         adversarial_confidences=adversarial_confidences,
     )
-    
+
     print("Tactician Position Sizing Result:")
     print(f"Kelly Multiplier: {result['kelly_multiplier']:.4f}")
     print(f"Position Size Fraction: {result['position_size_fraction']:.4f}")

@@ -2,7 +2,9 @@
 
 
 import pandas as pd
+from typing import Any, Dict, List
 
+from src.utils.decorators import (
     guard_dataframe_nulls,
     handle_errors,
     with_tracing_span,
@@ -222,11 +224,11 @@ class EnhancedExecutionManager:
             adaptive_lower = current_price * (1 - dynamic_lower)
 
             # Calculate position sizing with precision multiplier
-            base_position_size = analyst_signal.get("position_size", 0.1)
+            base_position_size = analyst_predictions.get("position_size", 0.1)
             precision_position_size = base_position_size * self.position_size_multiplier
 
             # Calculate leverage with precision multiplier
-            base_leverage = analyst_signal.get("leverage", 1.0)
+            base_leverage = analyst_predictions.get("leverage", 1.0)
             precision_leverage = base_leverage * self.leverage_multiplier
 
             # Calculate risk-adjusted parameters
@@ -235,7 +237,7 @@ class EnhancedExecutionManager:
             )
 
             # Calculate execution timing
-            entry_timing = self._calculate_entry_timing(market_data, tactician_confidence)
+            entry_timing = self._calculate_entry_timing(market_data, validation["tactician_confidence"])
 
             # Calculate precision score (no volatility adjustment - ML model handles it)
             precision_score = self._calculate_precision_score(

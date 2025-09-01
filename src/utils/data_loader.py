@@ -370,6 +370,9 @@ class PartitionedDataLoader:
         """Get partition information for a dataset (cached)."""
         if PYARROW_AVAILABLE:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 dataset, ds.dataset(dataset_path)
                 schema, dataset.schema
 
@@ -397,6 +400,9 @@ class PartitionedDataLoader:
         return {'error': 'Dataset not found'}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             stats = {
                 'dataset_path': dataset_path,
                 'total_files': 0,

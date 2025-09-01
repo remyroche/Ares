@@ -31,6 +31,9 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if step06_feature_engineering output exists
             step06_output_dir, Path("data / training")
             step06_files, list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
@@ -67,6 +70,9 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define expected output files
             output_dir, Path("data / matrix_operations")
             expected_files = [
@@ -157,6 +163,9 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(config_file, 'r') as f:
                 config, json.load(f)
 
@@ -233,6 +242,9 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(results_file, 'r') as f:
                 results, json.load(f)
 
@@ -339,6 +351,9 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(summary_file, 'r') as f:
                 summary, json.load(f)
 

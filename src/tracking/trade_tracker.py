@@ -242,6 +242,9 @@ class TradeTracker:
             bool: True if recording successful
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Generate trade ID
             trade_id = f"trade_{int(time.time() * 1000)}"
 
@@ -365,6 +368,9 @@ class TradeTracker:
             bool: True if update successful
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if trade_id not in self.trades:
                 self.logger.warning(missing(f"Trade {trade_id} not found"))
                 return False

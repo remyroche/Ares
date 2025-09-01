@@ -425,6 +425,9 @@ def train_seq2seq(
         callbacks = []
         if artifact_dir_models:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 os.makedirs(artifact_dir_models, exist_ok=True)
                 callbacks.append(
                     ModelCheckpoint(

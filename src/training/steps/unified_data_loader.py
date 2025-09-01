@@ -16,6 +16,9 @@ project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.error_handler import handle_errors
     from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
@@ -132,6 +135,9 @@ class UnifiedDataLoader:
             DataFrame with unified data or None if failed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Sanitize inputs
             symbol, sanitize_string(symbol, max_length = 20, allowed_chars="A - Z0 - 9")
             exchange, sanitize_string(exchange, max_length = 20, allowed_chars="A - Z0 - 9")
@@ -148,6 +154,9 @@ class UnifiedDataLoader:
 
         # Load data using ParquetDatasetManager if available
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from src.training.steps.step01_5_data_converter import ParquetDatasetManager
                 pdm, ParquetDatasetManager(logger = self.logger)
 
@@ -210,6 +219,9 @@ class UnifiedDataLoader:
             Validation result dictionary
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             validation_result = {"valid": True, "reason": "OK"}
 
         # Check required columns
@@ -297,6 +309,9 @@ class UnifiedDataLoader:
             DataFrame with unified data or None if failed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Find all parquet files in the unified directory
             parquet_files = []
         for root, _dirs, files in os.walk(unified_path):
@@ -389,6 +404,9 @@ class UnifiedDataLoader:
             Dictionary with data information or None if failed
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             unified_path, self._get_unified_data_path(symbol, exchange, timeframe, data_dir)
 
         if not os.path.exists(unified_path):
@@ -408,6 +426,9 @@ class UnifiedDataLoader:
 
         # Try to get date range from file path
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract date from path like: .../year = 2025 / month = 07 / day = 15/...
                             path_parts, file_path.split("/")
         for i, part in enumerate(path_parts):

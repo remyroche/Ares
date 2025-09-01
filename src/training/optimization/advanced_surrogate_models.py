@@ -3,6 +3,7 @@
 Advanced Surrogate Models for Optimization
 
 This module provides advanced surrogate models including:
+    pass  # TODO: Add implementation
 - Ensemble methods
 - Deep learning models
 - Specialized kernels
@@ -585,32 +586,3 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
             'prediction_time': self.prediction_time
         }
 
-
-class SurrogateModelFactory:
-    """Factory for creating different types of surrogate models."""
-
-    @staticmethod
-    def create_model(model_type: str, config: Dict[str, Any]) -> BaseSurrogateModel:
-        """Create a surrogate model of the specified type."""
-        if model_type == "ensemble":
-            return EnsembleSurrogateModel(config)
-        elif model_type == "deep":
-            return DeepSurrogateModel(config)
-        elif model_type == "advanced_gp":
-            return AdvancedGaussianProcessModel(config)
-        elif model_type == "multi_task":
-            return MultiTaskSurrogateModel(config)
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
-
-    @staticmethod
-    def get_available_models() -> List[str]:
-        """Get list of available model types."""
-        models = ["ensemble", "advanced_gp"]
-
-        if TORCH_AVAILABLE:
-            models.append("deep")
-
-        models.append("multi_task")
-
-        return models

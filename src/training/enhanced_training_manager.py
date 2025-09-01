@@ -533,6 +533,9 @@ class EnhancedTrainingManager:
             return
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             checkpoint_data = {
                 "timestamp": datetime.now().isoformat(),
                 "current_step": step_name,
@@ -581,6 +584,9 @@ class EnhancedTrainingManager:
             self.checkpoint_dir.mkdir(exist_ok=True)
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = getattr(self, "current_symbol", "unknown")
             exchange = getattr(self, "current_exchange", "unknown")
             timeframe = getattr(self, "current_timeframe", "unknown")
@@ -607,6 +613,9 @@ class EnhancedTrainingManager:
     def _clear_checkpoint(self) -> None:
         """Clear the checkpoint file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = getattr(self, "current_symbol", "unknown")
             exchange = getattr(self, "current_exchange", "unknown")
             timeframe = getattr(self, "current_timeframe", "unknown")
@@ -644,6 +653,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
             cpu_percent = process.cpu_percent(interval=0.1)
@@ -685,6 +697,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🔍 Validating dependencies for {step_name}")
 
             # If force_rerun is True, we're starting from this step, so skip dependency validation
@@ -730,6 +745,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get system info
             cpu_count = int(psutil.cpu_count() or 0)
             memory_gb = float(psutil.virtual_memory().total / 1024 / 1024 / 1024)
@@ -868,6 +886,9 @@ class EnhancedTrainingManager:
     def _optimize_memory_usage(self) -> None:
         """Perform memory optimization to reduce memory footprint."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Force garbage collection
             gc.collect()
 
@@ -1002,6 +1023,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
             # Ensure blank_training_mode is defined
             if not hasattr(self, "blank_training_mode"):
@@ -1101,6 +1125,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate enhanced training manager specific settings
             # Ensure max_enhanced_training_history is defined
             if not hasattr(self, "max_enhanced_training_history"):
@@ -1153,6 +1180,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("=" * 80)
             self.logger.info(
                 "🚀 COMPREHENSIVE 15-STEP ENHANCED TRAINING PIPELINE START",
@@ -1256,6 +1286,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
             for field in required_fields:
@@ -1284,6 +1317,9 @@ class EnhancedTrainingManager:
     async def _initialize_computational_optimization(self) -> bool:
         """Initialize computational optimization components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing computational optimization components...")
 
             # Get computational optimization configuration
@@ -1355,6 +1391,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", "")
             exchange = training_input.get("exchange", "")
             timeframe = training_input.get("timeframe", "1m")
@@ -1456,10 +1495,13 @@ class EnhancedTrainingManager:
 
                 # Save checkpoint after data collection
                 self._save_checkpoint("step01_data_collection", pipeline_state)
-            step_times["step01_data_collection"] = time.time() - step_start
+                step_times["step01_data_collection"] = time.time() - step_start
 
                 # Optionally run validator for Step 1
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     step01_validation = await self._run_step_validator(
                         "step01_data_collection",
                         training_input,
@@ -1543,6 +1585,9 @@ class EnhancedTrainingManager:
 
                     step_start_1_5 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps.step01_5_data_converter import run_step as step01_5_run_step
 
                         # Execute step 1.5 with QA decorators
@@ -1583,6 +1628,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 1.5 (AFTER execution, for verification only)
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step01_5_validation = await self._run_step_validator(
                             "step01_5_data_converter", training_input, pipeline_state,
                         )
@@ -1633,6 +1681,9 @@ class EnhancedTrainingManager:
 
                     step_start_2 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         # Prepare feature engineering configuration
                         feature_config = self.config.get("vectorized_advanced_features", {})
                         if not feature_config:
@@ -1691,6 +1742,9 @@ class EnhancedTrainingManager:
                     # Run validator only if Step 2 was executed (not skipped above)
                     if _should_run("step02_feature_engineering"):
                         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             step02_validation = await self._run_step_validator(
                                 "step02_feature_engineering", training_input, pipeline_state,
                             )
@@ -1826,6 +1880,9 @@ class EnhancedTrainingManager:
 
                     step_start_4 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step04_regime_data_splitting
 
                         step04_success = await step04_regime_data_splitting.run_step(
@@ -1865,6 +1922,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 4
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step04_validation = await self._run_step_validator(
                             "step04_regime_data_splitting", training_input, pipeline_state,
                         )
@@ -1908,6 +1968,9 @@ class EnhancedTrainingManager:
 
                     step_start_5 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step05_triple_barrier_method
 
                         step05_success = await step05_triple_barrier_method.run_step(
@@ -1947,6 +2010,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 5
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step05_validation = await self._run_step_validator(
                             "step05_triple_barrier_method", training_input, pipeline_state,
                         )
@@ -1988,6 +2054,9 @@ class EnhancedTrainingManager:
 
                     step_start_6 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step06_labeling
 
                         step06_success = await step06_labeling.run_step(
@@ -2027,6 +2096,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 6
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step06_validation = await self._run_step_validator(
                             "step06_labeling", training_input, pipeline_state,
                         )
@@ -2068,6 +2140,9 @@ class EnhancedTrainingManager:
 
                     step_start_7 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step07_feature_engineering
 
                         step07_success = await step07_feature_engineering.run_step(
@@ -2107,6 +2182,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 7
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step07_validation = await self._run_step_validator(
                             "step07_feature_engineering", training_input, pipeline_state,
                         )
@@ -2148,6 +2226,9 @@ class EnhancedTrainingManager:
 
                     step_start_7 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step07_regime_data_splitting
 
                         step07_success = await step07_regime_data_splitting.run_step(
@@ -2187,6 +2268,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 7
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step07_validation = await self._run_step_validator(
                             "step07_regime_data_splitting", training_input, pipeline_state,
                         )
@@ -2228,6 +2312,9 @@ class EnhancedTrainingManager:
 
                     step_start_8 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step09_hmm_based_training_enhanced
 
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
@@ -2269,6 +2356,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 8
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step08_validation = await self._run_step_validator(
                             "step08_enhanced_hmm_based_training", training_input, pipeline_state,
                         )
@@ -2299,6 +2389,9 @@ class EnhancedTrainingManager:
                     self._heartbeat("Step 9.5: Multi-Timeframe HMM Ensemble Training")
                     step_start_9_5 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import step09_5_multi_timeframe_hmm_ensemble
 
                         # Use regime-specific ensemble creation
@@ -2328,6 +2421,9 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 9.5
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         step09_5_validation = await self._run_step_validator(
                             "step09_5_multi_timeframe_hmm_ensemble", training_input, pipeline_state,
                         )
@@ -2358,6 +2454,9 @@ class EnhancedTrainingManager:
                     self._heartbeat("Step 6_5: Unified Regime Intelligence")
                     step_start_6_5 = time.time()
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         from src.training.steps import (
                             step05_5_unified_regime_intelligence as _step6_5,
                         )
@@ -2618,6 +2717,9 @@ class EnhancedTrainingManager:
 
                 # Run meta-label relevance evaluation with complementarity and persist active labels
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
 
                     # Load the latest processed frame if available
@@ -2673,6 +2775,9 @@ class EnhancedTrainingManager:
 
                 # NEW: Persist thresholds and reliability for MetaLabelingSystem consumption
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     artifacts_dir = self.config.get("meta_labeling", {}).get(
                         "artifacts_dir", "artifacts/meta_labeling",
                     )
@@ -2707,6 +2812,9 @@ class EnhancedTrainingManager:
                         _safe_json_write(artifacts_root / "thresholds.json", thresholds)
                     # Persist active labels if evaluated
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         if (
                             "active_meta_labels" in pipeline_state
                             or "inactive_meta_labels" in pipeline_state
@@ -3024,6 +3132,9 @@ class EnhancedTrainingManager:
     async def _initialize_optimized_tools(self) -> bool:
         """Initialize optimized tools and the optimized training manager."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing optimized tools...")
 
             # Ensure optimized_manager is defined
@@ -3081,6 +3192,9 @@ class EnhancedTrainingManager:
     ) -> bool:
         """Run optimized parameters optimization using computational optimization strategies."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(
                 "🚀 Running optimized parameters optimization with enhanced tools...",
             )
@@ -3283,6 +3397,9 @@ class EnhancedTrainingManager:
     ) -> pd.DataFrame | None:
         """Load market data for optimization using optimized data manager."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Load market data from the data directory
             # This is a simplified implementation
 
@@ -3419,6 +3536,9 @@ class EnhancedTrainingManager:
             validation_result: Validation result dictionary
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not validation_result:
                 return
 
@@ -3462,6 +3582,9 @@ class EnhancedTrainingManager:
             validation_result: Validation result dictionary
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not validation_result:
                 return
 
@@ -3520,6 +3643,9 @@ class EnhancedTrainingManager:
             }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🔍 Running validator for {step_name}")
 
             # First, validate step dependencies
@@ -3592,6 +3718,9 @@ class EnhancedTrainingManager:
         step_warnings = []
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Execute the original step function
             result = await step01_5_run_step(
                 symbol=symbol,
@@ -3661,6 +3790,9 @@ class EnhancedTrainingManager:
         step_warnings = []
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps import step02_feature_engineering
 
             # Execute the original step function
@@ -3716,6 +3848,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Add to training history
             history_entry = {
                 "timestamp": datetime.now().isoformat(),
@@ -3746,6 +3881,9 @@ class EnhancedTrainingManager:
     async def _store_enhanced_training_results(self) -> None:
         """Store enhanced training results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("📁 Storing enhanced training results...")
 
             # Store results in a format that can be retrieved later
@@ -3876,6 +4014,9 @@ class EnhancedTrainingManager:
     async def stop(self) -> None:
         """Stop the enhanced training manager and cleanup resources."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🛑 Stopping Enhanced Training Manager...")
 
             # Cleanup computational optimization manager
@@ -3929,6 +4070,9 @@ class EnhancedTrainingManager:
     ) -> dict[str, Any]:
         """Execute training using the optimized manager directly for advanced operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(
                 f"🚀 Executing optimized training for {symbol} on {exchange}",
             )
@@ -3973,6 +4117,9 @@ class EnhancedTrainingManager:
     async def initialize_components(self) -> bool:
         """Initialize the enhanced training manager and all its components (auxiliary)."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing Enhanced Training Manager...")
 
             # Initialize optimized tools first
@@ -3983,6 +4130,9 @@ class EnhancedTrainingManager:
             # Initialize computational optimization manager if enabled
             if self.enable_computational_optimization:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     # create_computational_optimization_manager is async; await it here
                     self.computational_optimization_manager = (
                         await create_computational_optimization_manager(
@@ -4039,6 +4189,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🔍 Starting comprehensive feature selection...")
 
             # Load feature selection configuration
@@ -4161,6 +4314,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🎯 Executing tiered feature selection...")
 
             # Categorize features by tier
@@ -4425,6 +4581,9 @@ class EnhancedTrainingManager:
 
     def save_activation_thresholds(self, thresholds: dict[str, Any]) -> None:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             target = self.artifacts_dir / "thresholds.json"
             _safe_json_write(target, thresholds)
             # Also cache in memory (flatten thresholds mapping label->threshold)
@@ -4453,6 +4612,9 @@ class EnhancedTrainingManager:
             )
             return
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             path = self.artifacts_dir / "thresholds.json"
             if path.exists():
                 with open(path) as f:
@@ -4627,6 +4789,9 @@ class EnhancedTrainingManager:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import glob
             from pathlib import Path
 
@@ -4674,6 +4839,9 @@ class EnhancedTrainingManager:
             bool: True if tracking successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if data is not None:
                 # Convert data to numpy array for metrics calculation
                 if hasattr(data, 'values'):
@@ -4722,6 +4890,9 @@ class EnhancedTrainingManager:
             bool: True if tracking successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if model is not None and hasattr(model, 'predict'):
                 # Generate sample predictions for tracking
                 # This is a simplified approach - in practice, you'd use actual test data
@@ -4764,6 +4935,9 @@ class EnhancedTrainingManager:
             bool: True if tracking successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if optimization_results:
                 # Extract key metrics from optimization results
                 best_score = optimization_results.get('best_score', 0.0)
@@ -4811,6 +4985,9 @@ class EnhancedTrainingManager:
             bool: True if tracking successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if validation_results:
                 # Extract key metrics from validation results
                 accuracy = validation_results.get('accuracy', 0.0)
@@ -4860,6 +5037,9 @@ class EnhancedTrainingManager:
             bool: True if tracking successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if ab_test_results:
                 # Extract key metrics from A/B testing results
                 variant_a_score = ab_test_results.get('variant_a_score', 0.0)
@@ -4900,6 +5080,9 @@ class EnhancedTrainingManager:
             return
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             step_end_time = time.time()
             execution_duration = step_end_time - step_start_time
 
@@ -4966,6 +5149,9 @@ class EnhancedTrainingManager:
         """Create a summary of the step result."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if hasattr(result, 'shape'):  # DataFrame
                 return {
                     "type": "DataFrame",
@@ -5005,6 +5191,9 @@ class EnhancedTrainingManager:
         """Get current system resource usage."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             memory = psutil.virtual_memory()
             cpu = psutil.cpu_percent()
             disk = psutil.disk_usage('/')

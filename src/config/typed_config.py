@@ -84,6 +84,9 @@ class TypedConfigManager:
             RuntimeTypeError: If validation fails
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate main configuration structure
             config: ConfigDict = {}
 

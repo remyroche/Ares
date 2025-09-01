@@ -927,6 +927,9 @@ class MatrixDiverseLookbackOptimizer:
         """Calculate feature with specific lookback period."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if feature_name == "RSI":
                 return self._calculate_rsi(data['close'], period)
             elif feature_name == "MACD_fast":

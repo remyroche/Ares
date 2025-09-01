@@ -30,6 +30,9 @@ class VIFValidationError(Exception):
     signal.alarm(seconds)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         yield
     finally:
         # Restore original handler and cancel alarm

@@ -3,7 +3,7 @@
 from typing import Any
 
 # Version information
-ARES_VERSION = "0.1.0"
+ARES_VERSION = "0_2_3"
 
 from src.config.environment import get_environment_settings
 from src.config.system import get_system_config

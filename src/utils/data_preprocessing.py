@@ -35,6 +35,9 @@ def regularize_timestamps(
     logger, system_logger.getChild("DataPreprocessing")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if data is None or data.empty:
         return data
 
@@ -148,6 +151,9 @@ def preprocess_data_for_multi_timeframe(
     logger, system_logger.getChild("DataPreprocessing")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Regularize timestamps for all data
         processed_price, regularize_timestamps(price_data)
         processed_volume = (
@@ -191,6 +197,9 @@ def validate_and_fix_data_quality(
     }
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         fixed_data, data.copy()
 
         # Fix common issues based on data type

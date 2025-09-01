@@ -140,6 +140,9 @@ class RawDataQualityChecker:
         self.logger.info(f"🚀 {func.__name__}: Starting validation...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 result, func(self, data, *args, **kwargs)
 
                 end_time, datetime.now()
@@ -296,6 +299,9 @@ class RawDataQualityChecker:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic structure validation (this may fix the datetime index)
             structure_valid, self._validate_data_structure(data, results)
         if not structure_valid:
@@ -391,6 +397,9 @@ class RawDataQualityChecker:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if irregular intervals are detected
             time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
@@ -463,6 +472,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Quick quality check
             time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
@@ -610,6 +622,9 @@ class RawDataQualityChecker:
         self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Import the unified data downloader
             from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
@@ -626,6 +641,9 @@ class RawDataQualityChecker:
         self.logger.info(f"🔧 Downloading gap {i + 1}/{len(gaps)}: {gap_start} to {gap_end}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use the unified downloader to download data for this gap period
                     success, asyncio.run(
                         download_all_data_with_consolidation(
@@ -702,6 +720,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Look for data files in common locations
             possible_paths = [
                 f"data_cache / klines_{exchange}_{symbol}_{timeframe}_*.csv",
@@ -718,6 +739,9 @@ class RawDataQualityChecker:
 
         for file_path in files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"🔍 Loading data from: {file_path}")
 
         # Load the data
@@ -762,6 +786,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create a copy of the main data
             filled_data, main_data.copy()
 
@@ -1019,6 +1046,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Attempting to create datetime index...")
 
         # Method 1: Check if there's a timestamp column
@@ -1027,6 +1057,9 @@ class RawDataQualityChecker:
         if col in data.columns:
         self.logger.info(f"🔧 Found timestamp column: {col}")
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to parse the timestamp column
         if data[col].dtype == "object":
         # Try different datetime formats
@@ -1038,6 +1071,9 @@ class RawDataQualityChecker:
                                 "%Y-%m-%dT%H:%M:%S.%f",
                             ]:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                                     timestamps, pd.to_datetime(data[col], format = fmt)
         if not timestamps.isna().all():
         # Create new DataFrame with datetime index
@@ -1128,6 +1164,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Look for clues in column names
             column_names = " ".join(data.columns).lower()
 
@@ -1628,6 +1667,9 @@ class RawDataQualityChecker:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for large gaps in the data
             time_diffs, data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
@@ -1661,6 +1703,9 @@ class RawDataQualityChecker:
         self.logger.info(f"🔧 Processing gap {i + 1}/{len(large_gaps)}: {gap_start} to {gap_end}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Download missing data for this gap
                     gap_data, self.download_missing_data_for_timeframe(
                         symbol = symbol,
@@ -1730,6 +1775,9 @@ class RawDataQualityChecker:
         self.logger.info(f"   Time range: {start_time} to {end_time}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use the unified downloader
             from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation,
@@ -1782,6 +1830,9 @@ class RawDataQualityChecker:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import glob
             import os
 

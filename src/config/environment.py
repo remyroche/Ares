@@ -230,13 +230,6 @@ class EnvironmentSettings(BaseSettings):
             "experiment_name": self.mlflow_experiment_name,
         }
 
-    class Config:
-        """Pydantic configuration."""
-
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        extra = "ignore"
 
 
 def get_environment_settings() -> EnvironmentSettings:

@@ -169,6 +169,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Load unified data with regime information
             unified_data_path = f"{data_dir}/{symbol}_unified_data.parquet"
             if not os.path.exists(unified_data_path):
@@ -206,6 +209,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"🎯 Training model for regime: {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Regime-specific feature engineering
             regime_features = await self._engineer_regime_features(regime_data, regime)
             
@@ -252,6 +258,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"🔧 Engineering features for regime: {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Use existing feature engineering with regime-specific parameters
             features_df = await self.prepare_enhanced_data(regime_data, "1m")
             
@@ -275,6 +284,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"⚙️ Optimizing hyperparameters for regime: {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Regime-specific hyperparameter optimization
             if self.regime_config["regime_specific_hyperparameters"]:
                 # Use regime-specific parameter ranges
@@ -322,6 +334,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"🔍 Validating model for regime: {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Regime-specific validation
             if self.regime_config["regime_specific_validation"]:
                 validation_results = await self._perform_regime_specific_validation(
@@ -347,6 +362,9 @@ class EnhancedHMMBasedTrainingStep:
         """Perform regime-specific validation."""
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Regime-specific validation logic
             # This would include regime-specific metrics and thresholds
             
@@ -376,6 +394,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Load regime data
             regime_data = await self._load_regime_specific_data(symbol, data_dir, "all")
             
@@ -424,6 +445,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info("🔍 Validating all regime-specific results")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             for regime, results in self.regime_results.items():
                 if not results.get("success", False):
                     self.logger.error(f"❌ Regime {regime} results validation failed")
@@ -462,6 +486,9 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info("💾 Saving regime-specific models")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             for regime, results in self.regime_results.items():
                 if results.get("success", False):
                     regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
@@ -518,6 +545,9 @@ class EnhancedHMMBasedTrainingStep:
         # Use enhanced feature selection if multi - output is enabled
         if has_profit and self.enable_multi_output:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 
         self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
@@ -711,6 +741,9 @@ class EnhancedHMMBasedTrainingStep:
             Training results dictionary
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             architecture, self.model_architectures.get(timeframe, "LightGBM")
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
@@ -887,6 +920,9 @@ class EnhancedHMMBasedTrainingStep:
         """
         if prediction_type == "multi_output" and self.multi_output_trainer:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create market data for prediction
                 market_data, pd.DataFrame({
                     'close': np.random.randn(len(features)),  # Placeholder - should use actual market data
@@ -923,6 +959,9 @@ class EnhancedHMMBasedTrainingStep:
             save_path: Path to save models
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             os.makedirs(save_path, exist_ok = True)
 
         # Save multi - output models
@@ -979,6 +1018,9 @@ class EnhancedHMMBasedTrainingStep:
             load_path: Path to load models from
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load multi - output models
             multi_output_dir, os.path.join(load_path, "multi_output_models")
         if os.path.exists(multi_output_dir) and self.multi_output_trainer:
@@ -1029,6 +1071,9 @@ async def run_enhanced_step(
         True if successful, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         logger, system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM - Based Training for {symbol}")
 

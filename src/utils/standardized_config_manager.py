@@ -140,7 +140,7 @@ class StandardizedConfigManager:
         step_defaults = {
             "step_name": step_name,
             "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0"
+            "version": "1_2_3"
         }
 
         step_config.update(step_defaults)
@@ -167,6 +167,9 @@ class StandardizedConfigManager:
             True if successful, False otherwise
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             config_dir, self.base_config_path / config_type
             config_dir.mkdir(parents = True, exist_ok = True)
 
@@ -176,7 +179,7 @@ class StandardizedConfigManager:
             config_with_metadata = {
                 "metadata": {
                     "created_at": datetime.now().isoformat(),
-                    "version": "1.0.0",
+                    "version": "1_2_3",
                     "config_type": config_type
                 },
                 "config": config

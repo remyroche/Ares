@@ -210,6 +210,9 @@ class DemoComprehensivePipelineExecutor:
         print(f"🔍 Monitoring quality for {step_name}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get step data for monitoring
             step_data = step_result.get("data")
             if step_data is None:
@@ -375,7 +378,7 @@ async def main():
         "TIMEFRAME": "1m",
         "DATA_DIR": "data_cache",
         "LOOKBACK_DAYS": 1095,
-        "project_version": "1.0.0",
+        "project_version": "1_2_3",
         "data_quality_monitor": {
             "enable_real_time_monitoring": True,
             "alert_threshold": 0.8,

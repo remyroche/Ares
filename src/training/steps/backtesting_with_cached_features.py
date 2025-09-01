@@ -57,6 +57,9 @@ class BacktestingWithCachedFeatures:
     async def initialize(self) -> bool:
         """Initialize the backtesting system."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing backtesting with cached features...")
 
         # Initialize feature engineering
@@ -358,6 +361,9 @@ class BacktestingWithCachedFeatures:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
 
             results: list[dict[str, Any]] = []
@@ -394,6 +400,9 @@ class BacktestingWithCachedFeatures:
     async def _load_backtest_data(self, data_path: str) -> pd.DataFrame | None:
         """Load backtest data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if not data_path:
         return None
 
@@ -401,6 +410,9 @@ class BacktestingWithCachedFeatures:
         if file_path.suffix.lower() == ".parquet":
         # Prefer dataset scan if a partitioned base is provided in path
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     from src.training.enhanced_training_manager_optimized import (
                         ParquetDatasetManager,
                     )
@@ -454,6 +466,9 @@ class BacktestingWithCachedFeatures:
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             stats, self.performance_stats.copy()
 
         if stats.get("iterations_completed", 0) > 0:
@@ -492,6 +507,9 @@ class BacktestingWithCachedFeatures:
 async def main() -> None:
     """Main function for backtesting with cached features."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Configuration
         config = {
             "wavelet_cache": {

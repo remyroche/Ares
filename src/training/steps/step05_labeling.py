@@ -196,6 +196,9 @@ class LabelingStep:
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load triple barrier labels from previous step
             triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
         if not triple_barrier_path.exists():
@@ -264,6 +267,9 @@ class LabelingStep:
     ) -> None:
         """Log step 5 artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Collect execution metadata
             execution_metadata = {
                 "start_time": datetime.now().isoformat(),
@@ -300,7 +306,7 @@ class LabelingStep:
             ,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1_2_3"),  # Default version
             }
 
         # Create step data for report
@@ -334,7 +340,7 @@ class LabelingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
         self.logger.info(f"✅ Logged labeling report: {report_name}")
@@ -352,7 +358,7 @@ class LabelingStep:
                         "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 },
                         "timeframe": timeframe,
                     }
@@ -372,7 +378,7 @@ class LabelingStep:
                     ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
                 )
         self.logger.info(f"✅ Logged labeling metadata: {metadata_artifact_name}")
@@ -388,7 +394,7 @@ class LabelingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1_2_3"),
                 }
             )
 
@@ -401,6 +407,9 @@ class LabelingStep:
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result_data, data.copy()
 
         # 1. Triple barrier labels (already present)
@@ -411,6 +420,9 @@ class LabelingStep:
         # 2. Generate meta - labels if meta - labeling system is available
         if self.meta_labeling_system:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await self.meta_labeling_system.initialize()
 
         # Generate analyst labels
@@ -452,6 +464,9 @@ class LabelingStep:
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Start with triple barrier labels as base
             composite_label, data['triple_barrier_label'].copy()
 
@@ -475,6 +490,9 @@ class LabelingStep:
     async def _calculate_label_confidence(self, data: pd.DataFrame) -> pd.Series:
         """Calculate confidence scores for labels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             confidence, np.ones(len(data), dtype = np.float32)
 
         # Higher confidence when multiple labeling strategies agree
@@ -494,6 +512,9 @@ class LabelingStep:
     async def _determine_label_source(self, data: pd.DataFrame) -> pd.Series:
         """Determine the source of each label."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             sources = []
 
         for idx in range(len(data)):

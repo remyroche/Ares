@@ -25,6 +25,9 @@ sys.path.insert(0, str(project_root))
 
 # Import enhanced utilities
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.enhanced_error_handling import (
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
@@ -99,6 +102,9 @@ class OptimizedUnifiedDataProcessor:
         chunk_count, 0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         for chunk in pd.read_parquet(file_path, chunksize = self.config.chunk_size):
                 chunk_count += 1
         self.logger.debug(f"Processing {source_name} chunk {chunk_count}")
@@ -234,6 +240,9 @@ class EnhancedStep1_5DataConverter:
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Extract parameters
             symbol, training_input.get("symbol", self.config.symbol)
             exchange, training_input.get("exchange", self.config.exchange)
@@ -286,6 +295,9 @@ class EnhancedStep1_5DataConverter:
     async def _check_unified_data_exists(self, symbol: str, exchange: str, timeframe: str) -> bool:
         """Check if unified data already exists."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             unified_base, os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
         if os.path.exists(unified_base):
                 parquet_files = []
@@ -331,6 +343,9 @@ class EnhancedStep1_5DataConverter:
     async def _perform_full_conversion(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Perform full data conversion."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Identify data sources
             data_sources, await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
 
@@ -397,6 +412,9 @@ class EnhancedStep1_5DataConverter:
     async def _save_unified_data(self, unified_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> bool:
         """Save unified data to partitioned parquet format."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create output directory
             output_dir, os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             os.makedirs(output_dir, exist_ok = True)
@@ -413,6 +431,9 @@ class EnhancedStep1_5DataConverter:
 
         # Use pyarrow for efficient writing
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 import pyarrow as pa
                 import pyarrow.parquet as pq
 
@@ -526,6 +547,9 @@ if __name__ == "__main__":
 
         # Execute enhanced data conversion
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result, await step01_5.execute(training_input, pipeline_state)
 
             print("=" * 60)

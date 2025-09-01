@@ -217,6 +217,9 @@ def validate_mode_parameters(mode: str, **kwargs) -> bool:
         True if parameters are valid, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = get_training_mode_config(mode)
 
         # Validate lookback_days if provided

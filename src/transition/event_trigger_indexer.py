@@ -132,6 +132,9 @@ class EventTriggerIndexer:
             return combined_df
         # Try to compute intensities using CompositeHMMRegimeSystem
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             meta = CompositeHMMRegimeSystem(self.config)
             labels = candidate_labels
             if labels is None:

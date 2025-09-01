@@ -47,6 +47,9 @@ class TransitionInferenceCombiner:
 
     def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if path and os.path.exists(path):
                 with open(path) as f:
                     data = json.load(f)

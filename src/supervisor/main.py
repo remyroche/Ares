@@ -222,6 +222,9 @@ class Supervisor:
         and updates the persistent state. This is key for crash recovery.
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # 1. Update account equity and peak equity
             account_info = await self.trader.get_account_info()  # Use self.trader
             current_equity = float(account_info.get("totalWalletBalance", 0))

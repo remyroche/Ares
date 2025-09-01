@@ -113,6 +113,9 @@ class EnhancedDataQualityManager:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Step 1: Check for data gaps
         if check_gaps and self.gap_detector:
                 gap_results, await self._check_data_gaps(symbol, exchange, timeframe)
@@ -168,6 +171,9 @@ class EnhancedDataQualityManager:
         return {"gaps": [], "error": "Gap detector not available"}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for missing data periods
             missing_data, self.gap_detector.detect_missing_data(symbol, exchange)
 
@@ -214,10 +220,16 @@ class EnhancedDataQualityManager:
         return {"filled_gaps": [], "error": "Gap filler not available"}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             filled_gaps = []
 
         for gap in gaps:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if gap["type"] == "aggtrades":
         # Fill aggtrades gap
                         success, await self.gap_filler.fill_aggtrades_gap(
@@ -263,6 +275,9 @@ class EnhancedDataQualityManager:
         return {"issues": [], "metrics": {}, "error": "Validator not available"}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             issues = []
             metrics = {}
 
@@ -286,6 +301,9 @@ class EnhancedDataQualityManager:
 
         for file_path in klines_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     df, pd.read_parquet(file_path)
                     metrics[f"klines_{file_path.name}"] = {
                         "file_size": file_path.stat().st_size,
@@ -315,6 +333,9 @@ class EnhancedDataQualityManager:
     async def _check_step3_step4_completeness(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Check if data is complete for step3 and step4 requirements."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             missing = []
             ready, True
 
@@ -328,6 +349,9 @@ class EnhancedDataQualityManager:
             klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     df, pd.read_parquet(klines_file)
         if len(df) < 10000:  # Minimum rows for HMM
                         missing.append("Insufficient klines data for HMM analysis")
@@ -384,6 +408,9 @@ class EnhancedDataQualityManager:
         logger.info(f"📊 Preparing data for step3 / step4: {exchange}_{symbol}_{timeframe}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # First, run comprehensive quality check
             quality_results, await self.comprehensive_quality_check(
                 symbol, exchange, timeframe,
@@ -439,10 +466,16 @@ class EnhancedDataQualityManager:
     async def _fix_missing_data_for_steps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Use step1 and step01_5 components to fix missing data for step3 / step4."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             logger.info("🔄 Attempting to fix missing data using step1 / step01_5 components...")
 
         # Try to run step1 data collection if needed
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from ..step1_data_collection import run_step as run_step1
                 step1_success, await run_step1(
                     symbol = symbol,
@@ -462,6 +495,9 @@ class EnhancedDataQualityManager:
 
         # Try to run step01_5 data conversion if needed
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from ..step01_5_data_converter import run_step as run_step01_5
                 step01_5_success, await run_step01_5(
                     symbol = symbol,

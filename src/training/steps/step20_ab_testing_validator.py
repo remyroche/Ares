@@ -122,6 +122,9 @@ class Step15ABTestingValidator(BaseValidator):
             bool: True if files exist
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected A / B testing file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json",
@@ -163,6 +166,9 @@ class Step15ABTestingValidator(BaseValidator):
             bool: True if statistical significance is acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load A / B testing results
             results_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
 
@@ -251,6 +257,9 @@ class Step15ABTestingValidator(BaseValidator):
             bool: True if performance comparison is acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load A / B testing performance results
             performance_file = (
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json"
@@ -349,6 +358,9 @@ class Step15ABTestingValidator(BaseValidator):
             bool: True if sample sizes are acceptable
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load A / B testing metadata
             metadata_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json"
 

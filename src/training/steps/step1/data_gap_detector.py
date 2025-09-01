@@ -331,6 +331,9 @@ class DataGapDetector:
 
         for file_path in all_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the file
         if file_path.suffix.lower() == ".csv":
                     df, pd.read_csv(file_path, parse_dates=["timestamp"])

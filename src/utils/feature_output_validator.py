@@ -487,6 +487,9 @@ class FeatureOutputValidator:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Handle different feature dict formats
         if all(
                     isinstance(v, (pd.Series, pd.DataFrame)) for v in features.values()

@@ -5,6 +5,9 @@ Prometheus metrics collection utility for training step validators.
 import logging
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from prometheus_client import (
         Counter,
         Gauge,
@@ -143,6 +146,9 @@ class PrometheusMetrics:
         import socket
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             sock, socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             result, sock.connect_ex(("localhost", self.port))
             sock.close()

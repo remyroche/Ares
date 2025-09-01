@@ -221,6 +221,9 @@ class PipelineStandards:
         df, df.copy()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if target_format == "int64":
         # Convert to int64 milliseconds
         if pd.api.types.is_datetime64_any_dtype(df[column]):
@@ -276,6 +279,9 @@ class PipelineStandards:
         return result
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check for null values
             null_count, df[column].isnull().sum()
         if null_count > 0:
@@ -581,7 +587,7 @@ class PipelineStandards:
             "asset": asset.upper(),
             "timeframe": timeframe,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "pipeline_version": "1.0.0",
+            "pipeline_version": "1_2_3",
             "data_format": "parquet",
             "compression": "snappy",
             **kwargs

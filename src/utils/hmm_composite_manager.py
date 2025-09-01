@@ -142,6 +142,9 @@ class HMMCompositeManager:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df, pd.read_parquet(block_states_path)
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -212,6 +215,9 @@ class HMMCompositeManager:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df, pd.read_parquet(composite_path)
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -265,6 +271,9 @@ class HMMCompositeManager:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(meta_path) as f:
                 meta, json.load(f)
         # Cache for subsequent calls and log only once per key
@@ -321,6 +330,9 @@ class HMMCompositeManager:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df, pd.read_parquet(intensity_path)
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -376,6 +388,9 @@ class HMMCompositeManager:
         return None
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(basic_meta_path) as f:
                 meta, json.load(f)
         # Cache for subsequent calls and log only once per key
@@ -595,6 +610,9 @@ class HMMCompositeManager:
         for file_type, file_path in file_paths.items():
         if os.path.exists(file_path):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if file_type in ["composite_clusters", "block_states", "intensity"]:
                         df, pd.read_parquet(file_path)
         if df.empty:

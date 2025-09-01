@@ -98,6 +98,9 @@ class ExchangeABTester:
     async def start_ab_test(self, test_config: ABTestConfig) -> bool:
         """Start a new A/B test."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.is_running:
                 self.logger.error("A/B test already running")
                 return False
@@ -145,6 +148,9 @@ class ExchangeABTester:
     ) -> ExchangeResult:
         """Process a model prediction for a specific exchange."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.is_running or self.current_test is None:
                 msg = "No A/B test currently running"
                 raise ValueError(msg)
@@ -225,6 +231,9 @@ class ExchangeABTester:
     async def _update_metrics(self, exchange: str, result: ExchangeResult) -> None:
         """Update performance metrics for an exchange."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             metrics = self.performance_metrics[exchange]
 
             metrics["total_predictions"] += 1
@@ -264,6 +273,9 @@ class ExchangeABTester:
     async def stop_ab_test(self) -> bool:
         """Stop the current A/B test and generate results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.is_running:
                 return False
 
@@ -291,6 +303,9 @@ class ExchangeABTester:
     async def _generate_results(self) -> None:
         """Generate final test results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.current_test:
                 return
 
@@ -349,6 +364,9 @@ class ExchangeABTester:
     async def _save_results(self) -> None:
         """Save test results to file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not self.current_test:
                 return
 
@@ -383,6 +401,9 @@ class ExchangeABTester:
     def get_test_status(self) -> dict[str, Any]:
         """Get current test status."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             return {
                 "is_running": self.is_running,
                 "current_test": asdict(self.current_test)

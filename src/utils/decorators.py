@@ -174,6 +174,9 @@ def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") 
         start_memory, _get_memory_usage() if level in ["detailed", "profiling"] else 0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result, wrapper_func(*args, **kwargs)
         return result
         finally:
@@ -891,6 +894,9 @@ def _sanitize(value: Any) -> Any:
     Masks values of known sensitive keys. Keeps structure to aid debugging.
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if isinstance(value, dict):
             redacted: dict[str, Any] = {}
         for key, val in value.items():

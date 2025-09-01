@@ -308,6 +308,9 @@ class MetaLabelRelevanceEvaluator:
             "inactive_labels": sorted(inactive),
         }
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             with open(os.path.join(self.artifacts_dir, "active_labels.json"), "w") as f:
                 json.dump(
                     {

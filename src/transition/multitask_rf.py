@@ -122,6 +122,9 @@ class MultiTaskRandomForest:
         }
         # Reliability + thresholds per class (one-vs-rest)
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             proba = pc_model.predict_proba(Xva)
             classes = list(pc_model.classes_)
             val_true = yva.values
@@ -168,6 +171,9 @@ class MultiTaskRandomForest:
                 ),
             }
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))
@@ -182,6 +188,9 @@ class MultiTaskRandomForest:
 
         # 2b) Next regime head (multiclass): majority regime in Y_post_states
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             regimes = []
             for s in samples:
                 y_states = s.get("Y_post_states")
@@ -225,6 +234,9 @@ class MultiTaskRandomForest:
                 }
                 # thresholds are not used for multiclass here; reliability scale
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     proba = nr_model.predict_proba(Xva)
                     classes = list(nr_model.classes_)
                     val_true = yva.values
@@ -271,6 +283,9 @@ class MultiTaskRandomForest:
                 ),
             }
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 p1 = clf.predict_proba(Xva)[:, 1]
                 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
                 mean_y = float(np.mean(yva.values))

@@ -167,6 +167,9 @@ def get_current_regime_info(
     p_emerge: dict[int, float] = {}
     exit_hazard: float | None = None
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if blk_df is not None and not blk_df.empty:
             blk_row = _align_last(blk_df, ts)
             comp_row = last_row
@@ -185,6 +188,9 @@ def get_current_regime_info(
                             "_calibrator.joblib",
                         ):
                             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                                 k = int(fname.split("_")[2])
                                 cal = joblib.load(os.path.join(models_dir, fname))
                                 keep_cols = _build_keep_cols(X_all, k)

@@ -231,6 +231,9 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
     """
     key = model_key.lower()
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         mapping: dict[str, Any] = {
             "xgboost": xgb.XGBClassifier(
                 n_estimators=int(params.get("n_estimators", 400)),
@@ -303,6 +306,9 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
 
         if key == "hmm_gaussian":
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(

@@ -38,35 +38,3 @@ class DashboardMetric:
     metadata: Dict[str, Any]
     unit: Optional[str]
 
-
-class MetricsDashboard:
-    """Real-time metrics dashboard."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("MetricsDashboard")
-
-        self.dashboard_config = config.get(
-            "metrics_dashboard",
-            {
-                "update_interval_seconds": 30,
-                "enable_export": False,
-            },
-        )
-
-        self.is_active: bool = False
-        self.update_task: Optional[asyncio.Task] = None
-        self.metrics: List[DashboardMetric] = []
-        self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
-
-    @handle_errors(exceptions=(Exception,), default_return=False, context="metrics_dashboard.initialize")
-    async def initialize(self) -> bool:
-        self.logger.info("📊 Initializing Metrics Dashboard ...")
-        self.metrics.clear()
-        self.is_active = True
-        self.logger.info("✅ Metrics Dashboard initialized successfully")
-        return True
-
-    async def _metrics_update_loop(self) -> None:
-        while self.is_active:
-            await asyncio.sleep(self.update_interval)

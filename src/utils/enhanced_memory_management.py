@@ -25,6 +25,9 @@ except ImportError:
     PANDAS_AVAILABLE, False
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
@@ -55,6 +58,9 @@ class MemoryMonitor:
         return 0.0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             process, psutil.Process()
             usage_mb, process.memory_info().rss / 1024 / 1024
         self.peak_usage, max(self.peak_usage, usage_mb)
@@ -166,6 +172,9 @@ def memory_efficient(max_memory_mb: float, 1024.0, optimize_dtypes: bool, True):
             monitor.log_memory_status(f"before {func.__name__}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 result, await func(*args, **kwargs)
 
         # Check memory after processing
@@ -293,6 +302,9 @@ class MemoryOptimizedProcessor:
         chunk_count, 0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         for chunk in pd.read_parquet(file_path, chunksize = chunk_size):
                 chunk_count += 1
         self.logger.debug(f"Processing stream chunk {chunk_count}")

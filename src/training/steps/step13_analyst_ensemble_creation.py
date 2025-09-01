@@ -70,6 +70,9 @@ class AnalystEnsembleCreationStep:
         logger.info("🚀 Starting Step 7: Analyst Ensemble Creation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if enhanced HMM models exist from Step 6
             enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
         if not os.path.exists(enhanced_models_dir):
@@ -110,6 +113,9 @@ class AnalystEnsembleCreationStep:
     def _load_enhanced_models(self, enhanced_models_dir: str) -> dict[str, Any]:
         """Load enhanced models from Step 6."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ensemble_models: dict[str, Any] = {}
 
         if not os.path.exists(enhanced_models_dir):
@@ -147,8 +153,14 @@ class AnalystEnsembleCreationStep:
     ) -> dict[str, Any]:
         """Create ensemble from loaded models."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Apply optimized feature selection for ensemble creation
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from src.training.optimized_feature_selection_manager import (
                     OptimizedFeatureSelectionManager,
                 )
@@ -240,6 +252,9 @@ class AnalystEnsembleCreationStep:
     def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
         """Get sample data for feature selection from existing features."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Try to load sample features and labels from Step 2 artifacts
             features_file, f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
             labels_file, f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
@@ -275,6 +290,9 @@ class AnalystEnsembleCreationStep:
     ) -> bool:
         """Create a placeholder ensemble when no enhanced models are available."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             logger.info("📝 Creating placeholder ensemble for Step 7")
 
         # Create placeholder ensemble structure
@@ -307,6 +325,9 @@ class AnalystEnsembleCreationStep:
     ) -> None:
         """Save ensemble summary to file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create ensemble directory
             ensemble_dir, os.path.join(data_dir, "analyst_ensemble")
             os.makedirs(ensemble_dir, exist_ok = True)

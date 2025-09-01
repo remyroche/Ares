@@ -17,6 +17,9 @@ def init_sentry() -> None:
         return
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         import sentry_sdk
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
         from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -45,6 +48,9 @@ def init_otlp_logging() -> None:
         return
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Minimal setup for OTLP logging exporter
         from opentelemetry import _logs as otel_logs
         from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter

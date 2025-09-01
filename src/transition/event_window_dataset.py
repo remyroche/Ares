@@ -118,6 +118,9 @@ class EventWindowDatasetBuilder:
 
         # Try dataset cache
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.cache_dir:
                 os.makedirs(self.cache_dir, exist_ok=True)
                 key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
@@ -216,6 +219,9 @@ class EventWindowDatasetBuilder:
             # Macro context at t0 (static across pre-window for simplicity)
             if bool(self.ctx_cfg.get("enable_macro_context", True)):
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     macro_cols = []
                     # 1h EMA50 and ATR pct if available
                     if (
@@ -317,6 +323,9 @@ class EventWindowDatasetBuilder:
 
         # Save minimal meta cache
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.cache_dir:
                 with open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
                     json.dump(

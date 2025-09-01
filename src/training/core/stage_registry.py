@@ -52,6 +52,9 @@ class StageRegistry:
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Stage Registry...")
 
             # Load stage configuration
@@ -80,6 +83,9 @@ class StageRegistry:
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Set default stage parameters
             self.stage_config.setdefault("stage_interval", 3600)
             self.stage_config.setdefault("max_stage_history", 100)

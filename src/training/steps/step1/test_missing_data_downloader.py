@@ -135,6 +135,9 @@ def main():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Test missing data identification
         missing_data, asyncio.run(test_missing_data_identification())
 

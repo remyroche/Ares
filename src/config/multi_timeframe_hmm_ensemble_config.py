@@ -177,6 +177,9 @@ def validate_ensemble_config(config: dict[str, Any]) -> bool:
         bool: True if valid = False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         ensemble_config = config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
 
         # Check if enabled

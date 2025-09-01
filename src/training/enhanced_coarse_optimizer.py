@@ -96,6 +96,9 @@ class EnhancedCoarseOptimizer:
     def _allocate_resources(self) -> dict[str, Any]:
         """Dynamically allocate computational resources for optimization."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             cpu_count_available = cpu_count()
             memory_gb = psutil.virtual_memory().total / (1024**3)
 
@@ -231,6 +234,9 @@ class EnhancedCoarseOptimizer:
     def _monitor_memory_usage(self) -> bool:
         """Monitor memory usage and trigger cleanup if needed."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             memory_percent = psutil.virtual_memory().percent
             memory_gb = psutil.virtual_memory().used / (1024**3)
 
@@ -315,6 +321,9 @@ class EnhancedCoarseOptimizer:
                 completed += len(chunk)
 
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     chunk_results = future.result()
                     results.update(chunk_results)
 
@@ -350,6 +359,9 @@ class EnhancedCoarseOptimizer:
         results = {}
         for feature in features:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
@@ -392,6 +404,9 @@ class EnhancedCoarseOptimizer:
 
         for i, feature in enumerate(features):
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
@@ -515,6 +530,9 @@ class EnhancedCoarseOptimizer:
             y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_val)
 
@@ -566,6 +584,9 @@ class EnhancedCoarseOptimizer:
         self.logger.info("Preparing data for optimization...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate input data
             if data is None or data.empty:
                 msg = "Input data is None or empty"
@@ -724,6 +745,9 @@ class EnhancedCoarseOptimizer:
     def _add_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add features to the data using functional approach."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Add technical indicators
             data = self._add_technical_indicators(data)
 
@@ -811,6 +835,9 @@ class EnhancedCoarseOptimizer:
         self.logger.info("Running feature selection...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get all features
             features = list(X.columns)
 
@@ -918,6 +945,9 @@ class EnhancedCoarseOptimizer:
         self.logger.info("Running hyperparameter optimization...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             X_selected = X[features]
             # FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X_selected) * 0.8)
@@ -946,6 +976,9 @@ class EnhancedCoarseOptimizer:
 
                 # Train model with enhanced cross-validation
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     if hasattr(model, "fit"):
                         # Use enhanced cross-validation for more robust evaluation
                         cv_results = self._enhanced_cross_validation(
@@ -1027,6 +1060,9 @@ class EnhancedCoarseOptimizer:
                 # Create ranges for each parameter
                 for param_name in all_param_names:
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         values = [
                             t.params[param_name]
                             for t in top_trials
@@ -1107,6 +1143,9 @@ class EnhancedCoarseOptimizer:
         self.logger.info(f"📊 Initial resource allocation: {self.resources}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Prepare data using functional approach
             X, y = self.prepare_data(self.klines_data)
 

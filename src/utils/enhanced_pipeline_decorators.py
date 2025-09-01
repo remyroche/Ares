@@ -111,6 +111,9 @@ class EnhancedPipelineDecorator:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Pre - execution monitoring
         await self._pre_execution_monitoring(step_report, args, kwargs)
 
@@ -220,6 +223,9 @@ class EnhancedPipelineDecorator:
         data_quality_info = {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check args for DataFrames
         for i, arg in enumerate(args):
         if PANDAS_AVAILABLE and isinstance(arg, pd.DataFrame):
@@ -255,6 +261,9 @@ class EnhancedPipelineDecorator:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
                 analysis.update({
                     "result_size": result.shape,
@@ -319,6 +328,9 @@ class EnhancedPipelineDecorator:
     def _serialize_result(self, result: Any) -> Any:
         """Safely serialize result for JSON storage."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
         return {
                     "type": "DataFrame",
@@ -358,6 +370,9 @@ class EnhancedPipelineDecorator:
         report_path, self.reports_dir / filename
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Save detailed JSON report
         with open(report_path, 'w', encoding='utf - 8') as f:
                 json.dump(step_report, f, indent = 2, ensure_ascii = False, default = str)
@@ -484,6 +499,9 @@ class EnhancedPipelineDecorator:
         # Store in metadata index
         metadata_file, self.reports_dir / "reports_metadata.json"
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if metadata_file.exists():
         with open(metadata_file, 'r', encoding='utf - 8') as f:
                     metadata_index, json.load(f)
@@ -534,6 +552,9 @@ async def get_step_reports(step_name: str, None, limit: int, 50) -> List[Dict[st
         return []
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(metadata_file, 'r', encoding='utf - 8') as f:
             metadata_index, json.load(f)
 
@@ -566,6 +587,9 @@ async def cleanup_old_reports(days_to_keep: int, 30):
     cleaned_count, 0
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         metadata_file, reports_dir / "reports_metadata.json"
         if metadata_file.exists():
         with open(metadata_file, 'r', encoding='utf - 8') as f:
@@ -581,6 +605,9 @@ async def cleanup_old_reports(days_to_keep: int, 30):
         # Remove old report files
         for old_report in old_reports:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     report_path, Path(old_report["report_path"])
                     summary_path, Path(old_report["summary_path"])
 

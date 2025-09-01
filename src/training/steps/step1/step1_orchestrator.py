@@ -122,6 +122,9 @@ class Step1Orchestrator:
             results["success"] = False
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Step 1: Detect missing data gaps
             logger.info("📊 STEP 1.1: DETECTING MISSING DATA GAPS")
             logger.info("-" * 60)
@@ -208,7 +211,7 @@ class Step1Orchestrator:
                 )
 
         # Step 5.5: Create 1m consolidated data
-            logger.info("📊 STEP 1.5.5: CREATING 1M CONSOLIDATED DATA")
+            logger.info("📊 STEP 1_2_3: CREATING 1M CONSOLIDATED DATA")
             logger.info("-" * 60)
 
             consolidation_results, self.data_preparation.create_1m_consolidated_data(
@@ -245,7 +248,7 @@ class Step1Orchestrator:
                 results["warnings"].append("Resampling incomplete")
 
         # Step 6.5: Prepare data for step01_5 processing
-            logger.info("📊 STEP 1.6.5: PREPARING DATA FOR STEP1_5 PROCESSING")
+            logger.info("📊 STEP 1_2_3: PREPARING DATA FOR STEP1_5 PROCESSING")
             logger.info("-" * 60)
 
             preparation_results, self.data_preparation.prepare_for_step01_5(

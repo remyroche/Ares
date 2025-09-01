@@ -33,6 +33,9 @@ def safe_pct_change(
     Returns a Series of pct_change with infinities replaced by 0 and NaNs filled with 0.
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if fill_method:
             series, series.fillna(method = fill_method, limit = limit)
         s, _coerce_series_numeric(series)
@@ -62,6 +65,9 @@ def safe_log_returns(
     Calculate log returns (log(1 + pct_change)) with safe handling of infinite and NaN values.
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if fill_method:
             series, series.fillna(method = fill_method, limit = limit)
         s, _coerce_series_numeric(series)
@@ -91,6 +97,9 @@ def validate_dataframe_for_ml(
     - Keep only numeric columns for cleaning operations - Replace infinite values with 0 - Optionally clip extreme absolute values - Fill NaN values with 0
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         df_clean, df.copy()
         numeric_cols, df_clean.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) == 0:
@@ -155,6 +164,9 @@ def safe_division(
     Preserves type where possible (Series -> Series, ndarray -> ndarray, scalar -> float).
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Series / Series
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
         with np.errstate(divide="ignore", invalid="ignore"):

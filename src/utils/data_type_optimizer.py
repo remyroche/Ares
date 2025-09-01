@@ -167,6 +167,9 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
         for pattern, dtype in optimal_dtypes.items():
         if pattern in col_lower:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if dtype == "int8":
         # For cluster IDs, ensure they're small integers
         if col_lower.startswith("cluster_") or "cluster" in col_lower:

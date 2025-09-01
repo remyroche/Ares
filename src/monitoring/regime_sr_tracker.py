@@ -20,22 +20,3 @@ class RegimeType(Enum):
     LOW_VOLATILITY = "low_volatility"
 
 
-class RegimeSRTracker:
-    """Regime and S/R tracker scaffold."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("RegimeSRTracker")
-
-    @handle_specific_errors(
-        error_handlers, {
-            ValueError: (False, "Invalid regime tracker configuration"),
-            AttributeError: (False, "Missing regime tracker parameters"),
-        },
-        default_return, False,
-        context="regime_sr_tracker.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing Regime SR Tracker ...")
-        self.logger.info("✅ Regime SR Tracker initialization completed")
-        return True

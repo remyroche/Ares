@@ -142,6 +142,9 @@ class AnalystCreationStep:
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Use threading with timeout to prevent hanging
             import queue
             import threading
@@ -212,6 +215,9 @@ class AnalystCreationStep:
         start_time, datetime.now()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             data_dir: str, str(training_input.get("data_dir", "data / training"))
             models_dir: str, os.path.join(data_dir, "analyst_models")
             regime_data_dir: str, data_dir
@@ -312,6 +318,9 @@ class AnalystCreationStep:
     async def _load_regime_splits(self, data_dir: str) -> dict[str, pd.DataFrame]:
         """Load regime data from unified dataset with labels."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol, self.config.get("symbol", "ETHUSDT")
             exchange, self.config.get("exchange", "BINANCE")
             timeframe, self.config.get("timeframe", "1m")
@@ -378,6 +387,9 @@ class AnalystCreationStep:
     async def _prepare_regime_data(self, regime_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         """Prepare data for analyst model creation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Separate features and labels
             feature_columns = [col for col in regime_data.columns
         if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
@@ -406,6 +418,9 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create base analyst models for a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"🔧 Creating base analyst models for regime: {regime_name}")
 
             regime_models = {}
@@ -443,6 +458,9 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create a LightGBM model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic LightGBM parameters
             params = {
                 'objective': 'binary',
@@ -491,6 +509,9 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create an XGBoost model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic XGBoost parameters
             params = {
                 'objective': 'binary:logistic',
@@ -527,6 +548,9 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create a Random Forest model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Basic Random Forest parameters
             params = {
                 'n_estimators': 100,
@@ -561,6 +585,9 @@ class AnalystCreationStep:
     ) -> dict[str, Any]:
         """Create a neural network model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Convert to tensors
             X_train_tensor, torch.FloatTensor(X_train.values)
             y_train_tensor, torch.FloatTensor(y_train.values)
@@ -615,6 +642,9 @@ class AnalystCreationStep:
     async def _save_analyst_models(self, created_models: dict[str, dict[str, Any]], models_dir: str) -> None:
         """Save created analyst models."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         for regime_name, regime_models in created_models.items():
                 regime_dir, os.path.join(models_dir, regime_name)
                 os.makedirs(regime_dir, exist_ok = True)
@@ -683,6 +713,9 @@ async def run_step(
     logger.info("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize analyst creation step
         config = {
             "SYMBOL": symbol,

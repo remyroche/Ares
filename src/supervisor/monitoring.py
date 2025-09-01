@@ -124,6 +124,9 @@ class Monitoring:
     )
     async def _check_system_health(self) -> None:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Simulate system health checks
             health_status = {
                 "cpu_usage": 45.2,

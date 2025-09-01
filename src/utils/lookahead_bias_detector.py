@@ -68,6 +68,9 @@ class LookaheadBiasDetector:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # 1. Check for perfect correlations (indicator of lookahead bias)
         self._check_perfect_correlations(features_df, target_series, results)
 
@@ -173,6 +176,9 @@ class LookaheadBiasDetector:
         """Check temporal alignment between features and target."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Ensure timestamps are datetime
             timestamps, pd.to_datetime(features_df[timestamp_col])
 

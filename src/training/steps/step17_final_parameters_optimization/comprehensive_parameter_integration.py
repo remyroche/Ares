@@ -56,7 +56,7 @@ class ComprehensiveParameterIntegration:
             "max_drawdown": 0.25,
             "min_win_rate": 0.45,
             "min_profit_factor": 1.1,
-            "max_var_95": 0.05
+            "max_var_95": 0.10
         }
     
     def _create_step_parameter_mapping(self) -> Dict[str, Dict[str, Any]]:

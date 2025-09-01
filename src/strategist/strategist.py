@@ -58,6 +58,15 @@ class Strategist:
 
         # Strategy parameters (position sizing handled by Tactician)
         self.min_confidence_threshold: float = self.strategist_config.get("min_confidence_threshold", 0.6)
+        tech_cfg = self.strategist_config.get("technical_indicator_thresholds", {})
+        self.rsi_oversold: float = tech_cfg.get("rsi_oversold", 30.0)
+        self.rsi_overbought: float = tech_cfg.get("rsi_overbought", 70.0)
+        self.sma_fast_window: int = tech_cfg.get("sma_fast_window", 20)
+        self.sma_slow_window: int = tech_cfg.get("sma_slow_window", 50)
+        self.volume_ratio_high: float = tech_cfg.get("volume_ratio_high", 1.5)
+        self.volume_ratio_low: float = tech_cfg.get("volume_ratio_low", 0.5)
+        self.price_volatility_window: int = tech_cfg.get("price_volatility_window", 20)
+        self.strategy_type: str = self.strategist_config.get("strategy_type", "technical_analysis")
 
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
@@ -297,7 +306,7 @@ class Strategist:
         try:
             strategy = {
                 "timestamp": datetime.now().isoformat(),
-                "strategy_type": "technical_analysis",
+                "strategy_type": self.strategy_type,
                 "confidence": 0.0,
                 "direction": "HOLD",
                 "entry_price": current_price,
@@ -328,20 +337,20 @@ class Strategist:
                 confidence_factors.append(-0.2)
                 strategy["reasoning"].append("Negative momentum")
 
-            # RSI analysis
+            # RSI analysis (parameterized)
             rsi = indicators["rsi"]
-            if rsi < 30:
+            if rsi < self.rsi_oversold:
                 confidence_factors.append(0.2)
-                strategy["reasoning"].append("Oversold conditions (RSI < 30)")
-            elif rsi > 70:
+                strategy["reasoning"].append(f"Oversold conditions (RSI < {self.rsi_oversold})")
+            elif rsi > self.rsi_overbought:
                 confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Overbought conditions (RSI > 70)")
+                strategy["reasoning"].append(f"Overbought conditions (RSI > {self.rsi_overbought})")
 
-            # Volume analysis
-            if indicators["volume_ratio"] > 1.5:
+            # Volume analysis (parameterized)
+            if indicators["volume_ratio"] > self.volume_ratio_high:
                 confidence_factors.append(0.1)
                 strategy["reasoning"].append("High volume confirmation")
-            elif indicators["volume_ratio"] < 0.5:
+            elif indicators["volume_ratio"] < self.volume_ratio_low:
                 confidence_factors.append(-0.1)
                 strategy["reasoning"].append("Low volume - weak signal")
 

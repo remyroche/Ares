@@ -55,14 +55,11 @@ class PositionSizer:
         self.positionsize_combined_threshold: float = position_sizing_optimization.get("positionsize_combined_threshold", 0.7)
         
         # Load optimized component weights
-        self.ml_weight: float = position_sizing_optimization.get("ml_weight", 0.7)
-        self.kelly_weight: float = position_sizing_optimization.get("kelly_weight", 0.3)
+        # Removed config-driven weights; internal weighting is handled without exposed params
         
         # Load additional optimized parameters
-        self.risk_adjustment_factor: float = position_sizing_optimization.get("risk_adjustment_factor", 1.0)
-        self.confidence_boost_threshold: float = position_sizing_optimization.get("confidence_boost_threshold", 0.8)
-        self.volatility_adjustment: float = position_sizing_optimization.get("volatility_adjustment", 1.0)
-        self.market_regime_multiplier: float = position_sizing_optimization.get("market_regime_multiplier", 1.0)
+        # Removed deprecated parameters: risk_adjustment_factor, confidence_boost_threshold,
+        # volatility_adjustment, market_regime_multiplier
 
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
@@ -147,14 +144,10 @@ class PositionSizer:
                 self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
                 
                 # Update component weights
-                self.ml_weight = position_sizing_optimization.get("ml_weight", self.ml_weight)
-                self.kelly_weight = position_sizing_optimization.get("kelly_weight", self.kelly_weight)
+                # Removed: no longer updating ml_weight/kelly_weight from config
                 
                 # Update additional parameters
-                self.risk_adjustment_factor = position_sizing_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-                self.confidence_boost_threshold = position_sizing_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
-                self.volatility_adjustment = position_sizing_optimization.get("volatility_adjustment", self.volatility_adjustment)
-                self.market_regime_multiplier = position_sizing_optimization.get("market_regime_multiplier", self.market_regime_multiplier)
+                # Removed: deprecated parameters no longer refreshed
                 
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
                 
@@ -421,18 +414,16 @@ class PositionSizer:
         """Calculate weighted position size using Kelly criterion and ML confidence."""
         try:
             # Calculate weighted position size
-            weighted_size = (
-                kelly_position_size * self.kelly_weight
-                + ml_position_size * self.ml_weight
-            ) / (self.kelly_weight + self.ml_weight)
-
+            # Use simple averaging to avoid external weight parameters
+            weighted_size = (kelly_position_size + ml_position_size) / 2.0
+ 
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),
             )
-
+ 
         except Exception as e:
             self.print(error(f"Error calculating weighted position size: {e}"))
-            return kelly_position_size
+            return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
     def _apply_position_size_modifiers(
         self,

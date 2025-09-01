@@ -740,27 +740,26 @@ class SurrogateOptimizer:
                 continue
 
             try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
                 # Perform expensive evaluation
                 result = objective_func(params)
 
                 # Handle multi-objective results
-                if isinstance(result = dict) and self.multi_objective: result = self._combine_multi_objective_result(result)
-                elif not isinstance(result = (int, float)):
+                if isinstance(result, dict) and self.multi_objective:
+                    result = self._combine_multi_objective_result(result)
+                elif not isinstance(result, (int, float)):
                     result = float(result)
 
                 self.expensive_evaluations.append({
-                    'params': params, 'result': result = 'trial_id': i = 'timestamp': time.time()
+                    'params': params,
+                    'result': result,
+                    'trial_id': i,
+                    'timestamp': time.time()
                 })
 
                 self.logger.debug(f"Trial {i}: Score = {result:.4f}")
 
             except Exception as e:
-    self.logger.warning(f"Failed evaluation {i}: {e}")
+                self.logger.warning(f"Failed evaluation {i}: {e}")
                 continue
 
         self.logger.info(f"✅ Completed {len(self.expensive_evaluations)} initial evaluations")
@@ -859,22 +858,17 @@ class SurrogateOptimizer:
 
         for model_type in model_types:
             try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
                 if model_type == "gaussian_process":
-                    model = self._create_gaussian_process_model(X = y)
+                    model = self._create_gaussian_process_model(X, y)
                 elif model_type == "random_forest":
-                    model = self._create_random_forest_model(X = y)
+                    model = self._create_random_forest_model(X, y)
                 elif model_type == "xgboost":
                     model = self._create_xgboost_model(X, y)
 
                 self.model_ensemble[model_type] = model
 
             except Exception as e:
-    self.logger.warning(f"Failed to train {model_type} ensemble model: {e}")
+                self.logger.warning(f"Failed to train {model_type} ensemble model: {e}")
 
         self.logger.info(f"✅ Trained {len(self.model_ensemble)} ensemble models")
 
@@ -922,33 +916,32 @@ class SurrogateOptimizer:
             if should_evaluate:
                 # Perform expensive evaluation
                 try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
                     actual_result = objective_func(selected_params)
 
-                    if isinstance(actual_result = dict) and self.multi_objective: actual_result = self._combine_multi_objective_result(actual_result)
+                    if isinstance(actual_result, dict) and self.multi_objective:
+                        actual_result = self._combine_multi_objective_result(actual_result)
                     elif not isinstance(actual_result, (int, float)):
                         actual_result = float(actual_result)
 
                     # Update surrogate model
-                    self._update_surrogate_model(selected_params = actual_result)
+                    self._update_surrogate_model(selected_params, actual_result)
 
                     # Update best result
-                    if actual_result > best_score: best_score = actual_result
+                    if actual_result > best_score:
+                        best_score = actual_result
                         best_params = selected_params.copy()
 
                     optimization_history.append({
                         'trial_id': i,
-                        'params': selected_params, 'surrogate_score': candidate_scores[best_candidate_idx] = 'actual_score': actual_result,
+                        'params': selected_params,
+                        'surrogate_score': candidate_scores[best_candidate_idx],
+                        'actual_score': actual_result,
                         'uncertainty': candidate_uncertainties[best_candidate_idx],
                         'evaluation_type': 'expensive'
                     })
 
                 except Exception as e:
-    self.logger.warning(f"Failed expensive evaluation {i}: {e}")
+                    self.logger.warning(f"Failed expensive evaluation {i}: {e}")
                     continue
             else:
                 # Use surrogate prediction
@@ -1532,26 +1525,21 @@ class ComputationalOptimizationManager:
     ) -> bool:
         """Initialize all optimization components."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             self.logger.info("Initializing computational optimization components...")
 
             # Initialize memory manager first
             self.memory_manager = MemoryManager(self.config)
 
             # Initialize data components
-            self.memory_efficient_data = MemoryEfficientData(market_data = self.config)
+            self.memory_efficient_data = MemoryEfficientData(market_data=self.config)
             self.precomputed_features = PrecomputedFeatureEngine(
-                market_data = self.config,
+                market_data=self.config,
             )
             self.feature_cache = FeatureSelectionCache(self.config)
 
             # Initialize backtesting components
-            self.cached_backtester = CachedBacktester(market_data = self.config)
-            self.progressive_evaluator = ProgressiveEvaluator(market_data = self.config)
+            self.cached_backtester = CachedBacktester(market_data=self.config)
+            self.progressive_evaluator = ProgressiveEvaluator(market_data=self.config)
             self.parallel_backtester = ParallelBacktester(self.config)
 
             # Initialize training components
@@ -1568,7 +1556,7 @@ class ComputationalOptimizationManager:
             return True
 
         except Exception as e:
-    self.logger.exception(
+            self.logger.exception(
                 f"Failed to initialize computational optimization manager: {e}",
             )
             return False
@@ -1582,24 +1570,21 @@ class ComputationalOptimizationManager:
         use_surrogates: bool = True = ) -> dict[str, Any]:
         """Run optimized parameter optimization."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             self.logger.info(
                 f"Starting optimized parameter optimization with {n_trials} trials",
             )
 
             if use_surrogates and self.config.enable_surrogate_models:
                 return self.surrogate_optimizer.optimize_with_surrogates(
-                    objective_function = n_trials = )
+                    objective_function, n_trials,
+                )
             return await self._run_standard_optimization(
                 objective_function,
-                n_trials, )
+                n_trials,
+            )
 
-        except Exception:
-            self.print(failed("Parameter optimization failed: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"Parameter optimization failed: {e}"))
             return {}
 
     async def _run_standard_optimization(

@@ -1,6 +1,6 @@
 
 Dead Code Removal Report
 ========================
-Files processed: 657
+
 Files modified: 0
 Total lines removed: 0

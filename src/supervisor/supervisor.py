@@ -666,15 +666,7 @@ Get Tactician predictions using calibrated confidence scores from ML models.
 The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
 Must agree with Analyst on trade direction.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not self.is_initialized:
                 self.logger.error(error("❌ Supervisor not initialized"))
 return {}
@@ -724,15 +716,7 @@ exchange: str
         """
 Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Calculate aggregate Analyst confidence
 if not analyst_confidence_scores:
                 return {
@@ -784,15 +768,7 @@ confidence_scores: Dict[str, float],
 market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Analyst model confidences."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_analyst_determine_trade_direction"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_analyst_determine_trade_direction"})
-            return None
+        try:
 # Logic to determine if models suggest long, short, or neutral
 # This would be based on the specific Analyst model outputs
 bullish_confidence = sum(
@@ -844,15 +820,7 @@ Tactician decides when, how much, and what leverage based on Tactician ML models
 Must agree with Analyst on trade direction.
 Enhanced with high precision triple barrier completion.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Import enhanced execution manager
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 
@@ -922,15 +890,7 @@ confidence_scores: Dict[str, float],
 market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Tactician model confidences."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_tactician_determine_direction"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_tactician_determine_direction"})
-            return None
+        try:
 # Logic to determine if Tactician models suggest long, short, or neutral
 # This would be based on the specific Tactician model outputs (lower timeframe)
 bullish_confidence = sum(
@@ -1019,15 +979,7 @@ This function enhances the Analyst's decision-making by incorporating:
 3. Risk-reward metrics
 4. Directional probability assessments
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_analyst_signals": {},
@@ -1088,15 +1040,7 @@ This function enhances the Tactician's execution by providing:
 3. Barrier analysis for stop-loss placement
 4. Position decision signals (but NOT position sizing - that's Tactician's job)
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_tactician_signals": {},
@@ -1147,15 +1091,7 @@ barrier_analysis: dict[str, Any],
 regime_predictions: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced analyst signals with ML profit integration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_analyst_signals"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_analyst_signals"})
-            return None
+        try:
 enhanced_signals = {
 "directional_signals": {},
 "confidence_signals": {},
@@ -1220,15 +1156,7 @@ barrier_analysis: dict[str, Any],
 analyst_signals: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced tactician signals with ML profit integration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_tactician_signals"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_tactician_signals"})
-            return None
+        try:
 enhanced_signals = {
 "execution_signals": {},
 "timing_signals": {},
@@ -1312,15 +1240,7 @@ Generate position decision signals (should we take a position?).
 This provides signals to the Tactician about whether to take positions,
 but does NOT calculate position sizing - that's the Tactician's responsibility.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 position_decisions = {
 "position_recommendations": {},
 "aggregate_position_signal": {}
@@ -1409,15 +1329,7 @@ Generate leverage inputs for the Tactician.
 This provides confidence and probability data to help the Tactician
 make leverage decisions, but does NOT calculate leverage itself.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
-            return None
+        try:
 leverage_inputs = {
 "confidence_inputs": {},
 "probability_inputs": {},
@@ -1491,15 +1403,7 @@ barrier_analysis: dict[str, Any],
 market_data: pd.DataFrame
 ) -> dict[str, Any]:
         """Calculate risk metrics for analyst decision making."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_calculate_analyst_risk_metrics"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_calculate_analyst_risk_metrics"})
-            return None
+        try:
 risk_metrics = {
 "aggregate_risk": {},
 "individual_risks": {},
@@ -1763,15 +1667,7 @@ default_return=None, context="component features monitoring",
 )
 async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_monitor_component_features"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_monitor_component_features"})
-            return None
+        try:
 # Monitor each component's features
 self._monitor_analyst_features()
 self._monitor_strategist_features()
@@ -2024,15 +1920,7 @@ Strategy Coordination:
 - Tactician handles position sizing and execution tactics
 - Supervisor orchestrates communication between the two
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_coordinate_strategist_tactician"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_coordinate_strategist_tactician"})
-            return None
+        try:
 strategist = self.components["strategist"]
 tactician = self.components["tactician"]
 
@@ -2062,15 +1950,7 @@ default_return=None, context="training manager coordination",
 )
 async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_coordinate_training_manager"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_coordinate_training_manager"})
-            return None
+        try:
 training_manager = self.components["enhanced_training_manager"]
 
 # Coordinate with Analyst for model updates
@@ -2100,15 +1980,7 @@ default_return=None, context="online learning update",
 )
 async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("supervisor", e, {"operation": "_update_online_learning"})
-            return None
-        except Exception as e:
-            handle_component_failure("supervisor", e, {"operation": "_update_online_learning"})
-            return None
+        try:
 # Get current model performances from components
 model_performances = {}
 

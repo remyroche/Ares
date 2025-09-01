@@ -27,10 +27,6 @@ from src.utils.supervisor_error_handler import (
 )
 
 class ABTester:
-    # TODO: Implement specific functionality based on requirements
-class ABTester:
-    # TODO: Implement specific functionality based on requirements
-class ABTester:
     """
 AB Testing component with enhanced error handling.
 """
@@ -76,15 +72,7 @@ Args:
 Returns:
             bool: True if initialization successful, False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
+        try:
 self.logger.info("Initializing AB test...")
 
 # Validate challenger parameters
@@ -131,15 +119,7 @@ Args:
 Returns:
             bool: True if valid, False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Check if parameters are not empty
 if not challenger_params:
                 self.logger.error("Challenger parameters are empty")
@@ -188,15 +168,7 @@ Args:
 Returns:
             Optional[Dict[str, Any]]: AB test results or None if failed
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not self.is_ab_test_active:
                 self.logger.error("AB test not initialized")
 return None
@@ -241,15 +213,7 @@ context="champion phase execution",
 )
 async def _execute_champion_phase(self) -> None:
         """Execute champion model phase."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "_execute_champion_phase"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "_execute_champion_phase"})
-            return None
+        try:
 self.logger.info("Executing champion phase...")
 
 # Implementation for champion phase execution
@@ -269,15 +233,7 @@ context="challenger phase execution",
 )
 async def _execute_challenger_phase(self) -> None:
         """Execute challenger model phase."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "_execute_challenger_phase"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "_execute_challenger_phase"})
-            return None
+        try:
 self.logger.info("Executing challenger phase...")
 
 # Implementation for challenger phase execution
@@ -302,15 +258,7 @@ Analyze AB test results.
 Returns:
             Optional[Dict[str, Any]]: Analysis results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "_analyze_ab_test_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "_analyze_ab_test_results"})
-            return None
+        try:
 self.logger.info("Analyzing AB test results...")
 
 # Implementation for results analysis
@@ -351,15 +299,7 @@ Promote challenger model if it performs better than champion.
 Returns:
             bool: True if challenger was promoted, False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "promote_challenger_if_superior"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "promote_challenger_if_superior"})
-            return None
+        try:
 if not self.ab_test_results.get("results"):
                 self.logger.warning(
 "No AB test results available for promotion decision",
@@ -434,15 +374,7 @@ async def stop(self) -> None:
         """Stop the AB tester component."""
 self.logger.info("🛑 Stopping AB Tester...")
 
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("ab_tester", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("ab_tester", e, {"operation": "stop"})
-            return None
+        try:
 # Cleanup AB test state
 self.is_ab_test_active = False
 self.ab_test_end_time = datetime.now()

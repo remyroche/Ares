@@ -28,10 +28,6 @@ from src.utils.supervisor_error_handler import (
 )
 
 class RiskAllocator:
-    # TODO: Implement specific functionality based on requirements
-class RiskAllocator:
-    # TODO: Implement specific functionality based on requirements
-class RiskAllocator:
     """
 Portfolio-Level Risk Allocator component responsible for:
     - Portfolio-level risk management (excluding position sizing)
@@ -75,15 +71,7 @@ default_return=False,
 context="risk allocator initialization",
 )
 async def initialize(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "initialize"})
-            return None
+                try:
 self.logger.info("Initializing Risk Allocator...")
 await self._load_risk_configuration()
 if not self._validate_configuration():
@@ -101,15 +89,7 @@ default_return=None,
 context="risk configuration loading",
 )
 async def _load_risk_configuration(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_load_risk_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_load_risk_configuration"})
-            return None
+                try:
 self.risk_config.setdefault("allocation_interval", 60)
 self.risk_config.setdefault("max_history", 100)
 self.allocation_interval = self.risk_config["allocation_interval"]
@@ -124,15 +104,7 @@ default_return=False,
 context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_validate_configuration"})
-            return None
+                try:
 if self.allocation_interval <= 0:
                 self.logger.error("Invalid allocation interval")
 return False
@@ -153,15 +125,7 @@ default_return=False,
 context="risk allocator run",
 )
 async def run(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "run"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "run"})
-            return None
+                try:
 self.is_running = True
 self.logger.info("🚦 Risk Allocator started.")
 while self.is_running:
@@ -179,15 +143,7 @@ default_return=None,
 context="risk allocation step",
 )
 async def _perform_risk_allocation(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_perform_risk_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_perform_risk_allocation"})
-            return None
+                try:
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -205,15 +161,7 @@ default_return=None,
 context="risk allocation calculation",
 )
 async def _calculate_risk_allocations(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_calculate_risk_allocations"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_calculate_risk_allocations"})
-            return None
+                try:
 # Simulate risk allocation calculations
 allocations = {
 "equity_allocation": 0.6,
@@ -232,15 +180,7 @@ default_return=None,
 context="risk limits update",
 )
 async def _update_risk_limits(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_update_risk_limits"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_update_risk_limits"})
-            return None
+                try:
 # Update risk limits
 limits = {
 "max_position_size": 0.1,
@@ -260,15 +200,7 @@ context="risk allocator stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "stop"})
-            return None
+        try:
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Risk Allocator stopped successfully")
@@ -301,15 +233,7 @@ confidence_level: Confidence level for VaR calculation (default: 0.95)
 Returns:
             float: VaR value
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not returns:
                 return 0.0
 
@@ -337,15 +261,7 @@ confidence_level: Confidence level for ES calculation (default: 0.95)
 Returns:
             float: Expected Shortfall value
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not returns:
                 return 0.0
 
@@ -378,15 +294,7 @@ Args:
 Returns:
             dict: VaR values for different timeframes
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
+        try:
 var_results = {}
 
 # Calculate VaR for different timeframes
@@ -418,15 +326,7 @@ current_es: Current Expected Shortfall value
 Returns:
             dict: Risk monitoring results and alerts
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
+        try:
 risk_limits = self.risk_config.get("risk_limits", {})
 var_limit = risk_limits.get("max_var", 0.02)  # 2% VaR limit
 es_limit = risk_limits.get("max_es", 0.03)  # 3% ES limit
@@ -493,15 +393,7 @@ Args:
 Returns:
             dict: Risk metrics for the specified timeframe
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not self.var_history:
                 return {}
 
@@ -523,15 +415,7 @@ return {}
 
 def _calculate_risk_summary(self) -> dict[str, Any]:
         """Calculate summary statistics for risk metrics."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_calculate_risk_summary"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "_calculate_risk_summary"})
-            return None
+        try:
 if not self.var_history:
                 return {}
 
@@ -570,15 +454,7 @@ context="risk allocator setup",
 async def setup_risk_allocator(
 config: dict[str, Any] | None = None,
 ) -> RiskAllocator | None:
-    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("risk_allocator", e, {"operation": "setup_risk_allocator"})
-            return None
-        except Exception as e:
-            handle_component_failure("risk_allocator", e, {"operation": "setup_risk_allocator"})
-            return None
+            try:
 global risk_allocator
 if config is None:
             config = {"risk_allocator": {"allocation_interval": 60, "max_history": 100}}

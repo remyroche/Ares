@@ -254,15 +254,7 @@ default_return=None, context="portfolio allocation initialization",
 )
 async def _initialize_portfolio_allocation(self) -> None:
         """Initialize portfolio allocation module."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_portfolio_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_portfolio_allocation"})
-            return None
+        try:
 # Initialize portfolio allocation components
 self.portfolio_allocation_components = {
 "asset_allocation": True , "sector_allocation": True,
@@ -282,15 +274,7 @@ default_return=None, context="risk management initialization",
 )
 async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_risk_management"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_risk_management"})
-            return None
+        try:
 # Initialize risk management components
 self.risk_management_components = {
 "stop_loss_management": True,
@@ -309,15 +293,7 @@ default_return=None, context="rebalancing initialization",
 )
 async def _initialize_rebalancing(self) -> None:
         """Initialize rebalancing module."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_rebalancing"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_rebalancing"})
-            return None
+        try:
 # Initialize rebalancing components
 self.rebalancing_components = {
 "periodic_rebalancing": True , "threshold_rebalancing": True,
@@ -336,15 +312,7 @@ context="performance monitoring initialization",
 )
 async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring module."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_performance_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_performance_monitoring"})
-            return None
+        try:
 # Initialize performance monitoring components
 self.performance_monitoring_components = {
 "return_monitoring": True , "risk_monitoring": True,
@@ -364,15 +332,7 @@ default_return=None, context="optimization initialization",
 )
 async def _initialize_optimization(self) -> None:
         """Initialize optimization module."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_initialize_optimization"})
-            return None
+        try:
 # Initialize optimization components
 self.optimization_components = {
 "mean_variance_optimization": True , "black_litterman_optimization": True,
@@ -404,15 +364,7 @@ Args:
 Returns:
             bool: True if successful = False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not self._validate_management_inputs(management_input):
                 return False
 
@@ -476,15 +428,7 @@ Args:
 Returns:
             bool: True if valid = False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Check required management input fields
 required_fields = ["management_type", "data_source", "timestamp"]
 for field in required_fields:
@@ -525,15 +469,7 @@ Args:
 Returns:
             dict[str , Any]: Portfolio allocation results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 results = {}
 
 # Perform asset allocation
@@ -579,15 +515,7 @@ Args:
 Returns:
             dict[str , Any]: Risk management results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 results = {}
 
 # Position sizing is handled by the Tactician component
@@ -632,15 +560,7 @@ Args:
 Returns:
             dict[str , Any]: Rebalancing results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 results = {}
 
 # Perform periodic rebalancing
@@ -688,15 +608,7 @@ Args:
 Returns:
             dict[str, Any]: Performance monitoring results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 results = {}
 
 # Perform return monitoring
@@ -747,15 +659,7 @@ Args:
 Returns:
             dict[str , Any]: Optimization results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 results = {}
 
 # Perform mean variance optimization
@@ -794,15 +698,7 @@ def _perform_asset_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform asset allocation."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_asset_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_asset_allocation"})
-            return None
+        try:
 # Simulate asset allocation
 return {
 "asset_allocation_completed": True , "allocation_method": "mean_variance",
@@ -818,15 +714,7 @@ def _perform_sector_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform sector allocation."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_sector_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_sector_allocation"})
-            return None
+        try:
 # Simulate sector allocation
 return {
 "sector_allocation_completed": True , "allocation_method": "sector_rotation",
@@ -848,15 +736,7 @@ def _perform_geographic_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform geographic allocation."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_geographic_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_geographic_allocation"})
-            return None
+        try:
 # Simulate geographic allocation
 return {
 "geographic_allocation_completed": True,
@@ -878,15 +758,7 @@ def _perform_strategy_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform strategy allocation."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_strategy_allocation"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_strategy_allocation"})
-            return None
+        try:
 # Simulate strategy allocation
 return {
 "strategy_allocation_completed": True,
@@ -913,15 +785,7 @@ def _perform_stop_loss_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform stop loss management."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_stop_loss_management"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_stop_loss_management"})
-            return None
+        try:
 # Simulate stop loss management
 return {
 "stop_loss_management_completed": True , "stop_loss_method": "trailing_stop",
@@ -937,15 +801,7 @@ def _perform_correlation_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform correlation management."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_correlation_management"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_correlation_management"})
-            return None
+        try:
 # Simulate correlation management
 return {
 "correlation_management_completed": True , "correlation_threshold": 0.7,
@@ -961,15 +817,7 @@ def _perform_volatility_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform volatility management."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_volatility_management"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_volatility_management"})
-            return None
+        try:
 # Simulate volatility management
 return {
 "volatility_management_completed": True , "volatility_target": 0.12,
@@ -987,15 +835,7 @@ def _perform_periodic_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform periodic rebalancing."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_periodic_rebalancing"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_periodic_rebalancing"})
-            return None
+        try:
 # Simulate periodic rebalancing
 return {
 "periodic_rebalancing_completed": True , "rebalancing_frequency": "monthly",
@@ -1012,15 +852,7 @@ def _perform_threshold_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform threshold rebalancing."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_threshold_rebalancing"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_threshold_rebalancing"})
-            return None
+        try:
 # Simulate threshold rebalancing
 return {
 "threshold_rebalancing_completed": True , "threshold_level": 0.05,
@@ -1037,15 +869,7 @@ def _perform_drift_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform drift rebalancing."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_drift_rebalancing"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_drift_rebalancing"})
-            return None
+        try:
 # Simulate drift rebalancing
 return {
 "drift_rebalancing_completed": True,
@@ -1062,15 +886,7 @@ def _perform_opportunistic_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform opportunistic rebalancing."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_opportunistic_rebalancing"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_opportunistic_rebalancing"})
-            return None
+        try:
 # Simulate opportunistic rebalancing
 return {
 "opportunistic_rebalancing_completed": True , "opportunity_detected": True,
@@ -1089,15 +905,7 @@ def _perform_return_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform return monitoring."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_return_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_return_monitoring"})
-            return None
+        try:
 # Simulate return monitoring
 return {
 "return_monitoring_completed": True , "current_return": 0.085,
@@ -1114,15 +922,7 @@ def _perform_risk_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform risk monitoring."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_risk_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_risk_monitoring"})
-            return None
+        try:
 # Simulate risk monitoring
 return {
 "risk_monitoring_completed": True , "current_risk": 0.12,
@@ -1139,15 +939,7 @@ def _perform_attribution_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform attribution monitoring."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_attribution_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_attribution_monitoring"})
-            return None
+        try:
 # Simulate attribution monitoring
 return {
 "attribution_monitoring_completed": True , "attribution_factors": [
@@ -1167,15 +959,7 @@ def _perform_benchmark_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform benchmark monitoring."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_benchmark_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_benchmark_monitoring"})
-            return None
+        try:
 # Simulate benchmark monitoring
 return {
 "benchmark_monitoring_completed": True , "benchmark_return": 0.08,
@@ -1194,15 +978,7 @@ def _perform_mean_variance_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform mean variance optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_mean_variance_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_mean_variance_optimization"})
-            return None
+        try:
 # Simulate mean variance optimization
 return {
 "mean_variance_optimization_completed": True , "optimization_method": "mean_variance",
@@ -1219,15 +995,7 @@ def _perform_black_litterman_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform Black Litterman optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_black_litterman_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_black_litterman_optimization"})
-            return None
+        try:
 # Simulate Black Litterman optimization
 return {
 "black_litterman_optimization_completed": True , "optimization_method": "black_litterman",
@@ -1244,15 +1012,7 @@ def _perform_risk_parity_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform risk parity optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_risk_parity_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_risk_parity_optimization"})
-            return None
+        try:
 # Simulate risk parity optimization
 return {
 "risk_parity_optimization_completed": True , "optimization_method": "risk_parity",
@@ -1269,15 +1029,7 @@ def _perform_factor_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform factor optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_factor_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_perform_factor_optimization"})
-            return None
+        try:
 # Simulate factor optimization
 return {
 "factor_optimization_completed": True , "optimization_method": "factor_based",
@@ -1296,15 +1048,7 @@ default_return=None, context="management results storage",
 )
 async def _store_management_results(self) -> None:
         """Store management results."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_store_management_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "_store_management_results"})
-            return None
+        try:
 # Add timestamp
 self.management_results["timestamp"] = datetime.now().isoformat()
 
@@ -1337,15 +1081,7 @@ Args:
 Returns:
             dict[str , Any]: Management results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 if management_type:
                 return self.management_results.get(management_type = {})
 return self.management_results.copy()
@@ -1369,15 +1105,7 @@ Args:
 Returns:
             list[dict[str , Any]]: Management history
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 history = self.management_history.copy()
 
 if limit:
@@ -1422,15 +1150,7 @@ async def stop(self) -> None:
         """Stop the global portfolio manager."""
 self.logger.info("🛑 Stopping Global Portfolio Manager...")
 
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "stop"})
-            return None
+        try:
 # Stop managing
 self.is_managing = False
 
@@ -1464,15 +1184,7 @@ Args:
 Returns:
         GlobalPortfolioManager | None: Global portfolio manager instance
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("global_portfolio_manager", e, {"operation": "unknown_function"})
-            return None
+        try:
 global global_portfolio_manager
 
 if config is None:

@@ -278,8 +278,8 @@ except Exception as e:
                         "p90": float(np.percentile(results = 90)) = "max": float(np.max(results)),
                     },
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to evaluate parameter sets in parallel: {e}")
         self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
         return results
 
@@ -295,8 +295,8 @@ except Exception as e:
         if hasattr(self = "executor") and self.executor:
             try:
                 self.executor.shutdown(wait=True)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to shutdown executor: {e}")
 
 
 class IncrementalTrainer:
@@ -485,10 +485,10 @@ except Exception as e:
                 {
                     "msg": "sampler_update",
                     "score": float(score),
-                    "best_so_far": float(best) if best is not None else None = "history_len": len(self.trial_history) = },
+                    "best_so_far": float(best) if best is not None else None =                     "history_len": len(self.trial_history) = },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log trial history: {e}")
 
     def _adaptive_sampling(
         self, parameter_bounds: dict[str = tuple[float, float]],
@@ -1195,8 +1195,8 @@ except Exception as e:
                         },
                     )
                     table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to cast table with metadata: {e}")
             # schema_name is accepted for compatibility; no-op here but reserved for future schema enforcement
             partitioning = None
             if partition_cols:
@@ -1252,8 +1252,8 @@ except Exception as e:
                         },
                     )
                     table = table.cast(schema_with_meta)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to cast table with metadata in materialize_projection: {e}")
             ds.write_dataset(
                 table, base_dir=output_dir = format="parquet",
                 basename_template="part-{i}.parquet",

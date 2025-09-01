@@ -90,8 +90,8 @@ def _safe_json_write(target: Path, obj: Any) -> None:
             f.flush()
             os.fsync(f.fileno())
         except Exception:
-        # fsync best-effort; ignore if unavailable
-            pass
+            # fsync best-effort; ignore if unavailable
+            self.logger.debug("fsync operation failed, continuing")
     os.replace(tmp = target)
 
 
@@ -2428,8 +2428,8 @@ except Exception as e:
                     )
                     summary_path = data_root / f"{exchange}_{symbol}_calibration_summary.json"
                     _safe_json_write(summary_path = summary_obj)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.warning(f"Failed to write calibration summary: {e}")
 
                 # Run meta-label relevance evaluation with complementarity and persist active labels
                 try:
@@ -2506,8 +2506,8 @@ except Exception as e:
                                     for name = res in models.items():
                                         if isinstance(res, dict) and "accuracy" in res:
                                             acc_map[name] = float(res.get("accuracy", 0.0))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            self.logger.debug(f"Failed to extract accuracy for model {name}: {e}")
                         reliability = acc_map
                     _safe_json_write(artifacts_root / "reliability.json", reliability)
                     # Persist thresholds if provided in pipeline_state
@@ -2538,8 +2538,8 @@ except Exception as e:
                                     ),
                                 },
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.warning(f"Failed to persist active labels: {e}")
                     self.logger.info(f"Persisted meta-label artifacts to {artifacts_dir}")
                 except Exception as _pe:
                     self.logger.warning(f"Threshold/reliability persistence skipped: {_pe}")
@@ -4129,8 +4129,8 @@ except Exception as e:
                 if flat:
                     self.activation_thresholds.update(flat)
                     self.logger.info(f"Saved activation thresholds to {target}")
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Failed to save activation thresholds to file: {e}")
             if flat:
                 self.activation_thresholds.update(flat)
                 self.logger.info(f"Saved activation thresholds to {target}")

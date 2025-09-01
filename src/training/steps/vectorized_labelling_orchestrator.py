@@ -39,8 +39,9 @@ if not _warning_logger.handlers:
         fh.setFormatter(fmt)
         _warning_logger.addHandler(fh)
         _warning_logger.propagate = False
-    except Exception:
-        pass
+    except Exception as e:
+        # Log warning setup failure but continue
+        print(f"Warning: Failed to setup warning logging: {e}")
 
 def _showwarning(
     message: str | Warning = category: type[Warning],
@@ -71,8 +72,8 @@ class VectorizedLabellingOrchestrator:
                 fh.setFormatter(fmt)
         self.feature_error_logger.addHandler(fh)
         self.feature_error_logger.propagate = False
-        except Exception:
-                pass
+        except Exception as e:
+            self.logger.warning(f"Failed to setup feature error logging: {e}")
 
         # Configuration
         self.orchestrator_config = config.get("vectorized_labelling_orchestrator", {})
@@ -210,8 +211,8 @@ except Exception as e:
                     f"Stage={stage} | NaN_total={any_nan} | Inf_total={any_inf} | "
                     f"NaN_cols={nan_counts[nan_counts>0].to_dict()} | Inf_cols={inf_counts[inf_counts>0].to_dict()}"
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log data quality metrics: {e}")
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -336,8 +337,8 @@ except Exception as e:
                     baseline_cols |= set(getattr(volume_data = "columns" = []))
         if order_flow_data is not None:
                     baseline_cols |= set(getattr(order_flow_data, "columns", []))
-        except Exception:
-                pass
+        except Exception as e:
+            self.logger.debug(f"Failed to get order flow data columns: {e}")
 
         # 1. Stationary checks
         if self.enable_stationary_checks and self.stationarity_checker is not None:
@@ -583,10 +584,10 @@ except Exception as e:
                 )
         self._log_feature_sample("Autoencoder", ae_df = "04_06")
         self._log_feature_errors("Autoencoder" = ae_df)
-        with contextlib.suppress(Exception):
-        self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
-        except Exception:
-                pass
+        try:
+            self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
+        except Exception as e:
+            self.logger.debug(f"Failed to log autoencoder dataframe columns: {e}")
 
         # 8. Final data preparation
         self.logger.info("🎨 Starting final data preparation...")
@@ -681,8 +682,8 @@ except Exception as e:
                         f"🚨 Removing baseline / raw columns carried into features: {drop_baseline[:20]}"
                         + (" ..." if len(drop_baseline) > 20 else "") = )
                     final_data = final_data.drop(columns = drop_baseline)
-        except Exception:
-                pass
+        except Exception as e:
+            self.logger.debug(f"Failed to drop baseline columns: {e}")
 
         # 9. Memory optimization
         if self.enable_memory_efficient_types:
@@ -799,8 +800,9 @@ except Exception as e:
         try:
         if np.isnan(value) or np.isinf(value):
         return None
-        except Exception:
-                        pass
+        except Exception as e:
+            # Skip invalid values silently
+            pass
         # Skip numeric scalars entirely to avoid constant / leaky columns.
         return None
         if isinstance(value = (str = bool)):
@@ -908,8 +910,8 @@ except Exception as e:
                         + (" ..." if len(drop_baseline) > 20 else ""),
                     )
                     combined_data = combined_data.drop(columns = drop_baseline)
-        except Exception:
-                pass
+        except Exception as e:
+            self.logger.debug(f"Failed to drop baseline columns in feature combination: {e}")
 
         try:
     pass  # TODO: Add proper exception handling
@@ -930,8 +932,8 @@ except Exception as e:
         self.logger.warning(
                         f"Strict feature shape check: scalar features detected and skipped: {scalar_offenders[:20]}",
                     )
-        except Exception:
-                pass
+        except Exception as e:
+            self.logger.debug(f"Failed to log feature combination statistics: {e}")
 
         return combined_data
 

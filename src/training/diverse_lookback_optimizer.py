@@ -5,11 +5,10 @@ Diverse Lookback Period Optimizer
 
 This module specializes in finding 2-3 lookback periods for each feature that deliver
 meaningful yet significantly different information. It focuses on:
-    pass  # TODO: Add implementation
-1. Information diversity (different market insights)
-2. Meaningful signal strength
-3. Low correlation between selected periods
-4. Complementary information content
+1. Information diversity (different market insights): Captures various market dynamics and time horizons
+2. Meaningful signal strength: Ensures each period provides significant predictive power
+3. Low correlation between selected periods: Minimizes redundancy and maximizes information gain
+4. Complementary information content: Periods work together to provide comprehensive market coverage
 """
 
 import json

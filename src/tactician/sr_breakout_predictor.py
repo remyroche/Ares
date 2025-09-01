@@ -826,59 +826,50 @@ return {}
 
 def _save_metrics_to_csv(self, metrics: dict[str, Any], file_path: Path) -> None:
         """Save metrics to CSV format."""
-try:
+        try:
+            import csv
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-import csv
+            # Flatten metrics for CSV
+            csv_data = []
 
-# Flatten metrics for CSV
-csv_data = []
+            # Market metrics
+            market_metrics = metrics.get("market_metrics", {})
+            csv_data.append(["Category", "Metric", "Value"])
+            csv_data.append(["Market", "Data Points", market_metrics.get("data_points", 0)])
+            csv_data.append(["Market", "Current Price", market_metrics.get("price_range", {}).get("current", 0)])
+            csv_data.append(["Market", "Volatility", market_metrics.get("price_range", {}).get("volatility", 0)])
+            csv_data.append(["Market", "Total Volume", market_metrics.get("volume_metrics", {}).get("total_volume", 0)])
 
-# Market metrics
-market_metrics = metrics.get("market_metrics", {})
-csv_data.append(["Category", "Metric", "Value"])
-csv_data.append(["Market", "Data Points", market_metrics.get("data_points", 0)])
-csv_data.append(["Market", "Current Price", market_metrics.get("price_range", {}).get("current", 0)])
-csv_data.append(["Market", "Volatility", market_metrics.get("price_range", {}).get("volatility", 0)])
-csv_data.append(["Market", "Total Volume", market_metrics.get("volume_metrics", {}).get("total_volume", 0)])
+            # S/R metrics
+            sr_metrics = metrics.get("sr_metrics", {})
+            csv_data.append(["S/R", "Total Levels", sr_metrics.get("total_levels", 0)])
+            csv_data.append(["S/R", "Support Levels", sr_metrics.get("support_levels", {}).get("count", 0)])
+            csv_data.append(["S/R", "Resistance Levels", sr_metrics.get("resistance_levels", {}).get("count", 0)])
+            csv_data.append(["S/R", "SR Zone Width", sr_metrics.get("proximity_metrics", {}).get("sr_zone_width", 0)])
 
-# S/R metrics
-sr_metrics = metrics.get("sr_metrics", {})
-csv_data.append(["S/R", "Total Levels", sr_metrics.get("total_levels", 0)])
-csv_data.append(["S/R", "Support Levels", sr_metrics.get("support_levels", {}).get("count", 0)])
-csv_data.append(["S/R", "Resistance Levels", sr_metrics.get("resistance_levels", {}).get("count", 0)])
-csv_data.append(["S/R", "SR Zone Width", sr_metrics.get("proximity_metrics", {}).get("sr_zone_width", 0)])
+            # Clustering metrics
+            clustering_metrics = metrics.get("clustering_metrics", {})
+            csv_data.append(["Clustering", "Total Clusters", clustering_metrics.get("total_clusters", 0)])
+            csv_data.append(["Clustering", "Noise Points", clustering_metrics.get("noise_points", 0)])
 
-# Clustering metrics
-clustering_metrics = metrics.get("clustering_metrics", {})
-csv_data.append(["Clustering", "Total Clusters", clustering_metrics.get("total_clusters", 0)])
-csv_data.append(["Clustering", "Noise Points", clustering_metrics.get("noise_points", 0)])
+            # Performance metrics
+            performance_metrics = metrics.get("performance_metrics", {})
+            csv_data.append(["Performance", "Data Quality Score", performance_metrics.get("data_quality_score", 0)])
+            csv_data.append(["Performance", "SR Confidence Score", performance_metrics.get("sr_confidence_score", 0)])
+            csv_data.append(["Performance", "Overall Quality Score", performance_metrics.get("overall_analysis_quality", 0)])
 
-# Performance metrics
-performance_metrics = metrics.get("performance_metrics", {})
-csv_data.append(["Performance", "Data Quality Score", performance_metrics.get("data_quality_score", 0)])
-csv_data.append(["Performance", "SR Confidence Score", performance_metrics.get("sr_confidence_score", 0)])
-csv_data.append(["Performance", "Overall Quality Score", performance_metrics.get("overall_analysis_quality", 0)])
-
-with open(file_path, 'w', newline='') as f:
+            with open(file_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-writer.writerows(csv_data)
+                writer.writerows(csv_data)
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error saving metrics to CSV: {e}")
+            raise
 
 def _save_html_report(self, report: dict[str, Any], file_path: Path) -> None:
         """Save HTML report."""
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-html_content = f"""
+        try:
+            html_content = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -950,12 +941,11 @@ body {{ font-family: Arial, sans-serif; margin: 20px; }}
 </body>
 </html>
 """
-
-with open(file_path, 'w') as f:
+            with open(file_path, 'w') as f:
                 f.write(html_content)
-
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error saving HTML report: {e}")
+            raise
 
 async def get_latest_report(self) -> dict[str, Any]:
         """Get the latest generated report."""
@@ -969,73 +959,64 @@ return self.metrics_history[-limit:] if self.metrics_history else []
 
 async def cleanup_old_reports(self) -> None:
         """Clean up old reports based on retention policy."""
-try:
+        try:
+            import os
+            from pathlib import Path
+            from datetime import datetime, timedelta
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-import os
-from pathlib import Path
-from datetime import datetime, timedelta
-
-if not self.reporting_enabled:
+            if not self.reporting_enabled:
                 return
 
-report_path = Path(self.report_directory)
-cutoff_date = datetime.now() - timedelta(days=self.report_retention_days)
+            report_path = Path(self.report_directory)
+            cutoff_date = datetime.now() - timedelta(days=self.report_retention_days)
 
-for subdir in ["json", "csv", "html"]:
+            for subdir in ["json", "csv", "html"]:
                 subdir_path = report_path / subdir
-if subdir_path.exists():
+                if subdir_path.exists():
                     for file_path in subdir_path.iterdir():
                         if file_path.is_file():
                             file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
-if file_time < cutoff_date:
+                            if file_time < cutoff_date:
                                 file_path.unlink()
-self.logger.info(f"Cleaned up old report: {file_path}")
+                                self.logger.info(f"Cleaned up old report: {file_path}")
 
-self.logger.info("🧹 Old reports cleanup completed")
+            self.logger.info("🧹 Old reports cleanup completed")
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error cleaning up old reports: {e}")
+            raise
 
 async def generate_manual_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any] = None) -> dict[str, Any]:
         """Manually generate a detailed report."""
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-if not self.reporting_enabled:
+        try:
+            if not self.reporting_enabled:
                 self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
-return {}
+                return {}
 
-if sr_context is None:
+            if sr_context is None:
                 # Generate SR context if not provided
-current_price = market_data["close"].iloc[-1]
-sr_context = await self.get_sr_context(market_data, current_price)
+                current_price = market_data["close"].iloc[-1]
+                sr_context = await self.get_sr_context(market_data, current_price)
 
-report = await self._generate_detailed_report(market_data, sr_context)
-self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
-return report
+            report = await self._generate_detailed_report(market_data, sr_context)
+            self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
+            return report
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error generating manual report: {e}")
-return {}
+            return {}
 
 def get_reporting_status(self) -> dict[str, Any]:
         """Get reporting system status."""
-return {
-"reporting_enabled": self.reporting_enabled,
-"report_directory": self.report_directory,
-"report_format": self.report_format,
-"report_retention_days": self.report_retention_days,
-"total_reports_generated": len(self.metrics_history),
-"current_report_id": self.current_report_id,
-"last_report_timestamp": self.metrics_history[-1]["report_timestamp"] if self.metrics_history else None
-}
+        return {
+            "reporting_enabled": self.reporting_enabled,
+            "report_directory": self.report_directory,
+            "report_format": self.report_format,
+            "report_retention_days": self.report_retention_days,
+            "total_reports_generated": len(self.metrics_history),
+            "current_report_id": self.current_report_id,
+            "last_report_timestamp": self.metrics_history[-1]["report_timestamp"] if self.metrics_history else None
+        }
 
 @validate_data_quality(
 required_columns=["open", "high", "low", "close", "volume"],
@@ -1073,60 +1054,54 @@ if not self.is_initialized:
 return {}
 
 try:
+            self.logger.info("Predicting SR breakouts...")
 
+            # Detect support and resistance levels
+            support_levels = await self._detect_support_levels(market_data)
+            resistance_levels = await self._detect_resistance_levels(market_data)
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement functionality
-self.logger.info("Predicting SR breakouts...")
+            # Calculate breakout probabilities
+            breakout_probabilities = await self._calculate_breakout_probabilities(
+                support_levels, resistance_levels, current_price,
+            )
 
-# Detect support and resistance levels
-support_levels = await self._detect_support_levels(market_data)
-resistance_levels = await self._detect_resistance_levels(market_data)
+            # Calculate confidence scores
+            confidence_scores = await self._calculate_confidence_scores(
+                support_levels, resistance_levels, market_data,
+            )
 
-# Calculate breakout probabilities
-breakout_probabilities = await self._calculate_breakout_probabilities(
-support_levels, resistance_levels, current_price,
-)
+            # Generate SR features
+            sr_features = await self._generate_sr_features(
+                support_levels, resistance_levels, market_data,
+            )
 
-# Calculate confidence scores
-confidence_scores = await self._calculate_confidence_scores(
-support_levels, resistance_levels, market_data,
-)
+            # Create predictions
+            predictions = {
+                "support_levels": support_levels,
+                "resistance_levels": resistance_levels,
+                "breakout_probabilities": breakout_probabilities,
+                "confidence_scores": confidence_scores,
+                "sr_features": sr_features,
+                "current_price": current_price,
+                "timestamp": pd.Timestamp.now(),
+            }
 
-# Generate SR features
-sr_features = await self._generate_sr_features(
-support_levels, resistance_levels, market_data,
-)
-
-# Create predictions
-predictions = {
-"support_levels": support_levels,
-"resistance_levels": resistance_levels,
-"breakout_probabilities": breakout_probabilities,
-"confidence_scores": confidence_scores,
-"sr_features": sr_features,
-"current_price": current_price,
-"timestamp": pd.Timestamp.now(),
-}
-
-# Generate detailed report for predictions
-if self.reporting_enabled:
+            # Generate detailed report for predictions
+            if self.reporting_enabled:
                 await self._generate_detailed_report(market_data, predictions)
 
-# Store predictions
-self.sr_predictions = predictions
+            # Store predictions
+            self.sr_predictions = predictions
 
-# Update performance metrics
-self._update_performance_metrics(predictions)
+            # Update performance metrics
+            self._update_performance_metrics(predictions)
 
-self.logger.info("✅ SR breakout predictions generated")
-return predictions
+            self.logger.info("✅ SR breakout predictions generated")
+            return predictions
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error predicting SR breakouts: {e}")
-return {}
+            return {}
 
 @validate_data_quality(
 required_columns=["open", "high", "low", "close", "volume"],
@@ -1164,28 +1139,22 @@ if not self.is_initialized:
 return {}
 
 try:
+            # Detect support and resistance levels
+            support_levels = await self._detect_support_levels(market_data)
+            resistance_levels = await self._detect_resistance_levels(market_data)
 
+            # Apply DBSCAN clustering to filter significant levels
+            all_levels = support_levels + resistance_levels
+            clustering_result = await self.cluster_sr_levels_dbscan(all_levels)
+            clustered_levels = clustering_result.get('clustered_levels', all_levels)
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement functionality
-# Detect support and resistance levels
-support_levels = await self._detect_support_levels(market_data)
-resistance_levels = await self._detect_resistance_levels(market_data)
+            # Separate clustered levels back into support and resistance
+            clustered_support = [level for level in clustered_levels if level.get('type', 'support') == 'support']
+            clustered_resistance = [level for level in clustered_levels if level.get('type', 'resistance') == 'resistance']
 
-# Apply DBSCAN clustering to filter significant levels
-all_levels = support_levels + resistance_levels
-clustering_result = await self.cluster_sr_levels_dbscan(all_levels)
-clustered_levels = clustering_result.get('clustered_levels', all_levels)
-
-# Separate clustered levels back into support and resistance
-clustered_support = [level for level in clustered_levels if level.get('type', 'support') == 'support']
-clustered_resistance = [level for level in clustered_levels if level.get('type', 'resistance') == 'resistance']
-
-# Calculate enhanced strength for all levels
-enhanced_strength_support = await self.calculate_comprehensive_strength(market_data, clustered_support)
-enhanced_strength_resistance = await self.calculate_comprehensive_strength(market_data, clustered_resistance)
+            # Calculate enhanced strength for all levels
+            enhanced_strength_support = await self.calculate_comprehensive_strength(market_data, clustered_support)
+            enhanced_strength_resistance = await self.calculate_comprehensive_strength(market_data, clustered_resistance)
 
 # Update levels with enhanced strength
 for level in clustered_support:
@@ -1255,22 +1224,17 @@ context = {
 }
 
 # Generate detailed report after context is fully defined
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-context["report_id"] = await self._generate_detailed_report(market_data, context)
-except Exception as e:
+            try:
+                context["report_id"] = await self._generate_detailed_report(market_data, context)
+            except Exception as e:
                 self.logger.warning(f"Error generating detailed report: {e}")
-context["report_id"] = "report_generation_failed"
+                context["report_id"] = "report_generation_failed"
 
-return context
+            return context
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error getting S/R context: {e}")
-return {}
+            return {}
 
 async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
@@ -1288,26 +1252,21 @@ Returns:
             dict[str, float]: Comprehensive SR features for ML training
 """
 try:
+            self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
+            # Get comprehensive SR context
+            sr_context = await self.get_sr_context(market_data, current_price)
 
-# Get comprehensive SR context
-sr_context = await self.get_sr_context(market_data, current_price)
+            # Extract features from SR context
+            features = {}
 
-# Extract features from SR context
-features = {}
-
-# Basic proximity features
-features.update({
-"sr_proximity": sr_context.get("support_proximity", 1.0),
-"support_proximity": sr_context.get("support_proximity", 1.0),
-"resistance_proximity": sr_context.get("resistance_proximity", 1.0),
-"sr_nearest_support": sr_context.get("nearest_support", current_price),
-"sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
+            # Basic proximity features
+            features.update({
+                "sr_proximity": sr_context.get("support_proximity", 1.0),
+                "support_proximity": sr_context.get("support_proximity", 1.0),
+                "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
+                "sr_nearest_support": sr_context.get("nearest_support", current_price),
+                "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
 })
 
 # Strength features

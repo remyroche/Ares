@@ -4,22 +4,20 @@ PLACEHOLDER FINDER REPORT
 
 SUMMARY STATISTICS:
   Files analyzed: 27
-  Total placeholders found: 390
+  Total placeholders found: 291
   Pass statements: 2
-  TODO comments: 388
+  TODO comments: 289
   NotImplementedError raises: 0
   Placeholder functions: 0
 
 PER DIRECTORY BREAKDOWN:
-  src/tactician: 15 files, 390 placeholders
+  src/tactician: 12 files, 291 placeholders
 
 PER FILE BREAKDOWN:
   src/tactician/enhanced_execution_manager.py: 18 placeholders
     - todo_comments: 18
   src/tactician/enhanced_order_manager.py: 25 placeholders
     - todo_comments: 25
-  src/tactician/enhanced_prediction_integrator.py: 30 placeholders
-    - todo_comments: 30
   src/tactician/enhanced_scenario_based_predictor.py: 27 placeholders
     - todo_comments: 27
   src/tactician/fully_migrated_tactician.py: 22 placeholders
@@ -27,8 +25,6 @@ PER FILE BREAKDOWN:
   src/tactician/ml_target_updater.py: 2 placeholders
     - pass_statements: 1
     - todo_comments: 1
-  src/tactician/position_division_strategy.py: 28 placeholders
-    - todo_comments: 28
   src/tactician/position_monitor.py: 3 placeholders
     - pass_statements: 1
     - todo_comments: 2
@@ -36,10 +32,8 @@ PER FILE BREAKDOWN:
     - todo_comments: 28
   src/tactician/scenario_based_predictor.py: 26 placeholders
     - todo_comments: 26
-  src/tactician/sr_backtesting_validator.py: 32 placeholders
-    - todo_comments: 32
-  src/tactician/sr_breakout_predictor.py: 100 placeholders
-    - todo_comments: 100
+  src/tactician/sr_breakout_predictor.py: 91 placeholders
+    - todo_comments: 91
   src/tactician/sr_data_integration.py: 1 placeholders
     - todo_comments: 1
   src/tactician/sr_data_integration_simple.py: 26 placeholders
@@ -359,221 +353,6 @@ File: src/tactician/enhanced_order_manager.py
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Enhanced Order Manager...")
         
-
-File: src/tactician/enhanced_prediction_integrator.py
------------------------------------------------------
-
-  TODO_COMMENTS:
-    Line 25: # TODO: Implement class methods
-      Context:
-        
-        
-            # TODO: Implement class methods
-        class TacticianEnhancedPredictionIntegrator:
-            pass  # TODO: Add implementation
-    Line 27: pass  # TODO: Add implementation
-      Context:
-            # TODO: Implement class methods
-        class TacticianEnhancedPredictionIntegrator:
-            pass  # TODO: Add implementation
-        class TacticianEnhancedPredictionIntegrator:
-            """
-    Line 131: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 133: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Determine timeframe
-        if timeframe is None:
-    Line 192: pass  # TODO: Add proper exception handling
-      Context:
-                """Generate enhanced prediction for a specific type."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 194: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Get base prediction from Analyst
-        base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
-    Line 228: pass  # TODO: Add proper exception handling
-      Context:
-                """Extract base prediction from Analyst predictions."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 230: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Map Tactician prediction types to Analyst prediction types
-        analyst_type_mapping = {
-    Line 261: pass  # TODO: Add proper exception handling
-      Context:
-                """Create synthetic prediction when Analyst prediction is not available."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 263: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Extract any available confidence or prediction values
-        base_confidence = 0.5
-    Line 318: pass  # TODO: Add proper exception handling
-      Context:
-                """Apply Tactician-specific enhancement to base prediction."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 320: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Get ML model confidence factor for this prediction type
-        ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
-    Line 384: pass  # TODO: Add proper exception handling
-      Context:
-                """Enhance prediction value for 2 barrier combinations."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 386: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if prediction_type == "price_deviation_prediction":
-                        # Calculate price deviations for 2 barrier combinations
-    Line 446: pass  # TODO: Add proper exception handling
-      Context:
-                """Calculate enhanced confidence using ML model factor."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 448: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Base enhancement from ML model factor
-        enhanced_confidence = min(1.0, base_confidence * ml_confidence_factor)
-    Line 478: pass  # TODO: Add proper exception handling
-      Context:
-                """Calculate precision score for the enhanced prediction."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 480: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Base precision from confidence
-        precision_score = enhanced_confidence
-    Line 503: pass  # TODO: Add proper exception handling
-      Context:
-                """Determine optimal timeframe based on market data."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 505: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if market_data.empty:
-                        return self.primary_timeframe
-    Line 535: pass  # TODO: Add proper exception handling
-      Context:
-                """Validate Tactician predictions against Analyst predictions."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 537: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        validation_results = {
-        "is_valid": True,
-    Line 609: pass  # TODO: Add proper exception handling
-      Context:
-                """Update ML confidence factors dynamically (called by ML model)."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 611: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        for prediction_type, factor in new_factors.items():
-                        if prediction_type in self.ml_confidence_factors:
-    Line 633: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 635: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Try to load from step12 results
-        if step12_results_path and Path(step12_results_path).exists():
-    Line 696: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 698: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Check if step12 results have been updated
-        step12_config = self.config.get("step12_confidence_optimization", {})
-    Line 716: pass  # TODO: Add proper exception handling
-      Context:
-                """Get summary of Tactician predictions."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 718: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        summary = {
-        "total_predictions": 0,
 
 File: src/tactician/enhanced_scenario_based_predictor.py
 --------------------------------------------------------
@@ -948,207 +727,6 @@ File: src/tactician/ml_target_updater.py
                     # TODO: Implement actual price fetching from exchange client
                     # For now, return a placeholder
                     return 50000.0  # Placeholder price
-
-File: src/tactician/position_division_strategy.py
--------------------------------------------------
-
-  TODO_COMMENTS:
-    Line 21: pass  # TODO: Add implementation
-      Context:
-        
-        class PositionDivisionStrategy:
-            pass  # TODO: Add implementation
-        class PositionDivisionStrategy:
-            pass  # TODO: Add implementation
-    Line 23: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class PositionDivisionStrategy:
-            pass  # TODO: Add implementation
-        class PositionDivisionStrategy:
-            """
-    Line 70: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 72: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        self.logger.info("Initializing Position Division Strategy...")
-        
-    Line 100: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 102: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if self.max_positions <= 0:
-                        self.logger.error(invalid("Max positions must be positive"))
-    Line 148: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 150: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        self.logger.info("Calculating position division strategy...")
-        
-    Line 191: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 193: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Higher confidence = fewer positions (more concentrated)
-        # Lower confidence = more positions (more diversified)
-    Line 230: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 232: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        position_sizes = []
-        
-    Line 272: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 274: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Get market volatility
-        volatility = market_conditions.get("volatility", 0.02)  # Default 2%
-    Line 327: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 329: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Check if we can add more positions
-        if len(self.active_positions) >= self.max_positions:
-    Line 372: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 374: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if position_id not in self.active_positions:
-                        self.logger.warning(warning(f"Position {position_id} not found"))
-    Line 424: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 426: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if not entry_time:
-                        return 0.0
-    Line 446: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 448: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Update basic metrics
-        total_positions = len(self.position_history)
-    Line 487: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 489: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if limit:
-                        return self.position_history[-limit:]
-    Line 515: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 517: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        return {
-        "active_positions": len(self.active_positions),
-    Line 537: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 539: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        self.logger.info("Cleaning up Position Division Strategy...")
-        
 
 File: src/tactician/position_monitor.py
 ---------------------------------------
@@ -1566,933 +1144,641 @@ File: src/tactician/scenario_based_predictor.py
         features = []
         
 
-File: src/tactician/sr_backtesting_validator.py
------------------------------------------------
-
-  TODO_COMMENTS:
-    Line 24: pass  # TODO: Add implementation
-      Context:
-        @dataclass
-        class PlaceholderDataClass:
-            pass  # TODO: Add implementation
-        class SRLevelTest:
-            pass  # TODO: Add implementation
-    Line 26: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class SRLevelTest:
-            pass  # TODO: Add implementation
-        class SRLevelTest:
-            pass  # TODO: Add implementation
-    Line 28: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class SRLevelTest:
-            pass  # TODO: Add implementation
-        class SRLevelTest:
-            """Individual S/R level test result."""
-    Line 69: pass  # TODO: Add implementation
-      Context:
-        @dataclass
-        class PlaceholderDataClass:
-            pass  # TODO: Add implementation
-        class BacktestResult:
-            pass  # TODO: Add implementation
-    Line 71: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class BacktestResult:
-            pass  # TODO: Add implementation
-        class BacktestResult:
-            pass  # TODO: Add implementation
-    Line 73: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class BacktestResult:
-            pass  # TODO: Add implementation
-        class BacktestResult:
-            """Result of S/R backtesting."""
-    Line 125: pass  # TODO: Add implementation
-      Context:
-        
-        class SRBacktestingValidator:
-            pass  # TODO: Add implementation
-        class SRBacktestingValidator:
-            pass  # TODO: Add implementation
-    Line 127: pass  # TODO: Add implementation
-      Context:
-            pass  # TODO: Add implementation
-        class SRBacktestingValidator:
-            pass  # TODO: Add implementation
-        class SRBacktestingValidator:
-            """
-    Line 199: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 201: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if self.logger:
-                        self.logger.info("🔧 Initializing data integration for S/R backtesting...")
-    Line 255: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 257: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
-        
-    Line 298: pass  # TODO: Add proper exception handling
-      Context:
-                """Test a single S/R level."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 300: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        level_price = level.get("price", 0.0)
-        level_type = level.get("type", "support")
-    Line 362: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 364: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        touches = 0
-        bounces = 0
-    Line 421: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 423: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # Look ahead for confirmation
-        end_index = min(touch_index + self.confirmation_periods, len(market_data))
-    Line 486: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 488: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if not touch_volumes or len(touch_volumes) == 0:
-                        return
-    Line 563: pass  # TODO: Add proper exception handling
-      Context:
-        """
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 565: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if not touch_indices:
-                        return 0.0
-    Line 604: pass  # TODO: Add proper exception handling
-      Context:
-                """Calculate confidence score for a level based on its performance and volume analysis."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 606: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        confidence = 0.0
-        
-    Line 668: pass  # TODO: Add proper exception handling
-      Context:
-                """Calculate overall metrics from individual level tests."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 670: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if not result.level_tests:
-                        return
-    Line 739: pass  # TODO: Add proper exception handling
-      Context:
-                """Calculate S/R validation score based on level effectiveness."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 741: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        # S/R validation score components (0-1)
-        bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
-    Line 781: pass  # TODO: Add proper exception handling
-      Context:
-                """Analyze time-based factors affecting S/R level validity."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 783: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        if not touch_indices:
-                        return
-    Line 812: pass  # TODO: Add proper exception handling
-      Context:
-            """Setup S/R backtesting validator."""
-        try:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-    Line 814: pass  # TODO: Add proper exception handling
-      Context:
-            pass  # TODO: Add proper exception handling
-        except Exception as e:
-            pass  # TODO: Add proper exception handling
-        validator = SRBacktestingValidator(config)
-        return validator
-
 File: src/tactician/sr_breakout_predictor.py
 --------------------------------------------
 
   TODO_COMMENTS:
-    Line 391: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        if not self.optimized_params:
-                        return
-    Line 452: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        self.optimized_params = optimized_params
-        await self._apply_optimized_parameters()
-    Line 483: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        import os
-        from pathlib import Path
-    Line 518: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
-        
-    Line 638: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        score = 1.0
-        
-    Line 669: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        score = 0.5  # Base score
-        
-    Line 701: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        score = 0.5  # Base score
-        
-    Line 735: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        if not self.reporting_enabled:
-                        return {}
-    Line 801: # TODO: Implement proper exception handling
-      Context:
-        except Exception as e:
-            # Log the error and handle gracefully
-                # TODO: Implement proper exception handling
-        import os
-        from pathlib import Path
-    Line 847: # TODO: Implement proper exception handling
+    Line 834: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         import csv
         
-    Line 893: # TODO: Implement proper exception handling
+    Line 880: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         html_content = f"""
         <!DOCTYPE html>
-    Line 990: # TODO: Implement proper exception handling
+    Line 977: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         import os
         from pathlib import Path
-    Line 1023: # TODO: Implement proper exception handling
+    Line 1010: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not self.reporting_enabled:
                         self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
-    Line 1094: # TODO: Implement functionality
+    Line 1081: # TODO: Implement functionality
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement functionality
         self.logger.info("Predicting SR breakouts...")
         
-    Line 1185: # TODO: Implement functionality
+    Line 1172: # TODO: Implement functionality
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement functionality
         # Detect support and resistance levels
         support_levels = await self._detect_support_levels(market_data)
-    Line 1276: # TODO: Implement proper exception handling
+    Line 1263: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         context["report_id"] = await self._generate_detailed_report(market_data, context)
         except Exception as e:
-    Line 1308: # TODO: Implement proper exception handling
+    Line 1295: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
         
-    Line 1562: # TODO: Implement proper exception handling
+    Line 1549: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Validate VWAP data availability
         vwap_available = self._validate_vwap_data(market_data)
-    Line 1589: # TODO: Implement proper exception handling
+    Line 1576: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Validate VWAP data availability
         vwap_available = self._validate_vwap_data(market_data)
-    Line 1616: # TODO: Implement proper exception handling
+    Line 1603: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1648: # TODO: Implement proper exception handling
+    Line 1635: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1683: # TODO: Implement proper exception handling
+    Line 1670: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1718: # TODO: Implement proper exception handling
+    Line 1705: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 1750: # TODO: Implement proper exception handling
+    Line 1737: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 1785: # TODO: Implement proper exception handling
+    Line 1772: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 1820: # TODO: Implement proper exception handling
+    Line 1807: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not levels:
                         return []
-    Line 1867: # TODO: Implement proper exception handling
+    Line 1854: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1899: # TODO: Implement proper exception handling
+    Line 1886: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1931: # TODO: Implement proper exception handling
+    Line 1918: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 1960: # TODO: Implement proper exception handling
+    Line 1947: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 1992: # TODO: Implement proper exception handling
+    Line 1979: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2024: # TODO: Implement proper exception handling
+    Line 2011: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2053: # TODO: Implement proper exception handling
+    Line 2040: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2085: # TODO: Implement proper exception handling
+    Line 2072: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2118: # TODO: Implement proper exception handling
+    Line 2105: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2151: # TODO: Implement proper exception handling
+    Line 2138: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2183: # TODO: Implement proper exception handling
+    Line 2170: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2216: # TODO: Implement proper exception handling
+    Line 2203: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2249: # TODO: Implement proper exception handling
+    Line 2236: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2281: # TODO: Implement proper exception handling
+    Line 2268: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2317: # TODO: Implement proper exception handling
+    Line 2304: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_levels = []
         
-    Line 2353: # TODO: Implement proper exception handling
+    Line 2340: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2385: # TODO: Implement proper exception handling
+    Line 2372: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2421: # TODO: Implement proper exception handling
+    Line 2408: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         resistance_levels = []
         
-    Line 2462: # TODO: Implement proper exception handling
+    Line 2449: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Find swing high and low
         high = market_data['high'].max()
-    Line 2504: # TODO: Implement proper exception handling
+    Line 2491: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Simple Elliott Wave detection (can be enhanced with more sophisticated algorithms)
         prices = market_data['close'].values
-    Line 2585: # TODO: Implement proper exception handling
+    Line 2572: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if len(wave_points) < 5:
                         return 0.3
-    Line 2630: # TODO: Implement proper exception handling
+    Line 2617: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Volume Profile Analysis
         volume_profile = await self._calculate_volume_profile(market_data)
-    Line 2671: # TODO: Implement proper exception handling
+    Line 2658: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Create price bins
         price_range = market_data['high'].max() - market_data['low'].min()
-    Line 2744: # TODO: Implement proper exception handling
+    Line 2731: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         imbalances = []
         
-    Line 2791: # TODO: Implement proper exception handling
+    Line 2778: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         confluence_levels = {}
         
-    Line 2866: # TODO: Implement proper exception handling
+    Line 2853: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Basic S/R context - use VWAP if available, otherwise fall back to close price
         current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
-    Line 2906: # TODO: Implement proper exception handling
+    Line 2893: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Base strength calculation
         base_strength = 0.5
-    Line 2940: # TODO: Implement proper exception handling
+    Line 2927: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         touch_counts = {}
         
-    Line 2980: # TODO: Implement proper exception handling
+    Line 2967: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         level_ages = {}
         
-    Line 3019: # TODO: Implement proper exception handling
+    Line 3006: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         bounce_rates = {}
         
-    Line 3085: # TODO: Implement proper exception handling
+    Line 3072: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         isolation_scores = {}
         
-    Line 3127: # TODO: Implement proper exception handling
+    Line 3114: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not DBSCAN_AVAILABLE:
                         self.logger.warning("DBSCAN not available, returning unclustered levels")
-    Line 3241: # TODO: Implement proper exception handling
+    Line 3228: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not self.enable_enhanced_strength:
                         # Return basic strength calculation
-    Line 3267: # TODO: Implement proper exception handling
+    Line 3254: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         touch_count_data = touch_counts.get(level_id, {})
         if not isinstance(touch_count_data, dict):
-    Line 3366: # TODO: Implement proper exception handling
+    Line 3353: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         probabilities = {}
         
-    Line 3405: # TODO: Implement proper exception handling
+    Line 3392: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         confidence_scores = {}
         
-    Line 3436: # TODO: Implement proper exception handling
+    Line 3423: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         features = {}
         
-    Line 3486: # TODO: Implement proper exception handling
+    Line 3473: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not levels:
                         return None
-    Line 3526: # TODO: Implement proper exception handling
+    Line 3513: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not level:
                         return 1.0
-    Line 3544: # TODO: Implement proper exception handling
+    Line 3531: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if len(market_data) < 1:
                         return {}
-    Line 3554: # TODO: Implement proper exception handling
+    Line 3541: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         high = market_data['high'].iloc[-1]
         low = market_data['low'].iloc[-1]
-    Line 3604: # TODO: Implement proper exception handling
+    Line 3591: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         features: dict[str, float] = {}
         
-    Line 3711: # TODO: Implement proper exception handling
+    Line 3698: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Extract key features
         price_change_1m = features.get("price_change_1m", 0)
-    Line 3757: # TODO: Implement proper exception handling
+    Line 3744: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Base confidence
         confidence = 0.5
-    Line 3828: # TODO: Implement proper exception handling
+    Line 3815: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if len(market_data) < 20:
                         return 0.0
-    Line 3851: # TODO: Implement proper exception handling
+    Line 3838: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if len(market_data) < 10:
                         return 0.0
-    Line 3880: # TODO: Implement proper exception handling
+    Line 3867: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Store prediction in history
         self.prediction_history.append(predictions)
-    Line 3923: # TODO: Implement proper exception handling
+    Line 3910: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not sr_context:
                         return False
-    Line 3961: # TODO: Implement proper exception handling
+    Line 3948: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not sr_context:
                         return {}
-    Line 4032: # TODO: Implement functionality
+    Line 4019: # TODO: Implement functionality
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement functionality
         # Extract features for prediction
         features = await self._extract_outcome_features(market_data, current_price, sr_context)
-    Line 4096: # TODO: Implement functionality
+    Line 4083: # TODO: Implement functionality
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement functionality
         # Get current price
         current_price = market_data['close'].iloc[-1]
-    Line 4160: # TODO: Implement functionality
+    Line 4147: # TODO: Implement functionality
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement functionality
         features = {}
         current_price = market_data['close'].iloc[-1]
-    Line 4208: # TODO: Implement proper exception handling
+    Line 4195: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         features = {}
         current_price = market_data['close'].iloc[-1]
-    Line 4287: # TODO: Implement proper exception handling
+    Line 4274: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Calculate SR strength across different timeframes
         timeframes = [20, 50, 100]
-    Line 4313: # TODO: Implement proper exception handling
+    Line 4300: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_strength = sr_context.get("support_strength", 0.5)
         resistance_strength = sr_context.get("resistance_strength", 0.5)
-    Line 4336: # TODO: Implement proper exception handling
+    Line 4323: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         current_price = market_data['close'].iloc[-1]
         nearest_support = sr_context.get("nearest_support", current_price)
-    Line 4371: # TODO: Implement proper exception handling
+    Line 4358: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         support_strength = sr_context.get("support_strength", 0.5)
         resistance_strength = sr_context.get("resistance_strength", 0.5)
-    Line 4394: # TODO: Implement proper exception handling
+    Line 4381: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if len(market_data) < 20:
                         return 0.0
-    Line 4417: # TODO: Implement proper exception handling
+    Line 4404: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Use isolation data from enhanced strength calculation
         support_levels = sr_context.get("support_levels", [])
-    Line 4444: # TODO: Implement proper exception handling
+    Line 4431: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         nearest_support = sr_context.get("nearest_support", current_price)
         nearest_resistance = sr_context.get("nearest_resistance", current_price)
-    Line 4467: # TODO: Implement proper exception handling
+    Line 4454: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         current_price = market_data['close'].iloc[-1]
         nearest_support = sr_context.get("nearest_support", current_price)
-    Line 4499: # TODO: Implement proper exception handling
+    Line 4486: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         # Update model weights
         if "fractal_weight" in weights:
-    Line 4578: # TODO: Implement proper exception handling
+    Line 4565: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         current_price = market_data['close'].iloc[-1]
         
-    Line 4618: # TODO: Implement proper exception handling
+    Line 4605: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         self.logger.info("Stopping SR breakout predictor...")
         self.is_initialized = False
-    Line 4637: # TODO: Implement proper exception handling
+    Line 4624: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         self.logger.info("Cleaning up SR breakout predictor...")
         await self.stop()
-    Line 4654: # TODO: Implement proper exception handling
+    Line 4641: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         comparison = {
         "price_vs_vwap": {},
-    Line 4722: # TODO: Implement proper exception handling
+    Line 4709: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         analysis = {
         "data_source_distribution": {},
-    Line 4773: # TODO: Implement proper exception handling
+    Line 4760: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not price_levels or not vwap_levels:
                         return 0.0
-    Line 4799: # TODO: Implement proper exception handling
+    Line 4786: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if not levels:
                         return 0.0
-    Line 4825: # TODO: Implement proper exception handling
+    Line 4812: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         method_stats = {}
         
-    Line 4864: # TODO: Implement proper exception handling
+    Line 4851: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         recommendations = {
         "primary_approach": "",
-    Line 4911: # TODO: Implement proper exception handling
+    Line 4898: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         if 'vwap' not in market_data.columns:
                         self.logger.warning("⚠️ VWAP column not found in market data")
-    Line 4944: # TODO: Implement proper exception handling
+    Line 4931: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully
                 # TODO: Implement proper exception handling
         total_levels = len(price_levels) + len(vwap_levels)
         
-    Line 4977: # TODO: Implement proper exception handling
+    Line 4964: # TODO: Implement proper exception handling
       Context:
         except Exception as e:
             # Log the error and handle gracefully

@@ -1701,435 +1701,413 @@ regime_labels: Market regime labels for regime-specific analysis (optional)
 Returns:
             Dictionary containing all analysis results
 """
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-self.logger.info(
-"🔍 Starting comprehensive autoencoder feature importance analysis..."
-)
-self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
-self.logger.info(f"🎯 Labels shape: {labels.shape}")
-self.logger.info(f"📈 Unique labels: {len(np.unique(labels))}")
+        self.logger.info(
+            "🔍 Starting comprehensive autoencoder feature importance analysis..."
+        )
+        self.logger.info(f"📊 Encoded features shape: {encoded_features.shape}")
+        self.logger.info(f"🎯 Labels shape: {labels.shape}")
+        self.logger.info(f"📈 Unique labels: {len(np.unique(labels))}")
 
-# Store analysis results
-analysis_results = {
-"feature_importance": {},
-"correlation_analysis": {},
-"stability_metrics": {},
-"regime_analysis": {},
-"summary_statistics": {},
-"recommendations": [],
-}
+        # Store analysis results
+        analysis_results = {
+            "feature_importance": {},
+            "correlation_analysis": {},
+            "stability_metrics": {},
+            "regime_analysis": {},
+            "summary_statistics": {},
+            "recommendations": [],
+        }
 
-# 1. Statistical Correlation Analysis
-self.logger.info("📊 Performing statistical correlation analysis...")
-correlation_results = self._analyze_correlations(encoded_features, labels)
-analysis_results["correlation_analysis"] = correlation_results
+        try:
+            # 1. Statistical Correlation Analysis
+            self.logger.info("📊 Performing statistical correlation analysis...")
+            correlation_results = self._analyze_correlations(encoded_features, labels)
+            analysis_results["correlation_analysis"] = correlation_results
 
-# 2. Machine Learning Feature Importance
-self.logger.info("🤖 Computing ML-based feature importance...")
-ml_importance = self._compute_ml_importance(encoded_features, labels)
-analysis_results["feature_importance"] = ml_importance
+            # 2. Machine Learning Feature Importance
+            self.logger.info("🤖 Computing ML-based feature importance...")
+            ml_importance = self._compute_ml_importance(encoded_features, labels)
+            analysis_results["feature_importance"] = ml_importance
 
-# 3. Feature Stability Analysis
-self.logger.info("📈 Analyzing feature stability...")
-stability_results = self._analyze_feature_stability(encoded_features)
-analysis_results["stability_metrics"] = stability_results
+            # 3. Feature Stability Analysis
+            self.logger.info("📈 Analyzing feature stability...")
+            stability_results = self._analyze_feature_stability(encoded_features)
+            analysis_results["stability_metrics"] = stability_results
 
-# 4. Regime-Specific Analysis (if regime labels provided)
-if regime_labels is not None:
+            # 4. Regime-Specific Analysis (if regime labels provided)
+            if regime_labels is not None:
                 self.logger.info("🔄 Performing regime-specific analysis...")
-regime_results = self._analyze_regime_specific_importance(
-encoded_features, labels, regime_labels
-)
-analysis_results["regime_analysis"] = regime_results
+                regime_results = self._analyze_regime_specific_importance(
+                    encoded_features, labels, regime_labels
+                )
+                analysis_results["regime_analysis"] = regime_results
 
-# 5. Comparison with Original Features (if provided)
-if original_features is not None:
+            # 5. Comparison with Original Features (if provided)
+            if original_features is not None:
                 self.logger.info("🔄 Comparing with original features...")
-comparison_results = self._compare_with_original_features(
-encoded_features, original_features, labels
-)
-analysis_results["original_comparison"] = comparison_results
+                comparison_results = self._compare_with_original_features(
+                    encoded_features, original_features, labels
+                )
+                analysis_results["original_comparison"] = comparison_results
 
-# 6. Generate Summary and Recommendations
-self.logger.info("📋 Generating summary and recommendations...")
-summary, recommendations = self._generate_summary_and_recommendations(
-analysis_results
-)
-analysis_results["summary_statistics"] = summary
-analysis_results["recommendations"] = recommendations
+            # 6. Generate Summary and Recommendations
+            self.logger.info("📋 Generating summary and recommendations...")
+            summary, recommendations = self._generate_summary_and_recommendations(
+                analysis_results
+            )
+            analysis_results["summary_statistics"] = summary
+            analysis_results["recommendations"] = recommendations
 
-# Store results for later access
-self.importance_scores = ml_importance
-self.correlation_analysis = correlation_results
-self.stability_metrics = stability_results
-if regime_labels is not None:
+            # Store results for later access
+            self.importance_scores = ml_importance
+            self.correlation_analysis = correlation_results
+            self.stability_metrics = stability_results
+            if regime_labels is not None:
                 self.regime_analysis = analysis_results["regime_analysis"]
 
-self.logger.info(
-"✅ Autoencoder feature importance analysis completed successfully!"
-)
-return analysis_results
+            self.logger.info(
+                "✅ Autoencoder feature importance analysis completed successfully!"
+            )
+            return analysis_results
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error in feature importance analysis: {e}")
-return {"error": str(e)}
+            return {"error": str(e)}
 
-def _analyze_correlations(
-self, encoded_features: pd.DataFrame, labels: np.ndarray
-) -> dict[str, Any]:
+    def _analyze_correlations(
+        self, encoded_features: pd.DataFrame, labels: np.ndarray
+    ) -> dict[str, Any]:
         """Analyze statistical correlations between features and labels."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Create DataFrame with features and labels
-analysis_df = encoded_features.copy()
-analysis_df["target"] = labels
+        # Create DataFrame with features and labels
+        analysis_df = encoded_features.copy()
+        analysis_df["target"] = labels
 
-# Calculate correlations
-correlations = analysis_df.corr()["target"].drop("target")
+        # Calculate correlations
+        correlations = analysis_df.corr()["target"].drop("target")
 
-# Sort by absolute correlation
-abs_correlations = correlations.abs().sort_values(ascending=False)
+        # Sort by absolute correlation
+        abs_correlations = correlations.abs().sort_values(ascending=False)
 
-# Calculate mutual information (if scikit-learn available)
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-from sklearn.feature_selection import (
-mutual_info_classif,
-mutual_info_regression,
-)
+        # Calculate mutual information (if scikit-learn available)
+        try:
+            from sklearn.feature_selection import (
+                mutual_info_classif,
+                mutual_info_regression,
+            )
 
-# Determine if classification or regression
-unique_labels = len(np.unique(labels))
-if unique_labels <= 10:  # Classification
-mi_scores = mutual_info_classif(
-encoded_features, labels, random_state=42
-)
-else:  # Regression
-mi_scores = mutual_info_regression(
-encoded_features, labels, random_state=42
-)
+            # Determine if classification or regression
+            unique_labels = len(np.unique(labels))
+            if unique_labels <= 10:  # Classification
+                mi_scores = mutual_info_classif(
+                    encoded_features, labels, random_state=42
+                )
+            else:  # Regression
+                mi_scores = mutual_info_regression(
+                    encoded_features, labels, random_state=42
+                )
 
-mi_df = pd.DataFrame(
-{"feature": encoded_features.columns, "mutual_info": mi_scores}
-).sort_values("mutual_info", ascending=False)
+            mi_df = pd.DataFrame(
+                {"feature": encoded_features.columns, "mutual_info": mi_scores}
+            ).sort_values("mutual_info", ascending=False)
 
-self.logger.info(
-f"📊 Mutual information computed for {len(encoded_features.columns)} features"
-)
+            self.logger.info(
+                f"📊 Mutual information computed for {len(encoded_features.columns)} features"
+            )
 
-except ImportError:
-                self.logger.warning(
-"⚠️ scikit-learn not available, skipping mutual information"
-)
-mi_df = None
+        except ImportError:
+            self.logger.warning(
+                "⚠️ scikit-learn not available, skipping mutual information"
+            )
+            mi_df = None
 
-# Identify highly correlated features
-high_corr_threshold = self.config.get(
-"feature_analysis.high_correlation_threshold", 0.7
-)
-high_correlations = correlations[correlations.abs() > high_corr_threshold]
+        # Identify highly correlated features
+        high_corr_threshold = self.config.get(
+            "feature_analysis.high_correlation_threshold", 0.7
+        )
+        high_correlations = correlations[correlations.abs() > high_corr_threshold]
 
-# Identify low correlation features
-low_corr_threshold = self.config.get(
-"feature_analysis.low_correlation_threshold", 0.1
-)
-low_correlations = correlations[correlations.abs() < low_corr_threshold]
+        # Identify low correlation features
+        low_corr_threshold = self.config.get(
+            "feature_analysis.low_correlation_threshold", 0.1
+        )
+        low_correlations = correlations[correlations.abs() < low_corr_threshold]
 
-results = {
-"pearson_correlations": correlations.to_dict(),
-"abs_correlations": abs_correlations.to_dict(),
-"mutual_information": mi_df.to_dict("records")
-if mi_df is not None
-else None,
-"high_correlations": high_correlations.to_dict(),
-"low_correlations": low_correlations.to_dict(),
-"correlation_summary": {
-"mean_correlation": correlations.mean(),
-"std_correlation": correlations.std(),
-"max_correlation": correlations.max(),
-"min_correlation": correlations.min(),
-"high_corr_count": len(high_correlations),
-"low_corr_count": len(low_correlations),
-},
-}
+        results = {
+            "pearson_correlations": correlations.to_dict(),
+            "abs_correlations": abs_correlations.to_dict(),
+            "mutual_information": mi_df.to_dict("records")
+            if mi_df is not None
+            else None,
+            "high_correlations": high_correlations.to_dict(),
+            "low_correlations": low_correlations.to_dict(),
+            "correlation_summary": {
+                "mean_correlation": correlations.mean(),
+                "std_correlation": correlations.std(),
+                "max_correlation": correlations.max(),
+                "min_correlation": correlations.min(),
+                "high_corr_count": len(high_correlations),
+                "low_corr_count": len(low_correlations),
+            },
+        }
 
-self.logger.info("📊 Correlation analysis complete:")
-self.logger.info(
-f"   📈 Mean correlation: {results['correlation_summary']['mean_correlation']:.4f}"
-)
-self.logger.info(
-f"   📈 Max correlation: {results['correlation_summary']['max_correlation']:.4f}"
-)
-self.logger.info(
-f"   📈 High correlation features: {results['correlation_summary']['high_corr_count']}"
-)
-self.logger.info(
-f"   📈 Low correlation features: {results['correlation_summary']['low_corr_count']}"
-)
+        self.logger.info("📊 Correlation analysis complete:")
+        self.logger.info(
+            f"   📈 Mean correlation: {results['correlation_summary']['mean_correlation']:.4f}"
+        )
+        self.logger.info(
+            f"   📈 Max correlation: {results['correlation_summary']['max_correlation']:.4f}"
+        )
+        self.logger.info(
+            f"   📈 High correlation features: {results['correlation_summary']['high_corr_count']}"
+        )
+        self.logger.info(
+            f"   📈 Low correlation features: {results['correlation_summary']['low_corr_count']}"
+        )
 
-return results
+        return results
 
-except Exception as e:
-            self.logger.exception(f"❌ Error in correlation analysis: {e}")
-return {"error": str(e)}
+    except Exception as e:
+        self.logger.exception(f"❌ Error in correlation analysis: {e}")
+        return {"error": str(e)}
 
-def _compute_ml_importance(
-self, encoded_features: pd.DataFrame, labels: np.ndarray
-) -> dict[str, Any]:
+    def _compute_ml_importance(
+        self, encoded_features: pd.DataFrame, labels: np.ndarray
+    ) -> dict[str, Any]:
         """Compute machine learning-based feature importance."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Prepare data
-X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
-y = labels
+        try:
+            # Prepare data
+            X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
+            y = labels
 
-if len(np.unique(y)) < 2:
+            if len(np.unique(y)) < 2:
                 self.logger.warning(
-"⚠️ Insufficient unique labels for ML importance analysis"
-)
-return {"error": "Insufficient unique labels"}
+                    "⚠️ Insufficient unique labels for ML importance analysis"
+                )
+                return {"error": "Insufficient unique labels"}
 
-# 1. Random Forest Importance
-self.logger.info("🌲 Computing Random Forest feature importance...")
-rf_model = RandomForestClassifier(
-n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
-)
-rf_model.fit(X, y)
-rf_importance = pd.DataFrame(
-{"feature": X.columns, "importance": rf_model.feature_importances_}
-).sort_values("importance", ascending=False)
+            # 1. Random Forest Importance
+            self.logger.info("🌲 Computing Random Forest feature importance...")
+            rf_model = RandomForestClassifier(
+                n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+            )
+            rf_model.fit(X, y)
+            rf_importance = pd.DataFrame(
+                {"feature": X.columns, "importance": rf_model.feature_importances_}
+            ).sort_values("importance", ascending=False)
 
-# 2. Gradient Boosting Importance (if available)
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-from sklearn.ensemble import GradientBoostingClassifier
+            # 2. Gradient Boosting Importance (if available)
+            try:
+                from sklearn.ensemble import GradientBoostingClassifier
 
-gb_model = GradientBoostingClassifier(
-n_estimators=100, max_depth=6, random_state=42
-)
-gb_model.fit(X, y)
-gb_importance = pd.DataFrame(
-{"feature": X.columns, "importance": gb_model.feature_importances_}
-).sort_values("importance", ascending=False)
+                gb_model = GradientBoostingClassifier(
+                    n_estimators=100, max_depth=6, random_state=42
+                )
+                gb_model.fit(X, y)
+                gb_importance = pd.DataFrame(
+                    {"feature": X.columns, "importance": gb_model.feature_importances_}
+                ).sort_values("importance", ascending=False)
 
-self.logger.info("🌳 Gradient Boosting importance computed")
+                self.logger.info("🌳 Gradient Boosting importance computed")
 
-except ImportError:
+            except ImportError:
                 self.logger.warning("⚠️ Gradient Boosting not available")
-gb_importance = None
+                gb_importance = None
 
-# 3. Permutation Importance (more robust)
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import train_test_split
+            # 3. Permutation Importance (more robust)
+            try:
+                from sklearn.inspection import permutation_importance
+                from sklearn.model_selection import train_test_split
 
-# Split data for permutation importance
-X_train, X_test, y_train, y_test = train_test_split(
-X,
-y,
-test_size=0.3,
-random_state=42,
-stratify=y if len(np.unique(y)) <= 10 else None,
-)
+                # Split data for permutation importance
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X,
+                    y,
+                    test_size=0.3,
+                    random_state=42,
+                    stratify=y if len(np.unique(y)) <= 10 else None,
+                )
 
-# Use a simple model for permutation importance
-from sklearn.linear_model import LogisticRegression
+                # Use a simple model for permutation importance
+                from sklearn.linear_model import LogisticRegression
 
-perm_model = LogisticRegression(random_state=42, max_iter=1000)
-perm_model.fit(X_train, y_train)
+                perm_model = LogisticRegression(random_state=42, max_iter=1000)
+                perm_model.fit(X_train, y_train)
 
-# Compute permutation importance
-perm_importance = permutation_importance(
-perm_model, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1
-)
+                # Compute permutation importance
+                perm_importance = permutation_importance(
+                    perm_model, X_test, y_test, n_repeats=10, random_state=42, n_jobs=-1
+                )
 
-perm_df = pd.DataFrame(
-{
-"feature": X.columns,
-"importance": perm_importance.importances_mean,
-"std": perm_importance.importances_std,
-}
-).sort_values("importance", ascending=False)
+                perm_df = pd.DataFrame(
+                    {
+                        "feature": X.columns,
+                        "importance": perm_importance.importances_mean,
+                        "std": perm_importance.importances_std,
+                    }
+                ).sort_values("importance", ascending=False)
 
-self.logger.info("🔄 Permutation importance computed")
+                self.logger.info("🔄 Permutation importance computed")
 
-except ImportError:
+            except ImportError:
                 self.logger.warning("⚠️ Permutation importance not available")
-perm_df = None
+                perm_df = None
 
-# 4. Aggregate importance scores
-importance_methods = {
-"random_forest": rf_importance,
-"gradient_boosting": gb_importance,
-"permutation": perm_df,
-}
+            # 4. Aggregate importance scores
+            importance_methods = {
+                "random_forest": rf_importance,
+                "gradient_boosting": gb_importance,
+                "permutation": perm_df,
+            }
 
-# Compute ensemble importance (average across methods)
-available_methods = {
-k: v for k, v in importance_methods.items() if v is not None
-}
+            # Compute ensemble importance (average across methods)
+            available_methods = {
+                k: v for k, v in importance_methods.items() if v is not None
+            }
 
-if len(available_methods) > 1:
+            if len(available_methods) > 1:
                 # Normalize importance scores to [0, 1] range
-normalized_importance = {}
-for method_name, method_df in available_methods.items():
+                normalized_importance = {}
+                for method_name, method_df in available_methods.items():
                     if method_df is not None:
                         normalized_importance[method_name] = (
-method_df["importance"] / method_df["importance"].max()
-)
+                            method_df["importance"] / method_df["importance"].max()
+                        )
 
-# Compute ensemble importance
-ensemble_scores = pd.DataFrame(normalized_importance).mean(axis=1)
-ensemble_df = pd.DataFrame(
-{"feature": X.columns, "ensemble_importance": ensemble_scores}
-).sort_values("ensemble_importance", ascending=False)
+                # Compute ensemble importance
+                ensemble_scores = pd.DataFrame(normalized_importance).mean(axis=1)
+                ensemble_df = pd.DataFrame(
+                    {"feature": X.columns, "ensemble_importance": ensemble_scores}
+                ).sort_values("ensemble_importance", ascending=False)
 
-self.logger.info(
-"🎯 Ensemble importance computed from multiple methods"
-)
-else:
+                self.logger.info(
+                    "🎯 Ensemble importance computed from multiple methods"
+                )
+            else:
                 ensemble_df = rf_importance.copy()
-ensemble_df.columns = ["feature", "ensemble_importance"]
+                ensemble_df.columns = ["feature", "ensemble_importance"]
 
-results = {
-"random_forest": rf_importance.to_dict("records"),
-"gradient_boosting": gb_importance.to_dict("records")
-if gb_importance is not None
-else None,
-"permutation": perm_df.to_dict("records")
-if perm_df is not None
-else None,
-"ensemble": ensemble_df.to_dict("records"),
-"importance_summary": {
-"top_features": ensemble_df.head(10)["feature"].tolist(),
-"bottom_features": ensemble_df.tail(10)["feature"].tolist(),
-"mean_importance": ensemble_df["ensemble_importance"].mean(),
-"std_importance": ensemble_df["ensemble_importance"].std(),
-},
-}
+            results = {
+                "random_forest": rf_importance.to_dict("records"),
+                "gradient_boosting": gb_importance.to_dict("records")
+                if gb_importance is not None
+                else None,
+                "permutation": perm_df.to_dict("records")
+                if perm_df is not None
+                else None,
+                "ensemble": ensemble_df.to_dict("records"),
+                "importance_summary": {
+                    "top_features": ensemble_df.head(10)["feature"].tolist(),
+                    "bottom_features": ensemble_df.tail(10)["feature"].tolist(),
+                    "mean_importance": ensemble_df["ensemble_importance"].mean(),
+                    "std_importance": ensemble_df["ensemble_importance"].std(),
+                },
+            }
 
-self.logger.info("🤖 ML importance analysis complete:")
-self.logger.info(
-f"   🏆 Top 5 features: {results['importance_summary']['top_features'][:5]}"
-)
-self.logger.info(
-f"   📊 Mean importance: {results['importance_summary']['mean_importance']:.4f}"
-)
+            self.logger.info("🤖 ML importance analysis complete:")
+            self.logger.info(
+                f"   🏆 Top 5 features: {results['importance_summary']['top_features'][:5]}"
+            )
+            self.logger.info(
+                f"   📊 Mean importance: {results['importance_summary']['mean_importance']:.4f}"
+            )
 
-return results
+            return results
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error in ML importance analysis: {e}")
-return {"error": str(e)}
+            return {"error": str(e)}
 
-def _analyze_feature_stability(
-self, encoded_features: pd.DataFrame
-) -> dict[str, Any]:
+    def _analyze_feature_stability(
+        self, encoded_features: pd.DataFrame
+    ) -> dict[str, Any]:
         """Analyze feature stability over time."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Calculate rolling statistics to assess stability
-window_size = self.config.get("feature_analysis.stability_window", 100)
+        try:
+            # Calculate rolling statistics to assess stability
+            window_size = self.config.get("feature_analysis.stability_window", 100)
 
-stability_metrics = {}
+            stability_metrics = {}
 
-for column in encoded_features.columns:
+            for column in encoded_features.columns:
                 if column in ["autoencoder_recon_error"]:
                     continue  # Skip reconstruction error for stability analysis
 
-feature_data = encoded_features[column].dropna()
+                feature_data = encoded_features[column].dropna()
 
-if len(feature_data) < window_size * 2:
+                if len(feature_data) < window_size * 2:
                     continue
 
-# Rolling statistics
-rolling_mean = feature_data.rolling(
-window=window_size, min_periods=window_size // 2
-).mean()
-rolling_std = feature_data.rolling(
-window=window_size, min_periods=window_size // 2
-).std()
+                # Rolling statistics
+                rolling_mean = feature_data.rolling(
+                    window=window_size, min_periods=window_size // 2
+                ).mean()
+                rolling_std = feature_data.rolling(
+                    window=window_size, min_periods=window_size // 2
+                ).std()
 
-# Stability metrics
-mean_stability = 1 - (rolling_std / (rolling_mean.abs() + 1e-8)).mean()
-trend_stability = 1 - abs(rolling_mean.diff().mean()) / (
-feature_data.std() + 1e-8
-)
+                # Stability metrics
+                mean_stability = 1 - (rolling_std / (rolling_mean.abs() + 1e-8)).mean()
+                trend_stability = 1 - abs(rolling_mean.diff().mean()) / (
+                    feature_data.std() + 1e-8
+                )
 
-# Coefficient of variation
-cv = feature_data.std() / (feature_data.mean() + 1e-8)
+                # Coefficient of variation
+                cv = feature_data.std() / (feature_data.mean() + 1e-8)
 
-stability_metrics[column] = {
-"mean_stability": mean_stability,
-"trend_stability": trend_stability,
-"coefficient_of_variation": cv,
-"overall_stability": (mean_stability + trend_stability) / 2,
-}
+                stability_metrics[column] = {
+                    "mean_stability": mean_stability,
+                    "trend_stability": trend_stability,
+                    "coefficient_of_variation": cv,
+                    "overall_stability": (mean_stability + trend_stability) / 2,
+                }
 
-# Create stability DataFrame
-stability_df = pd.DataFrame.from_dict(stability_metrics, orient="index")
-stability_df = stability_df.sort_values(
-"overall_stability", ascending=False
-)
+            # Create stability DataFrame
+            stability_df = pd.DataFrame.from_dict(stability_metrics, orient="index")
+            stability_df = stability_df.sort_values(
+                "overall_stability", ascending=False
+            )
 
-# Identify stable and unstable features
-stability_threshold = self.config.get(
-"feature_analysis.stability_threshold", 0.7
-)
-stable_features = stability_df[
-stability_df["overall_stability"] > stability_threshold
-].index.tolist()
-unstable_features = stability_df[
-stability_df["overall_stability"] < (1 - stability_threshold)
-].index.tolist()
+            # Identify stable and unstable features
+            stability_threshold = self.config.get(
+                "feature_analysis.stability_threshold", 0.7
+            )
+            stable_features = stability_df[
+                stability_df["overall_stability"] > stability_threshold
+            ].index.tolist()
+            unstable_features = stability_df[
+                stability_df["overall_stability"] < (1 - stability_threshold)
+            ].index.tolist()
 
-results = {
-"stability_metrics": stability_df.to_dict("index"),
-"stable_features": stable_features,
-"unstable_features": unstable_features,
-"stability_summary": {
-"mean_stability": stability_df["overall_stability"].mean(),
-"stable_count": len(stable_features),
-"unstable_count": len(unstable_features),
-"stability_threshold": stability_threshold,
-},
-}
+            results = {
+                "stability_metrics": stability_df.to_dict("index"),
+                "stable_features": stable_features,
+                "unstable_features": unstable_features,
+                "stability_summary": {
+                    "mean_stability": stability_df["overall_stability"].mean(),
+                    "stable_count": len(stable_features),
+                    "unstable_count": len(unstable_features),
+                    "stability_threshold": stability_threshold,
+                },
+            }
 
-self.logger.info("📈 Stability analysis complete:")
-self.logger.info(
-f"   📊 Mean stability: {results['stability_summary']['mean_stability']:.4f}"
-)
-self.logger.info(
-f"   📊 Stable features: {results['stability_summary']['stable_count']}"
-)
-self.logger.info(
-f"   📊 Unstable features: {results['stability_summary']['unstable_count']}"
-)
+            self.logger.info("📈 Stability analysis complete:")
+            self.logger.info(
+                f"   📊 Mean stability: {results['stability_summary']['mean_stability']:.4f}"
+            )
+            self.logger.info(
+                f"   📊 Stable features: {results['stability_summary']['stable_count']}"
+            )
+            self.logger.info(
+                f"   📊 Unstable features: {results['stability_summary']['unstable_count']}"
+            )
 
-return results
+            return results
 
-except Exception as e:
+        except Exception as e:
             self.logger.exception(f"❌ Error in stability analysis: {e}")
-return {"error": str(e)}
+            return {"error": str(e)}
 
-def _analyze_regime_specific_importance(
-self,
+    def _analyze_regime_specific_importance(
+        self,
 encoded_features: pd.DataFrame,
 labels: np.ndarray,
 regime_labels: np.ndarray,

@@ -15,657 +15,547 @@ from src.tactician.sr_breakout_predictor import setup_sr_breakout_predictor, ens
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
-failed,
-invalid,
-warning,
+    failed,
+    invalid,
+    warning,
 )
 
+
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class WeightOptimizationResult:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
-
-
-    # TODO: Implement class methods
-class WeightOptimizationResult:
-    pass  # TODO: Add implementation
 class WeightOptimizationResult:
     """Result of weight optimization backtesting."""
 
-weights: Dict[str, float]
-performance_metrics: Dict[str, float]
-sharpe_ratio: float
-max_drawdown: float
-win_rate: float
-profit_factor: float
-total_return: float
-optimization_score: float
-backtest_periods: int
-confidence_level: float
-
-class SRWeightOptimizer:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
+    weights: Dict[str, float]
+    performance_metrics: Dict[str, float]
+    sharpe_ratio: float
+    max_drawdown: float
+    win_rate: float
+    profit_factor: float
+    total_return: float
+    optimization_score: float
+    backtest_periods: int
+    confidence_level: float
 
 
-    # TODO: Implement class methods
-class SRWeightOptimizer:
-    pass  # TODO: Add implementation
 class SRWeightOptimizer:
     """
-SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
+    SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
 
-Features:
-    - Weight optimization using backtesting
-- Performance metrics calculation
-- Multiple optimization strategies
-- Result validation and ranking
-"""
+    Features:
+    - Online learning with incremental updates
+    - Multi-objective optimization (total PnL, Sharpe ratio, win rate)
+    - Performance metrics calculation
+    - Result validation and ranking
+    """
 
-def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
-Initialize the SR weight optimizer.
+        Initialize the SR weight optimizer.
 
-Args:
+        Args:
             config: Configuration dictionary
-"""
-self.config = config
-self.logger = system_logger.getChild("SRWeightOptimizer")
-
-# Configuration
-self.optimizer_config = config.get("sr_weight_optimizer", {})
-self.max_iterations = self.optimizer_config.get("max_iterations", 100)
-self.min_confidence = self.optimizer_config.get("min_confidence", 0.6)
-self.backtest_periods = self.optimizer_config.get("backtest_periods", 30)
-
-# Component managers
-self.sr_predictor = None
-
-# Optimization state
-self.optimization_results: List[WeightOptimizationResult] = []
-self.best_weights: Optional[Dict[str, float]] = None
-self.optimization_history: List[Dict[str, Any]] = []
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="SR weight optimizer initialization"
-)
-async def initialize(self) -> bool:
         """
-Initialize the SR weight optimizer.
+        self.config = config
+        self.logger = system_logger.getChild("SRWeightOptimizer")
 
-Returns:
+        # Configuration
+        self.optimizer_config = config.get("sr_weight_optimizer", {})
+        self.max_iterations = self.optimizer_config.get("max_iterations", 100)
+        self.min_confidence = self.optimizer_config.get("min_confidence", 0.6)
+        self.backtest_periods = self.optimizer_config.get("backtest_periods", 30)
+
+        # Online learning configuration
+        self.online_config = self.optimizer_config.get("online_learning", {})
+        self.learning_rate = self.online_config.get("learning_rate", 0.01)
+        self.update_frequency = self.online_config.get("update_frequency", 10)  # updates every 10 trades
+        self.momentum = self.online_config.get("momentum", 0.9)
+        self.decay_rate = self.online_config.get("decay_rate", 0.95)
+
+        # Multi-objective optimization weights
+        self.objective_weights = self.optimizer_config.get("objective_weights", {
+            "total_pnl": 0.4,
+            "sharpe_ratio": 0.3,
+            "win_rate": 0.3
+        })
+
+        # Component managers
+        self.sr_predictor = None
+
+        # Optimization state
+        self.optimization_results: List[WeightOptimizationResult] = []
+        self.best_weights: Optional[Dict[str, float]] = None
+        self.optimization_history: List[Dict[str, Any]] = []
+        self.current_weights: Dict[str, float] = {}
+        self.weight_gradients: Dict[str, float] = {}
+        self.update_count = 0
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="SR weight optimizer initialization"
+    )
+    async def initialize(self) -> bool:
+        """
+        Initialize the SR weight optimizer.
+
+        Returns:
             bool: True if initialization successful
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Initializing SR Weight Optimizer...")
+        """
+        try:
+            self.logger.info("Initializing SR Weight Optimizer...")
 
-# Initialize SR predictor
-# Use optimized configuration
-optimized_config = ensure_optimized_sr_config(self.config)
-self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
-
-if not self.sr_predictor:
+            # Initialize SR predictor
+            self.sr_predictor = await setup_sr_breakout_predictor(self.config)
+            if not self.sr_predictor:
                 self.logger.error("Failed to initialize SR predictor")
-return False
+                return False
 
-# Validate configuration
-if not self._validate_configuration():
-                self.logger.error(invalid("Invalid SR weight optimizer configuration"))
-return False
+            # Initialize default weights
+            self.current_weights = self._initialize_default_weights()
 
-self.logger.info("✅ SR Weight Optimizer initialized successfully")
-return True
+            # Validate configuration
+            if not self._validate_configuration():
+                return False
 
-except Exception as e:
+            self.logger.info("✅ SR Weight Optimizer initialized successfully")
+            return True
+
+        except Exception as e:
             self.logger.error(failed(f"❌ SR Weight Optimizer initialization failed: {e}"))
-return False
+            return False
 
-def _validate_configuration(self) -> bool:
+    def _initialize_default_weights(self) -> Dict[str, float]:
+        """Initialize default weights for SR prediction."""
+        return {
+            "fractal_weight": 0.25,
+            "volume_weight": 0.25,
+            "pivot_weight": 0.25,
+            "atr_weight": 0.25,
+            "touch_count_weight": 0.2,
+            "total_volume_weight": 0.2,
+            "level_age_weight": 0.2,
+            "bounce_rate_weight": 0.2,
+            "isolation_score_weight": 0.2
+        }
+
+    def _validate_configuration(self) -> bool:
         """
-Validate SR weight optimizer configuration.
+        Validate optimizer configuration.
 
-Returns:
+        Returns:
             bool: True if configuration is valid
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.max_iterations <= 0:
-                self.logger.error(invalid("Max iterations must be positive"))
-return False
+        """
+        try:
+            # Validate learning parameters
+            if not 0 < self.learning_rate < 1:
+                self.logger.error(invalid("Learning rate must be between 0 and 1"))
+                return False
 
-if not 0 <= self.min_confidence <= 1:
-                self.logger.error(invalid("Min confidence must be between 0 and 1"))
-return False
+            if not 0 < self.momentum < 1:
+                self.logger.error(invalid("Momentum must be between 0 and 1"))
+                return False
 
-if self.backtest_periods <= 0:
-                self.logger.error(invalid("Backtest periods must be positive"))
-return False
+            if not 0 < self.decay_rate < 1:
+                self.logger.error(invalid("Decay rate must be between 0 and 1"))
+                return False
 
-return True
+            # Validate objective weights
+            total_weight = sum(self.objective_weights.values())
+            if abs(total_weight - 1.0) > 0.01:
+                self.logger.error(invalid("Objective weights must sum to 1.0"))
+                return False
 
-except Exception as e:
+            return True
+
+        except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="weight optimization"
-)
-async def optimize_weights(
-self,
-market_data: pd.DataFrame,
-target_data: pd.Series
-) -> Optional[WeightOptimizationResult]:
+    async def update_weights_online(self, trade_result: Dict[str, Any]) -> None:
         """
-Optimize SR breakout prediction weights.
+        Update weights using online learning with incremental updates.
 
-Args:
-            market_data: Market data for backtesting
-target_data: Target data for validation
-
-Returns:
-            WeightOptimizationResult: Optimization result or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Starting weight optimization...")
-
-# Generate weight combinations
-weight_combinations = self._generate_weight_combinations()
-
-best_result = None
-best_score = -np.inf
-
-# Test each weight combination
-for i, weights in enumerate(weight_combinations):
-                if i >= self.max_iterations:
-                    break
-
-# Test weights
-result = await self._test_weights(weights, market_data, target_data)
-
-if result and result.optimization_score > best_score:
-                    best_result = result
-best_score = result.optimization_score
-
-# Record optimization step
-self._record_optimization_step(i, weights, result)
-
-if i % 10 == 0:
-                    self.logger.info(f"Optimization progress: {i}/{min(len(weight_combinations), self.max_iterations)}")
-
-if best_result:
-                self.best_weights = best_result.weights
-self.optimization_results.append(best_result)
-self.logger.info(f"✅ Weight optimization completed. Best score: {best_score:.4f}")
-
-return best_result
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Weight optimization failed: {e}"))
-return None
-
-def _generate_weight_combinations(self) -> List[Dict[str, float]]:
+        Args:
+            trade_result: Result of a completed trade
         """
-Generate weight combinations for optimization.
+        try:
+            self.update_count += 1
 
-Returns:
-            List[Dict[str, float]]: Weight combinations
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Define weight ranges for different SR methods
-weight_ranges = {
-"fractal_weight": np.arange(0.1, 1.0, 0.1),
-"volume_weight": np.arange(0.1, 1.0, 0.1),
-"pivot_weight": np.arange(0.1, 1.0, 0.1),
-"atr_weight": np.arange(0.1, 1.0, 0.1)
-}
+            # Calculate performance metrics for this trade
+            performance_metrics = self._calculate_trade_performance(trade_result)
 
-# Generate all combinations
-combinations = []
-for fractal_w in weight_ranges["fractal_weight"]:
-                for volume_w in weight_ranges["volume_weight"]:
-                    for pivot_w in weight_ranges["pivot_weight"]:
-                        for atr_w in weight_ranges["atr_weight"]:
-                            # Normalize weights to sum to 1
-total_weight = fractal_w + volume_w + pivot_w + atr_w
-if total_weight > 0:
-                                weights = {
-"fractal_weight": fractal_w / total_weight,
-"volume_weight": volume_w / total_weight,
-"pivot_weight": pivot_w / total_weight,
-"atr_weight": atr_w / total_weight
-}
-combinations.append(weights)
+            # Calculate multi-objective score
+            objective_score = self._calculate_multi_objective_score(performance_metrics)
 
-return combinations
+            # Calculate gradients for each weight
+            gradients = self._calculate_weight_gradients(trade_result, objective_score)
 
-except Exception as e:
-            self.logger.error(failed(f"❌ Error generating weight combinations: {e}"))
-return []
+            # Update weights using online learning
+            self._update_weights_with_gradients(gradients)
 
-async def _test_weights(
-self,
-weights: Dict[str, float],
-market_data: pd.DataFrame,
-target_data: pd.Series
-) -> Optional[WeightOptimizationResult]:
+            # Apply momentum and decay
+            self._apply_momentum_and_decay()
+
+            # Store optimization history
+            self._store_optimization_step(trade_result, performance_metrics, objective_score)
+
+            # Update SR predictor with new weights
+            await self._update_sr_predictor_weights()
+
+            if self.update_count % self.update_frequency == 0:
+                self.logger.info(f"✅ Online weight update #{self.update_count} completed")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error in online weight update: {e}"))
+
+    def _calculate_trade_performance(self, trade_result: Dict[str, Any]) -> Dict[str, float]:
         """
-Test a specific weight combination.
+        Calculate performance metrics for a single trade.
 
-Args:
-            weights: Weight combination to test
-market_data: Market data for backtesting
-target_data: Target data for validation
+        Args:
+            trade_result: Trade result data
 
-Returns:
-            WeightOptimizationResult: Test result or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Set weights in SR predictor
-if self.sr_predictor:
-                await self.sr_predictor.set_weights(weights)
-
-# Run backtest
-backtest_results = await self._run_backtest(market_data, target_data)
-
-if not backtest_results:
-                return None
-
-# Calculate performance metrics
-performance_metrics = self._calculate_performance_metrics(backtest_results)
-
-# Calculate optimization score
-optimization_score = self._calculate_optimization_score(performance_metrics)
-
-# Create result
-result = WeightOptimizationResult(
-weights=weights,
-performance_metrics=performance_metrics,
-sharpe_ratio=performance_metrics.get("sharpe_ratio", 0.0),
-max_drawdown=performance_metrics.get("max_drawdown", 0.0),
-win_rate=performance_metrics.get("win_rate", 0.0),
-profit_factor=performance_metrics.get("profit_factor", 0.0),
-total_return=performance_metrics.get("total_return", 0.0),
-optimization_score=optimization_score,
-backtest_periods=len(backtest_results),
-confidence_level=performance_metrics.get("confidence", 0.0)
-)
-
-return result
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error testing weights: {e}"))
-return None
-
-async def _run_backtest(
-self,
-market_data: pd.DataFrame,
-target_data: pd.Series
-) -> Optional[List[Dict[str, Any]]]:
+        Returns:
+            Dict: Performance metrics
         """
-Run backtest with current weights.
+        try:
+            pnl = trade_result.get("pnl", 0.0)
+            duration = trade_result.get("duration", 1.0)
+            initial_capital = trade_result.get("initial_capital", 1.0)
 
-Args:
-            market_data: Market data for backtesting
-target_data: Target data for validation
+            # Calculate metrics
+            total_pnl = pnl
+            sharpe_ratio = pnl / (duration ** 0.5) if duration > 0 else 0.0
+            win_rate = 1.0 if pnl > 0 else 0.0
 
-Returns:
-            List[Dict[str, Any]]: Backtest results or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.sr_predictor:
-                return None
+            return {
+                "total_pnl": total_pnl,
+                "sharpe_ratio": sharpe_ratio,
+                "win_rate": win_rate
+            }
 
-results = []
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating trade performance: {e}"))
+            return {"total_pnl": 0.0, "sharpe_ratio": 0.0, "win_rate": 0.0}
 
-# Run predictions on historical data
-for i in range(len(market_data) - self.backtest_periods):
-                # Get historical window
-historical_data = market_data.iloc[i:i+self.backtest_periods]
-
-# Get prediction
-prediction = await self.sr_predictor.predict_breakout(historical_data)
-
-if prediction:
-                    # Compare with actual target
-actual_target = target_data.iloc[i+self.backtest_periods] if i+self.backtest_periods < len(target_data) else 0
-
-result = {
-"prediction": prediction,
-"actual_target": actual_target,
-"timestamp": market_data.index[i+self.backtest_periods] if i+self.backtest_periods < len(market_data) else None
-}
-results.append(result)
-
-return results
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error running backtest: {e}"))
-return None
-
-def _calculate_performance_metrics(self, backtest_results: List[Dict[str, Any]]) -> Dict[str, float]:
+    def _calculate_multi_objective_score(self, performance_metrics: Dict[str, float]) -> float:
         """
-Calculate performance metrics from backtest results.
+        Calculate multi-objective optimization score.
 
-Args:
-            backtest_results: Backtest results
-
-Returns:
-            Dict[str, float]: Performance metrics
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not backtest_results:
-                return {}
-
-# Extract predictions and actuals
-predictions = [r["prediction"].get("confidence", 0.0) for r in backtest_results]
-actuals = [r["actual_target"] for r in backtest_results]
-
-# Calculate basic metrics
-total_predictions = len(predictions)
-correct_predictions = sum(1 for p, a in zip(predictions, actuals) if (p > 0.5 and a > 0) or (p < 0.5 and a < 0))
-win_rate = correct_predictions / total_predictions if total_predictions > 0 else 0.0
-
-# Calculate returns
-returns = []
-for i, (pred, actual) in enumerate(zip(predictions, actuals)):
-                if pred > 0.5:  # Predicted positive
-returns.append(actual)
-else:  # Predicted negative
-returns.append(-actual)
-
-total_return = sum(returns)
-avg_return = np.mean(returns) if returns else 0.0
-std_return = np.std(returns) if returns else 0.0
-
-# Calculate Sharpe ratio
-sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
-
-# Calculate max drawdown
-cumulative_returns = np.cumsum(returns)
-running_max = np.maximum.accumulate(cumulative_returns)
-drawdown = cumulative_returns - running_max
-max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0.0
-
-# Calculate profit factor
-positive_returns = [r for r in returns if r > 0]
-negative_returns = [r for r in returns if r < 0]
-
-gross_profit = sum(positive_returns) if positive_returns else 0.0
-gross_loss = abs(sum(negative_returns)) if negative_returns else 0.0
-
-profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
-
-return {
-"win_rate": win_rate,
-"total_return": total_return,
-"avg_return": avg_return,
-"sharpe_ratio": sharpe_ratio,
-"max_drawdown": max_drawdown,
-"profit_factor": profit_factor,
-"confidence": np.mean(predictions) if predictions else 0.0
-}
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating performance metrics: {e}"))
-return {}
-
-def _calculate_optimization_score(self, performance_metrics: Dict[str, float]) -> float:
-        """
-Calculate optimization score from performance metrics.
-
-Args:
+        Args:
             performance_metrics: Performance metrics
 
-Returns:
-            float: Optimization score
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Weighted combination of metrics
-sharpe_weight = 0.3
-win_rate_weight = 0.25
-profit_factor_weight = 0.25
-drawdown_weight = 0.2
-
-sharpe_score = min(performance_metrics.get("sharpe_ratio", 0.0) / 2.0, 1.0)  # Normalize to 0-1
-win_rate_score = performance_metrics.get("win_rate", 0.0)
-profit_factor_score = min(performance_metrics.get("profit_factor", 0.0) / 2.0, 1.0)  # Normalize to 0-1
-drawdown_score = max(0, 1.0 + performance_metrics.get("max_drawdown", 0.0))  # Higher drawdown = lower score
-
-optimization_score = (
-sharpe_score * sharpe_weight +
-win_rate_score * win_rate_weight +
-profit_factor_score * profit_factor_weight +
-drawdown_score * drawdown_weight
-)
-
-return optimization_score
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error calculating optimization score: {e}"))
-return 0.0
-
-def _record_optimization_step(
-self,
-step: int,
-weights: Dict[str, float],
-result: Optional[WeightOptimizationResult]
-) -> None:
+        Returns:
+            float: Multi-objective score
         """
-Record an optimization step.
+        try:
+            # Normalize metrics to [0, 1] range
+            normalized_pnl = max(0, min(1, performance_metrics["total_pnl"] / 1000))  # Normalize to 1000 max
+            normalized_sharpe = max(0, min(1, performance_metrics["sharpe_ratio"] / 2))  # Normalize to 2 max
+            normalized_win_rate = performance_metrics["win_rate"]  # Already 0-1
 
-Args:
-            step: Optimization step number
-weights: Tested weights
-result: Optimization result
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-step_record = {
-"step": step,
-"weights": weights,
-"optimization_score": result.optimization_score if result else 0.0,
-"timestamp": pd.Timestamp.now().isoformat()
-}
+            # Calculate weighted score
+            score = (
+                self.objective_weights["total_pnl"] * normalized_pnl +
+                self.objective_weights["sharpe_ratio"] * normalized_sharpe +
+                self.objective_weights["win_rate"] * normalized_win_rate
+            )
 
-self.optimization_history.append(step_record)
+            return score
 
-except Exception as e:
-            self.logger.error(failed(f"❌ Error recording optimization step: {e}"))
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating multi-objective score: {e}"))
+            return 0.0
 
-def get_best_weights(self) -> Optional[Dict[str, float]]:
+    def _calculate_weight_gradients(self, trade_result: Dict[str, Any], objective_score: float) -> Dict[str, float]:
         """
-Get the best weights found during optimization.
+        Calculate gradients for each weight based on trade result.
 
-Returns:
-            Dict[str, float]: Best weights or None if not found
-"""
-return self.best_weights.copy() if self.best_weights else None
+        Args:
+            trade_result: Trade result data
+            objective_score: Multi-objective score
 
-def get_optimization_results(self, limit: Optional[int] = None) -> List[WeightOptimizationResult]:
+        Returns:
+            Dict: Weight gradients
         """
-Get optimization results.
+        try:
+            gradients = {}
 
-Args:
-            limit: Maximum number of results to return
+            # Calculate gradients for each weight
+            for weight_name in self.current_weights.keys():
+                # Simple gradient calculation based on performance
+                # In a more sophisticated implementation, this would use backpropagation
+                if objective_score > 0.5:  # Good performance
+                    # Reinforce current weights
+                    gradients[weight_name] = self.learning_rate * (1 - objective_score)
+                else:  # Poor performance
+                    # Adjust weights away from current values
+                    gradients[weight_name] = -self.learning_rate * objective_score
 
-Returns:
-            List[WeightOptimizationResult]: Optimization results
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if limit:
-                return self.optimization_results[-limit:]
-return self.optimization_results.copy()
+            return gradients
 
-except Exception as e:
-            self.logger.error(failed(f"❌ Error getting optimization results: {e}"))
-return []
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error calculating weight gradients: {e}"))
+            return {}
 
-def get_optimization_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def _update_weights_with_gradients(self, gradients: Dict[str, float]) -> None:
         """
-Get optimization history.
+        Update weights using calculated gradients.
 
-Args:
+        Args:
+            gradients: Weight gradients
+        """
+        try:
+            for weight_name, gradient in gradients.items():
+                if weight_name in self.current_weights:
+                    # Apply gradient update
+                    self.current_weights[weight_name] += gradient
+
+                    # Ensure weights stay in valid range [0, 1]
+                    self.current_weights[weight_name] = max(0, min(1, self.current_weights[weight_name]))
+
+            # Normalize weights to sum to 1
+            self._normalize_weights()
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error updating weights: {e}"))
+
+    def _normalize_weights(self) -> None:
+        """Normalize weights to sum to 1."""
+        try:
+            total_weight = sum(self.current_weights.values())
+            if total_weight > 0:
+                for weight_name in self.current_weights:
+                    self.current_weights[weight_name] /= total_weight
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error normalizing weights: {e}"))
+
+    def _apply_momentum_and_decay(self) -> None:
+        """Apply momentum and decay to weight updates."""
+        try:
+            # Apply momentum to gradients
+            for weight_name in self.weight_gradients:
+                self.weight_gradients[weight_name] *= self.momentum
+
+            # Apply decay to learning rate
+            self.learning_rate *= self.decay_rate
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error applying momentum and decay: {e}"))
+
+    def _store_optimization_step(self, trade_result: Dict[str, Any], performance_metrics: Dict[str, float], objective_score: float) -> None:
+        """
+        Store optimization step in history.
+
+        Args:
+            trade_result: Trade result data
+            performance_metrics: Performance metrics
+            objective_score: Multi-objective score
+        """
+        try:
+            step_data = {
+                "update_count": self.update_count,
+                "timestamp": pd.Timestamp.now().isoformat(),
+                "weights": self.current_weights.copy(),
+                "trade_result": trade_result,
+                "performance_metrics": performance_metrics,
+                "objective_score": objective_score,
+                "learning_rate": self.learning_rate
+            }
+
+            self.optimization_history.append(step_data)
+
+            # Keep history size manageable
+            if len(self.optimization_history) > 1000:
+                self.optimization_history = self.optimization_history[-1000:]
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error storing optimization step: {e}"))
+
+    async def _update_sr_predictor_weights(self) -> None:
+        """Update SR predictor with new weights."""
+        try:
+            if self.sr_predictor:
+                # Update SR predictor weights
+                self.sr_predictor.model_weights = self.current_weights.copy()
+                self.logger.debug("Updated SR predictor weights")
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error updating SR predictor weights: {e}"))
+
+    async def run_batch_optimization(self, historical_data: pd.DataFrame) -> WeightOptimizationResult:
+        """
+        Run batch optimization on historical data.
+
+        Args:
+            historical_data: Historical market data
+
+        Returns:
+            WeightOptimizationResult: Optimization result
+        """
+        try:
+            self.logger.info("Running batch optimization...")
+
+            best_score = -np.inf
+            best_weights = self.current_weights.copy()
+
+            # Grid search over weight combinations
+            for iteration in range(self.max_iterations):
+                # Generate weight combination
+                test_weights = self._generate_weight_combination()
+
+                # Test weights on historical data
+                performance_metrics = await self._test_weights_on_data(test_weights, historical_data)
+
+                # Calculate multi-objective score
+                objective_score = self._calculate_multi_objective_score(performance_metrics)
+
+                # Update best weights if better
+                if objective_score > best_score:
+                    best_score = objective_score
+                    best_weights = test_weights.copy()
+
+                if iteration % 10 == 0:
+                    self.logger.info(f"Batch optimization progress: {iteration}/{self.max_iterations}")
+
+            # Create optimization result
+            final_performance = await self._test_weights_on_data(best_weights, historical_data)
+            result = WeightOptimizationResult(
+                weights=best_weights,
+                performance_metrics=final_performance,
+                sharpe_ratio=final_performance.get("sharpe_ratio", 0.0),
+                max_drawdown=final_performance.get("max_drawdown", 0.0),
+                win_rate=final_performance.get("win_rate", 0.0),
+                profit_factor=final_performance.get("profit_factor", 0.0),
+                total_return=final_performance.get("total_pnl", 0.0),
+                optimization_score=best_score,
+                backtest_periods=self.backtest_periods,
+                confidence_level=self.min_confidence
+            )
+
+            # Update current weights
+            self.current_weights = best_weights
+            self.best_weights = best_weights
+
+            # Store result
+            self.optimization_results.append(result)
+
+            self.logger.info(f"✅ Batch optimization completed. Best score: {best_score:.4f}")
+            return result
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error in batch optimization: {e}"))
+            return None
+
+    def _generate_weight_combination(self) -> Dict[str, float]:
+        """Generate a random weight combination for testing."""
+        try:
+            # Generate random weights
+            weights = {}
+            for weight_name in self.current_weights.keys():
+                weights[weight_name] = np.random.random()
+
+            # Normalize weights
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                for weight_name in weights:
+                    weights[weight_name] /= total_weight
+
+            return weights
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error generating weight combination: {e}"))
+            return self.current_weights.copy()
+
+    async def _test_weights_on_data(self, weights: Dict[str, float], data: pd.DataFrame) -> Dict[str, float]:
+        """
+        Test weights on historical data.
+
+        Args:
+            weights: Weights to test
+            data: Historical data
+
+        Returns:
+            Dict: Performance metrics
+        """
+        try:
+            # Update SR predictor with test weights
+            if self.sr_predictor:
+                original_weights = self.sr_predictor.model_weights.copy()
+                self.sr_predictor.model_weights = weights
+
+                # Run backtest
+                backtest_result = await self.sr_predictor.run_backtest(data)
+
+                # Restore original weights
+                self.sr_predictor.model_weights = original_weights
+
+                return backtest_result
+
+            return {"total_pnl": 0.0, "sharpe_ratio": 0.0, "win_rate": 0.0}
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error testing weights: {e}"))
+            return {"total_pnl": 0.0, "sharpe_ratio": 0.0, "win_rate": 0.0}
+
+    def get_current_weights(self) -> Dict[str, float]:
+        """
+        Get current optimized weights.
+
+        Returns:
+            Dict: Current weights
+        """
+        return self.current_weights.copy()
+
+    def get_optimization_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get optimization history.
+
+        Args:
             limit: Maximum number of records to return
 
-Returns:
-            List[Dict[str, Any]]: Optimization history
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if limit:
+        Returns:
+            List: Optimization history
+        """
+        try:
+            if limit:
                 return self.optimization_history[-limit:]
-return self.optimization_history.copy()
+            return self.optimization_history.copy()
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Error getting optimization history: {e}"))
-return []
+            return []
 
-def save_optimization_results(self, filepath: str) -> bool:
+    def get_best_weights(self) -> Optional[Dict[str, float]]:
         """
-Save optimization results to file.
+        Get best weights from optimization.
 
-Args:
-            filepath: File path to save results
-
-Returns:
-            bool: True if saved successfully
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.optimization_results:
-                self.logger.warning(warning("No optimization results to save"))
-return False
-
-# Convert results to serializable format
-serializable_results = []
-for result in self.optimization_results:
-                serializable_result = {
-"weights": result.weights,
-"performance_metrics": result.performance_metrics,
-"sharpe_ratio": result.sharpe_ratio,
-"max_drawdown": result.max_drawdown,
-"win_rate": result.win_rate,
-"profit_factor": result.profit_factor,
-"total_return": result.total_return,
-"optimization_score": result.optimization_score,
-"backtest_periods": result.backtest_periods,
-"confidence_level": result.confidence_level
-}
-serializable_results.append(serializable_result)
-
-# Save to file
-with open(filepath, 'w') as f:
-                json.dump(serializable_results, f, indent=2)
-
-self.logger.info(f"✅ Optimization results saved to {filepath}")
-return True
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error saving optimization results: {e}"))
-return False
-
-def load_optimization_results(self, filepath: str) -> bool:
+        Returns:
+            Dict: Best weights or None
         """
-Load optimization results from file.
+        return self.best_weights.copy() if self.best_weights else None
 
-Args:
-            filepath: File path to load results from
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            if self.sr_predictor:
+                await self.sr_predictor.cleanup()
 
-Returns:
-            bool: True if loaded successfully
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-with open(filepath, 'r') as f:
-                data = json.load(f)
+            self.logger.info("✅ SR Weight Optimizer cleanup completed")
 
-# Convert back to WeightOptimizationResult objects
-self.optimization_results = []
-for item in data:
-                result = WeightOptimizationResult(
-weights=item["weights"],
-performance_metrics=item["performance_metrics"],
-sharpe_ratio=item["sharpe_ratio"],
-max_drawdown=item["max_drawdown"],
-win_rate=item["win_rate"],
-profit_factor=item["profit_factor"],
-total_return=item["total_return"],
-optimization_score=item["optimization_score"],
-backtest_periods=item["backtest_periods"],
-confidence_level=item["confidence_level"]
-)
-self.optimization_results.append(result)
-
-# Set best weights
-if self.optimization_results:
-                best_result = max(self.optimization_results, key=lambda x: x.optimization_score)
-self.best_weights = best_result.weights
-
-self.logger.info(f"✅ Optimization results loaded from {filepath}")
-return True
-
-except Exception as e:
-            self.logger.error(failed(f"❌ Error loading optimization results: {e}"))
-return False
-
-async def cleanup(self) -> None:
-        """
-Cleanup resources.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Cleaning up SR Weight Optimizer...")
-
-# Clear data
-self.optimization_results.clear()
-self.optimization_history.clear()
-self.best_weights = None
-
-self.logger.info("✅ SR Weight Optimizer cleanup completed")
-
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ SR Weight Optimizer cleanup failed: {e}"))
+
+
+# Setup function for easy integration
+async def setup_sr_weight_optimizer(config: Dict[str, Any]) -> Optional[SRWeightOptimizer]:
+    """Setup SR weight optimizer."""
+    try:
+        optimizer = SRWeightOptimizer(config)
+        if await optimizer.initialize():
+            return optimizer
+        return None
+    except Exception as e:
+        system_logger.error(f"Failed to setup SR weight optimizer: {e}")
+        return None

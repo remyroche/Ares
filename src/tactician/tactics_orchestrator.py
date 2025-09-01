@@ -24,7 +24,6 @@ class TradeDecision:
 
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.leverage_sizer import LeverageSizer
-from src.tactician.ml_tactics_manager import MLTacticsManager
 from src.tactician.position_closing import PositionCloser
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.tactician.position_monitor import PositionAction, PositionAssessment, PositionMonitor
@@ -40,8 +39,8 @@ from src.utils.warning_symbols import (
 
 class DecisionPolicy:
     """
-    Aggregates sizing, leverage, SR breakout, and ML signals into a unified TradeDecision.
-    Provides audit-friendly metadata and metrics.
+    Simplified decision policy that only uses financial data.
+    Removes complex signal aggregation in favor of direct financial metrics.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -63,7 +62,6 @@ class DecisionPolicy:
         self.position_sizer: Optional[PositionSizer] = None
         self.leverage_sizer: Optional[LeverageSizer] = None
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
-        self.ml_tactics: Optional[MLTacticsManager] = None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -80,8 +78,8 @@ class DecisionPolicy:
         try:
             self.logger.info("Initializing Decision Policy...")
 
-            # Initialize component managers
-            await self._initialize_components()
+            # Initialize component managers in parallel for speed
+            await self._initialize_components_parallel()
 
             # Validate configuration
             if not self._validate_configuration():
@@ -95,60 +93,84 @@ class DecisionPolicy:
             self.logger.error(failed(f"❌ Decision Policy initialization failed: {e}"))
             return False
 
+    async def _initialize_components_parallel(self) -> None:
+        """Initialize all component managers in parallel for speed."""
+        try:
+            # Create initialization tasks for all components
+            tasks = [
+                self._initialize_position_sizer(),
+                self._initialize_leverage_sizer(),
+                self._initialize_sr_predictor(),
+            ]
+
+            # Run all initializations in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Check results
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    component_names = ["PositionSizer", "LeverageSizer", "SRBreakoutPredictor"]
+                    self.logger.error(failed(f"❌ {component_names[i]} initialization failed: {result}"))
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Parallel component initialization failed: {e}"))
+
+    async def _initialize_position_sizer(self) -> None:
+        """Initialize position sizer."""
+        try:
+            self.position_sizer = PositionSizer(self.config)
+            await self.position_sizer.initialize()
+        except Exception as e:
+            raise Exception(f"PositionSizer initialization failed: {e}")
+
+    async def _initialize_leverage_sizer(self) -> None:
+        """Initialize leverage sizer."""
+        try:
+            self.leverage_sizer = LeverageSizer(self.config)
+            await self.leverage_sizer.initialize()
+        except Exception as e:
+            raise Exception(f"LeverageSizer initialization failed: {e}")
+
+    async def _initialize_sr_predictor(self) -> None:
+        """Initialize SR breakout predictor."""
+        try:
+            sr_config = self.config.copy()
+            sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
+            sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
+            self.sr_predictor = SRBreakoutPredictor(sr_config)
+            await self.sr_predictor.initialize()
+        except Exception as e:
+            raise Exception(f"SRBreakoutPredictor initialization failed: {e}")
+
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
         """
-        Refresh configuration from step17 optimization results.
+        Refresh configuration from step17 optimization results with immediate hot-swap.
         This method is called automatically when step17 completes.
 
         Args:
             step17_results: Step17 optimization results
         """
         try:
-            # Update decision policy configuration
+            # Immediate hot-swap of configuration
             if "decision_policy" in step17_results:
                 policy_optimization = step17_results["decision_policy"]
                 self.confidence_threshold = policy_optimization.get("confidence_threshold", self.confidence_threshold)
                 self.risk_threshold = policy_optimization.get("risk_threshold", self.risk_threshold)
 
-            # Refresh all component managers
+            # Refresh all component managers immediately
             if self.position_sizer:
                 self.position_sizer.refresh_step17_configuration(step17_results)
 
             if self.leverage_sizer:
                 self.leverage_sizer.refresh_step17_configuration(step17_results)
 
-            if self.ml_tactics:
-                self.ml_tactics.refresh_step17_configuration(step17_results)
+            if self.sr_predictor:
+                self.sr_predictor.refresh_step17_configuration(step17_results)
 
-            self.logger.info("✅ Decision policy configuration refreshed from step17 results")
+            self.logger.info("✅ Decision policy configuration refreshed immediately from step17 results")
 
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
-
-    async def _initialize_components(self) -> None:
-        """Initialize all component managers."""
-        try:
-            # Initialize position sizer
-            self.position_sizer = PositionSizer(self.config)
-            await self.position_sizer.initialize()
-
-            # Initialize leverage sizer
-            self.leverage_sizer = LeverageSizer(self.config)
-            await self.leverage_sizer.initialize()
-
-            # Initialize SR breakout predictor with optimized parameters
-            sr_config = self.config.copy()
-            sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
-            sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-            self.sr_predictor = SRBreakoutPredictor(sr_config)
-            await self.sr_predictor.initialize()
-
-            # Initialize ML tactics manager
-            self.ml_tactics = MLTacticsManager(self.config)
-            await self.ml_tactics.initialize()
-
-        except Exception as e:
-            self.logger.error(failed(f"❌ Component initialization failed: {e}"))
 
     def _validate_configuration(self) -> bool:
         """
@@ -176,7 +198,7 @@ class DecisionPolicy:
 
     async def make_decision(self, market_data: Dict[str, Any]) -> TradeDecision:
         """
-        Make a trading decision based on aggregated signals.
+        Make a trading decision based on financial data only.
 
         Args:
             market_data: Current market data
@@ -185,27 +207,30 @@ class DecisionPolicy:
             TradeDecision: Trading decision with confidence and metadata
         """
         try:
-            # Get signals from all components
+            # Get financial signals from components
             position_signal = await self.position_sizer.get_signal(market_data)
             leverage_signal = await self.leverage_sizer.get_signal(market_data)
             sr_signal = await self.sr_predictor.get_signal(market_data)
-            ml_signal = await self.ml_tactics.get_signal(market_data)
 
-            # Aggregate signals (simplified for now)
-            confidence = (position_signal.get("confidence", 0) + 
-                         leverage_signal.get("confidence", 0) + 
-                         sr_signal.get("confidence", 0) + 
-                         ml_signal.get("confidence", 0)) / 4
+            # Use financial data directly (no complex aggregation)
+            # Base decision on SR breakout prediction
+            sr_confidence = sr_signal.get("confidence", 0.0)
+            sr_direction = sr_signal.get("direction", "NEUTRAL")
 
-            # Determine action based on confidence
-            if confidence >= self.confidence_threshold:
-                action = "BUY" if sr_signal.get("direction", "NEUTRAL") == "BULLISH" else "SELL"
+            # Determine action based on SR confidence
+            if sr_confidence >= self.confidence_threshold:
+                if sr_direction == "BULLISH":
+                    action = "BUY"
+                elif sr_direction == "BEARISH":
+                    action = "SELL"
+                else:
+                    action = "HOLD"
             else:
                 action = "HOLD"
 
             return TradeDecision(
                 action=action,
-                confidence=confidence,
+                confidence=sr_confidence,
                 position_size=position_signal.get("size", 0.0),
                 leverage=leverage_signal.get("leverage", 1.0),
                 price=market_data.get("price", 0.0),
@@ -213,7 +238,7 @@ class DecisionPolicy:
                     "position_signal": position_signal,
                     "leverage_signal": leverage_signal,
                     "sr_signal": sr_signal,
-                    "ml_signal": ml_signal
+                    "decision_basis": "financial_data_only"
                 }
             )
 

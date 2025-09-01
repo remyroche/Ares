@@ -235,7 +235,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         if not TORCH_AVAILABLE:
             raise ImportError("PyTorch is required for DeepSurrogateModel")
 
-        self.network_config = config.get('network' = {})
+        self.network_config = config.get('network', {})
         self.training_config = config.get('training', {})
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -243,21 +243,21 @@ class DeepSurrogateModel(BaseSurrogateModel):
         self.optimizer = None
         self.criterion = None
 
-    def _build_network(self = input_dim: int) -> nn.Module:
+    def _build_network(self, input_dim: int) -> nn.Module:
         """Build the neural network architecture."""
         layers = []
-        hidden_dims = self.network_config.get('hidden_dims' = [100, 50, 25])
-        dropout_rate = self.network_config.get('dropout_rate' = 0.1)
+        hidden_dims = self.network_config.get('hidden_dims', [100, 50, 25])
+        dropout_rate = self.network_config.get('dropout_rate', 0.1)
         activation = self.network_config.get('activation', 'relu')
 
         # Input layer
-        layers.append(nn.Linear(input_dim = hidden_dims[0]))
+        layers.append(nn.Linear(input_dim, hidden_dims[0]))
         layers.append(self._get_activation(activation))
         layers.append(nn.Dropout(dropout_rate))
 
         # Hidden layers
         for i in range(len(hidden_dims) - 1):
-            layers.append(nn.Linear(hidden_dims[i] = hidden_dims[i + 1]))
+            layers.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
             layers.append(self._get_activation(activation))
             layers.append(nn.Dropout(dropout_rate))
 
@@ -266,7 +266,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
 
         return nn.Sequential(*layers)
 
-    def _get_activation(self = activation: str) -> nn.Module:
+    def _get_activation(self, activation: str) -> nn.Module:
         """Get activation function."""
         if activation == 'relu':
             return nn.ReLU()
@@ -279,7 +279,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         else:
             return nn.ReLU()
 
-    def fit(self = X: np.ndarray, y: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Fit the deep surrogate model."""
         start_time = time.time()
 
@@ -293,8 +293,8 @@ class DeepSurrogateModel(BaseSurrogateModel):
         # Setup training
         self.optimizer = optim.Adam(
             self.model.parameters(),
-            lr = self.training_config.get('learning_rate', 0.001),
-            weight_decay = self.training_config.get('weight_decay', 1e-5)
+            lr=self.training_config.get('learning_rate', 0.001),
+            weight_decay=self.training_config.get('weight_decay', 1e-5)
         )
 
         self.criterion = self._get_loss_function()
@@ -304,8 +304,8 @@ class DeepSurrogateModel(BaseSurrogateModel):
         batch_size = self.training_config.get('batch_size', 32)
         patience = self.training_config.get('patience', 50)
 
-        dataset = TensorDataset(X_tensor = y_tensor)
-        dataloader = DataLoader(dataset = batch_size = batch_size, shuffle = True)
+        dataset = TensorDataset(X_tensor, y_tensor)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         best_loss = float('inf')
         patience_counter = 0
@@ -313,12 +313,12 @@ class DeepSurrogateModel(BaseSurrogateModel):
         for epoch in range(epochs):
             epoch_loss = 0.0
 
-            for batch_X = batch_y in dataloader:
+            for batch_X, batch_y in dataloader:
                 self.optimizer.zero_grad()
 
                 # Forward pass
                 output = self.model(batch_X)
-                loss = self.criterion(output = batch_y)
+                loss = self.criterion(output, batch_y)
 
                 # Backward pass
                 loss.backward()
@@ -327,7 +327,8 @@ class DeepSurrogateModel(BaseSurrogateModel):
                 epoch_loss += loss.item()
 
             # Early stopping
-            if epoch_loss < best_loss: best_loss = epoch_loss
+            if epoch_loss < best_loss:
+                best_loss = epoch_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -343,7 +344,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Deep model training completed in {self.training_time:.2f}s")
 
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Predict using the deep surrogate model."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -360,7 +361,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
             variance = torch.exp(output[:, 1]).cpu().numpy()  # Ensure positive variance
 
         self.prediction_time = time.time() - start_time
-        return mean = np.sqrt(variance)  # Return mean and std
+        return mean, np.sqrt(variance)  # Return mean and std
 
     def _get_loss_function(self):
         """Get loss function for training."""
@@ -375,42 +376,42 @@ class DeepSurrogateModel(BaseSurrogateModel):
         else:
             return nn.MSELoss()
 
-    def get_model_info(self) -> Dict[str = Any]:
+    def get_model_info(self) -> Dict[str, Any]:
         """Get deep model information."""
         return {
-            'model_type': 'deep_neural_network' = 'device': str(self.device),
-            'network_config': self.network_config, 'training_config': self.training_config = 'training_time': self.training_time = 'prediction_time': self.prediction_time
+            'model_type': 'deep_neural_network', 'device': str(self.device),
+            'network_config': self.network_config, 'training_config': self.training_config, 'training_time': self.training_time, 'prediction_time': self.prediction_time
         }
 
 
 class AdvancedGaussianProcessModel(BaseSurrogateModel):
     """Advanced Gaussian Process with specialized kernels."""
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.kernel_config = config.get('kernel', {})
         self.gp_config = config.get('gaussian_process', {})
 
-    def _build_kernel(self = input_dim: int) -> Any:
+    def _build_kernel(self, input_dim: int) -> Any:
         """Build advanced kernel based on configuration."""
-        kernel_type = self.kernel_config.get('type' = 'rbf_constant_white')
+        kernel_type = self.kernel_config.get('type', 'rbf_constant_white')
 
         if kernel_type == 'rbf_constant_white':
             return (
                 ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3)) *
-                RBF(length_scale = 1.0 = length_scale_bounds=(1e-2 = 1e2)) +
-                WhiteKernel(noise_level = 1e-5, noise_level_bounds=(1e-10 = 1e-3))
+                RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2)) +
+                WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10, 1e-3))
             )
         elif kernel_type == 'matern':
             nu = self.kernel_config.get('nu', 1.5)
-            return Matern(length_scale = 1.0 = nu = nu = length_scale_bounds=(1e-2, 1e2))
+            return Matern(length_scale=1.0, nu=nu, length_scale_bounds=(1e-2, 1e2))
         elif kernel_type == 'rational_quadratic':
             alpha = self.kernel_config.get('alpha', 1.0)
-            return RationalQuadratic(length_scale = 1.0 = alpha = alpha = length_scale_bounds=(1e-2, 1e2))
+            return RationalQuadratic(length_scale=1.0, alpha=alpha, length_scale_bounds=(1e-2, 1e2))
         elif kernel_type == 'composite':
             return self._build_composite_kernel(input_dim)
         else:
-            return RBF(length_scale = 1.0 = length_scale_bounds=(1e-2 = 1e2))
+            return RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
 
     def _build_composite_kernel(self, input_dim: int) -> Any:
         """Build composite kernel for different input dimensions."""
@@ -420,7 +421,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
             WhiteKernel(noise_level = 1e-5)
         )
 
-    def fit(self = X: np.ndarray = y: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Fit the advanced Gaussian Process model."""
         start_time = time.time()
 
@@ -442,66 +443,65 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         self.is_fitted = True
         self.logger.info(f"Advanced GP training completed in {self.training_time:.2f}s")
 
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Predict using the advanced Gaussian Process model."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
 
         start_time = time.time()
 
-        mean = std = self.model.predict(X = return_std = True)
+        mean, std = self.model.predict(X, return_std=True)
 
         self.prediction_time = time.time() - start_time
-        return mean = std
+        return mean, std
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get advanced GP model information."""
         return {
-            'model_type': 'advanced_gaussian_process' = 'kernel_config': self.kernel_config,
-            'gp_config': self.gp_config = 'kernel': str(self.model.kernel_) if self.model else:
-    None = 'training_time': self.training_time = 'prediction_time': self.prediction_time
+            'model_type': 'advanced_gaussian_process', 'kernel_config': self.kernel_config,
+            'gp_config': self.gp_config, 'kernel': str(self.model.kernel_) if self.model else None, 'training_time': self.training_time, 'prediction_time': self.prediction_time
         }
 
 
 class MultiTaskSurrogateModel(BaseSurrogateModel):
     """Multi-task surrogate model for related optimization problems."""
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.task_config = config.get('multi_task', {})
         self.models = {}
         self.task_relationships = {}
 
-    def add_task(self = task_name: str = model: BaseSurrogateModel) -> None:
+    def add_task(self, task_name: str, model: BaseSurrogateModel) -> None:
         """Add a task to the multi-task model."""
         self.models[task_name] = model
         self.logger.info(f"Added task '{task_name}' to multi-task model")
 
-    def set_task_relationship(self, task1: str, task2: str = relationship: float) -> None:
+    def set_task_relationship(self, task1: str, task2: str, relationship: float) -> None:
         """Set relationship between tasks (0-1 = where 1 is highly related)."""
         self.task_relationships[(task1, task2)] = relationship
-        self.task_relationships[(task2 = task1)] = relationship
+        self.task_relationships[(task2, task1)] = relationship
         self.logger.info(f"Set relationship between {task1} and {task2}: {relationship}")
 
-    def fit(self, X: np.ndarray = y: np.ndarray = task_names: List[str]) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
         """Fit the multi-task surrogate model."""
         start_time = time.time()
 
         # Fit individual models
-        for task_name = model in self.models.items():
+        for task_name, model in self.models.items():
             if task_name in task_names:
                 self.logger.info(f"Fitting multi-task model for: {task_name}")
                 model.fit(X, y)
 
         # Learn task relationships if not provided
         if not self.task_relationships:
-            self._learn_task_relationships(X = y = task_names)
+            self._learn_task_relationships(X, y, task_names)
 
         self.training_time = time.time() - start_time
         self.is_fitted = True
         self.logger.info(f"Multi-task training completed in {self.training_time:.2f}s")
 
-    def predict(self, X: np.ndarray = task_name: str) -> Tuple[np.ndarray = np.ndarray]:
+    def predict(self, X: np.ndarray, task_name: str) -> Tuple[np.ndarray, np.ndarray]:
         """Predict for a specific task."""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -510,51 +510,53 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
             raise ValueError(f"Task '{task_name}' not found in multi-task model")
 
         # Get base prediction
-        base_pred = base_unc = self.models[task_name].predict(X)
+        base_pred, base_unc = self.models[task_name].predict(X)
 
         # Apply task relationships if available
-        if self.task_relationships: adjusted_pred = adjusted_unc = self._apply_task_relationships(
-                X, base_pred, base_unc = task_name
+        if self.task_relationships:
+            adjusted_pred, adjusted_unc = self._apply_task_relationships(
+                X, base_pred, base_unc, task_name
             )
             return adjusted_pred, adjusted_unc
 
-        return base_pred = base_unc
+        return base_pred, base_unc
 
-    def _learn_task_relationships(self = X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
+    def _learn_task_relationships(self, X: np.ndarray, y: np.ndarray, task_names: List[str]) -> None:
         """Learn relationships between tasks based on data."""
         # Simple correlation-based relationship learning
-        for i = task1 in enumerate(task_names):
-            for j = task2 in enumerate(task_names):
+        for i, task1 in enumerate(task_names):
+            for j, task2 in enumerate(task_names):
                 if i < j:
                     # Calculate correlation between task predictions
-                    pred1 = _ = self.models[task1].predict(X)
-                    pred2 = _ = self.models[task2].predict(X)
+                    pred1, _ = self.models[task1].predict(X)
+                    pred2, _ = self.models[task2].predict(X)
 
-                    correlation = np.corrcoef(pred1, pred2)[0 = 1]
-                    relationship = abs(correlation) if not np.isnan(correlation) else:
-    0.0
+                    correlation = np.corrcoef(pred1, pred2)[0, 1]
+                    relationship = abs(correlation) if not np.isnan(correlation) else 0.0
 
-                    self.set_task_relationship(task1 = task2, relationship)
+                    self.set_task_relationship(task1, task2, relationship)
 
     def _apply_task_relationships(
-        self, X: np.ndarray = base_pred: np.ndarray,
-        base_unc: np.ndarray = task_name: str
-    ) -> Tuple[np.ndarray = np.ndarray]:
+        self, X: np.ndarray, base_pred: np.ndarray,
+        base_unc: np.ndarray, task_name: str
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Apply task relationships to improve predictions."""
         # Simple weighted combination of related task predictions
         weighted_pred = base_pred.copy()
         weighted_unc = base_unc.copy()
 
-        for other_task = relationship in self.task_relationships.items():
-            if other_task[0] == task_name and other_task[1] != task_name: other_task_name = other_task[1]
-                if other_task_name in self.models: other_pred = other_unc = self.models[other_task_name].predict(X)
+        for other_task, relationship in self.task_relationships.items():
+            if other_task[0] == task_name and other_task[1] != task_name:
+                other_task_name = other_task[1]
+                if other_task_name in self.models:
+                    other_pred, other_unc = self.models[other_task_name].predict(X)
 
                     # Weighted combination
                     weight = relationship * 0.1  # Small weight for regularization
                     weighted_pred = (1 - weight) * weighted_pred + weight * other_pred
                     weighted_unc = np.sqrt((1 - weight) * weighted_unc**2 + weight * other_unc**2)
 
-        return weighted_pred = weighted_unc
+        return weighted_pred, weighted_unc
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get multi-task model information."""
@@ -562,6 +564,6 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
             'model_type': 'multi_task_surrogate',
             'num_tasks': len(self.models),
             'task_names': list(self.models.keys()),
-            'task_relationships': self.task_relationships, 'training_time': self.training_time = 'prediction_time': self.prediction_time
+            'task_relationships': self.task_relationships, 'training_time': self.training_time, 'prediction_time': self.prediction_time
         }
 

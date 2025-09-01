@@ -744,9 +744,6 @@ class SurrogateOptimizer:
                 continue
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Perform expensive evaluation
                 result = objective_func(params)
 
@@ -865,9 +862,6 @@ except Exception as e:
 
         for model_type in model_types:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 if model_type == "gaussian_process":
                     model = self._create_gaussian_process_model(X, y)
                 elif model_type == "random_forest":
@@ -926,9 +920,6 @@ except Exception as e:
             if should_evaluate:
                 # Perform expensive evaluation
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     actual_result = objective_func(selected_params)
 
                     if isinstance(actual_result, dict) and self.multi_objective:
@@ -1275,9 +1266,6 @@ except Exception as e:
             return
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Cross-validation score
             if hasattr(self.surrogate_model, 'score'):
                 cv_scores = cross_val_score(
@@ -1547,9 +1535,6 @@ class ComputationalOptimizationManager:
     ) -> bool:
         """Initialize all optimization components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing computational optimization components...")
 
             # Initialize memory manager first
@@ -1595,9 +1580,6 @@ except Exception as e:
         use_surrogates: bool = True = ) -> dict[str, Any]:
         """Run optimized parameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
                 f"Starting optimized parameter optimization with {n_trials} trials",
             )

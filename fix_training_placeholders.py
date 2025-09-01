@@ -4,10 +4,8 @@ Systematic placeholder fixer for training files.
 This script fixes common placeholder issues across all training files.
 """
 
-import os
 import re
 import glob
-from pathlib import Path
 from typing import List, Tuple
 
 class TrainingPlaceholderFixer:

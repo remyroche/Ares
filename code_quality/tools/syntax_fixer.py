@@ -6,7 +6,6 @@ Automatically fixes common Python syntax errors.
 
 import os
 import re
-import ast
 from typing import List, Dict, Tuple
 import argparse
 

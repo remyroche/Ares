@@ -5,11 +5,9 @@ Finds placeholders and functions that need to be implemented in Python code.
 """
 
 import os
-import re
 import argparse
 from typing import Dict, List, Set, Tuple, Any
 from collections import defaultdict
-from pathlib import Path
 
 
 class PlaceholderFinder:

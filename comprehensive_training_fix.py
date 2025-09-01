@@ -4,10 +4,8 @@ Comprehensive fixer for training files.
 This script fixes critical syntax errors and placeholder issues.
 """
 
-import os
 import re
 import glob
-from pathlib import Path
 from typing import List, Tuple
 
 class ComprehensiveTrainingFixer:

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -20,210 +21,187 @@ from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, cr
 
 
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class SRLevelTest:
-    pass  # TODO: Add implementation
-class SRLevelTest:
-    pass  # TODO: Add implementation
 class SRLevelTest:
     """Individual S/R level test result."""
+    level_price: float
+    level_type: str  # "support" or "resistance"
+    test_start_time: datetime
+    test_end_time: datetime
+    touches: int = 0
+    bounces: int = 0
+    breakouts: int = 0
+    false_breakouts: int = 0
+    bounce_rate: float = 0.0
+    breakout_rate: float = 0.0
+    false_breakout_rate: float = 0.0
+    avg_bounce_strength: float = 0.0
+    avg_breakout_strength: float = 0.0
+    level_strength: float = 0.0
+    confidence_score: float = 0.0
 
-level_price: float
-level_type: str  # "support" or "resistance"
-test_start_time: datetime
-test_end_time: datetime
-touches: int = 0
-bounces: int = 0
-breakouts: int = 0
-false_breakouts: int = 0
-bounce_rate: float = 0.0
-breakout_rate: float = 0.0
-false_breakout_rate: float = 0.0
-avg_bounce_strength: float = 0.0
-avg_breakout_strength: float = 0.0
-level_strength: float = 0.0
-confidence_score: float = 0.0
+    # Volume analysis metrics
+    avg_volume_at_touches: float = 0.0
+    volume_spike_ratio: float = 0.0  # Volume at touches vs average volume
+    volume_confirmation_rate: float = 0.0  # % of touches with above-average volume
+    volume_weighted_bounce_rate: float = 0.0  # Bounce rate weighted by volume
+    institutional_volume_ratio: float = 0.0  # Large volume bars ratio
+    volume_cluster_score: float = 0.0  # Volume clustering around level
 
-# Volume analysis metrics
-avg_volume_at_touches: float = 0.0
-volume_spike_ratio: float = 0.0  # Volume at touches vs average volume
-volume_confirmation_rate: float = 0.0  # % of touches with above-average volume
-volume_weighted_bounce_rate: float = 0.0  # Bounce rate weighted by volume
-institutional_volume_ratio: float = 0.0  # Large volume bars ratio
-volume_cluster_score: float = 0.0  # Volume clustering around level
+    # Time-based analysis
+    level_age_days: int = 0
+    age_decay_factor: float = 1.0  # How much level effectiveness decays over time
+    first_touch_date: Optional[datetime] = None
+    last_touch_date: Optional[datetime] = None
 
-# Time-based analysis
-level_age_days: int = 0
-age_decay_factor: float = 1.0  # How much level effectiveness decays over time
-first_touch_date: datetime = None
-last_touch_date: datetime = None
-
-# Multi-timeframe validation
-multi_timeframe_score: float = 0.0  # Confluence across timeframes
-higher_timeframe_alignment: float = 0.0  # Alignment with higher timeframes
+    # Multi-timeframe validation
+    multi_timeframe_score: float = 0.0  # Confluence across timeframes
+    higher_timeframe_alignment: float = 0.0  # Alignment with higher timeframes
 
 
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class BacktestResult:
-    pass  # TODO: Add implementation
-class BacktestResult:
-    pass  # TODO: Add implementation
 class BacktestResult:
     """Result of S/R backtesting."""
 
-# Overall metrics
-total_levels_tested: int = 0
-successful_levels: int = 0
-overall_bounce_rate: float = 0.0
-overall_breakout_rate: float = 0.0
-overall_false_breakout_rate: float = 0.0
+    # Overall metrics
+    total_levels_tested: int = 0
+    successful_levels: int = 0
+    overall_bounce_rate: float = 0.0
+    overall_breakout_rate: float = 0.0
+    overall_false_breakout_rate: float = 0.0
 
-# Support vs Resistance metrics
-support_bounce_rate: float = 0.0
-resistance_bounce_rate: float = 0.0
-support_breakout_rate: float = 0.0
-resistance_breakout_rate: float = 0.0
+    # Support vs Resistance metrics
+    support_bounce_rate: float = 0.0
+    resistance_bounce_rate: float = 0.0
+    support_breakout_rate: float = 0.0
+    resistance_breakout_rate: float = 0.0
 
-# Level quality metrics
-avg_level_strength: float = 0.0
-avg_confidence_score: float = 0.0
-level_detection_accuracy: float = 0.0
+    # Level quality metrics
+    avg_level_strength: float = 0.0
+    avg_confidence_score: float = 0.0
+    level_detection_accuracy: float = 0.0
 
-# Volume analysis metrics
-avg_volume_spike_ratio: float = 0.0
-avg_volume_confirmation_rate: float = 0.0
-avg_institutional_volume_ratio: float = 0.0
-avg_volume_cluster_score: float = 0.0
+    # Volume analysis metrics
+    avg_volume_spike_ratio: float = 0.0
+    avg_volume_confirmation_rate: float = 0.0
+    avg_institutional_volume_ratio: float = 0.0
+    avg_volume_cluster_score: float = 0.0
 
-# Time-based analysis metrics
-avg_level_age_days: float = 0.0
-avg_age_decay_factor: float = 1.0
-level_persistence_score: float = 0.0  # How long levels remain valid
+    # Time-based analysis metrics
+    avg_level_age_days: float = 0.0
+    avg_age_decay_factor: float = 1.0
+    level_persistence_score: float = 0.0  # How long levels remain valid
 
-# Multi-timeframe metrics
-avg_multi_timeframe_score: float = 0.0
-avg_higher_timeframe_alignment: float = 0.0
+    # Multi-timeframe metrics
+    avg_multi_timeframe_score: float = 0.0
+    avg_higher_timeframe_alignment: float = 0.0
 
-# S/R validation score
-sr_validation_score: float = 0.0
+    # S/R validation score
+    sr_validation_score: float = 0.0
 
-# Detailed results
-level_tests: List[SRLevelTest] = None
+    # Detailed results
+    level_tests: List[SRLevelTest] = None
 
-def __post_init__(self):
-    def __post_init__(self):
-    def __post_init__(self):
     def __post_init__(self):
         if self.level_tests is None:
             self.level_tests = []
 
 
 class SRBacktestingValidator:
-    pass  # TODO: Add implementation
-class SRBacktestingValidator:
-    pass  # TODO: Add implementation
-class SRBacktestingValidator:
     """
-Comprehensive S/R backtesting validator.
+    Comprehensive S/R backtesting validator.
 
-This class implements proper backtesting to validate S/R levels by:
-    1. Detecting when price touches S/R levels
-2. Measuring bounce vs breakout behavior
-3. Calculating success metrics and confidence scores
-4. Simulating trading strategies based on S/R levels
-"""
+    This class implements proper backtesting to validate S/R levels by:
+        1. Detecting when price touches S/R levels
+        2. Measuring bounce vs breakout behavior
+        3. Calculating success metrics and confidence scores
+        4. Simulating trading strategies based on S/R levels
+    """
 
-def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the S/R backtesting validator."""
-self.config = config
-self.logger = system_logger.getChild("SRBacktestingValidator")
+        self.config = config
+        self.logger = system_logger.getChild("SRBacktestingValidator")
 
-# Backtesting configuration
-self.backtest_config = config.get("sr_backtesting", {})
-self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
-self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
-self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
-self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
-self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
-self.min_touches = self.backtest_config.get("min_touches", 2)
+        # Backtesting configuration
+        self.backtest_config = config.get("sr_backtesting", {})
+        self.touch_threshold = self.backtest_config.get("touch_threshold", 0.001)  # 0.1% touch threshold
+        self.bounce_threshold = self.backtest_config.get("bounce_threshold", 0.005)  # 0.5% bounce threshold
+        self.breakout_threshold = self.backtest_config.get("breakout_threshold", 0.01)  # 1% breakout threshold
+        self.false_breakout_threshold = self.backtest_config.get("false_breakout_threshold", 0.02)  # 2% false breakout
+        self.confirmation_periods = self.backtest_config.get("confirmation_periods", 3)
+        self.min_touches = self.backtest_config.get("min_touches", 2)
 
-# Volume analysis configuration
-self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
-self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
-self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
-self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
-self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
+        # Volume analysis configuration
+        self.volume_spike_threshold = self.backtest_config.get("volume_spike_threshold", 1.5)  # 1.5x average volume
+        self.institutional_volume_threshold = self.backtest_config.get("institutional_volume_threshold", 2.0)  # 2x average volume
+        self.volume_confirmation_threshold = self.backtest_config.get("volume_confirmation_threshold", 1.2)  # 1.2x average volume
+        self.volume_lookback_periods = self.backtest_config.get("volume_lookback_periods", 20)  # 20 periods for volume baseline
+        self.volume_cluster_radius = self.backtest_config.get("volume_cluster_radius", 0.005)  # 0.5% price range for clustering
 
-# S/R validation configuration
-self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
-self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
-self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
+        # S/R validation configuration
+        self.min_bounce_rate = self.backtest_config.get("min_bounce_rate", 0.6)  # 60% minimum bounce rate
+        self.max_false_breakout_rate = self.backtest_config.get("max_false_breakout_rate", 0.3)  # 30% max false breakouts
+        self.min_volume_confirmation = self.backtest_config.get("min_volume_confirmation", 0.5)  # 50% volume confirmation
 
-# Time-based analysis configuration
-self.age_decay_factor = self.backtest_config.get("age_decay_factor", 0.95)  # 5% decay per period
-self.max_level_age_days = self.backtest_config.get("max_level_age_days", 365)  # 1 year max age
+        # Time-based analysis configuration
+        self.age_decay_factor = self.backtest_config.get("age_decay_factor", 0.95)  # 5% decay per period
+        self.max_level_age_days = self.backtest_config.get("max_level_age_days", 365)  # 1 year max age
 
-# Multi-timeframe configuration
-self.enable_multi_timeframe = self.backtest_config.get("enable_multi_timeframe", True)
-self.timeframe_weights = self.backtest_config.get("timeframe_weights", {
-"1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
-})
+        # Multi-timeframe configuration
+        self.enable_multi_timeframe = self.backtest_config.get("enable_multi_timeframe", True)
+        self.timeframe_weights = self.backtest_config.get("timeframe_weights", {
+            "1m": 0.05, "5m": 0.1, "15m": 0.15, "1h": 0.2, "4h": 0.25, "1d": 0.25
+        })
 
-# Data integration
-self.data_integration: Optional[SRDataIntegrationSimple] = None
+        # Data integration
+        self.data_integration: Optional[SRDataIntegrationSimple] = None
 
-async def initialize_data_integration(
-self,
-symbol: str = "BTCUSDT",
-exchange: str = "binance",
-timeframes: Optional[List[str]] = None,
-lookback_days: Optional[int] = None,
-training_mode: str = "blank"
-) -> bool:
+    async def initialize_data_integration(
+        self,
+        symbol: str = "BTCUSDT",
+        exchange: str = "binance",
+        timeframes: Optional[List[str]] = None,
+        lookback_days: Optional[int] = None,
+        training_mode: str = "blank"
+    ) -> bool:
         """Initialize the data integration system.
 
-Args:
+        Args:
             symbol: Trading symbol
-exchange: Exchange name
-timeframes: List of timeframes to use
-lookback_days: Override default lookback period
-training_mode: Training mode to use for lookback period
+            exchange: Exchange name
+            timeframes: List of timeframes to use
+            lookback_days: Override default lookback period
+            training_mode: Training mode to use for lookback period
 
-Returns:
+        Returns:
             True if initialization successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.logger:
+        """
+        try:
+            if self.logger:
                 self.logger.info("🔧 Initializing data integration for S/R backtesting...")
 
-# Create and initialize data integration
-self.data_integration = await create_sr_data_integration_simple(
-symbol=symbol,
-exchange=exchange,
-timeframes=timeframes,
-lookback_days=lookback_days,
-training_mode=training_mode
-)
+            # Create and initialize data integration
+            self.data_integration = await create_sr_data_integration_simple(
+                symbol=symbol,
+                exchange=exchange,
+                timeframes=timeframes,
+                lookback_days=lookback_days,
+                training_mode=training_mode
+            )
 
-if self.data_integration:
+            if self.data_integration:
                 if self.logger:
                     self.logger.info("✅ Data integration initialized successfully")
-return True
-else:
+                return True
+            else:
                 if self.logger:
                     self.logger.error("❌ Failed to initialize data integration")
-return False
+                return False
 
-except Exception as e:
+        except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Data integration initialization failed: {e}")
-return False
+            return False
 
 @handle_specific_errors(
 error_handlers={
@@ -233,58 +211,54 @@ AttributeError: (None, "Backtesting validator not properly initialized"),
 default_return=None,
 context="S/R backtesting validation"
 )
-async def validate_sr_levels(
-self,
-market_data: pd.DataFrame,
-sr_levels: List[Dict[str, Any]],
-current_price: float,
-multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
-) -> Optional[BacktestResult]:
+    async def validate_sr_levels(
+        self,
+        market_data: pd.DataFrame,
+        sr_levels: List[Dict[str, Any]],
+        current_price: float,
+        multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
+    ) -> Optional[BacktestResult]:
         """
-Validate S/R levels through comprehensive backtesting.
+        Validate S/R levels through comprehensive backtesting.
 
-Args:
+        Args:
             market_data: Historical market data for backtesting
-sr_levels: List of detected S/R levels
-current_price: Current market price
+            sr_levels: List of detected S/R levels
+            current_price: Current market price
 
-Returns:
+        Returns:
             BacktestResult: Comprehensive backtesting results
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
+        """
+        try:
+            self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
 
-# Initialize results
-result = BacktestResult()
-result.total_levels_tested = len(sr_levels)
+            # Initialize results
+            result = BacktestResult()
+            result.total_levels_tested = len(sr_levels)
 
-# Test each S/R level
-for level in sr_levels:
+            # Test each S/R level
+            for level in sr_levels:
                 level_test = await self._test_single_level(
-market_data, level, current_price, multi_timeframe_data
-)
-if level_test:
+                    market_data, level, current_price, multi_timeframe_data
+                )
+                if level_test:
                     result.level_tests.append(level_test)
-
-# Update overall metrics
-if level_test.bounce_rate > self.min_bounce_rate:
+                    # Update overall metrics
+                    if level_test.bounce_rate > self.min_bounce_rate:
                         result.successful_levels += 1
 
-# Calculate overall metrics
-await self._calculate_overall_metrics(result)
+            # Calculate overall metrics
+            await self._calculate_overall_metrics(result)
 
-# Calculate S/R validation score
-await self._calculate_sr_validation_score(result)
+            # Calculate S/R validation score
+            await self._calculate_sr_validation_score(result)
 
-self.logger.info(f"✅ S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
-return result
+            self.logger.info(f"✅ S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
+            return result
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"S/R validation failed: {e}")
-return None
+            return None
 
 async def _test_single_level(
 self,

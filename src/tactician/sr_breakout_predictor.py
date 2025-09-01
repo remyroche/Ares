@@ -623,214 +623,206 @@ except Exception as e:
             self.logger.error(f"Error calculating comprehensive metrics: {e}")
 return {}
 
-def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
+    def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
         """Calculate data quality score (0-1)."""
-try:
+        try:
+            score = 1.0
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-score = 1.0
+            # Check for missing data
+            missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
+            score -= missing_ratio * 0.3
 
-# Check for missing data
-missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
-score -= missing_ratio * 0.3
-
-# Check for sufficient data points
-if len(market_data) < 50:
+            # Check for sufficient data points
+            if len(market_data) < 50:
                 score -= 0.2
-elif len(market_data) < 100:
+            elif len(market_data) < 100:
                 score -= 0.1
 
-# Check for price anomalies
-price_changes = market_data["close"].pct_change().abs()
-anomaly_ratio = (price_changes > 0.1).sum() / len(price_changes)
-score -= anomaly_ratio * 0.2
+            # Check for price anomalies
+            price_changes = market_data["close"].pct_change().abs()
+            anomaly_ratio = (price_changes > 0.1).sum() / len(price_changes)
+            score -= anomaly_ratio * 0.2
 
-return max(0.0, min(1.0, score))
+            # Check for volume anomalies
+            if "volume" in market_data.columns:
+                volume_changes = market_data["volume"].pct_change().abs()
+                volume_anomaly_ratio = (volume_changes > 2.0).sum() / len(volume_changes)
+                score -= volume_anomaly_ratio * 0.1
 
-except Exception as e:
+            return max(0.0, min(1.0, score))
+
+        except Exception as e:
             self.logger.error(f"Error calculating data quality score: {e}")
-return 0.5
+            return 0.5
 
-def _calculate_sr_confidence_score(self, sr_context: dict[str, Any]) -> float:
+    def _calculate_sr_confidence_score(self, sr_context: dict[str, Any]) -> float:
         """Calculate S/R confidence score (0-1)."""
-try:
+        try:
+            score = 0.5  # Base score
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-score = 0.5  # Base score
-
-# Factor in number of levels
-total_levels = len(sr_context.get("support_levels", [])) + len(sr_context.get("resistance_levels", []))
-if total_levels >= 5:
+            # Factor in number of levels
+            total_levels = len(sr_context.get("support_levels", [])) + len(sr_context.get("resistance_levels", []))
+            if total_levels >= 5:
                 score += 0.2
-elif total_levels >= 3:
+            elif total_levels >= 3:
                 score += 0.1
 
-# Factor in strength
-avg_strength = (sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2
-score += avg_strength * 0.2
+            # Factor in strength
+            avg_strength = (sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2
+            score += avg_strength * 0.2
 
-# Factor in clustering quality
-clustering_result = sr_context.get("clustering_result", {})
-if clustering_result.get("n_clusters", 0) > 0:
+            # Factor in clustering quality
+            clustering_result = sr_context.get("clustering_result", {})
+            if clustering_result.get("n_clusters", 0) > 0:
                 score += 0.1
 
-return min(1.0, score)
+            # Factor in proximity to current price
+            support_proximity = sr_context.get("support_proximity", 1.0)
+            resistance_proximity = sr_context.get("resistance_proximity", 1.0)
+            if support_proximity < 0.05 or resistance_proximity < 0.05:
+                score += 0.1
 
-except Exception as e:
+            return min(1.0, score)
+
+        except Exception as e:
             self.logger.error(f"Error calculating SR confidence score: {e}")
-return 0.5
+            return 0.5
 
-def _calculate_overall_quality_score(self, market_metrics: dict, sr_metrics: dict, clustering_metrics: dict, advanced_metrics: dict) -> float:
+    def _calculate_overall_quality_score(self, market_metrics: dict, sr_metrics: dict, clustering_metrics: dict, advanced_metrics: dict) -> float:
         """Calculate overall analysis quality score (0-1)."""
-try:
+        try:
+            score = 0.5  # Base score
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-score = 0.5  # Base score
-
-# Market data quality
-if market_metrics.get("data_points", 0) >= 100:
+            # Market data quality
+            if market_metrics.get("data_points", 0) >= 100:
                 score += 0.1
 
-# S/R analysis quality
-if sr_metrics.get("total_levels", 0) >= 3:
+            # S/R analysis quality
+            if sr_metrics.get("total_levels", 0) >= 3:
                 score += 0.1
 
-# Clustering quality
-if clustering_metrics.get("total_clusters", 0) > 0:
+            # Clustering quality
+            if clustering_metrics.get("total_clusters", 0) > 0:
                 score += 0.1
 
-# Advanced analysis quality
-if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
+            # Advanced analysis quality
+            if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
                 score += 0.1
-if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
+            if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
                 score += 0.1
 
-return min(1.0, score)
+            # Volume analysis quality
+            if market_metrics.get("volume_metrics", {}).get("total_volume", 0) > 0:
+                score += 0.05
 
-except Exception as e:
+            return min(1.0, score)
+
+        except Exception as e:
             self.logger.error(f"Error calculating overall quality score: {e}")
-return 0.5
+            return 0.5
 
-async def _generate_detailed_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
+    async def _generate_detailed_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any]) -> dict[str, Any]:
         """Generate detailed metrics report."""
-try:
-
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-if not self.reporting_enabled:
+        try:
+            if not self.reporting_enabled:
                 return {}
 
-# Generate report ID
-self.current_report_id = self._generate_report_id()
+            # Generate report ID
+            self.current_report_id = self._generate_report_id()
 
-# Calculate comprehensive metrics
-metrics = self._calculate_comprehensive_metrics(market_data, sr_context)
+            # Calculate comprehensive metrics
+            metrics = self._calculate_comprehensive_metrics(market_data, sr_context)
 
-# Create detailed report
-report = {
-"report_id": self.current_report_id,
-"report_timestamp": pd.Timestamp.now().isoformat(),
-"report_version": "1.0",
-"configuration": {
-"sr_detection_method": self.sr_detection_method,
-"sr_proximity_threshold": self.sr_proximity_threshold,
-"breakout_confidence_threshold": self.breakout_confidence_threshold,
-"min_sr_strength": self.min_sr_strength,
-"max_sr_levels": self.max_sr_levels,
-"enable_dbscan_clustering": DBSCAN_AVAILABLE,
-},
-"metrics": metrics,
-"sr_context_summary": {
-"current_price": sr_context.get("current_price", 0.0),
-"nearest_support": sr_context.get("nearest_support", 0.0),
-"nearest_resistance": sr_context.get("nearest_resistance", 0.0),
-"support_strength": sr_context.get("support_strength", 0.5),
-"resistance_strength": sr_context.get("resistance_strength", 0.5),
-"sr_zone_width": sr_context.get("sr_zone_width", 0.0),
-},
-"analysis_summary": {
-"total_support_levels": len(sr_context.get("support_levels", [])),
-"total_resistance_levels": len(sr_context.get("resistance_levels", [])),
-"clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
-"fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
-"elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
-"order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
-}
-}
+            # Create detailed report
+            report = {
+                "report_id": self.current_report_id,
+                "report_timestamp": pd.Timestamp.now().isoformat(),
+                "report_version": "1.0",
+                "configuration": {
+                    "sr_detection_method": self.sr_detection_method,
+                    "sr_proximity_threshold": self.sr_proximity_threshold,
+                    "breakout_confidence_threshold": self.breakout_confidence_threshold,
+                    "min_sr_strength": self.min_sr_strength,
+                    "max_sr_levels": self.max_sr_levels,
+                    "enable_dbscan_clustering": DBSCAN_AVAILABLE,
+                },
+                "metrics": metrics,
+                "sr_context_summary": {
+                    "current_price": sr_context.get("current_price", 0.0),
+                    "nearest_support": sr_context.get("nearest_support", 0.0),
+                    "nearest_resistance": sr_context.get("nearest_resistance", 0.0),
+                    "support_strength": sr_context.get("support_strength", 0.5),
+                    "resistance_strength": sr_context.get("resistance_strength", 0.5),
+                    "sr_zone_width": sr_context.get("sr_zone_width", 0.0),
+                },
+                "analysis_summary": {
+                    "total_support_levels": len(sr_context.get("support_levels", [])),
+                    "total_resistance_levels": len(sr_context.get("resistance_levels", [])),
+                    "clusters_detected": sr_context.get("clustering_result", {}).get("n_clusters", 0),
+                    "fibonacci_levels": len(sr_context.get("fibonacci_levels", {})),
+                    "elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
+                    "order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
+                }
+            }
 
-# Store in history
-self.metrics_history.append(report)
+            # Store in history
+            self.metrics_history.append(report)
 
-# Limit history size
-if len(self.metrics_history) > 100:
+            # Limit history size
+            if len(self.metrics_history) > 100:
                 self.metrics_history = self.metrics_history[-100:]
 
-# Save report to file
-await self._save_report_to_file(report)
+            # Save report to file
+            await self._save_report_to_file(report)
 
-self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
-return report
+            self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
+            return report
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error generating detailed report: {e}")
-return {}
+            return {}
 
-async def _save_report_to_file(self, report: dict[str, Any]) -> None:
+    async def _save_report_to_file(self, report: dict[str, Any]) -> None:
         """Save report to file in specified format."""
-try:
+        try:
+            import os
+            from pathlib import Path
+            import json
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-import os
-from pathlib import Path
-import json
+            report_path = Path(self.report_directory)
 
-report_path = Path(self.report_directory)
-
-# Save JSON report
-json_file = report_path / "json" / f"{self.current_report_id}.json"
-with open(json_file, 'w') as f:
+            # Save JSON report
+            json_file = report_path / "json" / f"{self.current_report_id}.json"
+            with open(json_file, 'w') as f:
                 json.dump(report, f, indent=2, default=str)
 
-# Save CSV metrics
-csv_file = report_path / "csv" / f"{self.current_report_id}_metrics.csv"
-self._save_metrics_to_csv(report["metrics"], csv_file)
+            # Save CSV metrics
+            csv_file = report_path / "csv" / f"{self.current_report_id}_metrics.csv"
+            self._save_metrics_to_csv(report["metrics"], csv_file)
 
-# Save HTML report
-html_file = report_path / "html" / f"{self.current_report_id}.html"
-self._save_html_report(report, html_file)
+            # Save HTML report
+            html_file = report_path / "html" / f"{self.current_report_id}.html"
+            self._save_html_report(report, html_file)
 
-# Save latest metrics summary
-summary_file = report_path / "metrics" / "latest_metrics.json"
-with open(summary_file, 'w') as f:
+            # Save latest metrics summary
+            summary_file = report_path / "metrics" / "latest_metrics.json"
+            with open(summary_file, 'w') as f:
                 json.dump({
-"last_report_id": self.current_report_id,
-"last_report_timestamp": report["report_timestamp"],
-"summary": report["analysis_summary"],
-"quality_scores": {
-"data_quality": report["metrics"]["performance_metrics"]["data_quality_score"],
-"sr_confidence": report["metrics"]["performance_metrics"]["sr_confidence_score"],
-"overall_quality": report["metrics"]["performance_metrics"]["overall_analysis_quality"]
-}
-}, f, indent=2, default=str)
+                    "last_report_id": self.current_report_id,
+                    "last_report_timestamp": report["report_timestamp"],
+                    "summary": report["analysis_summary"],
+                    "quality_scores": {
+                        "data_quality": report["metrics"]["performance_metrics"]["data_quality_score"],
+                        "sr_confidence": report["metrics"]["performance_metrics"]["sr_confidence_score"],
+                        "overall_quality": report["metrics"]["performance_metrics"]["overall_analysis_quality"]
+                    }
+                }, f, indent=2, default=str)
 
-self.logger.info(f"📁 Report saved: {self.current_report_id}")
+            self.logger.info(f"📁 Report saved: {self.current_report_id}")
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error saving report to file: {e}")
+            raise
 
 def _save_metrics_to_csv(self, metrics: dict[str, Any], file_path: Path) -> None:
         """Save metrics to CSV format."""

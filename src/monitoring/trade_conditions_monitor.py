@@ -12,10 +12,10 @@ from enum import Enum
 
 class TradeAction(Enum):
     ENTER_LONG , "enter_long"
-    ENTER_SHORT = "enter_short"
-    EXIT_LONG = "exit_long"
-    EXIT_SHORT = "exit_short"
-    HOLD = "hold"
-    CANCEL_ORDER = "cancel_order"
+ENTER_SHORT = "enter_short"
+EXIT_LONG = "exit_long"
+EXIT_SHORT = "exit_short"
+HOLD = "hold"
+CANCEL_ORDER = "cancel_order"
 
 

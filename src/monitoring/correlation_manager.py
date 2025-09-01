@@ -16,9 +16,9 @@ from typing import Any, Dict, List, Optional
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
 
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    FAILED = "failed"
+ACTIVE = "active"
+COMPLETED = "completed"
+FAILED = "failed"
 
 
 @dataclass

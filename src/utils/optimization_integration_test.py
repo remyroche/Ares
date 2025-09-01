@@ -42,11 +42,11 @@ class OptimizationIntegrationTest:
 	Test class for optimization integration.
 	"""
 
-    def __init__(self) -> None:
+def __init__(self) -> None:
 		self.logger, logger
 		self.test_results: Dict[str, Any] = {}
 
-    def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
+def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
 		"""
 		Create test data for integration testing.
 

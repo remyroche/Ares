@@ -14,21 +14,21 @@ from enum import Enum
 
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
-    MODEL_ANALYSIS = "model_analysis"
-    RISK_ASSESSMENT = "risk_assessment"
-    EXECUTIVE_SUMMARY = "executive_summary"
-    CONTINUOUS_IMPROVEMENT = "continuous_improvement"
+MODEL_ANALYSIS = "model_analysis"
+RISK_ASSESSMENT = "risk_assessment"
+EXECUTIVE_SUMMARY = "executive_summary"
+CONTINUOUS_IMPROVEMENT = "continuous_improvement"
 
 
 class ReportSchedule(Enum):
     DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
+WEEKLY = "weekly"
+MONTHLY = "monthly"
 
 
 class ReportFormat(Enum):
     JSON = "json"
-    HTML = "html"
+HTML = "html"
 
 
 @dataclass

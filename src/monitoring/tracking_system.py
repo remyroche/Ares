@@ -12,9 +12,9 @@ from enum import Enum
 
 class TrackingType(Enum):
     ENSEMBLE_DECISION , "ensemble_decision"
-    REGIME_ANALYSIS = "regime_analysis"
-    FEATURE_IMPORTANCE = "feature_importance"
-    DECISION_PATH = "decision_path"
-    MODEL_BEHAVIOR = "model_behavior"
+REGIME_ANALYSIS = "regime_analysis"
+FEATURE_IMPORTANCE = "feature_importance"
+DECISION_PATH = "decision_path"
+MODEL_BEHAVIOR = "model_behavior"
 
 

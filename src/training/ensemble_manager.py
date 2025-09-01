@@ -4,758 +4,767 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
+handle_errors,
+handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.trading_decorators import (
-    comprehensive_model_decorator,
-    get_trade_tracker,
+comprehensive_model_decorator,
+get_trade_tracker,
 )
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-    warning,
+error,
+failed,
+invalid,
+warning,
 )
 
 
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles.
-    This module handles ensemble creation, optimization, and management.
-    """
+This module handles ensemble creation, optimization, and management.
+"""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+def __init__(self, config: dict[str, Any]) -> None:
         """Initialize ensemble manager.
 
-        Args:
+Args:
             config: Configuration dictionary
 
-        """
-        self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("EnsembleManager")
+"""
+self.config: dict[str, Any] = config
+self.logger = system_logger.getChild("EnsembleManager")
 
-        # Ensemble state
-        self.is_creating_ensembles: bool = False
-        self.ensemble_results: dict[str, Any] = {}
+# Ensemble state
+self.is_creating_ensembles: bool = False
+self.ensemble_results: dict[str, Any] = {}
 
-        # Configuration
-        self.ensemble_config: dict[str, Any] = self.config.get("ensemble_manager", {})
-        self.enable_analyst_ensembles: bool = self.ensemble_config.get(
-            "enable_analyst_ensembles",
-            True,
-        )
-        self.enable_tactician_ensembles: bool = self.ensemble_config.get(
-            "enable_tactician_ensembles",
-            True,
-        )
-        self.enable_ensemble_optimization: bool = self.ensemble_config.get(
-            "enable_ensemble_optimization",
-            True,
-        )
+# Configuration
+self.ensemble_config: dict[str, Any] = self.config.get("ensemble_manager", {})
+self.enable_analyst_ensembles: bool = self.ensemble_config.get(
+"enable_analyst_ensembles",
+True,
+)
+self.enable_tactician_ensembles: bool = self.ensemble_config.get(
+"enable_tactician_ensembles",
+True,
+)
+self.enable_ensemble_optimization: bool = self.ensemble_config.get(
+"enable_ensemble_optimization",
+True,
+)
 
-        # Trade tracking
-        self.trade_tracker = get_trade_tracker()
+# Trade tracking
+self.trade_tracker = get_trade_tracker()
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False, "Invalid ensemble manager configuration"),
-            AttributeError: (False, "Missing required ensemble parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="ensemble manager initialization",
-    )
-    async def initialize(self) -> bool:
+@handle_specific_errors(
+error_handlers={
+ValueError: (False, "Invalid ensemble manager configuration"),
+AttributeError: (False, "Missing required ensemble parameters"),
+KeyError: (False, "Missing configuration keys"),
+},
+default_return=False,
+context="ensemble manager initialization",
+)
+async def initialize(self) -> bool:
         """Initialize ensemble manager.
 
-        Returns:
+Returns:
             bool: True if initialization successful, False otherwise
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("Initializing Ensemble Manager...")
+self.logger.info("Initializing Ensemble Manager...")
 
-            # Validate configuration
-            if not self._validate_configuration():
+# Validate configuration
+if not self._validate_configuration():
                 self.print(invalid("Invalid configuration for ensemble manager"))
-                return False
+return False
 
-            # Initialize ensemble components
-            await self._initialize_ensemble_components()
+# Initialize ensemble components
+await self._initialize_ensemble_components()
 
-            self.logger.info("✅ Ensemble Manager initialized successfully")
-            return True
+self.logger.info("✅ Ensemble Manager initialized successfully")
+return True
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Ensemble Manager initialization failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
-    def _validate_configuration(self) -> bool:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=False,
+context="configuration validation",
+)
+def _validate_configuration(self) -> bool:
         """Validate ensemble manager configuration.
 
-        Returns:
+Returns:
             bool: True if configuration is valid, False otherwise
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            # Validate ensemble manager specific settings
-            if not any(
-                [self.enable_analyst_ensembles, self.enable_tactician_ensembles],
-            ):
+# Validate ensemble manager specific settings
+if not any(
+[self.enable_analyst_ensembles, self.enable_tactician_ensembles],
+):
                 self.print(error("At least one ensemble type must be enabled"))
-                return False
+return False
 
-            return True
+return True
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Configuration validation failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble components initialization",
-    )
-    async def _initialize_ensemble_components(self) -> None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="ensemble components initialization",
+)
+async def _initialize_ensemble_components(self) -> None:
         """Initialize ensemble components."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            # Initialize ensemble creator
-            from src.training.ensemble_creator import EnsembleCreator
+# Initialize ensemble creator
+from src.training.ensemble_creator import EnsembleCreator
 
-            self.ensemble_creator = EnsembleCreator(self.config)
-            await self.ensemble_creator.initialize()
+self.ensemble_creator = EnsembleCreator(self.config)
+await self.ensemble_creator.initialize()
 
-            # Initialize ensemble optimization components
-            if self.enable_ensemble_optimization:
+# Initialize ensemble optimization components
+if self.enable_ensemble_optimization:
                 self.logger.info("✅ Ensemble optimization components initialized")
 
-            self.logger.info("✅ All ensemble components initialized")
+self.logger.info("✅ All ensemble components initialized")
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Failed to initialize ensemble components: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            raise
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+raise
 
-    @comprehensive_model_decorator(
-        enable_error_handling=True,
-        enable_tracking=True,
-        enable_performance_monitoring=True,
-        enable_retry=True,
-        model_name="EnsembleManager",
-        capture_predictions=True,
-        capture_feature_importance=True,
-        capture_confidence=True,
-        retry_attempts=3,
-        alert_threshold_ms=20000.0,  # 20 seconds for ensemble creation
-    )
-    async def create_ensembles(
-        self,
-        optimization_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@comprehensive_model_decorator(
+enable_error_handling=True,
+enable_tracking=True,
+enable_performance_monitoring=True,
+enable_retry=True,
+model_name="EnsembleManager",
+capture_predictions=True,
+capture_feature_importance=True,
+capture_confidence=True,
+retry_attempts=3,
+alert_threshold_ms=20000.0,  # 20 seconds for ensemble creation
+)
+async def create_ensembles(
+self,
+optimization_results: dict[str, Any],
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create ensembles from optimized models.
 
-        Args:
+Args:
             optimization_results: Results from model optimization
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Ensemble creation results
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🎯 Starting ensemble creation...")
-            self.is_creating_ensembles = True
+self.logger.info("🎯 Starting ensemble creation...")
+self.is_creating_ensembles = True
 
-            # Validate inputs
-            if not self._validate_ensemble_inputs(optimization_results, training_input):
+# Validate inputs
+if not self._validate_ensemble_inputs(optimization_results, training_input):
                 return None
 
-            # Create analyst ensembles
-            analyst_ensembles = None
-            if self.enable_analyst_ensembles:
+# Create analyst ensembles
+analyst_ensembles = None
+if self.enable_analyst_ensembles:
                 analyst_ensembles = await self._create_analyst_ensembles(
-                    optimization_results,
-                    training_input,
-                )
+optimization_results,
+training_input,
+)
 
-            # Create tactician ensembles
-            tactician_ensembles = None
-            if self.enable_tactician_ensembles:
+# Create tactician ensembles
+tactician_ensembles = None
+if self.enable_tactician_ensembles:
                 tactician_ensembles = await self._create_tactician_ensembles(
-                    optimization_results,
-                    training_input,
-                )
+optimization_results,
+training_input,
+)
 
-            # Optimize ensembles if enabled
-            if self.enable_ensemble_optimization:
+# Optimize ensembles if enabled
+if self.enable_ensemble_optimization:
                 if analyst_ensembles:
                     analyst_ensembles = await self._optimize_ensembles(
-                        analyst_ensembles,
-                        "analyst",
-                    )
-                if tactician_ensembles:
+analyst_ensembles,
+"analyst",
+)
+if tactician_ensembles:
                     tactician_ensembles = await self._optimize_ensembles(
-                        tactician_ensembles,
-                        "tactician",
-                    )
+tactician_ensembles,
+"tactician",
+)
 
-            # Combine results
-            ensemble_results = {
-                "analyst_ensembles": analyst_ensembles,
-                "tactician_ensembles": tactician_ensembles,
-                "training_input": training_input,
-                "ensemble_creation_timestamp": datetime.now().isoformat(),
-            }
+# Combine results
+ensemble_results = {
+"analyst_ensembles": analyst_ensembles,
+"tactician_ensembles": tactician_ensembles,
+"training_input": training_input,
+"ensemble_creation_timestamp": datetime.now().isoformat(),
+}
 
-            # Store ensemble results
-            await self._store_ensemble_results(ensemble_results)
+# Store ensemble results
+await self._store_ensemble_results(ensemble_results)
 
-            self.is_creating_ensembles = False
-            self.logger.info("✅ Ensemble creation completed successfully")
-            return ensemble_results
+self.is_creating_ensembles = False
+self.logger.info("✅ Ensemble creation completed successfully")
+return ensemble_results
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Ensemble creation failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            self.is_creating_ensembles = False
-            return None
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+self.is_creating_ensembles = False
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="ensemble inputs validation",
-    )
-    def _validate_ensemble_inputs(
-        self,
-        optimization_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> bool:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=False,
+context="ensemble inputs validation",
+)
+def _validate_ensemble_inputs(
+self,
+optimization_results: dict[str, Any],
+training_input: dict[str, Any],
+) -> bool:
         """Validate ensemble input parameters.
 
-        Args:
+Args:
             optimization_results: Results from model optimization
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             bool: True if inputs are valid, False otherwise
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            # Validate optimization results
-            if not optimization_results:
+# Validate optimization results
+if not optimization_results:
                 self.print(error("Optimization results are empty"))
-                return False
+return False
 
-            # Validate training input
-            if not training_input:
+# Validate training input
+if not training_input:
                 self.print(error("Training input is empty"))
-                return False
+return False
 
-            # Check for required optimization results
-            if not optimization_results.get("optimized_models"):
+# Check for required optimization results
+if not optimization_results.get("optimized_models"):
                 self.print(error("No optimized models found in results"))
-                return False
+return False
 
-            return True
+return True
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Ensemble inputs validation failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return False
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="analyst ensemble creation",
-    )
-    async def _create_analyst_ensembles(
-        self,
-        optimization_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="analyst ensemble creation",
+)
+async def _create_analyst_ensembles(
+self,
+optimization_results: dict[str, Any],
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create analyst model ensembles.
 
-        Args:
+Args:
             optimization_results: Results from model optimization
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Analyst ensemble creation results
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🧠 Creating analyst ensembles...")
+self.logger.info("🧠 Creating analyst ensembles...")
 
-            analyst_ensembles = {}
+analyst_ensembles = {}
 
-            # Get optimized analyst models
-            optimized_models = optimization_results.get("optimized_models", {})
-            analyst_models = {
-                k: v for k, v in optimized_models.items() if k.startswith("analyst_")
-            }
+# Get optimized analyst models
+optimized_models = optimization_results.get("optimized_models", {})
+analyst_models = {
+k: v for k, v in optimized_models.items() if k.startswith("analyst_")
+}
 
-            if not analyst_models:
+if not analyst_models:
                 self.print(warning("No analyst models found for ensemble creation"))
-                return None
+return None
 
-            # Create multi-timeframe ensemble
-            multi_timeframe_ensemble = await self._create_multi_timeframe_ensemble(
-                analyst_models,
-                training_input,
-            )
-            if multi_timeframe_ensemble:
+# Create multi-timeframe ensemble
+multi_timeframe_ensemble = await self._create_multi_timeframe_ensemble(
+analyst_models,
+training_input,
+)
+if multi_timeframe_ensemble:
                 analyst_ensembles["multi_timeframe"] = multi_timeframe_ensemble
 
-            # Create individual timeframe ensembles
-            for timeframe in ["1h", "15m", "5m", "1m"]:
+# Create individual timeframe ensembles
+for timeframe in ["1h", "15m", "5m", "1m"]:
                 timeframe_models = {
-                    k: v for k, v in analyst_models.items() if timeframe in k
-                }
-                if timeframe_models:
+k: v for k, v in analyst_models.items() if timeframe in k
+}
+if timeframe_models:
                     timeframe_ensemble = await self._create_timeframe_ensemble(
-                        timeframe_models,
-                        timeframe,
-                        training_input,
-                    )
-                    if timeframe_ensemble:
+timeframe_models,
+timeframe,
+training_input,
+)
+if timeframe_ensemble:
                         analyst_ensembles[f"timeframe_{timeframe}"] = timeframe_ensemble
 
-            self.logger.info(f"✅ Created {len(analyst_ensembles)} analyst ensembles")
-            return analyst_ensembles
+self.logger.info(f"✅ Created {len(analyst_ensembles)} analyst ensembles")
+return analyst_ensembles
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Analyst ensemble creation failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician ensemble creation",
-    )
-    async def _create_tactician_ensembles(
-        self,
-        optimization_results: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="tactician ensemble creation",
+)
+async def _create_tactician_ensembles(
+self,
+optimization_results: dict[str, Any],
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create tactician model ensembles.
 
-        Args:
+Args:
             optimization_results: Results from model optimization
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Tactician ensemble creation results
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🎯 Creating tactician ensembles...")
+self.logger.info("🎯 Creating tactician ensembles...")
 
-            tactician_ensembles = {}
+tactician_ensembles = {}
 
-            # Get optimized tactician models
-            optimized_models = optimization_results.get("optimized_models", {})
-            tactician_models = {
-                k: v for k, v in optimized_models.items() if k.startswith("tactician_")
-            }
+# Get optimized tactician models
+optimized_models = optimization_results.get("optimized_models", {})
+tactician_models = {
+k: v for k, v in optimized_models.items() if k.startswith("tactician_")
+}
 
-            if not tactician_models:
+if not tactician_models:
                 self.print(warning("No tactician models found for ensemble creation"))
-                return None
+return None
 
-            # Create single timeframe ensemble for tactician (1m only)
-            tactician_ensemble = await self._create_tactician_single_ensemble(
-                tactician_models,
-                training_input,
-            )
-            if tactician_ensemble:
+# Create single timeframe ensemble for tactician (1m only)
+tactician_ensemble = await self._create_tactician_single_ensemble(
+tactician_models,
+training_input,
+)
+if tactician_ensemble:
                 tactician_ensembles["single_timeframe"] = tactician_ensemble
 
-            self.logger.info(
-                f"✅ Created {len(tactician_ensembles)} tactician ensembles",
-            )
-            return tactician_ensembles
+self.logger.info(
+f"✅ Created {len(tactician_ensembles)} tactician ensembles",
+)
+return tactician_ensembles
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Tactician ensemble creation failed: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="multi-timeframe ensemble creation",
-    )
-    async def _create_multi_timeframe_ensemble(
-        self,
-        analyst_models: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="multi-timeframe ensemble creation",
+)
+async def _create_multi_timeframe_ensemble(
+self,
+analyst_models: dict[str, Any],
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create multi-timeframe ensemble for analyst models.
 
-        Args:
+Args:
             analyst_models: Optimized analyst models
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Multi-timeframe ensemble result
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🧠 Creating multi-timeframe analyst ensemble...")
+self.logger.info("🧠 Creating multi-timeframe analyst ensemble...")
 
-            # This would implement actual multi-timeframe ensemble creation logic
-            # For now, return a placeholder result
-            return {
-                "ensemble_type": "multi_timeframe_weighted",
-                "timeframe_weights": {
-                    "1h": 0.3,
-                    "15m": 0.25,
-                    "5m": 0.25,
-                    "1m": 0.2,
-                },
-                "ensemble_metrics": {
-                    "accuracy": 0.87,
-                    "precision": 0.84,
-                    "recall": 0.81,
-                },
-                "ensemble_path": f"ensembles/analyst_multi_timeframe_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
-                "constituent_models": list(analyst_models.keys()),
-            }
+# This would implement actual multi-timeframe ensemble creation logic
+# For now, return a placeholder result
+return {
+"ensemble_type": "multi_timeframe_weighted",
+"timeframe_weights": {
+"1h": 0.3,
+"15m": 0.25,
+"5m": 0.25,
+"1m": 0.2,
+},
+"ensemble_metrics": {
+"accuracy": 0.87,
+"precision": 0.84,
+"recall": 0.81,
+},
+"ensemble_path": f"ensembles/analyst_multi_timeframe_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
+"constituent_models": list(analyst_models.keys()),
+}
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Failed to create multi-timeframe ensemble: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="timeframe ensemble creation",
-    )
-    async def _create_timeframe_ensemble(
-        self,
-        timeframe_models: dict[str, Any],
-        timeframe: str,
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="timeframe ensemble creation",
+)
+async def _create_timeframe_ensemble(
+self,
+timeframe_models: dict[str, Any],
+timeframe: str,
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create ensemble for a specific timeframe.
 
-        Args:
+Args:
             timeframe_models: Models for the specific timeframe
-            timeframe: Target timeframe
-            training_input: Training input parameters
+timeframe: Target timeframe
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Timeframe ensemble result
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🧠 Creating {timeframe} timeframe ensemble...")
+self.logger.info(f"🧠 Creating {timeframe} timeframe ensemble...")
 
-            # This would implement actual timeframe ensemble creation logic
-            # For now, return a placeholder result
-            return {
-                "ensemble_type": "single_timeframe_weighted",
-                "timeframe": timeframe,
-                "model_weights": {
-                    "random_forest": 0.4,
-                    "lightgbm": 0.35,
-                    "xgboost": 0.25,
-                },
-                "ensemble_metrics": {
-                    "accuracy": 0.85,
-                    "precision": 0.82,
-                    "recall": 0.79,
-                },
-                "ensemble_path": f"ensembles/analyst_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
-                "constituent_models": list(timeframe_models.keys()),
-            }
+# This would implement actual timeframe ensemble creation logic
+# For now, return a placeholder result
+return {
+"ensemble_type": "single_timeframe_weighted",
+"timeframe": timeframe,
+"model_weights": {
+"random_forest": 0.4,
+"lightgbm": 0.35,
+"xgboost": 0.25,
+},
+"ensemble_metrics": {
+"accuracy": 0.85,
+"precision": 0.82,
+"recall": 0.79,
+},
+"ensemble_path": f"ensembles/analyst_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
+"constituent_models": list(timeframe_models.keys()),
+}
 
-        except Exception as e:
+except Exception as e:
             self.logger.exception(
-                f"❌ Failed to create {timeframe} timeframe ensemble: {e}",
-            )
-            return None
+f"❌ Failed to create {timeframe} timeframe ensemble: {e}",
+)
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="tactician single ensemble creation",
-    )
-    async def _create_tactician_single_ensemble(
-        self,
-        tactician_models: dict[str, Any],
-        training_input: dict[str, Any],
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="tactician single ensemble creation",
+)
+async def _create_tactician_single_ensemble(
+self,
+tactician_models: dict[str, Any],
+training_input: dict[str, Any],
+) -> dict[str, Any] | None:
         """Create single ensemble for tactician models.
 
-        Args:
+Args:
             tactician_models: Optimized tactician models
-            training_input: Training input parameters
+training_input: Training input parameters
 
-        Returns:
+Returns:
             dict: Tactician ensemble result
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🎯 Creating tactician single ensemble...")
+self.logger.info("🎯 Creating tactician single ensemble...")
 
-            # This would implement actual tactician ensemble creation logic
-            # For now, return a placeholder result
-            return {
-                "ensemble_type": "single_timeframe_weighted",
-                "timeframe": "1m",
-                "model_weights": {
-                    "random_forest": 0.4,
-                    "lightgbm": 0.35,
-                    "xgboost": 0.25,
-                },
-                "ensemble_metrics": {
-                    "accuracy": 0.89,
-                    "precision": 0.86,
-                    "recall": 0.83,
-                },
-                "ensemble_path": f"ensembles/tactician_1m_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
-                "constituent_models": list(tactician_models.keys()),
-            }
+# This would implement actual tactician ensemble creation logic
+# For now, return a placeholder result
+return {
+"ensemble_type": "single_timeframe_weighted",
+"timeframe": "1m",
+"model_weights": {
+"random_forest": 0.4,
+"lightgbm": 0.35,
+"xgboost": 0.25,
+},
+"ensemble_metrics": {
+"accuracy": 0.89,
+"precision": 0.86,
+"recall": 0.83,
+},
+"ensemble_path": f"ensembles/tactician_1m_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
+"constituent_models": list(tactician_models.keys()),
+}
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Failed to create tactician ensemble: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            return None
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble optimization",
-    )
-    async def _optimize_ensembles(
-        self,
-        ensembles: dict[str, Any],
-        ensemble_type: str,
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="ensemble optimization",
+)
+async def _optimize_ensembles(
+self,
+ensembles: dict[str, Any],
+ensemble_type: str,
+) -> dict[str, Any] | None:
         """Optimize ensembles.
 
-        Args:
+Args:
             ensembles: Ensembles to optimize
-            ensemble_type: Type of ensemble (analyst or tactician)
+ensemble_type: Type of ensemble (analyst or tactician)
 
-        Returns:
+Returns:
             dict: Optimized ensembles
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🔧 Optimizing {ensemble_type} ensembles...")
+self.logger.info(f"🔧 Optimizing {ensemble_type} ensembles...")
 
-            optimized_ensembles = {}
+optimized_ensembles = {}
 
-            for ensemble_name, ensemble in ensembles.items():
+for ensemble_name, ensemble in ensembles.items():
                 optimized_ensemble = await self._optimize_single_ensemble(
-                    ensemble,
-                    ensemble_name,
-                    ensemble_type,
-                )
-                if optimized_ensemble:
+ensemble,
+ensemble_name,
+ensemble_type,
+)
+if optimized_ensemble:
                     optimized_ensembles[ensemble_name] = optimized_ensemble
 
-            self.logger.info(
-                f"✅ Optimized {len(optimized_ensembles)} {ensemble_type} ensembles",
-            )
-            return optimized_ensembles
+self.logger.info(
+f"✅ Optimized {len(optimized_ensembles)} {ensemble_type} ensembles",
+)
+return optimized_ensembles
 
-        except Exception as e:
+except Exception as e:
             self.logger.exception(
-                f"❌ {ensemble_type} ensemble optimization failed: {e}",
-            )
-            return None
+f"❌ {ensemble_type} ensemble optimization failed: {e}",
+)
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="single ensemble optimization",
-    )
-    async def _optimize_single_ensemble(
-        self,
-        ensemble: dict[str, Any],
-        ensemble_name: str,
-        ensemble_type: str,
-    ) -> dict[str, Any] | None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="single ensemble optimization",
+)
+async def _optimize_single_ensemble(
+self,
+ensemble: dict[str, Any],
+ensemble_name: str,
+ensemble_type: str,
+) -> dict[str, Any] | None:
         """Optimize a single ensemble.
 
-        Args:
+Args:
             ensemble: Ensemble to optimize
-            ensemble_name: Name of the ensemble
-            ensemble_type: Type of ensemble
+ensemble_name: Name of the ensemble
+ensemble_type: Type of ensemble
 
-        Returns:
+Returns:
             dict: Optimized ensemble
 
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🔧 Optimizing {ensemble_type} ensemble: {ensemble_name}")
+self.logger.info(f"🔧 Optimizing {ensemble_type} ensemble: {ensemble_name}")
 
-            # This would implement actual ensemble optimization logic
-            # For now, return a placeholder result
-            return {
-                "original_ensemble": ensemble,
-                "optimized_weights": ensemble.get("model_weights", {}),
-                "optimization_metrics": {
-                    "improvement": 0.03,
-                    "optimization_time": 15.5,
-                },
-                "optimized_ensemble_path": f"ensembles/optimized_{ensemble_type}_{ensemble_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
-            }
+# This would implement actual ensemble optimization logic
+# For now, return a placeholder result
+return {
+"original_ensemble": ensemble,
+"optimized_weights": ensemble.get("model_weights", {}),
+"optimization_metrics": {
+"improvement": 0.03,
+"optimization_time": 15.5,
+},
+"optimized_ensemble_path": f"ensembles/optimized_{ensemble_type}_{ensemble_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
+}
 
-        except Exception as e:
+except Exception as e:
             self.logger.exception(
-                f"❌ Failed to optimize {ensemble_type} ensemble {ensemble_name}: {e}",
-            )
-            return None
+f"❌ Failed to optimize {ensemble_type} ensemble {ensemble_name}: {e}",
+)
+return None
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="ensemble results storage",
-    )
-    async def _store_ensemble_results(self, ensemble_results: dict[str, Any]) -> None:
+@handle_errors(
+exceptions=(ValueError, AttributeError),
+default_return=None,
+context="ensemble results storage",
+)
+async def _store_ensemble_results(self, ensemble_results: dict[str, Any]) -> None:
         """Store ensemble results.
 
-        Args:
+Args:
             ensemble_results: Ensemble results to store
 
-        """
-        try:
-            self.logger.info("📁 Storing ensemble results...")
+"""
+try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+self.logger.info("📁 Storing ensemble results...")
 
-            # Store ensemble results in memory for now
-            # In practice, this would store to database or file system
-            self.ensemble_results = ensemble_results.copy()
+# Store ensemble results in memory for now
+# In practice, this would store to database or file system
+self.ensemble_results = ensemble_results.copy()
 
-            self.logger.info("✅ Ensemble results stored successfully")
+self.logger.info("✅ Ensemble results stored successfully")
 
-        except Exception as e:
+except Exception as e:
             error_msg = f"Failed to store ensemble results: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
 
-    def get_ensemble_status(self) -> dict[str, Any]:
+def get_ensemble_status(self) -> dict[str, Any]:
         """Get current ensemble status.
 
-        Returns:
+Returns:
             dict: Ensemble status information
 
-        """
-        return {
-            "is_creating_ensembles": self.is_creating_ensembles,
-            "has_ensemble_results": bool(self.ensemble_results),
-            "analyst_ensembles_enabled": self.enable_analyst_ensembles,
-            "tactician_ensembles_enabled": self.enable_tactician_ensembles,
-            "ensemble_optimization_enabled": self.enable_ensemble_optimization,
-        }
+"""
+return {
+"is_creating_ensembles": self.is_creating_ensembles,
+"has_ensemble_results": bool(self.ensemble_results),
+"analyst_ensembles_enabled": self.enable_analyst_ensembles,
+"tactician_ensembles_enabled": self.enable_tactician_ensembles,
+"ensemble_optimization_enabled": self.enable_ensemble_optimization,
+}
 
-    def get_ensemble_results(self) -> dict[str, Any]:
+def get_ensemble_results(self) -> dict[str, Any]:
         """Get the latest ensemble results.
 
-        Returns:
+Returns:
             dict: Ensemble results
 
-        """
-        return self.ensemble_results.copy()
+"""
+return self.ensemble_results.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="ensemble manager cleanup",
-    )
-    async def stop(self) -> None:
+@handle_errors(
+exceptions=(Exception,),
+default_return=None,
+context="ensemble manager cleanup",
+)
+async def stop(self) -> None:
         """Stop the ensemble manager and cleanup resources."""
-        try:
-            self.logger.info("🛑 Stopping Ensemble Manager...")
-            self.is_creating_ensembles = False
-            self.logger.info("✅ Ensemble Manager stopped successfully")
-        except Exception as e:
+try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+self.logger.info("🛑 Stopping Ensemble Manager...")
+self.is_creating_ensembles = False
+self.logger.info("✅ Ensemble Manager stopped successfully")
+except Exception as e:
             error_msg = f"Failed to stop Ensemble Manager: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
+self.logger.exception(error_msg)
+self.print(failed(error_msg))
 
 
 @handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="ensemble manager setup",
+exceptions=(Exception,),
+default_return=None,
+context="ensemble manager setup",
 )
 async def setup_ensemble_manager(
-    config: dict[str, Any] | None = None,
+config: dict[str, Any] | None = None,
 ) -> EnsembleManager | None:
     """Setup and return a configured EnsembleManager instance.
 
-    Args:
+Args:
         config: Configuration dictionary
 
-    Returns:
+Returns:
         EnsembleManager: Configured ensemble manager instance
 
-    """
-    try:
-        manager = EnsembleManager(config or {})
-        if await manager.initialize():
+"""
+try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+manager = EnsembleManager(config or {})
+if await manager.initialize():
             return manager
-        return None
-    except Exception as e:
+return None
+except Exception as e:
         system_logger.exception(f"Failed to setup ensemble manager: {e}")
-        return None
+return None

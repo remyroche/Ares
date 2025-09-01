@@ -65,104 +65,104 @@ Returns:
         try:
             self.logger.info("Initializing Position Division Strategy...")
 
-# Validate configuration
-if not self._validate_configuration():
+            # Validate configuration
+            if not self._validate_configuration():
                 self.logger.error(invalid("Invalid position division strategy configuration"))
-return False
+                return False
 
-# Clear state
-self.active_positions.clear()
-self.position_history.clear()
-self.strategy_performance.clear()
+            # Clear state
+            self.active_positions.clear()
+            self.position_history.clear()
+            self.strategy_performance.clear()
 
-self.logger.info("✅ Position Division Strategy initialized successfully")
-return True
+            self.logger.info("✅ Position Division Strategy initialized successfully")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Position Division Strategy initialization failed: {e}"))
-return False
+            return False
 
-def _validate_configuration(self) -> bool:
+    def _validate_configuration(self) -> bool:
         """
-Validate position division strategy configuration.
+        Validate position division strategy configuration.
 
-Returns:
+        Returns:
             bool: True if configuration is valid
-"""
+        """
         try:
             if self.max_positions <= 0:
                 self.logger.error(invalid("Max positions must be positive"))
-return False
+                return False
 
-if not 0 < self.position_size_limit <= 1:
+            if not 0 < self.position_size_limit <= 1:
                 self.logger.error(invalid("Position size limit must be between 0 and 1"))
-return False
+                return False
 
-if self.take_profit_pct <= 0:
+            if self.take_profit_pct <= 0:
                 self.logger.error(invalid("Take profit percentage must be positive"))
-return False
+                return False
 
-if self.stop_loss_pct <= 0:
+            if self.stop_loss_pct <= 0:
                 self.logger.error(invalid("Stop loss percentage must be positive"))
-return False
+                return False
 
-return True
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
-return False
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="position division calculation"
-)
-async def calculate_position_division(
-self,
-total_capital: float,
-confidence_score: float,
-market_conditions: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="position division calculation"
+    )
+    async def calculate_position_division(
+        self,
+        total_capital: float,
+        confidence_score: float,
+        market_conditions: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
-Calculate position division strategy.
+        Calculate position division strategy.
 
-Args:
+        Args:
             total_capital: Total available capital
-confidence_score: Confidence score (0-1)
-market_conditions: Current market conditions
+            confidence_score: Confidence score (0-1)
+            market_conditions: Current market conditions
 
-Returns:
+        Returns:
             Dict: Position division strategy or None if failed
-"""
+        """
         try:
             self.logger.info("Calculating position division strategy...")
 
-# Calculate number of positions based on confidence
-num_positions = self._calculate_num_positions(confidence_score)
+            # Calculate number of positions based on confidence
+            num_positions = self._calculate_num_positions(confidence_score)
 
-# Calculate position sizes
-position_sizes = self._calculate_position_sizes(total_capital, num_positions, confidence_score)
+            # Calculate position sizes
+            position_sizes = self._calculate_position_sizes(total_capital, num_positions, confidence_score)
 
-# Calculate take profit and stop loss levels
-tp_sl_levels = self._calculate_tp_sl_levels(market_conditions)
+            # Calculate take profit and stop loss levels
+            tp_sl_levels = self._calculate_tp_sl_levels(market_conditions)
 
-# Create strategy
-strategy = {
-"num_positions": num_positions,
-"position_sizes": position_sizes,
-"take_profit_levels": tp_sl_levels["take_profit"],
-"stop_loss_levels": tp_sl_levels["stop_loss"],
-"confidence_score": confidence_score,
-"total_capital": total_capital,
-"timestamp": datetime.now().isoformat()
-}
+            # Create strategy
+            strategy = {
+                "num_positions": num_positions,
+                "position_sizes": position_sizes,
+                "take_profit_levels": tp_sl_levels["take_profit"],
+                "stop_loss_levels": tp_sl_levels["stop_loss"],
+                "confidence_score": confidence_score,
+                "total_capital": total_capital,
+                "timestamp": datetime.now().isoformat()
+            }
 
-self.logger.info(f"✅ Position division strategy calculated: {num_positions} positions")
-return strategy
+            self.logger.info(f"✅ Position division strategy calculated: {num_positions} positions")
+            return strategy
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(failed(f"❌ Position division calculation failed: {e}"))
-return None
+            return None
 
 def _calculate_num_positions(self, confidence_score: float) -> int:
         """

@@ -260,114 +260,108 @@ context="S/R backtesting validation"
             self.logger.error(f"S/R validation failed: {e}")
             return None
 
-async def _test_single_level(
-self,
-market_data: pd.DataFrame,
-level: Dict[str, Any],
-current_price: float,
-multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
-) -> Optional[SRLevelTest]:
+    async def _test_single_level(
+        self,
+        market_data: pd.DataFrame,
+        level: Dict[str, Any],
+        current_price: float,
+        multi_timeframe_data: Optional[Dict[str, pd.DataFrame]] = None
+    ) -> Optional[SRLevelTest]:
         """Test a single S/R level."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-level_price = level.get("price", 0.0)
-level_type = level.get("type", "support")
-level_strength = level.get("enhanced_strength", level.get("strength", 0.5))
+        try:
+            level_price = level.get("price", 0.0)
+            level_type = level.get("type", "support")
+            level_strength = level.get("enhanced_strength", level.get("strength", 0.5))
 
-# Create test result
-test = SRLevelTest(
-level_price=level_price,
-level_type=level_type,
-test_start_time=market_data.index[0],
-test_end_time=market_data.index[-1],
-level_strength=level_strength
-)
+            # Create test result
+            test = SRLevelTest(
+                level_price=level_price,
+                level_type=level_type,
+                test_start_time=market_data.index[0],
+                test_end_time=market_data.index[-1],
+                level_strength=level_strength
+            )
 
-# Analyze price interactions with this level
-touch_data = await self._analyze_level_interactions(
-market_data, level_price, level_type
-)
+            # Analyze price interactions with this level
+            touch_data = await self._analyze_level_interactions(
+                market_data, level_price, level_type
+            )
 
-touches, bounces, breakouts, false_breakouts = touch_data[:4]
-touch_volumes, touch_indices = touch_data[4:6]
+            touches, bounces, breakouts, false_breakouts = touch_data[:4]
+            touch_volumes, touch_indices = touch_data[4:6]
 
-# Update test results
-test.touches = touches
-test.bounces = bounces
-test.breakouts = breakouts
-test.false_breakouts = false_breakouts
+            # Update test results
+            test.touches = touches
+            test.bounces = bounces
+            test.breakouts = breakouts
+            test.false_breakouts = false_breakouts
 
-# Calculate rates
-if touches > 0:
+            # Calculate rates
+            if touches > 0:
                 test.bounce_rate = bounces / touches
-test.breakout_rate = breakouts / touches
-test.false_breakout_rate = false_breakouts / touches
+                test.breakout_rate = breakouts / touches
+                test.false_breakout_rate = false_breakouts / touches
 
-# Analyze volume patterns
-await self._analyze_volume_patterns(test, market_data, touch_volumes, touch_indices, level_price)
+            # Analyze volume patterns
+            await self._analyze_volume_patterns(test, market_data, touch_volumes, touch_indices, level_price)
 
-# Analyze time-based factors
-await self._analyze_time_based_factors(test, market_data, touch_indices)
+            # Analyze time-based factors
+            await self._analyze_time_based_factors(test, market_data, touch_indices)
 
-# Calculate confidence score with comprehensive analysis
-test.confidence_score = self._calculate_level_confidence(test)
+            # Calculate confidence score with comprehensive analysis
+            test.confidence_score = self._calculate_level_confidence(test)
 
-return test
+            return test
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Failed to test level {level.get('price', 0)}: {e}")
-return None
+            return None
 
-async def _analyze_level_interactions(
-self,
-market_data: pd.DataFrame,
-level_price: float,
-level_type: str
-) -> Tuple[int, int, int, int, List[float], List[int]]:
+    async def _analyze_level_interactions(
+        self,
+        market_data: pd.DataFrame,
+        level_price: float,
+        level_type: str
+    ) -> Tuple[int, int, int, int, List[float], List[int]]:
         """
-Analyze how price interacts with a specific S/R level.
+        Analyze how price interacts with a specific S/R level.
 
-Returns:
+        Returns:
             Tuple of (touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices)
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-touches = 0
-bounces = 0
-breakouts = 0
-false_breakouts = 0
-touch_volumes = []
-touch_indices = []
+        """
+        try:
+            touches = 0
+            bounces = 0
+            breakouts = 0
+            false_breakouts = 0
+            touch_volumes = []
+            touch_indices = []
 
-# Define touch zone around the level
-touch_zone_upper = level_price * (1 + self.touch_threshold)
-touch_zone_lower = level_price * (1 - self.touch_threshold)
+            # Define touch zone around the level
+            touch_zone_upper = level_price * (1 + self.touch_threshold)
+            touch_zone_lower = level_price * (1 - self.touch_threshold)
 
-i = 0
-while i < len(market_data) - self.confirmation_periods:
+            i = 0
+            while i < len(market_data) - self.confirmation_periods:
                 # Check if price touches the level
-high = market_data['high'].iloc[i]
-low = market_data['low'].iloc[i]
+                high = market_data['high'].iloc[i]
+                low = market_data['low'].iloc[i]
 
-if low <= touch_zone_upper and high >= touch_zone_lower:
+                if low <= touch_zone_upper and high >= touch_zone_lower:
                     touches += 1
-touch_volumes.append(market_data['volume'].iloc[i])
-touch_indices.append(i)
+                    touch_volumes.append(market_data['volume'].iloc[i])
+                    touch_indices.append(i)
 
-# Analyze what happens after the touch
-touch_result = await self._analyze_touch_outcome(
-market_data, i, level_price, level_type
-)
+                    # Analyze what happens after the touch
+                    touch_result = await self._analyze_touch_outcome(
+                        market_data, i, level_price, level_type
+                    )
 
-if touch_result == "bounce":
+                    if touch_result == "bounce":
                         bounces += 1
-elif touch_result == "breakout":
+                    elif touch_result == "breakout":
                         breakouts += 1
-elif touch_result == "false_breakout":
+                    elif touch_result == "false_breakout":
                         false_breakouts += 1
 
 i += 1

@@ -12,16 +12,16 @@ to different problem characteristics:
 - Multi-objective strategies
 """
 
-import numpy as np
-from typing import Dict, Any, List, Tuple, Optional, Callable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import numpy as np
+from scipy.stats import pearsonr, spearmanr
 # ML libraries
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from scipy.stats import pearsonr, spearmanr
 
 # Utilities
 from src.utils.logger import system_logger

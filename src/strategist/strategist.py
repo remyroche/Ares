@@ -256,15 +256,23 @@ class Strategist:
             # Price indicators
             indicators["current_price"] = current_price
             indicators["price_change"] = (current_price - market_data["close"].iloc[-2]) / market_data["close"].iloc[-2]
-            indicators["price_volatility"] = market_data["close"].pct_change().std()
+            # Price volatility with configurable window
+            volatility_window = max(2, int(self.price_volatility_window))
+            indicators["price_volatility"] = (
+                market_data["close"].pct_change().rolling(window=volatility_window).std().iloc[-1]
+            )
 
             # Volume indicators
+            # Volume moving average with configurable thresholds
             indicators["volume_ma"] = market_data["volume"].rolling(window=20).mean().iloc[-1]
             indicators["volume_ratio"] = market_data["volume"].iloc[-1] / indicators["volume_ma"]
 
             # Technical indicators
-            indicators["sma_20"] = market_data["close"].rolling(window=20).mean().iloc[-1]
-            indicators["sma_50"] = market_data["close"].rolling(window=50).mean().iloc[-1]
+            # SMA windows parameterized
+            sma_fast = max(2, int(self.sma_fast_window))
+            sma_slow = max(sma_fast + 1, int(self.sma_slow_window))
+            indicators["sma_20"] = market_data["close"].rolling(window=sma_fast).mean().iloc[-1]
+            indicators["sma_50"] = market_data["close"].rolling(window=sma_slow).mean().iloc[-1]
             indicators["rsi"] = self._calculate_rsi(market_data["close"])
 
             # Trend indicators

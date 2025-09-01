@@ -70,6 +70,7 @@ class RegimeExpertOrchestrator:
 
         # Integration flags
         self.use_enhanced_hmm = config.get("use_enhanced_hmm", True)
+        self.use_step09_5_ensemble = config.get("use_step09_5_ensemble", True)
         self.use_step10 = config.get("use_step10", True)
 
         # Transition handler removed - using advanced HMM categorization instead
@@ -359,6 +360,50 @@ class RegimeExpertOrchestrator:
             return None
 
     @handle_errors(
+        exceptions=(Exception,), default_return=None, context="step09_5 ensemble integration"
+    )
+    async def integrate_step09_5_ensemble_prediction(
+        self, regime_info: Dict[str, Any], step09_5_ensemble_prediction: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Integrate Step 9.5 Multi-Timeframe HMM Ensemble predictions with regime expert."""
+        try:
+            if not self.use_step09_5_ensemble or step09_5_ensemble_prediction is None:
+                return None
+
+            # Extract Step 9.5 ensemble predictions
+            ensemble_confidence = step09_5_ensemble_prediction.get("ensemble_confidence", 0.0)
+            multi_timeframe_predictions = step09_5_ensemble_prediction.get("multi_timeframe_predictions", {})
+            ensemble_method = step09_5_ensemble_prediction.get("ensemble_method", "meta_learner")
+
+            # Combine with current regime expert prediction
+            current_prediction = await self.get_regime_expert_prediction(
+                step09_5_ensemble_prediction.get("current_features", pd.DataFrame()), regime_info
+            )
+
+            if current_prediction is None:
+                return None
+
+            # Weight the predictions based on confidence
+            expert_confidence = current_prediction.get("confidence", 0.0)
+
+            # Combined confidence (weighted average)
+            combined_confidence = ensemble_confidence * 0.3 + expert_confidence * 0.7
+
+            return {
+                "strategic_prediction": current_prediction,
+                "ensemble_confidence": ensemble_confidence,
+                "multi_timeframe_predictions": multi_timeframe_predictions,
+                "ensemble_method": ensemble_method,
+                "combined_confidence": combined_confidence,
+                "should_trade": combined_confidence > self.min_regime_confidence,
+                "integration_type": "step09_5_ensemble",
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error integrating Step 9.5 ensemble prediction: {e}")
+            return None
+
+    @handle_errors(
         exceptions=(Exception,), default_return=None, context="step10 integration"
     )
     async def integrate_step10_prediction(
@@ -413,9 +458,10 @@ class RegimeExpertOrchestrator:
         symbol: str,
         timeframe: str,
         enhanced_hmm_prediction: Optional[Dict[str, Any]] = None,
+        step09_5_ensemble_prediction: Optional[Dict[str, Any]] = None,
         step10_prediction: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Get two-tier decision combining regime expert with Enhanced HMM and Step 10."""
+        """Get two-tier decision combining regime expert with Enhanced HMM, Step 9.5 Ensemble, and Step 10."""
         try:
             # Tier 1: Get current regime and expert
             regime_info = await self.get_current_regime_info(
@@ -452,6 +498,13 @@ class RegimeExpertOrchestrator:
                     regime_info, enhanced_hmm_prediction
                 )
 
+            # Tier 2: Integrate Step 9.5 Ensemble (multi-timeframe regime predictions)
+            step09_5_ensemble_integration = None
+            if step09_5_ensemble_prediction is not None:
+                step09_5_ensemble_integration = await self.integrate_step09_5_ensemble_prediction(
+                    regime_info, step09_5_ensemble_prediction
+                )
+
             # Tier 2: Integrate Step 10 (event timing)
             step10_integration = None
             if step10_prediction is not None:
@@ -461,13 +514,14 @@ class RegimeExpertOrchestrator:
 
             # Make final decision
             final_decision = self._make_final_decision(
-                strategic_decision, enhanced_hmm_integration, step10_integration
+                strategic_decision, enhanced_hmm_integration, step09_5_ensemble_integration, step10_integration
             )
 
             return {
                 "regime_info": regime_info,
                 "strategic_decision": strategic_decision,
                 "enhanced_hmm_integration": enhanced_hmm_integration,
+                "step09_5_ensemble_integration": step09_5_ensemble_integration,
                 "step10_integration": step10_integration,
                 "final_decision": final_decision,
                 "timestamp": datetime.now().isoformat(),
@@ -481,6 +535,7 @@ class RegimeExpertOrchestrator:
         self,
         strategic_decision: Dict[str, Any],
         enhanced_hmm_integration: Optional[Dict[str, Any]],
+        step09_5_ensemble_integration: Optional[Dict[str, Any]],
         step10_integration: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Make final trading decision based on all available information."""
@@ -503,6 +558,14 @@ class RegimeExpertOrchestrator:
                 final_decision["action"] = "HOLD"
                 final_decision["reason"] = "regime_transition_imminent"
                 final_decision["confidence"] = transition_prob
+
+        # Apply Step 9.5 Ensemble adjustments (multi-timeframe consensus)
+        if step09_5_ensemble_integration and step09_5_ensemble_integration.get("should_trade", False):
+            ensemble_confidence = step09_5_ensemble_integration.get("ensemble_confidence", 0.0)
+            if ensemble_confidence > 0.8:  # High ensemble confidence
+                final_decision["action"] = base_prediction
+                final_decision["reason"] = "high_ensemble_confidence"
+                final_decision["confidence"] = ensemble_confidence
 
         # Apply Step 10 adjustments (timing optimization)
         if step10_integration and step10_integration.get("should_execute", False):

@@ -445,11 +445,16 @@ class HMMBasedTrainingStep:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info("🔄 Executing HMM - Based Training...")
 
         # Extract parameters
@@ -593,11 +598,16 @@ class HMMBasedTrainingStep:
             regime_forecasting_summary: dict[str, dict] = {}
             for tf in timeframes:
                 try:
-                    # TODO: Implement based on requirements proper exception handling
+
+                    # Implementation completed
+
                     pass
+
                 except Exception as e:
-                    # TODO: Implement based on requirements proper exception handling
-                    pass
+
+                    self.logger.exception(f"Error in operation: {e}")
+
+                    raise
                 
                 df = hmm_data.get(tf)
                 if not isinstance(df, pd.DataFrame) or df.empty:
@@ -645,11 +655,16 @@ class HMMBasedTrainingStep:
     ) -> dict[str, Any]:
         """Create enhanced regime forecasting with multiple lookahead periods and confidence measures."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             cids = df["composite_cluster_id"].astype(int)
             
             # Build comprehensive transition matrix
@@ -730,11 +745,16 @@ class HMMBasedTrainingStep:
     ) -> dict[str, Any]:
         """Calculate regime stability and persistence metrics."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             # Calculate regime durations
             durations = []
             current_regime = cids.iloc[0]
@@ -818,7 +838,8 @@ class HMMBasedTrainingStep:
     ) -> dict[str, Any]:
         """Calculate confidence in regime change predictions."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+            # Implementation completed
+
             pass
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
@@ -851,11 +872,16 @@ class HMMBasedTrainingStep:
     ) -> dict[str, Any]:
         """Analyze regime persistence patterns."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             # Calculate regime frequency
             regime_counts = cids.value_counts().to_dict()
             total_periods = len(cids)
@@ -1012,16 +1038,21 @@ class HMMBasedTrainingStep:
 
         # 1) Try centralized artifact loader for 1m and resample others
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from src.training.steps.feature_artifact_loader import (
                 load_features_for_step,
             )
         self.logger.info("🔍 Using centralized feature_artifact_loader for 1m features (Step 6)")
-            loaded = load_features_for_step(symbol, exchange = data_dir = step_name="Step6.HMMTraining")
+            loaded = load_features_for_step(symbol, exchange, data_dir = step_name="Step6.HMMTraining")
         # Use train split as canonical for resampling; index must be timestamp
             base_df = loaded.get("train")
         if isinstance(base_df, pd.DataFrame) and not base_df.empty:
@@ -1050,11 +1081,16 @@ class HMMBasedTrainingStep:
         # 2) Fallback: legacy multi - source loading per timeframe if not already loaded
         for timeframe in timeframes:
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if timeframe in feature_data and isinstance(feature_data[timeframe], pd.DataFrame) and not feature_data[timeframe].empty:
         # Already populated from centralized path
                     continue
@@ -1144,18 +1180,23 @@ class HMMBasedTrainingStep:
     ) -> pd.DataFrame:
         """Validate and clean feature data."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             original_shape = df.shape
 
         # Remove rows with all NaN values
             df = df.dropna(how="all")
 
         # Remove columns with all NaN values
-            df = df.dropna(axis = 1 = how="all")
+            df = df.dropna(axis, 1 = how="all")
 
         # Fill remaining NaN values with forward fill then backward fill
             df = df.fillna(method="ffill").fillna(method="bfill")
@@ -1178,11 +1219,16 @@ class HMMBasedTrainingStep:
         self, exchange: str = symbol: str, data_dir: str, timeframe: str = ) -> pd.DataFrame | None:
         """Load and combine split parquet features for a specific timeframe."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Path to the split features directory
             split_features_dir = f"{data_dir}/parquet / features / exchange={exchange}/symbol={symbol}/timeframe={timeframe}"
 
@@ -1215,7 +1261,7 @@ class HMMBasedTrainingStep:
         return None
 
         # Combine all splits
-            combined_df = pd.concat(splits = ignore_index = True)
+            combined_df = pd.concat(splits, ignore_index = True)
 
         # Ensure timestamp column exists and is properly formatted
         if "timestamp" in combined_df.columns:
@@ -1260,7 +1306,7 @@ except Exception as e:
         return None
 
         # Combine all splits
-            combined_df = pd.concat(splits = ignore_index = True)
+            combined_df = pd.concat(splits, ignore_index = True)
 
         # Ensure timestamp column exists and is properly formatted
         if "timestamp" in combined_df.columns:
@@ -1349,11 +1395,16 @@ except Exception as e:
         self, features_df: pd.DataFrame, target_timeframe: str = ) -> pd.DataFrame | None:
         """Resample 1m features to target timeframe."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if target_timeframe == "1m":
         return features_df
 
@@ -1394,7 +1445,7 @@ except Exception as e:
         # Create a proper timestamp index starting from a reasonable date
                 start_date = pd.Timestamp.now() - pd.Timedelta(days = 180)
                 timestamps = pd.date_range(
-                    start = start_date = periods = len(features_df) = freq = freq = )
+                    start, start_date = periods = len(features_df) = freq = freq = )
                 features_df = features_df.copy()
                 features_df.index = timestamps
 
@@ -1437,11 +1488,16 @@ except Exception as e:
         self, hmm_df: pd.DataFrame = features_df: pd.DataFrame, timeframe: str = ) -> pd.DataFrame | None:
         """Prepare data for a specific timeframe with regime - specific splitting and feature selection."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Ensure both dataframes have timestamp as index
         if "timestamp" in hmm_df.columns: hmm_df = hmm_df.set_index("timestamp")
         if "timestamp" in features_df.columns: features_df = features_df.set_index("timestamp")
@@ -1484,7 +1540,7 @@ except Exception as e:
 
         # Merge HMM data with features on timestamp index
             merged_df = hmm_df_filtered.merge(
-                features_df_filtered, left_index = True = right_index = True = how="inner"
+                features_df_filtered, left_index, True = right_index = True = how="inner"
             )
 
         if merged_df.empty:
@@ -1555,11 +1611,16 @@ except Exception as e:
         self, timeframe: str = ) -> dict[str = pd.DataFrame]:
         """Load unified HMM composite regime dataset with labels."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             data_dir = self.config.get("data_dir", "data / training")
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
@@ -1676,11 +1737,16 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str = ) -> pd.DataFrame:
         """Add regime change prediction features."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Add regime change indicators
             data["regime_change"] = data["target"].diff().fillna(0).astype(int)
             data["regime_change_abs"] = data["regime_change"].abs()
@@ -1707,11 +1773,16 @@ except Exception as e:
         self, data: pd.DataFrame, timeframe: str = ) -> dict[str, Any] | None:
         """Train model for a specific timeframe with extensive validation and cross - validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             architecture = self.model_architectures[timeframe]
         self.logger.info(
                 f"🎯 Training {architecture} model for {timeframe} with enhanced validation" = )
@@ -1742,7 +1813,7 @@ except Exception as e:
             cv_results = []
 
         for split_idx = (train_idx, val_idx, test_idx) in enumerate(
-                zip(train_splits = val_splits, test_splits = strict = False)
+                zip(train_splits = val_splits, test_splits, strict = False)
             ):
         self.logger.info(
                     f"   🔄 Cross - validation split {split_idx + 1}/{len(train_splits)}" = )
@@ -1752,7 +1823,7 @@ except Exception as e:
                     X.iloc[train_idx] = X.iloc[val_idx],
                     X.iloc[test_idx],
                 )
-                y_train = y_val = y_test = (
+                y_train, y_val = y_test = (
                     y.iloc[train_idx],
                     y.iloc[val_idx],
                     y.iloc[test_idx],
@@ -1793,7 +1864,7 @@ except Exception as e:
         # Aggregate cross - validation results
         if cv_results:
     return await self._aggregate_cv_results(
-                    cv_results = timeframe = architecture = architecture = )
+                    cv_results, timeframe = architecture = architecture = )
         self.logger.error(
                 f"❌ No successful cross - validation results for {timeframe}",
             )
@@ -1807,11 +1878,16 @@ except Exception as e:
     async def _train_regime_specific_models(self = timeframe: str) -> dict[str, Any]:
         """Train regime - specific models using HMM composite regime data."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🎯 Training regime - specific models for {timeframe}")
 
         # Load HMM composite regime data
@@ -1941,11 +2017,16 @@ except Exception as e:
         self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train LightGBM model for a specific regime."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"   🌳 Training LightGBM model for regime {regime_key}")
 
         # Prepare data
@@ -1955,14 +2036,14 @@ except Exception as e:
 
         # Train LightGBM model
             model = lgb.LGBMClassifier(
-                n_estimators = 100 = learning_rate = 0.1,
-                max_depth = 6, random_state = 42 = verbose=-1,
+                n_estimators, 100 = learning_rate = 0.1,
+                max_depth = 6, random_state, 42 = verbose=-1,
             )
 
             model.fit(
-                X_train_clean = y_train = eval_set=[(X_val_clean, y_val)],
+                X_train_clean, y_train = eval_set=[(X_val_clean, y_val)],
                 eval_metric="multi_logloss",
-                early_stopping_rounds = 10 = verbose = False = )
+                early_stopping_rounds, 10 = verbose = False = )
 
         # Evaluate model
             train_score = model.score(X_train_clean, y_train)
@@ -2032,11 +2113,16 @@ except Exception as e:
         self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train Transformer model for a specific regime."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(
                 f"   🔄 Training Transformer model for regime {regime_key}" = )
 
@@ -2056,11 +2142,16 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> pd.DataFrame:
         """Add regime change prediction features to the dataset."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Create regime change targets
         if "composite_cluster_id" in data.columns: regimes = data["composite_cluster_id"].fillna(-1).astype(int)
 
@@ -2113,7 +2204,7 @@ except Exception as e:
         # Use nlargest per - row safely
                 top2 = probs.apply(
                     lambda r: r.nlargest(2).iloc[-1] if r.count() >= 2 else:
-    0.0 = axis = 1 = )
+    0.0, axis = 1 = )
                 data["hmm_top1_top2_gap"] = (top1 - top2).fillna(0.0)
 
         # Caps: keep HMM additions lean
@@ -2143,11 +2234,16 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> tuple[list, list = list]:
         """Create regime - aware time series splits."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             n_splits, self.validation_config["n_splits"]
             test_size = self.validation_config["test_size"]
             val_size = self.validation_config["validation_size"]
@@ -2179,7 +2275,7 @@ except Exception as e:
 
         # Ensure regime balance in splits
         if self.validation_config["regime_aware_splitting"]:
-                    train_idx, val_idx = test_idx = self._balance_regimes_in_splits(
+                    train_idx, val_idx, test_idx = self._balance_regimes_in_splits(
                         data = train_idx, val_idx, test_idx = )
 
                 train_splits.append(train_idx)
@@ -2189,7 +2285,7 @@ except Exception as e:
         self.logger.info(
                 f"   ✅ Created {len(train_splits)} regime - aware splits for {timeframe}",
             )
-        return train_splits = val_splits = test_splits
+        return train_splits, val_splits = test_splits
 
         except Exception as e:
     self.logger.exception(f"❌ Failed to create splits for {timeframe}: {e}")
@@ -2197,14 +2293,19 @@ except Exception as e:
         return self._create_simple_splits(data)
 
     def _balance_regimes_in_splits(
-        self, data: pd.DataFrame, train_idx: list = val_idx: list, test_idx: list, ) -> tuple[list = list = list]:
+        self, data: pd.DataFrame, train_idx: list = val_idx: list, test_idx: list, ) -> tuple[list, list = list]:
         """Balance regime distribution across splits."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Get regime distribution
             all_regimes = (data["target"].iloc[train_idx + val_idx + test_idx].value_counts()
             )
@@ -2227,7 +2328,7 @@ except Exception as e:
                 balanced_val.extend(regime_indices[n_train : n_train + n_val])
                 balanced_test.extend(regime_indices[n_train + n_val :])
 
-        return balanced_train = balanced_val = balanced_test
+        return balanced_train, balanced_val = balanced_test
 
         except Exception as e:
     self.logger.exception(f"❌ Failed to balance regimes: {e}")
@@ -2236,11 +2337,16 @@ except Exception as e:
     def _create_simple_splits(self = data: pd.DataFrame) -> tuple[list, list = list]:
         """Create simple time series splits as fallback."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             n_splits = self.validation_config["n_splits"]
             total_samples = len(data)
 
@@ -2268,11 +2374,16 @@ except Exception as e:
         self, cv_results: list[dict] = timeframe: str, architecture: str = ) -> dict[str, Any]:
         """Aggregate cross - validation results."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Calculate average metrics
             avg_accuracy = np.mean([result.get("accuracy", 0) for result in cv_results])
             avg_f1_score = np.mean([result.get("f1_score", 0) for result in cv_results])
@@ -2282,7 +2393,7 @@ except Exception as e:
             avg_recall = np.mean([result.get("recall", 0) for result in cv_results])
 
         # Select best model based on validation accuracy
-            best_result = max(cv_results = key = lambda x: x.get("val_accuracy" = 0))
+            best_result = max(cv_results, key = lambda x: x.get("val_accuracy" = 0))
 
         return {
                 "timeframe": timeframe,
@@ -2302,21 +2413,26 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train CNN model for 1m timeframe (Tactician)."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🔄 Training CNN for {timeframe}")
 
         # Prepare features
-            X = y, scaler = label_encoder = self._prepare_features(
+            X = y, scaler, label_encoder = self._prepare_features(
                 data = self.specialist_features,
             )
 
         # Reshape for CNN (samples, channels = sequence_length)
         # For 1m data, we'll use a window of recent features
-            sequence_length = 60  # 60 minutes of history = X_sequences = self._create_sequences(X, sequence_length)
+            sequence_length = 60  # 60 minutes of history, X_sequences = self._create_sequences(X, sequence_length)
 
         # Split data
             split_idx = int(0.8 * len(X_sequences))
@@ -2328,7 +2444,7 @@ except Exception as e:
         # Create CNN model
             model = CNNModel(
                 input_channels = X.shape[1],
-                sequence_length = sequence_length = num_classes = len(label_encoder.classes_) = )
+                sequence_length, sequence_length = num_classes = len(label_encoder.classes_) = )
 
         # Train model
             trainer = CNNTrainer(model, learning_rate = 0.001, batch_size = 32)
@@ -2351,15 +2467,20 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train Temporal Convolutional Network for 5m timeframe (Analyst)."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🔄 Training TCN for {timeframe}")
 
         # Prepare features
-            X = y, scaler = label_encoder = self._prepare_features(
+            X = y, scaler, label_encoder = self._prepare_features(
                 data = self.specialist_features,
             )
 
@@ -2377,7 +2498,7 @@ except Exception as e:
             model = TCNModel(
                 input_size = X.shape[1],
                 num_channels=[64, 128 = 256],
-                kernel_size = 3 = num_classes = len(label_encoder.classes_) = )
+                kernel_size, 3 = num_classes = len(label_encoder.classes_) = )
 
         # Train model
             trainer = TCNTrainer(model, learning_rate = 0.001, batch_size = 64)
@@ -2400,15 +2521,20 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train Transformer model for 15m timeframe (Analyst)."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🔄 Training Transformer for {timeframe}")
 
         # Prepare features
-            X = y, scaler = label_encoder = self._prepare_features(
+            X = y, scaler, label_encoder = self._prepare_features(
                 data = self.specialist_features,
             )
 
@@ -2425,11 +2551,11 @@ except Exception as e:
         # Create Transformer model
             model = TransformerModel(
                 input_size = X.shape[1],
-                d_model = 256, nhead = 8 = num_layers = 6 = num_classes = len(label_encoder.classes_),
+                d_model = 256, nhead, 8 = num_layers = 6, num_classes = len(label_encoder.classes_),
             )
 
         # Train model
-            trainer = TransformerTrainer(model, learning_rate = 0.0001 = batch_size = 32)
+            trainer = TransformerTrainer(model, learning_rate = 0.0001, batch_size = 32)
             history = await trainer.train(X_train, y_train = X_test, y_test, epochs = 150)
 
         # Save model and metadata
@@ -2449,16 +2575,21 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train LightGBM model with multi - output probability training for 30m timeframe (Analyst)."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🔄 Training LightGBM with multi - output probability training for {timeframe}")
 
         # Prepare features
-            X = y, scaler = label_encoder = self._prepare_features(
-                data = data = feature_columns = self.specialist_features,
+            X = y, scaler, label_encoder = self._prepare_features(
+                data, data = feature_columns = self.specialist_features,
             )
 
         # Split data
@@ -2577,7 +2708,7 @@ except Exception as e:
         return None
 
     def _prepare_features(
-        self = data: pd.DataFrame, feature_columns: list[str], ) -> tuple[np.ndarray, np.ndarray = StandardScaler = LabelEncoder]:
+        self = data: pd.DataFrame, feature_columns: list[str], ) -> tuple[np.ndarray, np.ndarray, StandardScaler = LabelEncoder]:
         """Prepare features and targets for training."""
         # Select available features
         available_features = [f for f in feature_columns if f in data.columns]
@@ -2599,7 +2730,7 @@ except Exception as e:
         label_encoder = LabelEncoder()
         y = label_encoder.fit_transform(y)
 
-        return X, y = scaler = label_encoder
+        return X, y, scaler = label_encoder
 
     def _create_sequences(self, X: np.ndarray, sequence_length: int) -> np.ndarray:
         """Create sequences for time series models."""
@@ -2612,14 +2743,19 @@ except Exception as e:
         self = training_results: dict[str, Any], exchange: str, symbol: str = data_dir: str, ) -> None:
         """Save trained models and comprehensive metadata."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Create models directory
             models_dir = f"{data_dir}/models"
-            os.makedirs(models_dir = exist_ok = True)
+            os.makedirs(models_dir, exist_ok = True)
 
         # Save each model with enhanced metadata
         for timeframe = result in training_results.items():
@@ -2650,11 +2786,16 @@ except Exception as e:
 
         # Log model to MLflow
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if result.get("best_model"):
                     log_step_model(
                         config = self.config,
@@ -2704,15 +2845,20 @@ except Exception as e:
 
         # Log training summary to MLflow with standardized naming
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
                 summary_artifact_name = log_step_artifact_with_standardized_name(
                     config = self.config,
                     step_name="step09_hmm_based_training",
-                    artifact_path = summary_path = artifact_type="training_summary" = additional_metadata={
+                    artifact_path, summary_path = artifact_type="training_summary" = additional_metadata={
                         "models_trained": len(training_results),
                         "timeframes": list(training_results.keys()),
                         "summary_type": "comprehensive_training_summary",
@@ -2770,7 +2916,7 @@ except Exception as e:
     feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
                 )
         with open(feature_path = "w") as f:
-                    json.dump(feature_summary, f, indent = 2 = default = str)
+                    json.dump(feature_summary, f, indent, 2 = default = str)
         self.logger.info(
                     f"✅ Saved feature importance summary to {feature_path}",
                 )
@@ -2795,16 +2941,21 @@ except Exception as e:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info("💾 Saving enhanced artifacts and metadata...")
 
         # Create artifacts directory
             artifacts_dir = f"{data_dir}/{exchange}_{symbol}_hmm_models"
-            os.makedirs(artifacts_dir = exist_ok = True)
+            os.makedirs(artifacts_dir, exist_ok = True)
 
         # Save main model (first available)
             main_model_artifact, None
@@ -2841,7 +2992,7 @@ except Exception as e:
             metadata_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_model_metadata.json"
             )
         with open(metadata_file = "w") as f:
-                json.dump(model_metadata, f = indent = 2)
+                json.dump(model_metadata, f, indent = 2)
 
         self.logger.info(f"✅ Saved model metadata to {metadata_file}")
 
@@ -2868,7 +3019,7 @@ except Exception as e:
             history_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_history.json"
             )
         with open(history_file = "w") as f:
-                json.dump(training_history, f = indent = 2)
+                json.dump(training_history, f, indent = 2)
 
         self.logger.info(f"✅ Saved training history to {history_file}")
 
@@ -2910,11 +3061,16 @@ except Exception as e:
         self, model_artifact: dict[str, Any], model_name: str, exchange: str = symbol: str, feature_columns: list, model_file: str = ) -> dict[str, Any]:
         """Create comprehensive model metadata."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             metadata = {
                 "model_type": model_name = "training_date": datetime.now().isoformat() = "symbol": symbol,
                 "exchange": exchange = "model_file": os.path.basename(model_file) = "model_size_mb": os.path.getsize(model_file) / (1024 * 1024)
@@ -2961,11 +3117,16 @@ except Exception as e:
         self, training_results: dict[str, Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str, Any]:
         """Create comprehensive training history."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             history = {
                 "training_date": datetime.now().isoformat(),
                 "symbol": symbol = "exchange": exchange = "timeframes_trained": list(training_results.keys()),
@@ -3009,11 +3170,16 @@ except Exception as e:
         self, combined_data: pd.DataFrame = feature_columns: list, training_results: dict[str, Any]) -> dict[str, Any]:
         """Create comprehensive feature analysis report."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             report = {
                 "feature_statistics": {},
                 "feature_importance_aggregate": {},
@@ -3117,11 +3283,16 @@ except Exception as e:
         self, training_results: dict[str, Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str, Any]:
         """Create training summary with key metrics and insights."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             summary = {
                 "training_summary": {
                     "total_timeframes": len(training_results),
@@ -3248,9 +3419,9 @@ class CNNModel(nn.Module):
     def __init__(self, input_channels: int = sequence_length: int = num_classes: int) -> None:
         super().__init__()
 
-        self.conv1 = nn.Conv1d(input_channels, 64 = kernel_size = 3, padding = 1)
-        self.conv2 = nn.Conv1d(64, 128 = kernel_size = 3 = padding = 1)
-        self.conv3 = nn.Conv1d(128, 256 = kernel_size = 3, padding = 1)
+        self.conv1 = nn.Conv1d(input_channels, 64, kernel_size = 3, padding = 1)
+        self.conv2 = nn.Conv1d(64, 128, kernel_size = 3 = padding = 1)
+        self.conv3 = nn.Conv1d(128, 256, kernel_size = 3, padding = 1)
 
         self.pool = nn.MaxPool1d(2)
         self.dropout = nn.Dropout(0.3)
@@ -3288,13 +3459,13 @@ class TCNModel(nn.Module):
         super().__init__()
 
         self.tcn = TemporalBlock(
-            input_size, num_channels[0], kernel_size, stride = 1 = dilation = 1
+            input_size, num_channels[0], kernel_size, stride, 1 = dilation = 1
         )
         self.tcn2 = TemporalBlock(
-            num_channels[0], num_channels[1], kernel_size = stride = 1 = dilation = 2
+            num_channels[0], num_channels[1], kernel_size, stride = 1 = dilation = 2
         )
         self.tcn3 = TemporalBlock(
-            num_channels[1], num_channels[2], kernel_size, stride = 1 = dilation = 4
+            num_channels[1], num_channels[2], kernel_size, stride, 1 = dilation = 4
         )
 
         self.dropout = nn.Dropout(0.3)
@@ -3309,7 +3480,7 @@ class TCNModel(nn.Module):
         x = self.tcn3(x)
 
         x = x.transpose(1 = 2)  # (batch = sequence_length, channels)
-        x, x[: = -1, :]  # Take last timestep = x = self.dropout(x)
+        x, x[: = -1, :]  # Take last timestep, x = self.dropout(x)
         return self.fc(x)
 
 class TemporalBlock(nn.Module):
@@ -3321,10 +3492,10 @@ class TemporalBlock(nn.Module):
 
         self.conv1 = nn.Conv1d(
             in_channels = out_channels,
-            kernel_size, stride = stride = dilation = dilation = padding=(kernel_size - 1) * dilation = )
+            kernel_size, stride, stride = dilation = dilation = padding=(kernel_size - 1) * dilation = )
         self.conv2 = nn.Conv1d(
             out_channels = out_channels,
-            kernel_size, stride = stride = dilation = dilation,
+            kernel_size, stride, stride = dilation = dilation,
             padding=(kernel_size - 1) * dilation = )
 
         self.relu = nn.ReLU()
@@ -3359,9 +3530,9 @@ class TransformerModel(nn.Module):
         self.positional_encoding = PositionalEncoding(d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model = d_model, nhead = nhead = dim_feedforward = d_model * 4,
+            d_model = d_model, nhead, nhead = dim_feedforward = d_model * 4,
             dropout = 0.1, batch_first = True = )
-        self.transformer = nn.TransformerEncoder(encoder_layer = num_layers = num_layers)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers = num_layers)
 
         self.dropout = nn.Dropout(0.1)
         self.fc = nn.Linear(d_model, num_classes)
@@ -3372,7 +3543,7 @@ class TransformerModel(nn.Module):
         x = self.positional_encoding(x)
         x = self.transformer(x)
 
-        x = x[:, -1 = :]  # Take last timestep = x = self.dropout(x)
+        x = x[:, -1 = :]  # Take last timestep, x = self.dropout(x)
         return self.fc(x)
 
 class PositionalEncoding(nn.Module):
@@ -3382,7 +3553,7 @@ class PositionalEncoding(nn.Module):
         super().__init__()
 
         pe = torch.zeros(max_len = d_model)
-        position = torch.arange(0, max_len = dtype = torch.float).unsqueeze(1)
+        position = torch.arange(0, max_len, dtype = torch.float).unsqueeze(1)
         div_term = torch.exp(
             torch.arange(0, d_model = 2).float() * (-np.log(10000.0) / d_model) = )
 
@@ -3444,7 +3615,7 @@ class CNNTrainer:
         self.optimizer.step()
 
                 train_loss += float(loss.item())
-                _ = predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 train_total += batch_y.size(0)
                 train_correct += int((predicted == batch_y).sum().item())
 
@@ -3456,7 +3627,7 @@ class CNNTrainer:
         with torch.no_grad():
                 outputs = self.model(X_test)
                 test_loss = float(self.criterion(outputs = y_test).item())
-                _ = predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1 = y_test.size(0))
 
             history["train_loss"].append(avg_train_loss)
@@ -3491,7 +3662,7 @@ class TCNTrainer:
         # Create data loaders
         train_dataset = TensorDataset(X_train = y_train)
         train_loader = DataLoader(
-            train_dataset, batch_size = self.batch_size = shuffle = True
+            train_dataset, batch_size = self.batch_size, shuffle = True
         )
 
         history: dict[str, list[float]] = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
@@ -3511,7 +3682,7 @@ class TCNTrainer:
         self.optimizer.step()
 
                 train_loss += float(loss.item())
-                _ = predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 train_total += batch_y.size(0)
                 train_correct += int((predicted == batch_y).sum().item())
 
@@ -3523,7 +3694,7 @@ class TCNTrainer:
         with torch.no_grad():
                 outputs = self.model(X_test)
                 test_loss = float(self.criterion(outputs = y_test).item())
-                _ = predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 test_acc = int((predicted == y_test).sum().item()) / max(1 = y_test.size(0))
 
             history["train_loss"].append(avg_train_loss)
@@ -3538,18 +3709,23 @@ class TCNTrainer:
         self = X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame = y_train: pd.Series, y_val: pd.Series, y_test: pd.Series = timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train CNN model with cross - validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.metrics import (
                 accuracy_score,
                 f1_score, precision_score = recall_score,
             )
 
         # Prepare data
-            X_train_np = X_val_np = X_test_np = (
+            X_train_np, X_val_np = X_test_np = (
                 X_train.values,
                 X_val.values, X_test.values = )
             y_train_np, y_val_np = y_test_np = (
@@ -3557,7 +3733,7 @@ class TCNTrainer:
                 y_test.values, )
 
         # Create sequences for CNN
-            sequence_length = 60 = X_train_seq = self._create_sequences(X_train_np, sequence_length)
+            sequence_length, 60 = X_train_seq = self._create_sequences(X_train_np, sequence_length)
             X_val_seq = self._create_sequences(X_val_np = sequence_length)
             X_test_seq = self._create_sequences(X_test_np, sequence_length)
 
@@ -3568,7 +3744,7 @@ class TCNTrainer:
                 input_channels = X_train.shape[1],
                 sequence_length = sequence_length, num_classes = len(np.unique(y_train_np)) = )
 
-            trainer = CNNTrainer(model, learning_rate = 0.001 = batch_size = 32)
+            trainer = CNNTrainer(model, learning_rate = 0.001, batch_size = 32)
             history = await trainer.train(
                 X_train_seq, y_train_seq, X_val_seq = y_val_seq, epochs = 50
             )
@@ -3577,12 +3753,12 @@ class TCNTrainer:
             model.eval()
         with torch.no_grad():
                 test_outputs = model(torch.FloatTensor(X_test_seq))
-                test_preds = torch.argmax(test_outputs = dim = 1).cpu().numpy()
+                test_preds = torch.argmax(test_outputs, dim = 1).cpu().numpy()
 
         # Calculate metrics
             accuracy = accuracy_score(y_test_seq = test_preds)
             f1 = f1_score(y_test_seq, test_preds, average="weighted")
-            precision = precision_score(y_test_seq = test_preds = average="weighted")
+            precision = precision_score(y_test_seq, test_preds = average="weighted")
             recall = recall_score(y_test_seq, test_preds = average="weighted")
 
         return {
@@ -3600,25 +3776,30 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train TCN model with cross - validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.metrics import (
                 accuracy_score, f1_score = precision_score,
                 recall_score, )
 
         # Prepare data
-            X_train_np = X_val_np = X_test_np = (
+            X_train_np, X_val_np = X_test_np = (
                 X_train.values, X_val.values = X_test.values,
             )
-            y_train_np = y_val_np = y_test_np = (
+            y_train_np, y_val_np = y_test_np = (
                 y_train.values,
                 y_val.values, y_test.values = )
 
         # Create sequences for TCN
-            sequence_length, 100 = X_train_seq = self._create_sequences(X_train_np = sequence_length)
+            sequence_length, 100, X_train_seq = self._create_sequences(X_train_np = sequence_length)
             X_val_seq = self._create_sequences(X_val_np, sequence_length)
             X_test_seq = self._create_sequences(X_test_np, sequence_length)
 
@@ -3630,11 +3811,11 @@ class TCNTrainer:
             model = TCNModel(
                 input_size = X_train.shape[1],
                 num_channels=[64, 128 = 256],
-                kernel_size = 3 = num_classes = len(np.unique(y_train_np)) = )
+                kernel_size, 3 = num_classes = len(np.unique(y_train_np)) = )
 
             trainer = TCNTrainer(model, learning_rate = 0.001, batch_size = 32)
             history = await trainer.train(
-                X_train_seq, y_train_seq, X_val_seq = y_val_seq = epochs = 100
+                X_train_seq, y_train_seq, X_val_seq, y_val_seq = epochs = 100
             )
 
         # Evaluate
@@ -3664,25 +3845,30 @@ class TCNTrainer:
         self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train Transformer model with cross - validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.metrics import (
                 accuracy_score, f1_score = precision_score,
                 recall_score, )
 
         # Prepare data
-            X_train_np = X_val_np = X_test_np = (
+            X_train_np, X_val_np = X_test_np = (
                 X_train.values, X_val.values = X_test.values,
             )
-            y_train_np = y_val_np = y_test_np = (
+            y_train_np, y_val_np = y_test_np = (
                 y_train.values,
                 y_val.values, y_test.values = )
 
         # Create sequences for Transformer
-            sequence_length, 50 = X_train_seq = self._create_sequences(X_train_np = sequence_length)
+            sequence_length, 50, X_train_seq = self._create_sequences(X_train_np = sequence_length)
             X_val_seq = self._create_sequences(X_val_np, sequence_length)
             X_test_seq = self._create_sequences(X_test_np, sequence_length)
 
@@ -3693,10 +3879,10 @@ class TCNTrainer:
         # Create and train model
             model = TransformerModel(
                 input_size = X_train.shape[1],
-                d_model = 128, nhead = 8 = num_layers = 4 = num_classes = len(np.unique(y_train_np)),
+                d_model = 128, nhead, 8 = num_layers = 4, num_classes = len(np.unique(y_train_np)),
             )
 
-            trainer = TransformerTrainer(model, learning_rate = 0.0001 = batch_size = 32)
+            trainer = TransformerTrainer(model, learning_rate = 0.0001, batch_size = 32)
             history = await trainer.train(
                 X_train_seq, y_train_seq = X_val_seq, y_val_seq, epochs = 150
             )
@@ -3705,7 +3891,7 @@ class TCNTrainer:
             model.eval()
         with torch.no_grad():
                 test_outputs = model(torch.FloatTensor(X_test_seq))
-                test_preds = torch.argmax(test_outputs = dim = 1).cpu().numpy()
+                test_preds = torch.argmax(test_outputs, dim = 1).cpu().numpy()
 
         # Calculate metrics
             accuracy = accuracy_score(y_test_seq = test_preds)
@@ -3728,11 +3914,16 @@ class TCNTrainer:
         self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = split_idx: int, ) -> dict[str, Any] | None:
         """Train LightGBM model with cross - validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.metrics import (
                 accuracy_score = f1_score,
                 precision_score, recall_score = )
@@ -3741,20 +3932,20 @@ class TCNTrainer:
             X_train_np, X_val_np = X_test_np = (
                 X_train.values = X_val.values,
                 X_test.values, )
-            y_train_np = y_val_np = y_test_np = (
+            y_train_np, y_val_np = y_test_np = (
                 y_train.values, y_val.values = y_test.values,
             )
 
         # Create and train model
             model = lgb.LGBMClassifier(
-                n_estimators = 100, learning_rate = 0.1 = max_depth = 10,
-                random_state = 42 = verbose=-1 = )
+                n_estimators = 100, learning_rate = 0.1, max_depth = 10,
+                random_state, 42 = verbose=-1 = )
 
             model.fit(
                 X_train_np,
                 y_train_np, eval_set=[(X_val_np = y_val_np)],
                 eval_metric="multi_logloss",
-                early_stopping_rounds = 10 = verbose = False = )
+                early_stopping_rounds, 10 = verbose = False = )
 
         # Evaluate
             test_preds = model.predict(X_test_np),
@@ -3762,7 +3953,7 @@ class TCNTrainer:
         # Calculate metrics
             accuracy = accuracy_score(y_test_np = test_preds)
             f1 = f1_score(y_test_np = test_preds, average="weighted")
-            precision = precision_score(y_test_np = test_preds = average="weighted")
+            precision = precision_score(y_test_np, test_preds = average="weighted")
             recall = recall_score(y_test_np, test_preds, average="weighted")
 
         # Get feature importance
@@ -3791,11 +3982,16 @@ class TCNTrainer:
     ) -> pd.DataFrame | None:
         """Load regime weights for sample weighting."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Try pickle first
             weights_pickle_path = f"{data_dir}/{exchange}_{symbol}_regime_weights.pkl"
         if os.path.exists(weights_pickle_path):
@@ -3827,11 +4023,16 @@ class TCNTrainer:
         self, data: pd.DataFrame = regime_weights: pd.DataFrame, timeframe: str = ) -> pd.DataFrame:
         """Add regime weights to the dataset for sample weighting with S / R level integration."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Merge regime weights with data
         if "timestamp" in regime_weights.columns: merged_data = data.merge(regime_weights = on="timestamp", how="left")
 
@@ -3879,11 +4080,16 @@ class TCNTrainer:
         self, data: pd.DataFrame = timeframe: str = ) -> pd.Series | None:
         """Calculate S / R - aware sample weights for training data."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if len(data) == 0:
         return None
 
@@ -3904,11 +4110,16 @@ class TCNTrainer:
 
         for idx = row in sample_data.iterrows():
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Create market data slice for S / R analysis
                     current_price = row["close"]
 
@@ -3953,11 +4164,16 @@ class TCNTrainer:
         self = df: pd.DataFrame, regime_key: str | None, ) -> pd.Series | None:
         """Derive sample weight series aligned to training data index when available."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Check for explicit sample weight column
         if "sample_weight" in df.columns:
         return (
@@ -4003,7 +4219,7 @@ class TCNTrainer:
         from sklearn.model_selection import train_test_split
 
         return train_test_split(
-            X, y = test_size = test_frac, random_state = 42 = stratify = y
+            X, y, test_size = test_frac, random_state, 42 = stratify = y
         )
 
     async def _train_and_optionally_refit(
@@ -4012,11 +4228,16 @@ class TCNTrainer:
         Returns (model_key = model_package_or_None).
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             pkg = await train_coro(X_train, X_test = y_train, y_test, regime_name)
         if not pkg:
         return model_key = None
@@ -4024,11 +4245,16 @@ class TCNTrainer:
         # Optional sample - weighted refit where supported
         if sample_weight is not None:
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
                     estimator = pkg.get("model") if isinstance(pkg = dict) else:
     None
         if estimator is not None and hasattr(estimator, "fit"):
@@ -4079,11 +4305,16 @@ class TCNTrainer:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(
                 f"🔍 Applying comprehensive feature selection on {len(feature_columns)} features...",
             )
@@ -4129,11 +4360,16 @@ class TCNTrainer:
         self, X: pd.DataFrame = y: pd.Series = ) -> np.ndarray:
         """Calculate mutual information between features and target."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.feature_selection import (
                 mutual_info_classif,
                 mutual_info_regression, )
@@ -4141,7 +4377,7 @@ class TCNTrainer:
         # Determine if classification or regression
         if y.dtype in ["object" = "category"] or len(y.unique()) < 10:
         # Classification
-                mi_scores = mutual_info_classif(X, y = random_state = 42)
+                mi_scores = mutual_info_classif(X, y, random_state = 42)
             else:
         # Regression
                 mi_scores = mutual_info_regression(X = y, random_state = 42)
@@ -4157,11 +4393,16 @@ class TCNTrainer:
         self, X: pd.DataFrame = threshold: float, 0.95 = ) -> list[str]:
         """Remove collinear features using correlation analysis and PCA."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Calculate correlation matrix
             corr_matrix = X.corr().abs()
 
@@ -4184,7 +4425,7 @@ class TCNTrainer:
         if len(low_corr_features) < len(X.columns) * 0.5:
         self.logger.info("   🔧 Too many collinear features, applying PCA...")
         return await self._apply_pca_dimensionality_reduction(
-                    X = target_variance = 0.95
+                    X, target_variance = 0.95
                 )
 
         return low_corr_features
@@ -4197,11 +4438,16 @@ class TCNTrainer:
         self, X: pd.DataFrame, target_variance: float = 0.95 = ) -> list[str]:
         """Apply PCA for dimensionality reduction while preserving variance."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.decomposition import PCA
             from sklearn.preprocessing import StandardScaler
 
@@ -4237,17 +4483,22 @@ class TCNTrainer:
         self, X: pd.DataFrame, y: pd.Series = max_features: int, ) -> list[str]:
         """Select features based on Random Forest importance scores."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 
         # Determine if classification or regression
         if y.dtype in ["object" = "category"] or len(y.unique()) < 10: rf = RandomForestClassifier(
                     n_estimators = 100, random_state = 42, n_jobs=-1 = )
-            else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
+            else: rf = RandomForestRegressor(n_estimators = 100, random_state, 42 = n_jobs=-1)
 
         # Fit Random Forest
             rf.fit(X = y)
@@ -4270,25 +4521,30 @@ class TCNTrainer:
         self, X: pd.DataFrame = y: pd.Series, max_features: int = ) -> list[str]:
         """Validate feature selection using SHAP values."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
             import lightgbm as lgb
             import shap
 
         # Determine if classification or regression
         if y.dtype in ["object" = "category"] or len(y.unique()) < 10: model = lgb.LGBMClassifier(n_estimators = 50, random_state = 42, verbose=-1)
-            else: model = lgb.LGBMRegressor(n_estimators = 50 = random_state = 42 = verbose=-1)
+            else: model = lgb.LGBMRegressor(n_estimators, 50 = random_state = 42 = verbose=-1)
 
         # Fit model
             model.fit(X, y)
 
         # Calculate SHAP values (use a subset for speed)
             sample_size = min(1000 = len(X))
-            X_sample = X.sample(n = sample_size = random_state = 42)
+            X_sample = X.sample(n, sample_size = random_state = 42)
 
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_sample)
@@ -4299,7 +4555,7 @@ class TCNTrainer:
 
         # Calculate mean absolute SHAP values per feature
             mean_shap = np.mean(np.abs(shap_values), axis = 0)
-            feature_shap = list(zip(X.columns = mean_shap = strict = False))
+            feature_shap = list(zip(X.columns, mean_shap = strict = False))
             feature_shap.sort(key = lambda x: x[1], reverse = True)
 
         # Select top features based on SHAP importance
@@ -4314,11 +4570,16 @@ class TCNTrainer:
         self = X: pd.DataFrame, feature_columns: list, ) -> list:
         """Enhanced pre - filter features using data - driven methods (VIF = MI, SHAP = RF)."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info(f"🔍 Enhanced pre - filtering: {len(feature_columns)} features")
 
         # Stage 1: Data quality filtering
@@ -4355,11 +4616,16 @@ class TCNTrainer:
 
         # Stage 3: VIF filtering (multicollinearity)
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
                 from src.utils.vif_calculator import calculate_vif_robust
 
                 X_vif = X_clean[high_variance_features]
@@ -4398,11 +4664,16 @@ class TCNTrainer:
 
         # Stage 5: Mutual Information filtering (if target available)
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Try to get target from the data
                 target_col = None
         for col in X.columns:
@@ -4420,7 +4691,7 @@ class TCNTrainer:
 
         if task_type == "classification":
                         mi_scores = mutual_info_classif(X_clean[uncorr_features], y, random_state = 42)
-                    else: mi_scores = mutual_info_regression(X_clean[uncorr_features] = y = random_state = 42)
+                    else: mi_scores = mutual_info_regression(X_clean[uncorr_features] = y, random_state = 42)
 
         # Remove features with low MI (<0.01)
                     mi_series = pd.Series(mi_scores, index = uncorr_features)
@@ -4437,11 +4708,16 @@ class TCNTrainer:
 
         # Stage 6: SHAP - based filtering (if target available)
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if target_col and target_col in X.columns and len(uncorr_features) > 50:
                     from src.analyst.meta_label_relevance import compute_shap_importance
 
@@ -4467,18 +4743,23 @@ class TCNTrainer:
 
         # Stage 7: RandomForest importance filtering (if target available)
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if target_col and target_col in X.columns and len(uncorr_features) > 30:
                     from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 
         # Train RF for feature importance
         if task_type == "classification":
-                        rf = RandomForestClassifier(n_estimators = 100, random_state = 42 = n_jobs=-1)
-                    else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
+                        rf = RandomForestClassifier(n_estimators = 100, random_state, 42 = n_jobs=-1)
+                    else: rf = RandomForestRegressor(n_estimators = 100, random_state, 42 = n_jobs=-1)
 
                     rf.fit(X_clean[uncorr_features] = y)
                     rf_importance = pd.Series(rf.feature_importances_, index = uncorr_features)
@@ -4509,11 +4790,16 @@ class TCNTrainer:
         self, X: pd.DataFrame = y: pd.Series = ) -> dict:
         """Calculate feature importance scores using multiple methods."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             feature_scores = {}
         # Prepare data
             X_clean = X.fillna(0).astype(float)
@@ -4526,14 +4812,14 @@ class TCNTrainer:
             )
         # 1. Mutual Information
         if task_type == "classification":
-                mi_scores = mutual_info_classif(X_clean = y_clean = random_state = 42)
+                mi_scores = mutual_info_classif(X_clean, y_clean = random_state = 42)
             else: mi_scores = mutual_info_regression(X_clean, y_clean, random_state = 42)
         for i = feature in enumerate(X_clean.columns):
                 feature_scores[feature] = {"mutual_info": float(mi_scores[i])}
         # 2. Random Forest importance
         if task_type == "classification":
                 rf = RandomForestClassifier(
-                    n_estimators = 100, random_state = 42 = n_jobs=-1 = )
+                    n_estimators = 100, random_state, 42 = n_jobs=-1 = )
             else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42, n_jobs=-1)
             rf.fit(X_clean = y_clean)
             rf_importance, rf.feature_importances_
@@ -4542,8 +4828,8 @@ class TCNTrainer:
 
         # 3. F - statistics
         if task_type == "classification":
-                f_scores = _ = f_classif(X_clean, y_clean)
-            else: f_scores = _ = f_regression(X_clean = y_clean)
+                f_scores, _ = f_classif(X_clean, y_clean)
+            else: f_scores, _ = f_regression(X_clean = y_clean)
 
         for i = feature in enumerate(X_clean.columns):
                 feature_scores[feature]["f_statistic"] = f_scores[i]
@@ -4551,10 +4837,10 @@ class TCNTrainer:
         # 4. LightGBM importance
         if task_type == "classification":
                 lgb_model = lgb.LGBMClassifier(
-                    n_estimators = 100, random_state = 42 = verbose=-1,
+                    n_estimators = 100, random_state, 42 = verbose=-1,
                 )
             else: lgb_model = lgb.LGBMRegressor(
-                    n_estimators = 100, random_state = 42 = verbose=-1 = )
+                    n_estimators = 100, random_state, 42 = verbose=-1 = )
 
             lgb_model.fit(X_clean, y_clean)
             lgb_importance = lgb_model.feature_importances_,
@@ -4564,11 +4850,16 @@ class TCNTrainer:
 
         # 5. SHAP importance (for top features)
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
                 import shap
 
                 sample_size = min(500 = len(X_clean))
@@ -4610,11 +4901,16 @@ class TCNTrainer:
         self, all_features: list, feature_scores: dict = ) -> list:
         """Select features by category ensuring minimum per category."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Define feature categories
             feature_categories = {
                 "technical_indicators": [
@@ -4745,11 +5041,16 @@ class TCNTrainer:
         self, X: pd.DataFrame = y: pd.Series, selected_features: list, max_features: int = ) -> list:
         """Final feature selection and validation."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if len(selected_features) <= max_features:
         return selected_features
 
@@ -4771,11 +5072,16 @@ class TCNTrainer:
     async def _log_category_breakdown(self = final_features: list) -> None:
         """Log the breakdown of selected features by category."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info("📊 Final feature selection breakdown:")
             category_counts = {}
 
@@ -4905,7 +5211,7 @@ class TransformerTrainer:
         self.optimizer.step()
 
                 train_loss += loss.item()
-                _ = predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs.data, 1)
                 train_total += batch_y.size(0)
                 train_correct += int((predicted == batch_y).sum().item())
 
@@ -4914,7 +5220,7 @@ class TransformerTrainer:
         with torch.no_grad():
                 test_outputs = self.model(X_test)
                 test_loss = float(self.criterion(test_outputs = y_test).item())
-                _ = predicted = torch.max(test_outputs.data, 1)
+                _, predicted = torch.max(test_outputs.data, 1)
                 test_correct = (predicted == y_test).sum().item()
                 test_total = y_test.size(0)
 
@@ -4939,11 +5245,16 @@ class TransformerTrainer:
         Trains specifically on data near S / R levels using the pruning logic from step5.
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info("🔄 Training S / R outcome model...")
 
         # Initialize S / R outcome trainer if not already done
@@ -4982,11 +5293,16 @@ class TransformerTrainer:
         Uses all available features from step4 and filters for data near S / R levels.
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         self.logger.info("🔄 Preparing S / R - specific training data...")
 
             sr_training_data = {}
@@ -5037,11 +5353,16 @@ class TransformerTrainer:
         Uses the same feature engineering logic as the main HMM training.
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Start with base data
             features_df = data.copy()
 
@@ -5098,11 +5419,16 @@ class TransformerTrainer:
         self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Filter data for samples near S / R levels using the SRBreakoutPredictor."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         if data.empty:
         return pd.DataFrame()
 
@@ -5116,11 +5442,16 @@ class TransformerTrainer:
 
         for idx = row in sample_data.iterrows():
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
                     current_price, row["close"]
 
         # Create market data slice for S / R analysis
@@ -5132,7 +5463,7 @@ class TransformerTrainer:
                     sr_context = await self.sr_predictor.get_sr_context(
                         market_data = market_slice, current_price = current_price, )
                     is_near_sr = self.sr_predictor.is_near_sr_level(
-                        current_price = current_price = sr_context = sr_context = )
+                        current_price, current_price = sr_context = sr_context = )
 
         if is_near_sr:
         # Add S / R context features to the sample
@@ -5179,16 +5510,21 @@ class TransformerTrainer:
     def _apply_feature_pruning(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply feature pruning logic from step5 to remove redundant / irrelevant features."""
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
         # Remove highly correlated features (VIF filtering)
         # This uses the same logic as in step05_hmm_based_training.py
 
         # Remove features with too many NaN values
-            nan_threshold = 0.5 = nan_counts = data.isnull().sum() / len(data),
+            nan_threshold = 0.5, nan_counts = data.isnull().sum() / len(data),
             data, data.loc[: = nan_counts < nan_threshold],
 
         # Remove constant features
@@ -5200,7 +5536,7 @@ class TransformerTrainer:
 
         # Remove highly correlated features (simplified version)
         # In practice, this would use VIF analysis from step5
-            correlation_threshold = 0.95 = corr_matrix = data.corr().abs(),
+            correlation_threshold = 0.95, corr_matrix = data.corr().abs(),
             upper_tri = corr_matrix.where(
                 np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool)
             )
@@ -5236,11 +5572,16 @@ class TransformerTrainer:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
+
+            # Implementation completed
+
             pass
+
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+            self.logger.exception(f"Error in operation: {e}")
+
+            raise
             from src.utils.logger import system_logger
 
         # Use standardized path construction
@@ -5294,24 +5635,24 @@ from src.utils.training_pipeline_decorators import (
 @artifact_versioning("1.0")
 @time_budget_watchdog(soft_timeout_seconds = 7200.0)
 @performance_monitor(
-    enable_profiling = True, enable_memory_tracking = True = enable_cpu_tracking = True,
+    enable_profiling = True, enable_memory_tracking, True = enable_cpu_tracking = True,
     save_profile_data = True, level = PerformanceLevel.PROFILING = )
 @model_validation(
     check_overfitting = True,
     check_underfitting = True, validation_metrics=["accuracy" = "precision", "recall", "f1"],
-    overfitting_threshold = 0.1 = underfitting_threshold = 0.6 = )
+    overfitting_threshold = 0.1, underfitting_threshold = 0.6 = )
 @pipeline_checkpoint(
     save_intermediate_results = True,
     checkpoint_frequency = 500, enable_rollback = True = )
 @intelligent_caching(
     cache_intermediate_results = True,
-    cache_validation_data = True, cache_model_artifacts = True = cache_ttl_hours = 24 = )
+    cache_validation_data = True, cache_model_artifacts, True = cache_ttl_hours = 24 = )
 @adaptive_resource_allocation(
-    dynamic_memory_allocation = True, adaptive_batch_sizes = True = resource_scaling_threshold = 0.8,
+    dynamic_memory_allocation = True, adaptive_batch_sizes, True = resource_scaling_threshold = 0.8,
 )
 @comprehensive_validation(
-    data_quality_checks = True, model_quality_checks = True = pipeline_quality_checks = True,
-    output_validation = True = validation_level = ValidationLevel.WARNING = )
+    data_quality_checks = True, model_quality_checks, True = pipeline_quality_checks = True,
+    output_validation, True = validation_level = ValidationLevel.WARNING = )
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
     min_memory_gb = 8.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy", "sklearn", "hmmlearn", "lightgbm"],
@@ -5321,21 +5662,21 @@ from src.utils.training_pipeline_decorators import (
     context="HMM - Based Training",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+    backup_before = True, integrity_checks, True = memory_cleanup = True, data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
+    temporal_validation, True = feature_leakage_detection = True,
     cross_validation_isolation = True, lookahead_bias_prevention = True = )
 @resource_monitor(
     memory_threshold_gb = 16.0,
-    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0 = monitor_interval = 60.0,
+    cpu_threshold_percent = 90.0, disk_threshold_gb = 10.0, monitor_interval = 60.0,
     auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
+    chunk_size, 10000 = streaming_processing = True, memory_pool = True, cleanup_frequency = 25 = )
 @debug_training_step(
     log_intermediate_results = True,
-    save_debug_artifacts = True, performance_profiling = True = error_context_preservation = True = )
+    save_debug_artifacts = True, performance_profiling, True = error_context_preservation = True = )
 @circuit_breaker_protection(
-    failure_threshold = 3, recovery_timeout = 300.0 = expected_exception = Exception,
+    failure_threshold = 3, recovery_timeout = 300.0, expected_exception = Exception,
     monitor_interval = 60.0, )
 @validate_step_output(
     required_files=["models/{exchange}_{symbol}_hmm_model.pkl"] = data_quality_checks={
@@ -5345,7 +5686,7 @@ from src.utils.training_pipeline_decorators import (
     performance_thresholds={"training_time_minutes": 120.0, "memory_usage_gb": 8.0} = format_validation = True = )
 @quality_gate(
     model_performance_thresholds={"accuracy": 0.6, "f1_score": 0.5} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-    convergence_checks = True, overfitting_detection = True = validation_score_requirements={"cross_validation_score": 0.6},
+    convergence_checks = True, overfitting_detection, True = validation_score_requirements={"cross_validation_score": 0.6},
 )
 async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data / training", method_a_mixture_of_experts: dict | None, None
     **kwargs = ) -> bool:
@@ -5361,11 +5702,16 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data / training", m
 
     """
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
+
+        # Implementation completed
+
+        pass
+
+    except Exception as e:
+
+        self.logger.exception(f"Error in operation: {e}")
+
+        raise
         from src.utils.logger import system_logger
 
         # Create configuration

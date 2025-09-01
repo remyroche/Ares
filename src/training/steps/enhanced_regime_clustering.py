@@ -25,7 +25,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.neighbors import NearestNeighbors
 
-# Bayesian optimization
+# Enhanced Two-Stage Optimization
+try:
+    from .enhanced_two_stage_optimization import EnhancedTwoStageOptimizer
+    TWO_STAGE_OPT_AVAILABLE = True
+except ImportError:
+    TWO_STAGE_OPT_AVAILABLE = False
+    logging.warning("Enhanced two-stage optimization not available, using grid search fallback")
+
+# Bayesian optimization (fallback)
 try:
     from skopt import gp_minimize
     from skopt.space import Real, Integer
@@ -75,7 +83,18 @@ class EnhancedRegimeClustering:
         self.min_clusters = config.get("min_clusters", 5)
         self.max_clusters = config.get("max_clusters", 30)
         
-        # Bayesian optimization parameters
+        # Enhanced Two-Stage Optimization parameters
+        self.two_stage_available = TWO_STAGE_OPT_AVAILABLE
+        self.two_stage_config = {
+            "max_evaluations": config.get("bayesian_calls", 50),  # Use same parameter for compatibility
+            "stage1_ratio": config.get("stage1_ratio", 0.6),
+            "robustness_level": config.get("robustness_level", "medium"),
+            "search_space_expansion": config.get("search_space_expansion", 1.5),
+            "region_threshold": config.get("region_threshold", 0.8),
+            "random_seed": config.get("random_seed", 42)
+        }
+        
+        # Bayesian optimization parameters (fallback)
         self.bayesian_calls = config.get("bayesian_calls", 100)
         self.eps_range = config.get("eps_range", (0.01, 2.0))
         self.min_samples_range = config.get("min_samples_range", (2, 50))
@@ -223,13 +242,64 @@ class EnhancedRegimeClustering:
             return 1000  # High penalty for errors
     
     def find_optimal_dbscan_params(self, features: np.ndarray) -> Tuple[float, int]:
-        """Find optimal DBSCAN parameters using Bayesian optimization."""
+        """Find optimal DBSCAN parameters using Enhanced Two-Stage Optimization."""
         self.features_scaled = features
-        self.logger.info("🔍 Starting Bayesian optimization for DBSCAN parameters...")
         
-        if not BAYESIAN_OPT_AVAILABLE:
-            self.logger.warning("Bayesian optimization not available, using grid search")
+        # Try Enhanced Two-Stage Optimization first
+        if self.two_stage_available:
+            self.logger.info("🚀 Starting Enhanced Two-Stage Optimization for DBSCAN parameters...")
+            return self._two_stage_optimization_dbscan_params(features)
+        
+        # Fallback to Bayesian optimization
+        elif BAYESIAN_OPT_AVAILABLE:
+            self.logger.info("🔍 Enhanced Two-Stage Optimization not available, using Bayesian optimization...")
+            return self._bayesian_optimization_dbscan_params(features)
+        
+        # Final fallback to grid search
+        else:
+            self.logger.warning("Neither Enhanced Two-Stage nor Bayesian optimization available, using grid search")
             return self._grid_search_dbscan_params(features)
+    
+    def _two_stage_optimization_dbscan_params(self, features: np.ndarray) -> Tuple[float, int]:
+        """Find optimal DBSCAN parameters using Enhanced Two-Stage Optimization."""
+        try:
+            # Create optimizer with current configuration
+            optimizer = EnhancedTwoStageOptimizer(self.two_stage_config)
+            
+            # Run optimization
+            results = optimizer.optimize_dbscan_parameters(features)
+            
+            if results["success"]:
+                best_params = results["best_params"]
+                best_eps = best_params["eps"]
+                best_min_samples = best_params["min_samples"]
+                best_score = results["best_score"]
+                
+                # Store optimization results for reporting
+                self.two_stage_results = results
+                
+                self.logger.info(f"✅ Enhanced Two-Stage Optimization completed:")
+                self.logger.info(f"   Best eps: {best_eps:.4f}")
+                self.logger.info(f"   Best min_samples: {int(best_min_samples)}")
+                self.logger.info(f"   Best score: {best_score:.4f}")
+                self.logger.info(f"   Stage 1 method: {results['stage1_results']['method']}")
+                self.logger.info(f"   Stage 2 method: {results['stage2_results']['method']}")
+                self.logger.info(f"   Total evaluations: {results['total_evaluations']}")
+                self.logger.info(f"   Improvement: {results['improvement']:.4f}")
+                
+                return best_eps, int(best_min_samples)
+            else:
+                self.logger.warning("Enhanced Two-Stage Optimization failed, falling back to Bayesian optimization")
+                return self._bayesian_optimization_dbscan_params(features)
+                
+        except Exception as e:
+            self.logger.error(f"Error in Enhanced Two-Stage Optimization: {e}")
+            self.logger.warning("Falling back to Bayesian optimization")
+            return self._bayesian_optimization_dbscan_params(features)
+    
+    def _bayesian_optimization_dbscan_params(self, features: np.ndarray) -> Tuple[float, int]:
+        """Find optimal DBSCAN parameters using Bayesian optimization (fallback)."""
+        self.logger.info("🔍 Starting Bayesian optimization for DBSCAN parameters...")
         
         # Define parameter space
         space = [
@@ -743,6 +813,33 @@ class EnhancedRegimeClustering:
         report.append(f"• Final Score: {refinement_results['final_score']:.4f}")
         report.append("")
         
+        # Enhanced Two-Stage Optimization Results
+        if hasattr(self, 'two_stage_results') and self.two_stage_results:
+            report.append("🚀 ENHANCED TWO-STAGE OPTIMIZATION")
+            report.append("-" * 40)
+            two_stage_results = self.two_stage_results
+            report.append(f"• Stage 1 Method: {two_stage_results['stage1_results']['method']}")
+            report.append(f"• Stage 2 Method: {two_stage_results['stage2_results']['method']}")
+            report.append(f"• Total Evaluations: {two_stage_results['total_evaluations']}")
+            report.append(f"• Stage 1 Evaluations: {two_stage_results['stage1_results']['n_evaluations']}")
+            report.append(f"• Stage 2 Evaluations: {two_stage_results['stage2_results']['n_evaluations']}")
+            report.append(f"• Best Score: {two_stage_results['best_score']:.4f}")
+            report.append(f"• Improvement: {two_stage_results['improvement']:.4f}")
+            
+            # Stage 1 details
+            if 'promising_regions' in two_stage_results['stage1_results']:
+                regions = two_stage_results['stage1_results']['promising_regions']
+                report.append(f"• Promising Regions: {len(regions)}")
+                for i, region in enumerate(regions):
+                    report.append(f"  Region {i+1}: eps={region['center_eps']:.3f}, min_samples={region['center_min_samples']}, score={region['center_score']:.4f}")
+            
+            # Stage 2 details
+            if 'search_space' in two_stage_results['stage2_results']:
+                search_space = two_stage_results['stage2_results']['search_space']
+                report.append(f"• TPE Search Space: eps=[{search_space['eps_min']:.3f}, {search_space['eps_max']:.3f}], min_samples=[{search_space['min_samples_min']}, {search_space['min_samples_max']}]")
+            
+            report.append("")
+        
         # Quality Metrics
         report.append("📊 QUALITY METRICS")
         report.append("-" * 40)
@@ -943,6 +1040,10 @@ class EnhancedRegimeClustering:
                 "target_clusters": self.target_clusters
             }
         }
+        
+        # Add two-stage optimization results if available
+        if hasattr(self, 'two_stage_results') and self.two_stage_results:
+            self.results["two_stage_optimization"] = self.two_stage_results
         
         self.logger.info(f"✅ Enhanced clustering completed in {execution_time:.2f}s")
         self.logger.info(f"   Final clusters: {self.results['final_score_dict']['n_clusters']}")

@@ -1315,7 +1315,14 @@ class HMMRegimeDiscoveryStep:
             "max_iterations": 50,
             "no_improvement_limit": 10,
             "min_coverage_threshold": 0.98,
-            "bayesian_calls": 50,  # Reduced for faster execution
+            "bayesian_calls": 50,  # Used for two-stage optimization evaluations
+            
+            # Enhanced Two-Stage Optimization settings
+            "stage1_ratio": 0.6,  # 60% of evaluations for stage 1
+            "robustness_level": "medium",  # "low", "medium", "high"
+            "search_space_expansion": 1.5,  # TPE search space multiplier
+            "region_threshold": 0.8,  # Threshold for promising regions
+            "random_seed": 42,
             
             # Explainable AI settings
             "use_lime_shap": True,
@@ -1353,6 +1360,9 @@ class HMMRegimeDiscoveryStep:
         refinement_results = clustering_results["refinement_results"]
         report = clustering_results["report"]
         
+        # Extract two-stage optimization results if available
+        two_stage_results = clustering_results.get("two_stage_optimization", {})
+        
         # Save comprehensive report
         report_path = Path("reports") / f"enhanced_clustering_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         report_path.parent.mkdir(exist_ok=True)
@@ -1374,12 +1384,22 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"   Coverage: {final_score_dict['coverage']:.3f}")
         self.logger.info(f"   Quality Improvement: {refinement_results['quality_improvement']:.4f}")
         
+        # Log two-stage optimization results if available
+        if two_stage_results:
+            self.logger.info(f"🚀 Two-Stage Optimization Results:")
+            self.logger.info(f"   Stage 1 Method: {two_stage_results['stage1_results']['method']}")
+            self.logger.info(f"   Stage 2 Method: {two_stage_results['stage2_results']['method']}")
+            self.logger.info(f"   Total Evaluations: {two_stage_results['total_evaluations']}")
+            self.logger.info(f"   Best Score: {two_stage_results['best_score']:.4f}")
+            self.logger.info(f"   Improvement: {two_stage_results['improvement']:.4f}")
+        
         # Store enhanced clustering results for later use
         enhanced_clustering_results = {
             "enhanced_results": clustering_results,
             "report_path": str(report_path),
             "final_score_dict": final_score_dict,
-            "refinement_results": refinement_results
+            "refinement_results": refinement_results,
+            "two_stage_optimization": two_stage_results
         }
 
         # === PHASE 3: Cluster Quality Analysis ===
@@ -1468,7 +1488,14 @@ class HMMRegimeDiscoveryStep:
                     "hmm_reliability_score": final_score_dict.get("hmm_reliability_score", 0.0),
                     "quality_improvement": refinement_results["quality_improvement"],
                     "iterations": refinement_results["iterations"],
-                    "report_path": str(report_path)
+                    "report_path": str(report_path),
+                    "two_stage_optimization": {
+                        "stage1_method": two_stage_results.get("stage1_results", {}).get("method", "unknown"),
+                        "stage2_method": two_stage_results.get("stage2_results", {}).get("method", "unknown"),
+                        "total_evaluations": two_stage_results.get("total_evaluations", 0),
+                        "best_score": two_stage_results.get("best_score", 0.0),
+                        "improvement": two_stage_results.get("improvement", 0.0)
+                    } if two_stage_results else {}
                 }
             }
 

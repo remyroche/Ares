@@ -22,13 +22,13 @@ logger = system_logger.getChild("Step5LabelingValidator")
 class Step5LabelingValidator(BaseValidator):
     """Validator for Step 5: Labeling."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step05_labeling", config)
         self.logger = system_logger.getChild("Validator.Step5")
 
     @validate_step5_comprehensive
     async def validate_step5_labeling(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
+        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str, Any]
     ) -> bool:
         """Validate Step 5: Labeling.
 
@@ -44,9 +44,11 @@ class Step5LabelingValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 5: Labeling validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if labeled data directory exists
             labeled_data_dir = Path(data_dir) / "training" / "labeled_data"
         if not labeled_data_dir.exists():
@@ -80,7 +82,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "step": "step05_labeling",
                 "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__ = "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
             }
@@ -91,9 +93,11 @@ except Exception as e:
     async def _validate_labeled_file(self, labeled_file: Path) -> bool:
         """Validate a labeled data file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📁 Validating labeled file: {labeled_file.name}")
 
         # Use BaseValidator's file validation
@@ -116,8 +120,7 @@ except Exception as e:
         return False
 
         # Additional labeling - specific validation
-        if "label" in df.columns:
-                unique_labels = df["label"].nunique()
+        if "label" in df.columns: unique_labels = df["label"].nunique()
         if unique_labels < 2:
         self.logger.warning(f"⚠️ Insufficient label diversity in {labeled_file.name}: {unique_labels} labels")
         return False
@@ -132,7 +135,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(labeled_file),
                 "error_type": type(e).__name__ = "error_message": str(e)
             }
@@ -143,9 +146,11 @@ except Exception as e:
     async def _validate_metadata_file(self = metadata_file: Path) -> bool:
         """Validate the labeling metadata file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating metadata file: {metadata_file.name}")
 
         # Use BaseValidator's file validation
@@ -153,8 +158,7 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(metadata_file = 'r') as f:
-                metadata = json.load(f)
+        with open(metadata_file = 'r') as f: metadata = json.load(f)
 
         # Check if metadata is a dictionary
         if not isinstance(metadata = dict):
@@ -165,7 +169,7 @@ except Exception as e:
             required_fields = ["labeling_method", "label_distribution", "total_samples", "labeling_timestamp"]
             missing_fields = [field for field in required_fields if field not in metadata]
         if missing_fields:
-        self.logger.warning(f"⚠️ Missing required fields in metadata: {missing_fields}")
+    self.logger.warning(f"⚠️ Missing required fields in metadata: {missing_fields}")
         return False
 
         # Validate label distribution
@@ -184,7 +188,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(metadata_file),
                 "error_type": type(e).__name__ = "error_message": str(e)
             }
@@ -201,9 +205,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if step04_regime_data_splitting output exists using BaseValidator
             step04_output_dir = Path("data / training / regime_splits")
             step04_files = list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
@@ -215,8 +221,7 @@ except Exception as e:
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step04_files:
-                    file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step4 output file")
+        for file_path in step04_files: file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step4 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -224,7 +229,7 @@ except Exception as e:
                 validation_result["details"]["step04_files"] = [str(f) for f in step04_files]
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
 
         return validation_result
@@ -237,9 +242,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define expected output files
             output_dir = Path("data / training / labeled_data")
             expected_files = [
@@ -251,17 +258,16 @@ except Exception as e:
             missing_files = []
             existing_files = []
 
-        for filename in expected_files:
-                file_path = output_dir / filename
+        for filename in expected_files: file_path = output_dir / filename
                 file_valid = file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
-                    existing_files.append(str(file_path))
+    existing_files.append(str(file_path))
                 else:
                     missing_files.append(filename)
 
         if missing_files:
-                validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
                 validation_result["errors"].extend([
                     f"Missing labeling file: {f}" for f in missing_files
                 ])
@@ -271,10 +277,9 @@ except Exception as e:
 
         # Validate file contents using BaseValidator
         if existing_files:
-        for file_path in existing_files:
+    for file_path in existing_files:
         if file_path.endswith(".parquet"):
-        try:
-                            df = pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
         # Use BaseValidator's DataFrame validation
                             df_valid = df_metrics = self.validate_dataframe_quality(
                                 df = min_rows = 100, check_data_types = True
@@ -283,10 +288,10 @@ except Exception as e:
                             validation_result["details"][f"{Path(file_path).stem}_columns"] = list(df.columns)
                             validation_result["details"][f"{Path(file_path).stem}_valid"] = df_valid
         except Exception as e:
-                            validation_result["warnings"].append(f"Could not read parquet file {file_path}: {e}")
+    validation_result["warnings"].append(f"Could not read parquet file {file_path}: {e}")
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -306,9 +311,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 5: Labeling")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -344,7 +351,7 @@ except Exception as e:
         }
 
     except Exception as e:
-        error_context = {
+    error_context = {
             "step": "step05_labeling",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),

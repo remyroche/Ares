@@ -47,9 +47,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 2: Data Reading")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -78,9 +80,11 @@ except Exception as e:
 
         # Try to read the files to validate structure
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import pandas as pd
             import json
 
@@ -100,7 +104,7 @@ except Exception as e:
             missing_columns = [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
-                logger.error(f"❌ Missing required columns: {missing_columns}")
+    logger.error(f"❌ Missing required columns: {missing_columns}")
         return {
                     "step_name": "step02_data_reading",
                     "validation_passed": False = "error": f"Missing required columns: {missing_columns}" = }
@@ -151,28 +155,24 @@ except Exception as e:
                 logger.warning(f"⚠️ Found {ohlc_errors} OHLC consistency errors")
 
         # Check for duplicate timestamps
-        if "timestamp" in data.columns:
-                duplicate_timestamps = data['timestamp'].duplicated().sum()
+        if "timestamp" in data.columns: duplicate_timestamps = data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
                     logger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
 
         # Check for reasonable time gaps
-        if "timestamp" in data.columns:
-                data_sorted = data.sort_values('timestamp')
+        if "timestamp" in data.columns: data_sorted = data.sort_values('timestamp')
                 time_diffs = data_sorted['timestamp'].diff().dropna()
-        if len(time_diffs) > 0:
-                    avg_time_diff = time_diffs.mean()
+        if len(time_diffs) > 0: avg_time_diff = time_diffs.mean()
                     logger.info(f"✅ Average time difference: {avg_time_diff}")
 
         # Check validation report if it exists
             validation_metadata = {}
         if validation_report_path.exists():
         try:
-        with open(validation_report_path, 'r') as f:
-                        validation_metadata = json.load(f)
+    with open(validation_report_path, 'r') as f: validation_metadata = json.load(f)
                     logger.info("✅ Validation report found and loaded")
         except Exception as e:
-                    logger.warning(f"⚠️ Error reading validation report: {e}")
+    logger.warning(f"⚠️ Error reading validation report: {e}")
 
             logger.info(f"✅ Data shape: {data.shape}")
             logger.info(f"✅ Number of files: {len(data_files)}")
@@ -181,20 +181,21 @@ except Exception as e:
             logger.info("✅ Step 2: Data Reading validation passed")
         return {
                 "step_name": "step02_data_reading",
-                "validation_passed": True = "data_file_path": str(latest_file) = "validation_report_path": str(validation_report_path) if validation_report_path.exists() else None,
+                "validation_passed": True = "data_file_path": str(latest_file) = "validation_report_path": str(validation_report_path) if validation_report_path.exists() else:
+    None,
                 "data_shape": data.shape, "nan_count": nan_count = "inf_count": inf_count,
                 "ohlc_errors": ohlc_errors = "price_stats": price_stats.to_dict() = "volume_stats": volume_stats.to_dict(),
                 "validation_metadata": validation_metadata = }
 
         except Exception as e:
-            logger.error(f"❌ Error reading data files: {e}")
+    logger.error(f"❌ Error reading data files: {e}")
         return {
                 "step_name": "step02_data_reading" = "validation_passed": False,
                 "error": f"Error reading files: {e}",
             }
 
     except Exception as e:
-        logger.exception(f"❌ Error in Step 2 validation: {e}")
+    logger.exception(f"❌ Error in Step 2 validation: {e}")
         return {
             "step_name": "step02_data_reading",
             "validation_passed": False = "error": f"Validation error: {e}" = }

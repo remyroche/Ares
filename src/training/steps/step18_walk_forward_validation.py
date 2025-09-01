@@ -28,7 +28,7 @@ def __init__(self = config: dict[str, Any]) -> None:
     async def initialize(self) -> None:
         """Initialize the walk - forward validation step."""
         try:
-        self.logger.info("🚀 Initializing Walk - Forward Validation Step...")
+    self.logger.info("🚀 Initializing Walk - Forward Validation Step...")
         self.logger.info("✅ Walk - Forward Validation Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
@@ -37,8 +37,8 @@ def __init__(self = config: dict[str, Any]) -> None:
             raise
 
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str = Any]
-    ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute walk - forward validation.
 
         Args:
@@ -49,9 +49,11 @@ def __init__(self = config: dict[str, Any]) -> None:
             Dict containing validation results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Walk - Forward Validation...")
 
         # Extract parameters
@@ -86,9 +88,11 @@ except Exception as e:
 
         # Persist WFV results as Parquet partitioned by fold / horizon for pruning
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager = )
 
@@ -105,7 +109,7 @@ except Exception as e:
         for k = v in metrics.items():
                         summary_rows.append({"fold": fold_idx = "metric": k, "value": v})
         if summary_rows:
-                    summary_df = pd.DataFrame(summary_rows)
+    summary_df = pd.DataFrame(summary_rows)
                     pdm.write_partitioned_dataset(
                         df = summary_df = base_dir = os.path.join(wfv_base = "summary"),
                         partition_cols=["fold"],
@@ -204,21 +208,23 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
-        config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
+        config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = WalkForwardValidationStep(config)
         await step.initialize()
 
         # Execute step
-        training_input: dict[str = Any] = {
+        training_input: dict[str, Any] = {
             "symbol": symbol,
             "exchange": exchange, "data_dir": data_dir = "force_rerun": force_rerun,
             **kwargs, }
 
-        pipeline_state: dict[str = Any] = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"

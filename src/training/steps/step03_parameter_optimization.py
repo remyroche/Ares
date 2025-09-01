@@ -33,7 +33,7 @@ logger = system_logger.getChild("Step3ParameterOptimization")
 class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("ParameterOptimizationStep")
         self.start_time = None
@@ -49,7 +49,7 @@ class ParameterOptimizationStep:
         self.logger.info("✅ Parameter optimization components initialized successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
+    self.logger.error(f"❌ Failed to initialize parameter optimization components: {e}")
             raise
 
     @handle_errors(
@@ -60,9 +60,11 @@ class ParameterOptimizationStep:
     async def initialize(self) -> bool:
         """Initialize the parameter optimization step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing parameter optimization step...")
 
         # Load optimization configuration
@@ -73,7 +75,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to initialize parameter optimization step: {e}")
+    self.logger.error(f"Failed to initialize parameter optimization step: {e}")
         return False
 
     @monitor_step_execution
@@ -86,9 +88,11 @@ except Exception as e:
     async def execute(self) -> bool:
         """Execute the parameter optimization step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Starting parameter optimization for HMM regime discovery...")
         self.start_time = time.time()
 
@@ -125,7 +129,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to execute parameter optimization: {e}")
+    self.logger.error(f"Failed to execute parameter optimization: {e}")
         return False
 
     @handle_errors(
@@ -134,12 +138,14 @@ except Exception as e:
     )
     @comprehensive_data_validation
     @ensure_data_integrity
-    async def _load_and_validate_data(self) -> dict[str = Any]:
+    async def _load_and_validate_data(self) -> dict[str, Any]:
         """Load and validate data for parameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Loading and validating data for parameter optimization...")
 
         # Get data parameters from config
@@ -183,7 +189,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"Failed to load and validate data: {e}")
+    self.logger.error(f"Failed to load and validate data: {e}")
         return {"success": False = "error": str(e)}
 
     @handle_errors(
@@ -196,9 +202,11 @@ except Exception as e:
     async def _prepare_features_for_optimization(self = df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features for parameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Preparing features for parameter optimization...")
 
         # Ensure timestamp is datetime
@@ -240,7 +248,7 @@ except Exception as e:
         return optimization_features
 
         except Exception as e:
-        self.logger.error(f"Failed to prepare features: {e}")
+    self.logger.error(f"Failed to prepare features: {e}")
         return pd.DataFrame()
 
     @handle_errors(
@@ -250,12 +258,14 @@ except Exception as e:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_hmm_parameters(self = data: pd.DataFrame) -> dict[str = Any]:
+    async def _optimize_hmm_parameters(self = data: pd.DataFrame) -> dict[str, Any]:
         """Optimize HMM parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🧠 Optimizing HMM parameters...")
 
             optimization_result = {
@@ -274,8 +284,7 @@ except Exception as e:
         # Recommend number of components based on data size
         if data_size < 1000:
                 optimal_components, 3
-            elif data_size < 5000:
-                optimal_components = 4
+            elif data_size < 5000: optimal_components = 4
             elif data_size < 10000:
                 optimal_components, 5
             else:
@@ -296,7 +305,7 @@ except Exception as e:
         return optimization_result
 
         except Exception as e:
-        self.logger.error(f"Failed to optimize HMM parameters: {e}")
+    self.logger.error(f"Failed to optimize HMM parameters: {e}")
         return {}
 
     @handle_errors(
@@ -305,12 +314,14 @@ except Exception as e:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_clustering_parameters(self = data: pd.DataFrame) -> dict[str = Any]:
+    async def _optimize_clustering_parameters(self = data: pd.DataFrame) -> dict[str, Any]:
         """Optimize clustering parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Optimizing clustering parameters...")
 
             optimization_result = {
@@ -326,8 +337,7 @@ except Exception as e:
         # Recommend number of clusters based on data size
         if data_size < 1000:
                 optimal_clusters, 10
-            elif data_size < 5000:
-                optimal_clusters = 15
+            elif data_size < 5000: optimal_clusters = 15
             elif data_size < 10000:
                 optimal_clusters, 20
             else:
@@ -348,7 +358,7 @@ except Exception as e:
         return optimization_result
 
         except Exception as e:
-        self.logger.error(f"Failed to optimize clustering parameters: {e}")
+    self.logger.error(f"Failed to optimize clustering parameters: {e}")
         return {}
 
     @handle_errors(
@@ -357,12 +367,14 @@ except Exception as e:
     )
     @resource_monitor
     @secure_data_processing
-    async def _optimize_feature_parameters(self = data: pd.DataFrame) -> dict[str = Any]:
+    async def _optimize_feature_parameters(self = data: pd.DataFrame) -> dict[str, Any]:
         """Optimize feature engineering parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Optimizing feature engineering parameters...")
 
             optimization_result = {
@@ -405,7 +417,7 @@ except Exception as e:
         return optimization_result
 
         except Exception as e:
-        self.logger.error(f"Failed to optimize feature parameters: {e}")
+    self.logger.error(f"Failed to optimize feature parameters: {e}")
         return {}
 
     @handle_errors(
@@ -413,12 +425,14 @@ except Exception as e:
         context="combine_optimization_results"
     )
     @secure_data_processing
-    async def _combine_optimization_results(self, results: List[dict[str = Any]]) -> dict[str = Any]:
+    async def _combine_optimization_results(self, results: List[dict[str, Any]]) -> dict[str, Any]:
         """Combine all optimization results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔗 Combining optimization results...")
 
         # Filter out empty results
@@ -476,19 +490,21 @@ except Exception as e:
         return combined_result
 
         except Exception as e:
-        self.logger.error(f"Failed to combine optimization results: {e}")
+    self.logger.error(f"Failed to combine optimization results: {e}")
         return {}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return = False = context="save_optimization_results"
     )
     @secure_data_processing
-    async def _save_optimization_results(self, optimization_results: dict[str = Any]) -> bool:
+    async def _save_optimization_results(self, optimization_results: dict[str, Any]) -> bool:
         """Save optimization results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("💾 Saving optimization results...")
 
         # Create optimization results directory
@@ -505,7 +521,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to save optimization results: {e}")
+    self.logger.error(f"Failed to save optimization results: {e}")
         return False
 
     @handle_errors(
@@ -516,9 +532,11 @@ except Exception as e:
     async def _generate_optimization_reports(self = optimization_results: dict[str, Any]) -> bool:
         """Generate optimization reports."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📋 Generating optimization reports...")
 
         # Create reports directory
@@ -557,7 +575,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to generate optimization reports: {e}")
+    self.logger.error(f"Failed to generate optimization reports: {e}")
         return False
 
     # Helper methods for technical indicators
@@ -612,12 +630,12 @@ except Exception as e:
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
         try:
-        self.logger.info("🧹 Cleaning up parameter optimization resources...")
+    self.logger.info("🧹 Cleaning up parameter optimization resources...")
         self.logger.info("✅ Parameter optimization cleanup completed")
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to cleanup parameter optimization: {e}")
+    self.logger.error(f"Failed to cleanup parameter optimization: {e}")
         return False
 
 @handle_errors(
@@ -627,9 +645,11 @@ except Exception as e:
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the parameter optimization step."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info("🚀 Starting Step 3: Parameter Optimization")
 
         # Create and initialize the step
@@ -647,14 +667,14 @@ except Exception as e:
         await step.cleanup()
 
         if success:
-            logger.info("✅ Step 3: Parameter Optimization completed successfully")
+    logger.info("✅ Step 3: Parameter Optimization completed successfully")
         else:
             logger.error("❌ Step 3: Parameter Optimization failed")
 
         return success
 
     except Exception as e:
-        logger.error(f"Failed to run parameter optimization step: {e}")
+    logger.error(f"Failed to run parameter optimization step: {e}")
         return False
 
 if __name__ == "__main__":

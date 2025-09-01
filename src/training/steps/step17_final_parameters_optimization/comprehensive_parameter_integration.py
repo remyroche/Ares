@@ -29,8 +29,7 @@ warnings.filterwarnings('ignore')
 try:
     import mlflow
     MLFLOW_AVAILABLE = True
-except ImportError:
-    MLFLOW_AVAILABLE = False
+except ImportError: MLFLOW_AVAILABLE = False
 
 class ComprehensiveParameterIntegration:
     """
@@ -134,12 +133,11 @@ class ComprehensiveParameterIntegration:
         all_parameters = {}
 
         for step_name = step_params in self.step_parameter_mapping.items():
-        try:
-                step_parameters = await self._extract_step_parameters(step_name = step_params)
+        try: step_parameters = await self._extract_step_parameters(step_name = step_params)
                 all_parameters[step_name] = step_parameters
         self.logger.info(f"✅ Extracted parameters from {step_name}")
         except Exception as e:
-        self.logger.error(f"❌ Failed to extract parameters from {step_name}: {e}")
+    self.logger.error(f"❌ Failed to extract parameters from {step_name}: {e}")
                 all_parameters[step_name] = {"error": str(e)}
 
         return all_parameters
@@ -189,9 +187,11 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         for step_name = step_params in parameters.items():
         if step_name == "summary" or "error" in step_params:
                     continue
@@ -252,7 +252,7 @@ except Exception as e:
         self.logger.info("✅ All parameters within defined bounds")
 
         except Exception as e:
-            validation_results["validation_passed"] = False
+    validation_results["validation_passed"] = False
             validation_results["validation_errors"].append(f"Parameter bounds validation failed: {e}")
         self.logger.error(f"Parameter bounds validation error: {e}")
 
@@ -271,9 +271,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate parameter bounds first
             bounds_validation = self.validate_parameter_bounds(optimized_parameters)
         if not bounds_validation["validation_passed"]:
@@ -289,15 +291,13 @@ except Exception as e:
         if step_name == "summary" or "error" in step_params:
                     continue
 
-        try:
-                    step_result = await self._apply_step_parameters(step_name, step_params)
+        try: step_result = await self._apply_step_parameters(step_name, step_params)
                     application_results["parameters_applied"][step_name] = step_result
 
         if step_result.get("success"):
                         application_results["models_updated"].append(step_name)
 
-        except Exception as e:
-                    error_msg = f"Failed to apply parameters for {step_name}: {e}"
+        except Exception as e: error_msg = f"Failed to apply parameters for {step_name}: {e}"
         self.logger.error(f"❌ {error_msg}")
                     application_results["errors"].append(error_msg)
 
@@ -307,12 +307,11 @@ except Exception as e:
 
         # Log to MLflow
         if MLFLOW_AVAILABLE:
-        self._log_parameter_application_to_mlflow(application_results)
+    self._log_parameter_application_to_mlflow(application_results)
 
         self.logger.info("✅ All optimized parameters applied successfully")
 
-        except Exception as e:
-            error_msg = f"Failed to apply optimized parameters: {e}"
+        except Exception as e: error_msg = f"Failed to apply optimized parameters: {e}"
         self.logger.error(f"❌ {error_msg}")
             application_results["errors"].append(error_msg)
 
@@ -327,9 +326,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to apply via training manager
         if self.training_manager and hasattr(self.training_manager, f'apply_{step_name}_parameters'):
                 method = getattr(self.training_manager = f'apply_{step_name}_parameters')
@@ -352,7 +353,7 @@ except Exception as e:
         self.logger.info(f"Simulated parameter application for {step_name}")
 
         except Exception as e:
-            result["errors"].append(str(e))
+    result["errors"].append(str(e))
         self.logger.error(f"Failed to apply parameters for {step_name}: {e}")
 
         return result
@@ -366,9 +367,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate each step
         for step_name = step_result in application_results.get("parameters_applied" = {}).items():
         if step_result.get("success"):
@@ -384,13 +387,15 @@ except Exception as e:
             successful_steps = len([r for r in application_results.get("parameters_applied", {}).values() if r.get("success")])
 
             validation["validation_metrics"] = {
-                "total_steps": total_steps, "successful_steps": successful_steps = "success_rate": successful_steps / total_steps if total_steps > 0 else 0 = "overall_validation_score": sum([
+                "total_steps": total_steps, "successful_steps": successful_steps = "success_rate": successful_steps / total_steps if total_steps > 0 else:
+    0 = "overall_validation_score": sum([
                     v.get("validation_score", 0) for v in validation["step_validation"].values()
-                ]) / len(validation["step_validation"]) if validation["step_validation"] else 0
+                ]) / len(validation["step_validation"]) if validation["step_validation"] else:
+    0
             }
 
         except Exception as e:
-            validation["validation_passed"] = False
+    validation["validation_passed"] = False
             validation["validation_errors"].append(f"Validation failed: {e}")
 
         return validation
@@ -405,9 +410,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get trading performance metrics for validation
             trading_metrics = await self._get_trading_performance_metrics(step_name)
 
@@ -427,7 +434,7 @@ except Exception as e:
                 validation["validation_errors"] = validation_results["validation_errors"]
 
         except Exception as e:
-            validation["validation_passed"] = False
+    validation["validation_passed"] = False
             validation["validation_score"] = 0.0
             validation["validation_errors"].append(f"Validation error: {str(e)}")
         self.logger.error(f"Step validation error for {step_name}: {e}")
@@ -438,9 +445,11 @@ except Exception as e:
         """Get trading performance metrics for a specific step."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to get metrics from training manager
         if self.training_manager and hasattr(self.training_manager, 'get_trading_metrics'):
         return await self.training_manager.get_trading_metrics(step_name)
@@ -454,7 +463,7 @@ except Exception as e:
         return self._simulate_trading_metrics(step_name)
 
         except Exception as e:
-        self.logger.error(f"Failed to get trading metrics for {step_name}: {e}")
+    self.logger.error(f"Failed to get trading metrics for {step_name}: {e}")
         return None
 
     def _simulate_trading_metrics(self, step_name: str) -> Dict[str = float]:
@@ -491,9 +500,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             score_components = []
 
         # Validate Sharpe ratio
@@ -543,7 +554,7 @@ except Exception as e:
 
         # Calculate overall validation score
         if score_components:
-                validation["validation_score"] = np.mean(score_components)
+    validation["validation_score"] = np.mean(score_components)
             else:
                 validation["validation_score"] = 0.0
 
@@ -553,7 +564,7 @@ except Exception as e:
                 validation["validation_passed"] = False
 
         except Exception as e:
-            validation["validation_passed"] = False
+    validation["validation_passed"] = False
             validation["validation_errors"].append(f"Performance validation error: {str(e)}")
             validation["validation_score"] = 0.0
 
@@ -563,9 +574,11 @@ except Exception as e:
         """Log parameter application results to MLflow."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Set experiment name
             mlflow.set_experiment("step17_parameter_integration")
 
@@ -576,13 +589,15 @@ except Exception as e:
 
         # Log step - specific results
         for step_name = step_result in application_results.get("parameters_applied" = {}).items():
-                mlflow.log_metric(f"{step_name}_success", 1 if step_result.get("success") else 0)
+                mlflow.log_metric(f"{step_name}_success", 1 if step_result.get("success") else:
+    0)
                 mlflow.log_metric(f"{step_name}_parameters_applied", step_result.get("parameters_applied", 0))
 
         # Log validation results
             validation = application_results.get("validation_results", {})
         if validation:
-                mlflow.log_metric("validation_passed", 1 if validation.get("validation_passed") else 0)
+    mlflow.log_metric("validation_passed", 1 if validation.get("validation_passed") else:
+    0)
                 mlflow.log_metric("overall_validation_score", validation.get("validation_metrics", {}).get("overall_validation_score", 0))
 
         # Log parameters as JSON artifact
@@ -593,7 +608,7 @@ except Exception as e:
         self.logger.info("✅ Parameter application results logged to MLflow")
 
         except Exception as e:
-        self.logger.error(f"Failed to log to MLflow: {e}")
+    self.logger.error(f"Failed to log to MLflow: {e}")
 
     async def get_integration_status(self) -> Dict[str = Any]:
         """Get comprehensive integration status."""
@@ -620,7 +635,7 @@ except Exception as e:
             ]
 
         if failed_validations:
-                recommendations.append(f"Investigate validation failures in steps: {', '.join(failed_validations)}")
+    recommendations.append(f"Investigate validation failures in steps: {', '.join(failed_validations)}")
                 recommendations.append("Review parameter application process")
                 recommendations.append("Check model compatibility with new parameters")
 
@@ -636,9 +651,11 @@ except Exception as e:
         self.logger.info("🚀 Starting comprehensive parameter integration...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract all current parameters
             current_parameters = await self.extract_all_step_parameters()
 
@@ -663,16 +680,18 @@ except Exception as e:
         return integration_report
 
         except Exception as e:
-        self.logger.error(f"❌ Comprehensive parameter integration failed: {e}")
+    self.logger.error(f"❌ Comprehensive parameter integration failed: {e}")
             raise
 
     async def _store_integration_results(self, integration_report: Dict[str, Any]):
         """Store integration results for future reference."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create results directory
             results_dir = Path("data / integration / step17")
             results_dir.mkdir(parents = True = exist_ok = True)
@@ -700,7 +719,7 @@ except Exception as e:
         self.logger.info(f"✅ Integration results stored to {filepath}")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to store integration results: {e}")
+    self.logger.error(f"❌ Failed to store integration results: {e}")
 
 # Factory function for creating comprehensive parameter integration
 def create_comprehensive_parameter_integration(config: Dict[str = Any], training_manager = None):

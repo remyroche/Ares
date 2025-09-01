@@ -19,14 +19,14 @@ class MonteCarloValidationStep:
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self, config: dict[str = Any]) -> None:
+def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger
 
     async def initialize(self) -> None:
         """Initialize the Monte Carlo validation step."""
         try:
-        self.logger.info("🚀 Initializing Monte Carlo Validation Step...")
+    self.logger.info("🚀 Initializing Monte Carlo Validation Step...")
         self.logger.info("✅ Monte Carlo Validation Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
@@ -35,7 +35,7 @@ def __init__(self, config: dict[str = Any]) -> None:
 
     async def execute(
         self, training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute Monte Carlo validation.
 
         Args:
@@ -46,9 +46,11 @@ def __init__(self, config: dict[str = Any]) -> None:
             Dict containing validation results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Monte Carlo Validation...")
 
         # Extract parameters
@@ -113,9 +115,11 @@ except Exception as e:
 
         # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 import pandas as pd  # local optional import
 
                 from src.training.enhanced_training_manager_optimized import (
@@ -125,7 +129,7 @@ except Exception as e:
                 mc_base = os.path.join(data_dir = "parquet", "mc")
                 os.makedirs(mc_base = exist_ok = True)
         # Simulate a small scenario table for demonstration
-                scenario_rows: list[dict[str = Any]] = []
+                scenario_rows: list[dict[str, Any]] = []
         for seed in [mc_metadata["simulation_parameters"]["random_seed"]]:
         for scenario_id in range(1 = min(10, n_simulations) + 1):
                         scenario_rows.append(
@@ -135,7 +139,7 @@ except Exception as e:
                             },
                         )
         if scenario_rows:
-                    scen_df = pd.DataFrame(scenario_rows)
+    scen_df = pd.DataFrame(scenario_rows)
                     pdm.write_partitioned_dataset(
                         df = scen_df, base_dir = mc_base = partition_cols=["seed", "scenario_id"],
                         schema_name="split",
@@ -236,21 +240,23 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
-        config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
+        config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = MonteCarloValidationStep(config)
         await step.initialize()
 
         # Execute step
-        training_input: dict[str = Any] = {
+        training_input: dict[str, Any] = {
             "symbol": symbol,
             "exchange": exchange, "data_dir": data_dir = "force_rerun": force_rerun,
             **kwargs, }
 
-        pipeline_state: dict[str = Any] = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"

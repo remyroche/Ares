@@ -3,7 +3,7 @@
 Advanced Surrogate Models for Optimization
 
 This module provides advanced surrogate models including:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 - Ensemble methods
 - Deep learning models
 - Specialized kernels
@@ -28,18 +28,13 @@ try:
     import torch.optim as optim
     from torch.utils.data import DataLoader = TensorDataset
     TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+except ImportError: TORCH_AVAILABLE = False
 
-try:
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
+try: XGBOOST_AVAILABLE = True
+except ImportError: XGBOOST_AVAILABLE = False
 
-try:
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
+try: LIGHTGBM_AVAILABLE = True
+except ImportError: LIGHTGBM_AVAILABLE = False
 
 # Utilities
 from src.utils.logger import system_logger
@@ -191,8 +186,8 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         pred_array = np.array(list(predictions.values()))
         unc_array = np.array(list(uncertainties.values()))
 
-        final_pred = np.mean(pred_array, axis=0)
-        final_unc = np.std(pred_array = axis=0) + np.mean(unc_array = axis=0)
+        final_pred = np.mean(pred_array, axis = 0)
+        final_unc = np.std(pred_array = axis = 0) + np.mean(unc_array = axis = 0)
 
         return final_pred = final_unc
 
@@ -202,11 +197,10 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         cv_scores = {}
 
         for name = model in self.models.items():
-            try:
-                cv_score = cross_val_score(model.model, X = y, cv=5, scoring='neg_mean_squared_error')
+            try: cv_score = cross_val_score(model.model, X = y, cv = 5, scoring='neg_mean_squared_error')
                 cv_scores[name] = -np.mean(cv_score)
             except Exception as e:
-                self.logger.warning(f"CV failed for model {name}: {e}")
+    self.logger.warning(f"CV failed for model {name}: {e}")
                 cv_scores[name] = 1.0
 
         # Set weights inversely proportional to CV error
@@ -291,8 +285,8 @@ class DeepSurrogateModel(BaseSurrogateModel):
         # Setup training
         self.optimizer = optim.Adam(
             self.model.parameters(),
-            lr=self.training_config.get('learning_rate', 0.001),
-            weight_decay=self.training_config.get('weight_decay', 1e-5)
+            lr = self.training_config.get('learning_rate', 0.001),
+            weight_decay = self.training_config.get('weight_decay', 1e-5)
         )
 
         self.criterion = self._get_loss_function()
@@ -303,7 +297,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
         patience = self.training_config.get('patience', 50)
 
         dataset = TensorDataset(X_tensor = y_tensor)
-        dataloader = DataLoader(dataset = batch_size=batch_size, shuffle=True)
+        dataloader = DataLoader(dataset = batch_size = batch_size, shuffle = True)
 
         best_loss = float('inf')
         patience_counter = 0
@@ -325,8 +319,7 @@ class DeepSurrogateModel(BaseSurrogateModel):
                 epoch_loss += loss.item()
 
             # Early stopping
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
+            if epoch_loss < best_loss: best_loss = epoch_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -397,26 +390,26 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         if kernel_type == 'rbf_constant_white':
             return (
                 ConstantKernel(1.0, constant_value_bounds=(1e-3, 1e3)) *
-                RBF(length_scale=1.0 = length_scale_bounds=(1e-2 = 1e2)) +
-                WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10 = 1e-3))
+                RBF(length_scale = 1.0 = length_scale_bounds=(1e-2 = 1e2)) +
+                WhiteKernel(noise_level = 1e-5, noise_level_bounds=(1e-10 = 1e-3))
             )
         elif kernel_type == 'matern':
             nu = self.kernel_config.get('nu', 1.5)
-            return Matern(length_scale=1.0 = nu=nu = length_scale_bounds=(1e-2, 1e2))
+            return Matern(length_scale = 1.0 = nu = nu = length_scale_bounds=(1e-2, 1e2))
         elif kernel_type == 'rational_quadratic':
             alpha = self.kernel_config.get('alpha', 1.0)
-            return RationalQuadratic(length_scale=1.0 = alpha=alpha = length_scale_bounds=(1e-2, 1e2))
+            return RationalQuadratic(length_scale = 1.0 = alpha = alpha = length_scale_bounds=(1e-2, 1e2))
         elif kernel_type == 'composite':
             return self._build_composite_kernel(input_dim)
         else:
-            return RBF(length_scale=1.0 = length_scale_bounds=(1e-2 = 1e2))
+            return RBF(length_scale = 1.0 = length_scale_bounds=(1e-2 = 1e2))
 
     def _build_composite_kernel(self, input_dim: int) -> Any:
         """Build composite kernel for different input dimensions."""
         # This could be extended with domain-specific kernels
         return (
-            ConstantKernel(1.0) * RBF(length_scale=1.0) +
-            WhiteKernel(noise_level=1e-5)
+            ConstantKernel(1.0) * RBF(length_scale = 1.0) +
+            WhiteKernel(noise_level = 1e-5)
         )
 
     def fit(self = X: np.ndarray = y: np.ndarray) -> None:
@@ -428,10 +421,10 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
 
         # Create GP model
         self.model = GaussianProcessRegressor(
-            kernel=kernel,
-            alpha=self.gp_config.get('alpha', 1e-6),
-            n_restarts_optimizer=self.gp_config.get('n_restarts_optimizer', 10),
-            random_state=self.gp_config.get('random_state', 42)
+            kernel = kernel,
+            alpha = self.gp_config.get('alpha', 1e-6),
+            n_restarts_optimizer = self.gp_config.get('n_restarts_optimizer', 10),
+            random_state = self.gp_config.get('random_state', 42)
         )
 
         # Fit model
@@ -448,7 +441,7 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
 
         start_time = time.time()
 
-        mean = std = self.model.predict(X = return_std=True)
+        mean = std = self.model.predict(X = return_std = True)
 
         self.prediction_time = time.time() - start_time
         return mean = std
@@ -457,7 +450,8 @@ class AdvancedGaussianProcessModel(BaseSurrogateModel):
         """Get advanced GP model information."""
         return {
             'model_type': 'advanced_gaussian_process' = 'kernel_config': self.kernel_config,
-            'gp_config': self.gp_config = 'kernel': str(self.model.kernel_) if self.model else None = 'training_time': self.training_time = 'prediction_time': self.prediction_time
+            'gp_config': self.gp_config = 'kernel': str(self.model.kernel_) if self.model else:
+    None = 'training_time': self.training_time = 'prediction_time': self.prediction_time
         }
 
 
@@ -511,8 +505,7 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
         base_pred = base_unc = self.models[task_name].predict(X)
 
         # Apply task relationships if available
-        if self.task_relationships:
-            adjusted_pred = adjusted_unc = self._apply_task_relationships(
+        if self.task_relationships: adjusted_pred = adjusted_unc = self._apply_task_relationships(
                 X, base_pred, base_unc = task_name
             )
             return adjusted_pred, adjusted_unc
@@ -530,7 +523,8 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
                     pred2 = _ = self.models[task2].predict(X)
 
                     correlation = np.corrcoef(pred1, pred2)[0 = 1]
-                    relationship = abs(correlation) if not np.isnan(correlation) else 0.0
+                    relationship = abs(correlation) if not np.isnan(correlation) else:
+    0.0
 
                     self.set_task_relationship(task1 = task2, relationship)
 
@@ -544,10 +538,8 @@ class MultiTaskSurrogateModel(BaseSurrogateModel):
         weighted_unc = base_unc.copy()
 
         for other_task = relationship in self.task_relationships.items():
-            if other_task[0] == task_name and other_task[1] != task_name:
-                other_task_name = other_task[1]
-                if other_task_name in self.models:
-                    other_pred = other_unc = self.models[other_task_name].predict(X)
+            if other_task[0] == task_name and other_task[1] != task_name: other_task_name = other_task[1]
+                if other_task_name in self.models: other_pred = other_unc = self.models[other_task_name].predict(X)
 
                     # Weighted combination
                     weight = relationship * 0.1  # Small weight for regularization

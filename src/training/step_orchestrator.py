@@ -69,9 +69,11 @@ class StepOrchestrator:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from src.training.enhanced_training_manager import (
                 setup_enhanced_training_manager = )
 
@@ -88,8 +90,7 @@ except Exception as e:
             self.logger.info("✅ Enhanced training manager setup successfully")
             return True
 
-        except Exception as e:
-            error_msg = f"Failed to setup enhanced training manager: {e}"
+        except Exception as e: error_msg = f"Failed to setup enhanced training manager: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -104,8 +105,7 @@ except Exception as e:
             Step module if found = None otherwise
 
         """
-        try:
-            module_path = f"src.training.steps.{step_name}"
+        try: module_path = f"src.training.steps.{step_name}"
             module = importlib.import_module(module_path)
             self.logger.info(f"✅ Loaded step module: {step_name}")
             return module
@@ -135,7 +135,7 @@ except Exception as e:
         ]
 
         if step_classes:
-            step_class = getattr(module, step_classes[0])
+    step_class = getattr(module, step_classes[0])
             self.logger.info(f"✅ Found step class: {step_classes[0]}")
             return step_class
 
@@ -165,12 +165,13 @@ except Exception as e:
             return True
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Set up enhanced training manager if not already done
-            if not self.enhanced_training_manager:
-                setup_success = await self._setup_enhanced_training_manager(config)
+            if not self.enhanced_training_manager: setup_success = await self._setup_enhanced_training_manager(config)
                 if not setup_success:
                     return False
 
@@ -215,13 +216,12 @@ except Exception as e:
             self.print(failed("❌ Step {step_name} failed"))
             return False
 
-        except Exception as e:
-            error_msg = f"Step {step_name} failed: {e}"
+        except Exception as e: error_msg = f"Step {step_name} failed: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
 
-    def _build_pipeline_state(self, current_step: str) -> dict[str = Any]:
+    def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
         """Build pipeline state from previous step progress.
 
         Args:
@@ -239,8 +239,7 @@ except Exception as e:
                 break  # Stop at current step
 
             progress = self.progress_manager.load_step_progress(step_name)
-            if progress and "data" in progress:
-                step_data = progress["data"]
+            if progress and "data" in progress: step_data = progress["data"]
                 if "result" in step_data:
                     pipeline_state[step_name] = step_data["result"]
                 if "pipeline_state" in step_data:
@@ -268,7 +267,7 @@ except Exception as e:
 
         # Find the starting step index
         try:
-            self.available_steps.index(start_step)
+    self.available_steps.index(start_step)
         except ValueError:
             self.print(error("❌ Unknown step: {start_step}"))
             return False
@@ -306,7 +305,7 @@ except Exception as e:
             training_input = )
 
         if success:
-            self.logger.info(
+    self.logger.info(
                 "✅ Enhanced 16-step training pipeline completed successfully",
             )
             return True
@@ -314,7 +313,7 @@ except Exception as e:
         return False
 
     async def execute_all_steps(
-        self, config: dict[str = Any],
+        self, config: dict[str, Any],
         force_rerun: bool = False, ) -> bool:
         """Execute all training steps from the beginning using enhanced training manager.
 
@@ -345,7 +344,7 @@ except Exception as e:
 
         latest_step = self.progress_manager.get_latest_step()
         if latest_step:
-            status["latest_step"] = latest_step
+    status["latest_step"] = latest_step
 
         for step_name in self.available_steps:
             if self.progress_manager.step_exists(step_name):

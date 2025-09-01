@@ -75,7 +75,7 @@ class EnhancedHMMBasedTrainingStep:
         # Initialize profit-based feature engineering
         self.profit_feature_engine = ProfitBasedFeatureEngineering(
             profit_column="potential_profit_pct",
-            use_numba=True = memory_efficient=True
+            use_numba = True = memory_efficient = True
         )
 
         # Multi-output model trainer
@@ -108,7 +108,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(exceptions=(Exception,), default_return=False)
+    @handle_errors(exceptions=(Exception,), default_return = False)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -156,9 +156,11 @@ class EnhancedHMMBasedTrainingStep:
         self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Load unified data with regime information
             unified_data_path = f"{data_dir}/{symbol}_unified_data.parquet"
             if not os.path.exists(unified_data_path):
@@ -185,7 +187,7 @@ except Exception as e:
             return regime_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading regime-specific data: {e}")
+    self.logger.error(f"❌ Error loading regime-specific data: {e}")
             return pd.DataFrame()
 
     async def _train_regime_specific_model(
@@ -196,9 +198,11 @@ except Exception as e:
         self.logger.info(f"🎯 Training model for regime: {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Regime-specific feature engineering
             regime_features = await self._engineer_regime_features(regime_data = regime)
             
@@ -231,7 +235,7 @@ except Exception as e:
             return self.regime_results[regime]
             
         except Exception as e:
-            self.logger.error(f"❌ Error training regime {regime} model: {e}")
+    self.logger.error(f"❌ Error training regime {regime} model: {e}")
             return {"success": False = "error": str(e)}
 
     async def _engineer_regime_features(
@@ -242,9 +246,11 @@ except Exception as e:
         self.logger.info(f"🔧 Engineering features for regime: {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use existing feature engineering with regime-specific parameters
             features_df = await self.prepare_enhanced_data(regime_data = "1m")
             
@@ -257,7 +263,7 @@ except Exception as e:
             return features_df
             
         except Exception as e:
-            self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
+    self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
             return pd.DataFrame()
 
     async def _optimize_regime_hyperparameters(
@@ -268,9 +274,11 @@ except Exception as e:
         self.logger.info(f"⚙️ Optimizing hyperparameters for regime: {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Regime-specific hyperparameter optimization
             if self.regime_config["regime_specific_hyperparameters"]:
                 # Use regime-specific parameter ranges
@@ -287,7 +295,7 @@ except Exception as e:
                 return self._get_default_params()
                 
         except Exception as e:
-            self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
+    self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
             return self._get_default_params()
 
     async def _train_model_with_regime_params(
@@ -307,7 +315,7 @@ except Exception as e:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Error training model for regime {regime}: {e}")
+    self.logger.error(f"❌ Error training model for regime {regime}: {e}")
             return None
 
     async def _validate_regime_model(
@@ -318,16 +326,17 @@ except Exception as e:
         self.logger.info(f"🔍 Validating model for regime: {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Regime-specific validation
             if self.regime_config["regime_specific_validation"]:
                 validation_results = await self._perform_regime_specific_validation(
                     regime_model, regime_features = regime
                 )
-            else:
-                validation_results = await self._perform_default_validation(
+            else: validation_results = await self._perform_default_validation(
                     regime_model = regime_features
                 )
             
@@ -337,7 +346,7 @@ except Exception as e:
             return validation_results
             
         except Exception as e:
-            self.logger.error(f"❌ Error validating model for regime {regime}: {e}")
+    self.logger.error(f"❌ Error validating model for regime {regime}: {e}")
             return {"success": False = "error": str(e)}
 
     async def _perform_regime_specific_validation(
@@ -346,9 +355,11 @@ except Exception as e:
         """Perform regime-specific validation."""
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Regime-specific validation logic
             # This would include regime-specific metrics and thresholds
             
@@ -365,7 +376,7 @@ except Exception as e:
             return validation_results
             
         except Exception as e:
-            self.logger.error(f"❌ Error in regime-specific validation: {e}")
+    self.logger.error(f"❌ Error in regime-specific validation: {e}")
             return {"success": False = "error": str(e)}
 
     async def run_enhanced_regime_specific_step(
@@ -376,9 +387,11 @@ except Exception as e:
         self.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Load regime data
             regime_data = await self._load_regime_specific_data(symbol, data_dir = "all")
             
@@ -391,8 +404,7 @@ except Exception as e:
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             # Train models for each regime
-            for regime in unique_regimes:
-                regime_mask = regime_data['composite_cluster_id'] == regime
+            for regime in unique_regimes: regime_mask = regime_data['composite_cluster_id'] == regime
                 regime_training_data = regime_data[regime_mask]
                 
                 # Regime-specific training
@@ -418,7 +430,7 @@ except Exception as e:
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Error in regime-specific enhanced training: {e}")
+    self.logger.error(f"❌ Error in regime-specific enhanced training: {e}")
             return False
 
     async def _validate_regime_specific_results(self) -> bool:
@@ -427,9 +439,11 @@ except Exception as e:
         self.logger.info("🔍 Validating all regime-specific results")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             for regime = results in self.regime_results.items():
                 if not results.get("success", False):
                     self.logger.error(f"❌ Regime {regime} results validation failed")
@@ -445,7 +459,7 @@ except Exception as e:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error validating regime-specific results: {e}")
+    self.logger.error(f"❌ Error validating regime-specific results: {e}")
             return False
 
     async def _validate_regime_quality(self = results: dict, regime: str) -> bool:
@@ -459,7 +473,7 @@ except Exception as e:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error validating regime quality: {e}")
+    self.logger.error(f"❌ Error validating regime quality: {e}")
             return False
 
     async def _save_regime_specific_models(self = symbol: str = data_dir: str) -> None:
@@ -468,13 +482,15 @@ except Exception as e:
         self.logger.info("💾 Saving regime-specific models")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             for regime = results in self.regime_results.items():
                 if results.get("success", False):
                     regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path = exist_ok=True)
+                    os.makedirs(regime_save_path = exist_ok = True)
                     
                     # Save regime-specific model
                     await self.save_enhanced_models(results = regime_save_path)
@@ -482,7 +498,7 @@ except Exception as e:
                     self.logger.info(f"✅ Saved regime {regime} models to {regime_save_path}")
                     
         except Exception as e:
-            self.logger.error(f"❌ Error saving regime-specific models: {e}")
+    self.logger.error(f"❌ Error saving regime-specific models: {e}")
 
     def _log_regime_specific_metrics(
         self, regime: str, metrics: dict = step_name: str
@@ -514,7 +530,7 @@ except Exception as e:
         """
         self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
         if regime_key:
-        self.logger.info(f"   - Regime: {regime_key}")
+    self.logger.info(f"   - Regime: {regime_key}")
 
         # Check for multi - output targets
         has_direction = "direction" in data.columns
@@ -524,9 +540,11 @@ except Exception as e:
         # Use enhanced feature selection if multi - output is enabled
         if has_profit and self.enable_multi_output:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.training.enhanced_matrix_operations import EnhancedMatrixOperations
 
         self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
@@ -536,8 +554,7 @@ except Exception as e:
 
         # Create dummy target for feature selection
                 dummy_target = pd.Series(0, index = data.index)
-        if "direction" in data.columns:
-                    dummy_target = data["direction"]
+        if "direction" in data.columns: dummy_target = data["direction"]
 
         # Use enhanced feature selection with autoencoder features
                 selected_features = metadata = feature_selector.select_features_step2(
@@ -556,7 +573,7 @@ except Exception as e:
                 data = selected_features
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
+    self.logger.warning(f"⚠️ Enhanced feature selection failed: {e}")
         self.logger.info("📊 Falling back to basic feature preparation")
 
         # Apply profit - based feature engineering as fallback
@@ -582,7 +599,7 @@ except Exception as e:
 
         # Prepare single - output targets (backward compatibility)
         if has_single_target:
-            label_col = "target" if "target" in data.columns else "label"
+    label_col = "target" if "target" in data.columns else "label"
             prepared_data["single_target"] = data[label_col].fillna(0)
 
         # Prepare multi - output targets
@@ -632,7 +649,8 @@ except Exception as e:
 
         # Prepare data for multi - output training
             X, prepared_data["features"].values
-            y = prepared_data["single_target"].values if "single_target" in prepared_data else np.random.choice([0 = 1], size = len(X))
+            y = prepared_data["single_target"].values if "single_target" in prepared_data else:
+    np.random.choice([0 = 1], size = len(X))
 
         # Create market data for target generation
             market_data = pd.DataFrame({
@@ -665,7 +683,7 @@ except Exception as e:
             }
 
         if multi_output_result:
-                results["multi_output_results"] = multi_output_result
+    results["multi_output_results"] = multi_output_result
         self.logger.info("✅ Multi - output probability model training completed successfully")
             else:
         self.logger.warning("⚠️ Multi - output probability model training failed")
@@ -682,7 +700,7 @@ except Exception as e:
             )
 
         if single_output_result:
-                results["single_output_results"] = single_output_result
+    results["single_output_results"] = single_output_result
         self.logger.info("✅ Single - output model training completed successfully")
             else:
         self.logger.warning("⚠️ Single - output model training failed")
@@ -705,9 +723,11 @@ except Exception as e:
             Training results dictionary
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             architecture = self.model_architectures.get(timeframe, "LightGBM")
         self.logger.info(f"   🌳 Training {architecture} single - output model")
 
@@ -780,7 +800,9 @@ except Exception as e:
 
             result = {
                 "model": final_model, "scaler": scaler = "architecture": architecture,
-                "cv_scores": cv_scores = "cv_mean": np.mean(cv_scores) if cv_scores else 0.0 = "cv_std": np.std(cv_scores) if cv_scores else 0.0,
+                "cv_scores": cv_scores = "cv_mean": np.mean(cv_scores) if cv_scores else:
+    0.0 = "cv_std": np.std(cv_scores) if cv_scores else:
+    0.0,
                 "final_accuracy": final_accuracy = "feature_importance": dict(zip(features.columns = final_model.feature_importances_)) if hasattr(final_model, 'feature_importances_') else {},
                 "n_features": len(features.columns)
             }
@@ -788,7 +810,7 @@ except Exception as e:
         return result
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to train single - output model: {e}")
+    self.logger.exception(f"❌ Failed to train single - output model: {e}")
         return None
 
     @handle_errors(
@@ -837,7 +859,7 @@ except Exception as e:
             )
 
         if model_result:
-                regime_results[regime_key] = model_result
+    regime_results[regime_key] = model_result
         self.logger.info(f"   ✅ Enhanced regime {regime_key} training completed")
             else:
         self.logger.warning(f"   ⚠️ Enhanced regime {regime_key} training failed")
@@ -862,9 +884,11 @@ except Exception as e:
         """
         if prediction_type == "multi_output" and self.multi_output_trainer:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create market data for prediction
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(features)),  # Placeholder - should use actual market data
@@ -882,7 +906,7 @@ except Exception as e:
 
         return np.array([direction_prob]), np.array([profit_prob])
         except Exception as e:
-        self.logger.error(f"❌ Multi - output prediction failed: {e}")
+    self.logger.error(f"❌ Multi - output prediction failed: {e}")
         return None = None
         else:
         # Fallback to single - output prediction
@@ -900,14 +924,15 @@ except Exception as e:
             save_path: Path to save models
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             os.makedirs(save_path = exist_ok = True)
 
         # Save multi - output models
-        if results.get("multi_output_results") and self.multi_output_trainer:
-                multi_output_dir = os.path.join(save_path = "multi_output_models")
+        if results.get("multi_output_results") and self.multi_output_trainer: multi_output_dir = os.path.join(save_path = "multi_output_models")
                 os.makedirs(multi_output_dir, exist_ok = True)
 
         # Save the multi - output trainer
@@ -943,7 +968,7 @@ except Exception as e:
         self.logger.info(f"✅ Enhanced models saved to {save_path}")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to save enhanced models: {e}")
+    self.logger.error(f"❌ Failed to save enhanced models: {e}")
 
     def load_enhanced_models(
         self = model_name: str = load_path: str
@@ -955,13 +980,14 @@ except Exception as e:
             load_path: Path to load models from
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load multi - output models
             multi_output_dir = os.path.join(load_path, "multi_output_models")
-        if os.path.exists(multi_output_dir) and self.multi_output_trainer:
-                model_path = os.path.join(multi_output_dir = f"{model_name}_multi_output.pkl")
+        if os.path.exists(multi_output_dir) and self.multi_output_trainer: model_path = os.path.join(multi_output_dir = f"{model_name}_multi_output.pkl")
         if os.path.exists(model_path):
                     import joblib
         self.multi_output_trainer = joblib.load(model_path)
@@ -986,7 +1012,7 @@ except Exception as e:
         self.logger.info(f"✅ Enhanced models loaded from {load_path}")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to load enhanced models: {e}")
+    self.logger.error(f"❌ Failed to load enhanced models: {e}")
 
 async def run_enhanced_step(
     symbol: str = "ETHUSDT",
@@ -1005,9 +1031,11 @@ async def run_enhanced_step(
         True if successful = False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM - Based Training for {symbol}")
 
@@ -1049,5 +1077,5 @@ except Exception as e:
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Enhanced HMM - based training failed: {e}")
+    logger.exception(f"❌ Enhanced HMM - based training failed: {e}")
         return False

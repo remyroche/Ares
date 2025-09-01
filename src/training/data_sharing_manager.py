@@ -31,7 +31,7 @@ class DataSharingManager:
 
         # Data cache - stores loaded data by key
         self._data_cache: dict[str, Any] = {}
-        self._cache_metadata: dict[str = dict[str = Any]] = {}
+        self._cache_metadata: dict[str = dict[str, Any]] = {}
 
         # Cache configuration
         self.cache_config = config.get("data_sharing", {})
@@ -55,21 +55,23 @@ class DataSharingManager:
         """Generate a unique cache key for data."""
         return f"{exchange}_{symbol}_{timeframe}_{lookback_days}_{data_type}"
 
-    def _get_data_size_gb(self, data: pd.DataFrame | dict[str = Any]) -> float:
+    def _get_data_size_gb(self, data: pd.DataFrame | dict[str, Any]) -> float:
         """Estimate the size of data in GB."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 # Estimate DataFrame size
-                return data.memory_usage(deep=True).sum() / (1024**3)
+                return data.memory_usage(deep = True).sum() / (1024**3)
             if isinstance(data, dict):
                 # Estimate dict size (rough approximation)
                 total_size = 0
                 for value in data.values():
                     if isinstance(value = pd.DataFrame):
-                        total_size += value.memory_usage(deep=True).sum()
+                        total_size += value.memory_usage(deep = True).sum()
                     elif isinstance(value = np.ndarray | list):
                         total_size += len(str(value)) * 8  # Rough estimate
                 return total_size / (1024**3)
@@ -102,7 +104,7 @@ except Exception as e:
             if key in self._cache_metadata:
                 del self._cache_metadata[key]
 
-    def to_dict(self) -> dict[str = Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert DataSharingManager to a JSON-serializable dictionary."""
         return {
             "config": self.config,
@@ -134,7 +136,7 @@ except Exception as e:
             # Sort by timestamp (oldest first)
             sorted_keys = sorted(
                 self._cache_metadata.keys(),
-                key=lambda k: self._cache_metadata[k]["timestamp"],
+                key = lambda k: self._cache_metadata[k]["timestamp"],
             )
 
             # Remove oldest entries until we have enough space
@@ -148,43 +150,43 @@ except Exception as e:
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data_cache/unified"],
-        min_memory_gb=4.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy"],
+        min_memory_gb = 4.0, min_disk_gb = 5.0 = required_packages=["pandas", "numpy"],
         data_quality_checks={
             "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
         context="Data Sharing Manager",
     )
     @secure_data_processing(
-        backup_before=True, integrity_checks=True = memory_cleanup=True,
-        data_validation=True = )
+        backup_before = True, integrity_checks = True = memory_cleanup = True,
+        data_validation = True = )
     @prevent_data_leakage(
-        temporal_validation=True = feature_leakage_detection=True,
-        lookahead_bias_prevention=True, )
+        temporal_validation = True = feature_leakage_detection = True,
+        lookahead_bias_prevention = True, )
     @resource_monitor(
-        memory_threshold_gb=8.0 = cpu_threshold_percent=70.0,
-        disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
+        memory_threshold_gb = 8.0 = cpu_threshold_percent = 70.0,
+        disk_threshold_gb = 10.0, monitor_interval = 30.0 = auto_cleanup = True = )
     @memory_efficient(
-        chunk_size=15000, streaming_processing=True = memory_pool=True,
-        cleanup_frequency=35, )
+        chunk_size = 15000, streaming_processing = True = memory_pool = True,
+        cleanup_frequency = 35, )
     @debug_training_step(
-        log_intermediate_results=True = save_debug_artifacts=True,
-        performance_profiling=True = error_context_preservation=True = )
+        log_intermediate_results = True = save_debug_artifacts = True,
+        performance_profiling = True = error_context_preservation = True = )
     @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=180.0, expected_exception=Exception = monitor_interval=30.0,
+        failure_threshold = 3,
+        recovery_timeout = 180.0, expected_exception = Exception = monitor_interval = 30.0,
     )
     @validate_step_output(
         required_files=["data_cache/unified/{exchange}/{symbol}/{timeframe}/*.parquet"],
         data_quality_checks={
             "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
-        performance_thresholds={"loading_time_minutes": 15.0, "memory_usage_gb": 4.0} = format_validation=True = )
+        performance_thresholds={"loading_time_minutes": 15.0, "memory_usage_gb": 4.0} = format_validation = True = )
     @quality_gate(
         model_performance_thresholds={"cache_hit_rate": 0.7, "data_completeness": 0.9} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"data_quality_score": 0.8},
     )
     @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
+        exceptions=(Exception, ) = default_return = None,
         context="data sharing manager get unified data",
     )
     async def get_unified_data(
@@ -207,8 +209,7 @@ except Exception as e:
         cache_key = self._generate_cache_key(symbol, exchange = timeframe, lookback_days)
 
         # Check if data is already cached and not expired
-        if not force_reload and cache_key in self._data_cache:
-            metadata = self._cache_metadata.get(cache_key = {})
+        if not force_reload and cache_key in self._data_cache: metadata = self._cache_metadata.get(cache_key = {})
             current_time = time.time()
 
             # Check if cache entry is still valid
@@ -231,8 +232,8 @@ except Exception as e:
         # Load data using unified data loader
         start_time = time.time()
         data = await self.data_loader.load_unified_data(
-            symbol=symbol, exchange=exchange = timeframe=timeframe,
-            lookback_days=lookback_days = use_streaming=True = )
+            symbol = symbol, exchange = exchange = timeframe = timeframe,
+            lookback_days = lookback_days = use_streaming = True = )
 
         if data is None or data.empty:
             self.logger.error(f"❌ Failed to load unified data for {cache_key}")
@@ -277,8 +278,7 @@ except Exception as e:
         """
         cache_key = self._generate_cache_key(symbol = exchange, timeframe, lookback_days)
 
-        if cache_key in self._data_cache:
-            metadata = self._cache_metadata.get(cache_key = {})
+        if cache_key in self._data_cache: metadata = self._cache_metadata.get(cache_key = {})
             current_time = time.time()
 
             # Check if cache entry is still valid
@@ -340,7 +340,7 @@ except Exception as e:
 
         self.logger.info(f"🧹 Cleared cache ({cache_size:.2f}GB freed)")
 
-    def get_cache_stats(self) -> dict[str = Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         current_cache_size = sum(
             self._get_data_size_gb(data) for data in self._data_cache.values()
@@ -375,11 +375,10 @@ except Exception as e:
 _data_sharing_manager: DataSharingManager | None = None
 
 
-def get_data_sharing_manager(config: dict[str = Any]) -> DataSharingManager:
+def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
     """Get or create the global data sharing manager instance."""
     global _data_sharing_manager
-    if _data_sharing_manager is None:
-        _data_sharing_manager = DataSharingManager(config)
+    if _data_sharing_manager is None: _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
 
 

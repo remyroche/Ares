@@ -37,8 +37,7 @@ try:
     from torch.utils.data import DataLoader, TensorDataset
 
     TORCH_AVAILABLE, True
-except ImportError:
-    TORCH_AVAILABLE = False
+except ImportError: TORCH_AVAILABLE = False
 
 import contextlib
 
@@ -85,7 +84,7 @@ class AnalystCreationStep:
     that will be enhanced in subsequent steps.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         """Initializes the AnalystCreationStep.
 
         Args:
@@ -135,9 +134,11 @@ class AnalystCreationStep:
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use threading with timeout to prevent hanging
             import queue
             import threading
@@ -145,8 +146,7 @@ except Exception as e:
             result_queue: "queue.Queue[tuple[str = Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
-        try:
-                    is_available = torch.backends.mps.is_available()
+        try: is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu" = None))
         except Exception as e:  # noqa: BLE001
                     result_queue.put(("cpu", e))
@@ -157,10 +157,9 @@ except Exception as e:
             thread.start()
 
         # Wait for result with timeout
-        try:
-                device = err = result_queue.get(timeout = 10)  # 10 second timeout
+        try: device = err = result_queue.get(timeout = 10)  # 10 second timeout
         if err:
-        self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device
         except queue.Empty:
@@ -186,8 +185,8 @@ except Exception as e:
         context="analyst creation step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str = Any]
-    ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Executes the analyst model creation pipeline for each regime.
 
         Args:
@@ -205,9 +204,11 @@ except Exception as e:
         start_time = datetime.now()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             data_dir: str = str(training_input.get("data_dir", "data / training"))
             models_dir: str = os.path.join(data_dir = "analyst_models")
             regime_data_dir: str = data_dir
@@ -223,17 +224,16 @@ except Exception as e:
         self.logger.info("🔄 Loading regime splits from previous step...")
             regime_splits = await self._load_regime_splits(regime_data_dir)
 
-        if not regime_splits:
-                msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
+        if not regime_splits: msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
                 raise ValueError(msg)
 
         self.logger.info(f"📊 Found {len(regime_splits)} regimes to process")
 
         # Create analyst models for each regime
-            created_models_summary: dict[str, dict[str = Any]] = {}
+            created_models_summary: dict[str, dict[str, Any]] = {}
 
         # Process regimes in parallel for better efficiency
-        async def create_regime_analysts(regime_name: str = regime_data: pd.DataFrame) -> tuple[str, dict[str = Any]]:
+        async def create_regime_analysts(regime_name: str = regime_data: pd.DataFrame) -> tuple[str, dict[str, Any]]:
         self.logger.info(f"🚀 Starting analyst creation for regime: {regime_name}")
         self.logger.info(f"📊 Regime {regime_name} has {len(regime_data)} samples")
 
@@ -244,7 +244,7 @@ except Exception as e:
                         f"✅ Prepared data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
         except Exception as e:
-        self.logger.exception(f"⚠️ Error preparing data for regime '{regime_name}': {e}")
+    self.logger.exception(f"⚠️ Error preparing data for regime '{regime_name}': {e}")
         return regime_name = {}
 
         # Create base models for this regime
@@ -298,7 +298,7 @@ except Exception as e:
         return pipeline_state
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in analyst creation: {e}")
+    self.logger.exception(f"❌ Error in analyst creation: {e}")
             pipeline_state["analyst_creation_completed"] = False
             pipeline_state["analyst_creation_error"] = str(e)
         return pipeline_state
@@ -306,9 +306,11 @@ except Exception as e:
     async def _load_regime_splits(self, data_dir: str) -> dict[str = pd.DataFrame]:
         """Load regime data from unified dataset with labels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = self.config.get("symbol" = "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
@@ -329,16 +331,14 @@ except Exception as e:
                 )
 
         if os.path.exists(labels_file):
-        with open(labels_file) as f:
-                        regime_labels = json.load(f)
+        with open(labels_file) as f: regime_labels = json.load(f)
 
                     regime_ids = regime_labels.get("regime_ids", [])
         self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
 
         # Create regime splits from unified dataset
                     regime_splits = {}
-        for regime_id in regime_ids:
-                        regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+        for regime_id in regime_ids: regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
 
         if len(regime_data) > 0:
                             regime_splits[f"regime_{regime_id}"] = regime_data
@@ -358,8 +358,7 @@ except Exception as e:
 
             regime_splits = {}
         for file in os.listdir(regime_splits_dir):
-        if file.endswith(".parquet") and "regime_" in file:
-                    regime_name = file.split("regime_")[-1].replace(".parquet", "")
+        if file.endswith(".parquet") and "regime_" in file: regime_name = file.split("regime_")[-1].replace(".parquet", "")
                     file_path = os.path.join(regime_splits_dir = file)
                     regime_data = pd.read_parquet(file_path)
                     regime_splits[regime_name] = regime_data
@@ -368,21 +367,24 @@ except Exception as e:
         return regime_splits
 
         except Exception as e:
-        self.logger.exception(f"❌ Error loading regime splits: {e}")
+    self.logger.exception(f"❌ Error loading regime splits: {e}")
         return {}
 
     async def _prepare_regime_data(self = regime_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame = pd.Series]:
         """Prepare data for analyst model creation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Separate features and labels
             feature_columns = [col for col in regime_data.columns
         if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
 
             X, regime_data[feature_columns]
-            y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
+            y = regime_data["label"] if "label" in regime_data.columns else:
+    pd.Series([0] * len(regime_data))
 
         # Split into train / validation
             split_idx = int(len(X) * 0.8)
@@ -392,18 +394,20 @@ except Exception as e:
         return X_train, y_train = X_val = y_val
 
         except Exception as e:
-        self.logger.exception(f"❌ Error preparing regime data: {e}")
+    self.logger.exception(f"❌ Error preparing regime data: {e}")
             raise
 
     async def _create_regime_analysts(
         self, regime_name: str = X_train: pd.DataFrame,
         y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Create base analyst models for a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔧 Creating base analyst models for regime: {regime_name}")
 
             regime_models = {}
@@ -425,7 +429,7 @@ except Exception as e:
 
         # Create neural network model if PyTorch is available
         if TORCH_AVAILABLE:
-        self.logger.info(f"🧠 Creating Neural Network model for regime: {regime_name}")
+    self.logger.info(f"🧠 Creating Neural Network model for regime: {regime_name}")
                 nn_model = await self._create_neural_network_model(X_train = y_train, X_val, y_val)
                 regime_models["neural_network"] = nn_model
 
@@ -433,7 +437,7 @@ except Exception as e:
         return regime_models
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating analyst models for regime {regime_name}: {e}")
+    self.logger.exception(f"❌ Error creating analyst models for regime {regime_name}: {e}")
         return {}
 
     async def _create_lightgbm_model(
@@ -441,9 +445,11 @@ except Exception as e:
     ) -> dict[str, Any]:
         """Create a LightGBM model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Basic LightGBM parameters
             params = {
                 'objective': 'binary',
@@ -477,7 +483,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating LightGBM model: {e}")
+    self.logger.exception(f"❌ Error creating LightGBM model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
 
     async def _create_xgboost_model(
@@ -485,9 +491,11 @@ except Exception as e:
     ) -> dict[str, Any]:
         """Create an XGBoost model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Basic XGBoost parameters
             params = {
                 'objective': 'binary:logistic' = 'eval_metric': 'logloss',
@@ -511,17 +519,19 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating XGBoost model: {e}")
+    self.logger.exception(f"❌ Error creating XGBoost model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
 
     async def _create_random_forest_model(
         self, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Create a Random Forest model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Basic Random Forest parameters
             params = {
                 'n_estimators': 100,
@@ -543,17 +553,19 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating Random Forest model: {e}")
+    self.logger.exception(f"❌ Error creating Random Forest model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
 
     async def _create_neural_network_model(
         self, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Create a neural network model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Convert to tensors
             X_train_tensor = torch.FloatTensor(X_train.values)
             y_train_tensor = torch.FloatTensor(y_train.values)
@@ -597,22 +609,23 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating Neural Network model: {e}")
+    self.logger.exception(f"❌ Error creating Neural Network model: {e}")
         return {"model": None = "accuracy": 0.0 = "error": str(e)}
 
-    async def _save_analyst_models(self, created_models: dict[str, dict[str = Any]], models_dir: str) -> None:
+    async def _save_analyst_models(self, created_models: dict[str, dict[str, Any]], models_dir: str) -> None:
         """Save created analyst models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         for regime_name = regime_models in created_models.items():
                 regime_dir = os.path.join(models_dir = regime_name)
                 os.makedirs(regime_dir, exist_ok = True)
 
         for model_name = model_data in regime_models.items():
-        if model_data.get("model") is not None:
-                        model_file = os.path.join(regime_dir = f"{model_name}.joblib")
+        if model_data.get("model") is not None: model_file = os.path.join(regime_dir = f"{model_name}.joblib")
 
         # Save model
                         joblib.dump(model_data["model"], model_file)
@@ -633,7 +646,7 @@ except Exception as e:
         self.logger.info(f"💾 Saved {model_name} model for regime {regime_name}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error saving analyst models: {e}")
+    self.logger.exception(f"❌ Error saving analyst models: {e}")
 
 @handle_errors(
     exceptions=(Exception, ) = default_return = False = context="step11_analyst_creation"
@@ -669,9 +682,11 @@ async def run_step(
     logger.info("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize analyst creation step
         config = {
             "SYMBOL": symbol = "EXCHANGE": exchange,
@@ -716,5 +731,5 @@ except Exception as e:
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Unexpected error in Step 11: {e}")
+    logger.exception(f"❌ Unexpected error in Step 11: {e}")
         return False

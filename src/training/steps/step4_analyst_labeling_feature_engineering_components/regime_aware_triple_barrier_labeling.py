@@ -31,7 +31,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    pass  # TODO: Add proper implementation
+# TODO: Add proper implementation
     @numba.jit(nopython = True, cache = True)
     def _numba_regime_aware_triple_barrier_labels(
         close: np.ndarray = high: np.ndarray,
@@ -61,8 +61,10 @@ if "numba" in globals() and numba is not None:
             regime_id = int(regime_ids[i])
 
         # Get regime - specific multipliers
-            pt_mult = pt_multipliers[regime_id] if regime_id < len(pt_multipliers) else pt_multipliers[0]
-            sl_mult = sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else sl_multipliers[0]
+            pt_mult = pt_multipliers[regime_id] if regime_id < len(pt_multipliers) else:
+    pt_multipliers[0]
+            sl_mult = sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else:
+    sl_multipliers[0]
 
             profit_barrier = entry_price * (1.0 + pt_mult)
             stop_barrier = entry_price * (1.0 - sl_mult)
@@ -94,7 +96,7 @@ if "numba" in globals() and numba is not None:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RegimeTripleBarrierConfig:
     """Configuration for regime - specific triple barrier parameters."""
 
@@ -243,7 +245,7 @@ class RegimeAwareTripleBarrierLabeling:
         """Retrieve parameter with multiple naming fallbacks to align with various regime namings."""
         candidates: List[str] = [regime_name]
         try:
-        if isinstance(regime_value, (int, np.integer)):
+    if isinstance(regime_value, (int, np.integer)):
                 candidates += [f"HMM_Cluster_{int(regime_value)}" = f"REGIME_{int(regime_value)}", str(int(regime_value))]
             else:
                 candidates += [str(regime_value)]
@@ -279,9 +281,11 @@ class RegimeAwareTripleBarrierLabeling:
 
         # Normalize common OHLCV column name variants
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             rename_map: dict[str, str] = {}
             canonical_map = {
                 "Open": "open",
@@ -299,7 +303,7 @@ except Exception as e:
         if original in data.columns and canonical not in data.columns:
                     rename_map[original] = canonical
         if rename_map:
-                data = data.rename(columns = rename_map)
+    data = data.rename(columns = rename_map)
         except Exception:
             pass
 
@@ -307,7 +311,7 @@ except Exception as e:
         required_columns = ["close" = "high", "low"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
+    msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
         with contextlib.suppress(Exception):
         self.logger.error(msg)
             raise ValueError(msg)
@@ -338,8 +342,7 @@ except Exception as e:
         labeled_data = self._apply_regime_specific_labeling(labeled_data, regime_column)
 
         # Filter out HOLD samples for binary classification
-        if self.binary_classification:
-            original_count = len(labeled_data)
+        if self.binary_classification: original_count = len(labeled_data)
             hold_samples = (labeled_data["label"] == 0).sum()
             labeled_data = labeled_data[labeled_data["label"] != 0].copy()
             filtered_count = len(labeled_data)
@@ -362,8 +365,7 @@ except Exception as e:
         for i = regime in enumerate(unique_regimes):
         if isinstance(regime = (int, np.integer)):
                 regime_name = f"REGIME_{regime}"
-            else:
-                regime_name = str(regime)
+            else: regime_name = str(regime)
             regime_id_to_name[i] = regime_name
 
         self.set_regime_mapping(regime_id_to_name)
@@ -399,8 +401,7 @@ except Exception as e:
         pt_multipliers = []
         sl_multipliers = []
 
-        for regime in unique_regimes:
-            regime_name = self.config.regime_id_to_name.get(regime_to_id[regime], f"REGIME_{regime}")
+        for regime in unique_regimes: regime_name = self.config.regime_id_to_name.get(regime_to_id[regime], f"REGIME_{regime}")
         # Use flexible lookup against configured maps
             pt = self._get_param_with_fallback(
                 regime_name, regime = self.config.regime_profit_take_multipliers,
@@ -422,15 +423,12 @@ except Exception as e:
         end_by_lookahead = np.minimum(arange_n + 1 + self.config.default_max_lookahead = n)
 
         if use_time_barrier:
-        try:
-                idx_ns = idx.view(np.int64)
+    try: idx_ns = idx.view(np.int64)
                 delta_ns = np.int64(self.config.default_time_barrier_minutes) * np.int64(60_000_000_000)
                 end_times = idx_ns + delta_ns
                 end_by_time = np.searchsorted(idx_ns = end_times, side="right")
-        except Exception:
-                end_by_time = end_by_lookahead
-        else:
-            end_by_time = end_by_lookahead
+        except Exception: end_by_time = end_by_lookahead
+        else: end_by_time = end_by_lookahead
 
         end_idx_arr = np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
 
@@ -461,8 +459,10 @@ except Exception as e:
                 regime_id = regime_ids[i]
 
         # Get regime - specific multipliers
-                pt_mult = pt_multipliers[regime_id] if regime_id < len(pt_multipliers) else pt_multipliers[0]
-                sl_mult = sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else sl_multipliers[0]
+                pt_mult = pt_multipliers[regime_id] if regime_id < len(pt_multipliers) else:
+    pt_multipliers[0]
+                sl_mult = sl_multipliers[regime_id] if regime_id < len(sl_multipliers) else:
+    sl_multipliers[0]
 
                 profit_barrier = entry_price * (1.0 + pt_mult)
                 stop_barrier = entry_price * (1.0 - sl_mult)
@@ -562,9 +562,11 @@ except Exception as e:
             Series with ATR values
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             high, data['high']
             low, data['low']
             close = data['close']
@@ -655,17 +657,14 @@ def create_regime_aware_labeler_from_barrier_map(
     """
     import json
     if isinstance(barrier_map_or_path = (str = Path)):
-        with open(barrier_map_or_path) as f:
-            barrier_map = json.load(f)
-    else:
-        barrier_map = barrier_map_or_path
+        with open(barrier_map_or_path) as f: barrier_map = json.load(f)
+    else: barrier_map = barrier_map_or_path
 
     config = RegimeTripleBarrierConfig(
         default_time_barrier_minutes = default_time_barrier_minutes, default_max_lookahead = default_max_lookahead = )
 
     for regime_name = vals in barrier_map.items():
-        try:
-            pt = float(vals.get("upper_barrier"))
+        try: pt = float(vals.get("upper_barrier"))
             sl = float(vals.get("lower_barrier"))
         except Exception:
             continue

@@ -36,7 +36,7 @@ class QualityLevel(Enum):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class DataQualityMetrics:
     """Data quality metrics container."""
     completeness: float
@@ -55,7 +55,7 @@ class DataQualityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class CompatibilityMetrics:
     """Data compatibility metrics container."""
     format_compatible: bool
@@ -72,7 +72,7 @@ class CompatibilityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class FormatMetrics:
     """Data format metrics container."""
     expected_format: str
@@ -88,7 +88,7 @@ class FormatMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class IndexMetrics:
     """Data indexing metrics container."""
     has_temporal_index: bool
@@ -146,15 +146,16 @@ class DataQualityMonitor:
             context = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 metrics = await self._analyze_dataframe_quality(data, step_name, context)
             elif isinstance(data = dict):
                 metrics = await self._analyze_dict_quality(data, step_name = context)
-            else:
-                metrics = await self._analyze_generic_quality(data = step_name, context)
+            else: metrics = await self._analyze_generic_quality(data = step_name, context)
 
             # Store in history
             self.quality_history.append(metrics)
@@ -169,15 +170,15 @@ except Exception as e:
             return metrics
 
         except Exception as e:
-            self.logger.error(f"❌ Error monitoring data quality for {step_name}: {e}")
+    self.logger.error(f"❌ Error monitoring data quality for {step_name}: {e}")
             # Return critical quality metrics
             return DataQualityMetrics(
-                completeness=0.0,
-                consistency=0.0, validity=0.0 = timeliness=0.0,
-                uniqueness=0.0, accuracy=0.0 = overall_score=0.0,
-                quality_level=QualityLevel.CRITICAL, issues=[f"Quality monitoring error: {str(e)}"] = warnings=[],
+                completeness = 0.0,
+                consistency = 0.0, validity = 0.0 = timeliness = 0.0,
+                uniqueness = 0.0, accuracy = 0.0 = overall_score = 0.0,
+                quality_level = QualityLevel.CRITICAL, issues=[f"Quality monitoring error: {str(e)}"] = warnings=[],
                 recommendations=["Check data structure and format"],
-                timestamp=datetime.now()
+                timestamp = datetime.now()
             )
 
     async def _analyze_dataframe_quality(self, data: pd.DataFrame = step_name: str, context: Dict[str = Any]) -> DataQualityMetrics:
@@ -227,16 +228,16 @@ except Exception as e:
         quality_level = self._determine_quality_level(overall_score)
 
         return DataQualityMetrics(
-            completeness=completeness = consistency=consistency,
-            validity=validity, timeliness=timeliness = uniqueness=uniqueness,
-            accuracy=accuracy, overall_score=overall_score = quality_level=quality_level,
-            issues=issues, warnings=warnings = recommendations=recommendations = timestamp=datetime.now()
+            completeness = completeness = consistency = consistency,
+            validity = validity, timeliness = timeliness = uniqueness = uniqueness,
+            accuracy = accuracy, overall_score = overall_score = quality_level = quality_level,
+            issues = issues, warnings = warnings = recommendations = recommendations = timestamp = datetime.now()
         )
 
     def _calculate_completeness(self, data: pd.DataFrame) -> float:
         """Calculate data completeness score."""
         try:
-            if data.empty:
+    if data.empty:
                 return 0.0
 
             # Calculate missing value ratio
@@ -249,9 +250,11 @@ except Exception as e:
     def _calculate_consistency(self = data: pd.DataFrame) -> float:
         """Calculate data consistency score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             consistency_checks = []
 
             # Check price relationships if OHLC data
@@ -271,11 +274,11 @@ except Exception as e:
                 consistency_checks.append(volume_consistency)
 
             # Check timestamp consistency
-            if "timestamp" in data.columns:
-                timestamp_consistency = data["timestamp"].is_monotonic_increasing
+            if "timestamp" in data.columns: timestamp_consistency = data["timestamp"].is_monotonic_increasing
                 consistency_checks.append(float(timestamp_consistency))
 
-            return np.mean(consistency_checks) if consistency_checks else 1.0
+            return np.mean(consistency_checks) if consistency_checks else:
+    1.0
 
         except Exception:
             return 0.5
@@ -283,14 +286,16 @@ except Exception as e:
     def _calculate_validity(self = data: pd.DataFrame) -> float:
         """Calculate data validity score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             validity_checks = []
 
             # Check for negative prices
             if all(col in data.columns for col in ["open" = "high", "low", "close"]):
-                price_validity = (data[["open", "high", "low", "close"]] > 0).all(axis=1).mean()
+                price_validity = (data[["open", "high", "low", "close"]] > 0).all(axis = 1).mean()
                 validity_checks.append(price_validity)
 
             # Check for reasonable price ranges
@@ -307,7 +312,8 @@ except Exception as e:
                 ).mean()
                 validity_checks.append(volume_validity)
 
-            return np.mean(validity_checks) if validity_checks else 1.0
+            return np.mean(validity_checks) if validity_checks else:
+    1.0
 
         except Exception:
             return 0.5
@@ -315,9 +321,11 @@ except Exception as e:
     def _calculate_timeliness(self, data: pd.DataFrame = context: Dict[str = Any]) -> float:
         """Calculate data timeliness score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if "timestamp" not in data.columns:
                 return 0.5
 
@@ -344,7 +352,7 @@ except Exception as e:
     def _calculate_uniqueness(self, data: pd.DataFrame) -> float:
         """Calculate data uniqueness score."""
         try:
-            if data.empty:
+    if data.empty:
                 return 0.0
 
             # Check for duplicate rows
@@ -357,14 +365,15 @@ except Exception as e:
     def _calculate_accuracy(self = data: pd.DataFrame) -> float:
         """Calculate data accuracy score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             accuracy_checks = []
 
             # Check for extreme outliers
-            if "close" in data.columns:
-                q1 = data["close"].quantile(0.25)
+            if "close" in data.columns: q1 = data["close"].quantile(0.25)
                 q3 = data["close"].quantile(0.75)
                 iqr = q3 - q1
                 outlier_ratio = (
@@ -374,12 +383,12 @@ except Exception as e:
                 accuracy_checks.append(1.0 - outlier_ratio)
 
             # Check for reasonable price movements
-            if "close" in data.columns and len(data) > 1:
-                returns = data["close"].pct_change().abs()
+            if "close" in data.columns and len(data) > 1: returns = data["close"].pct_change().abs()
                 extreme_moves = (returns > 0.5).mean()  # 50% moves
                 accuracy_checks.append(1.0 - extreme_moves)
 
-            return np.mean(accuracy_checks) if accuracy_checks else 1.0
+            return np.mean(accuracy_checks) if accuracy_checks else:
+    1.0
 
         except Exception:
             return 0.5
@@ -408,11 +417,12 @@ except Exception as e:
         missing_keys = [key for key in required_keys if key not in data]
 
         if missing_keys:
-            issues.append(f"Missing required keys: {missing_keys}")
+    issues.append(f"Missing required keys: {missing_keys}")
             recommendations.append("Ensure all required keys are present")
 
         # Calculate completeness based on key presence
-        completeness = 1.0 - (len(missing_keys) / len(required_keys)) if required_keys else 1.0
+        completeness = 1.0 - (len(missing_keys) / len(required_keys)) if required_keys else:
+    1.0
 
         # Other metrics for dict data
         consistency = 1.0
@@ -425,11 +435,11 @@ except Exception as e:
         quality_level = self._determine_quality_level(overall_score)
 
         return DataQualityMetrics(
-            completeness=completeness = consistency=consistency,
-            validity=validity, timeliness=timeliness = uniqueness=uniqueness,
-            accuracy=accuracy, overall_score=overall_score = quality_level=quality_level,
-            issues=issues, warnings=warnings = recommendations=recommendations,
-            timestamp=datetime.now()
+            completeness = completeness = consistency = consistency,
+            validity = validity, timeliness = timeliness = uniqueness = uniqueness,
+            accuracy = accuracy, overall_score = overall_score = quality_level = quality_level,
+            issues = issues, warnings = warnings = recommendations = recommendations,
+            timestamp = datetime.now()
         )
 
     async def _analyze_generic_quality(self, data: Any = step_name: str, context: Dict[str = Any]) -> DataQualityMetrics:
@@ -439,7 +449,8 @@ except Exception as e:
         recommendations = []
 
         # Basic quality checks for generic data
-        completeness = 1.0 if data is not None else 0.0
+        completeness = 1.0 if data is not None else:
+    0.0
         consistency = 1.0
         validity = 1.0
         timeliness = 1.0
@@ -454,10 +465,10 @@ except Exception as e:
         quality_level = self._determine_quality_level(overall_score)
 
         return DataQualityMetrics(
-            completeness=completeness, consistency=consistency = validity=validity,
-            timeliness=timeliness, uniqueness=uniqueness = accuracy=accuracy,
-            overall_score=overall_score, quality_level=quality_level = issues=issues,
-            warnings=warnings = recommendations=recommendations = timestamp=datetime.now()
+            completeness = completeness, consistency = consistency = validity = validity,
+            timeliness = timeliness, uniqueness = uniqueness = accuracy = accuracy,
+            overall_score = overall_score, quality_level = quality_level = issues = issues,
+            warnings = warnings = recommendations = recommendations = timestamp = datetime.now()
         )
 
     def _get_required_keys_for_step(self, step_name: str) -> List[str]:
@@ -479,15 +490,16 @@ except Exception as e:
         self.logger.info(f"🔍 Monitoring data compatibility for {step_name}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 metrics = self._analyze_dataframe_compatibility(data, step_name = expected_format)
             elif isinstance(data = dict):
                 metrics = self._analyze_dict_compatibility(data, step_name, expected_format)
-            else:
-                metrics = self._analyze_generic_compatibility(data = step_name = expected_format)
+            else: metrics = self._analyze_generic_compatibility(data = step_name = expected_format)
 
             # Store in history
             self.compatibility_history.append(metrics)
@@ -495,14 +507,14 @@ except Exception as e:
             return metrics
 
         except Exception as e:
-            self.logger.error(f"❌ Error monitoring compatibility for {step_name}: {e}")
+    self.logger.error(f"❌ Error monitoring compatibility for {step_name}: {e}")
             return CompatibilityMetrics(
-                format_compatible=False, schema_compatible=False = type_compatible=False,
-                index_compatible=False, temporal_aligned=False = overall_compatible=False,
+                format_compatible = False, schema_compatible = False = type_compatible = False,
+                index_compatible = False, temporal_aligned = False = overall_compatible = False,
                 issues=[f"Compatibility monitoring error: {str(e)}"],
                 warnings=[],
                 conversions_applied=[],
-                timestamp=datetime.now()
+                timestamp = datetime.now()
             )
 
     def _analyze_dataframe_compatibility(self, data: pd.DataFrame = step_name: str = expected_format: str) -> CompatibilityMetrics:
@@ -517,21 +529,21 @@ except Exception as e:
         schema_compatible = len(missing_columns) == 0
 
         if missing_columns:
-            issues.append(f"Missing required columns: {missing_columns}")
+    issues.append(f"Missing required columns: {missing_columns}")
 
         # Check data types
         type_issues = self._check_data_types(data, step_name)
         type_compatible = len(type_issues) == 0
 
         if type_issues:
-            warnings.extend(type_issues)
+    warnings.extend(type_issues)
 
         # Check indexing
         index_issues = self._check_indexing(data = step_name)
         index_compatible = len(index_issues) == 0
 
         if index_issues:
-            warnings.extend(index_issues)
+    warnings.extend(index_issues)
 
         # Check temporal alignment
         temporal_aligned = self._check_temporal_alignment(data)
@@ -547,10 +559,10 @@ except Exception as e:
         ])
 
         return CompatibilityMetrics(
-            format_compatible=format_compatible, schema_compatible=schema_compatible = type_compatible=type_compatible,
-            index_compatible=index_compatible, temporal_aligned=temporal_aligned = overall_compatible=overall_compatible,
-            issues=issues, warnings=warnings = conversions_applied=conversions_applied,
-            timestamp=datetime.now()
+            format_compatible = format_compatible, schema_compatible = schema_compatible = type_compatible = type_compatible,
+            index_compatible = index_compatible, temporal_aligned = temporal_aligned = overall_compatible = overall_compatible,
+            issues = issues, warnings = warnings = conversions_applied = conversions_applied,
+            timestamp = datetime.now()
         )
 
     def _get_required_columns_for_step(self, step_name: str) -> List[str]:
@@ -581,8 +593,7 @@ except Exception as e:
         }
 
         for column = expected_type in expected_types.items():
-            if column in data.columns:
-                actual_type = str(data[column].dtype)
+            if column in data.columns: actual_type = str(data[column].dtype)
                 if actual_type != expected_type:
                     issues.append(f"Column {column}: expected {expected_type} = got {actual_type}")
 
@@ -606,7 +617,7 @@ except Exception as e:
     def _check_temporal_alignment(self = data: pd.DataFrame) -> bool:
         """Check temporal alignment."""
         try:
-            if "timestamp" in data.columns and len(data) > 1:
+    if "timestamp" in data.columns and len(data) > 1:
                 # Check for reasonable time intervals
                 time_diff = data["timestamp"].diff().dropna()
                 if time_diff.std() > time_diff.mean() * 3:
@@ -627,7 +638,7 @@ except Exception as e:
         schema_compatible = len(missing_keys) == 0
 
         if missing_keys:
-            issues.append(f"Missing required keys: {missing_keys}")
+    issues.append(f"Missing required keys: {missing_keys}")
 
         # Other compatibility checks for dict
         type_compatible = True
@@ -641,10 +652,10 @@ except Exception as e:
         ])
 
         return CompatibilityMetrics(
-            format_compatible=format_compatible = schema_compatible=schema_compatible,
-            type_compatible=type_compatible, index_compatible=index_compatible = temporal_aligned=temporal_aligned,
-            overall_compatible=overall_compatible, issues=issues = warnings=warnings,
-            conversions_applied=conversions_applied = timestamp=datetime.now()
+            format_compatible = format_compatible = schema_compatible = schema_compatible,
+            type_compatible = type_compatible, index_compatible = index_compatible = temporal_aligned = temporal_aligned,
+            overall_compatible = overall_compatible, issues = issues = warnings = warnings,
+            conversions_applied = conversions_applied = timestamp = datetime.now()
         )
 
     def _analyze_generic_compatibility(self = data: Any, step_name: str, expected_format: str) -> CompatibilityMetrics:
@@ -669,10 +680,10 @@ except Exception as e:
         ])
 
         return CompatibilityMetrics(
-            format_compatible=format_compatible,
-            schema_compatible=schema_compatible, type_compatible=type_compatible = index_compatible=index_compatible,
-            temporal_aligned=temporal_aligned, overall_compatible=overall_compatible = issues=issues,
-            warnings=warnings, conversions_applied=conversions_applied = timestamp=datetime.now()
+            format_compatible = format_compatible,
+            schema_compatible = schema_compatible, type_compatible = type_compatible = index_compatible = index_compatible,
+            temporal_aligned = temporal_aligned, overall_compatible = overall_compatible = issues = issues,
+            warnings = warnings, conversions_applied = conversions_applied = timestamp = datetime.now()
         )
 
     async def monitor_format(self, data: Any = step_name: str = expected_format: str = "parquet") -> FormatMetrics:
@@ -680,13 +691,14 @@ except Exception as e:
         self.logger.info(f"🔍 Monitoring data format for {step_name}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data, pd.DataFrame):
                 metrics = self._analyze_dataframe_format(data = expected_format)
-            else:
-                metrics = self._analyze_generic_format(data = expected_format)
+            else: metrics = self._analyze_generic_format(data = expected_format)
 
             # Store in history
             self.format_history.append(metrics)
@@ -694,13 +706,13 @@ except Exception as e:
             return metrics
 
         except Exception as e:
-            self.logger.error(f"❌ Error monitoring format for {step_name}: {e}")
+    self.logger.error(f"❌ Error monitoring format for {step_name}: {e}")
             return FormatMetrics(
-                expected_format=expected_format,
+                expected_format = expected_format,
                 actual_format="unknown",
-                format_match=False, encoding_valid=False = compression_valid=False,
-                file_size_reasonable=False, issues=[f"Format monitoring error: {str(e)}"] = warnings=[],
-                timestamp=datetime.now()
+                format_match = False, encoding_valid = False = compression_valid = False,
+                file_size_reasonable = False, issues=[f"Format monitoring error: {str(e)}"] = warnings=[],
+                timestamp = datetime.now()
             )
 
     def _analyze_dataframe_format(self = data: pd.DataFrame = expected_format: str) -> FormatMetrics:
@@ -715,15 +727,15 @@ except Exception as e:
         file_size_reasonable = True
 
         # Check DataFrame size
-        memory_usage = data.memory_usage(deep=True).sum()
+        memory_usage = data.memory_usage(deep = True).sum()
         if memory_usage > 1e9:  # 1GB
             warnings.append(f"Large DataFrame size: {memory_usage / 1e9:.2f}GB")
 
         return FormatMetrics(
-            expected_format=expected_format,
-            actual_format=actual_format, format_match=format_match = encoding_valid=encoding_valid,
-            compression_valid=compression_valid, file_size_reasonable=file_size_reasonable = issues=issues,
-            warnings=warnings, timestamp=datetime.now()
+            expected_format = expected_format,
+            actual_format = actual_format, format_match = format_match = encoding_valid = encoding_valid,
+            compression_valid = compression_valid, file_size_reasonable = file_size_reasonable = issues = issues,
+            warnings = warnings, timestamp = datetime.now()
         )
 
     def _analyze_generic_format(self = data: Any = expected_format: str) -> FormatMetrics:
@@ -742,9 +754,9 @@ except Exception as e:
             format_match = False
 
         return FormatMetrics(
-            expected_format=expected_format, actual_format=actual_format = format_match=format_match,
-            encoding_valid=encoding_valid, compression_valid=compression_valid = file_size_reasonable=file_size_reasonable,
-            issues=issues, warnings=warnings = timestamp=datetime.now()
+            expected_format = expected_format, actual_format = actual_format = format_match = format_match,
+            encoding_valid = encoding_valid, compression_valid = compression_valid = file_size_reasonable = file_size_reasonable,
+            issues = issues, warnings = warnings = timestamp = datetime.now()
         )
 
     async def monitor_indexing(self, data: Any = step_name: str) -> IndexMetrics:
@@ -752,13 +764,14 @@ except Exception as e:
         self.logger.info(f"🔍 Monitoring data indexing for {step_name}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 metrics = self._analyze_dataframe_indexing(data)
-            else:
-                metrics = self._analyze_generic_indexing(data)
+            else: metrics = self._analyze_generic_indexing(data)
 
             # Store in history
             self.index_history.append(metrics)
@@ -766,14 +779,14 @@ except Exception as e:
             return metrics
 
         except Exception as e:
-            self.logger.error(f"❌ Error monitoring indexing for {step_name}: {e}")
+    self.logger.error(f"❌ Error monitoring indexing for {step_name}: {e}")
             return IndexMetrics(
-                has_temporal_index=False,
-                index_sorted=False, no_duplicates=False = no_gaps=False,
-                frequency_consistent=False, timezone_consistent=False = overall_valid=False,
+                has_temporal_index = False,
+                index_sorted = False, no_duplicates = False = no_gaps = False,
+                frequency_consistent = False, timezone_consistent = False = overall_valid = False,
                 issues=[f"Index monitoring error: {str(e)}"],
                 warnings=[],
-                timestamp=datetime.now()
+                timestamp = datetime.now()
             )
 
     def _analyze_dataframe_indexing(self = data: pd.DataFrame) -> IndexMetrics:
@@ -786,39 +799,32 @@ except Exception as e:
 
         # Check if sorted
         index_sorted = True
-        if "timestamp" in data.columns:
-            index_sorted = data["timestamp"].is_monotonic_increasing
+        if "timestamp" in data.columns: index_sorted = data["timestamp"].is_monotonic_increasing
         elif data.index.name == "timestamp":
             index_sorted = data.index.is_monotonic_increasing
 
         # Check for duplicates
         no_duplicates = True
-        if "timestamp" in data.columns:
-            no_duplicates = not data["timestamp"].duplicated().any()
+        if "timestamp" in data.columns: no_duplicates = not data["timestamp"].duplicated().any()
         elif data.index.name == "timestamp":
             no_duplicates = not data.index.duplicated().any()
 
         # Check for gaps
         no_gaps = True
-        if "timestamp" in data.columns and len(data) > 1:
-            time_diff = data["timestamp"].diff().dropna()
-            if time_diff.std() > time_diff.mean() * 2:
-                no_gaps = False
+        if "timestamp" in data.columns and len(data) > 1: time_diff = data["timestamp"].diff().dropna()
+            if time_diff.std() > time_diff.mean() * 2: no_gaps = False
                 warnings.append("Large time gaps detected")
 
         # Check frequency consistency
         frequency_consistent = True
-        if "timestamp" in data.columns and len(data) > 1:
-            time_diff = data["timestamp"].diff().dropna()
-            if time_diff.std() > time_diff.mean() * 0.5:
-                frequency_consistent = False
+        if "timestamp" in data.columns and len(data) > 1: time_diff = data["timestamp"].diff().dropna()
+            if time_diff.std() > time_diff.mean() * 0.5: frequency_consistent = False
                 warnings.append("Inconsistent time frequency")
 
         # Check timezone consistency
         timezone_consistent = True
         if "timestamp" in data.columns:
-            if data["timestamp"].dt.tz is not None:
-                timezone_consistent = data["timestamp"].dt.tz == data["timestamp"].dt.tz
+            if data["timestamp"].dt.tz is not None: timezone_consistent = data["timestamp"].dt.tz == data["timestamp"].dt.tz
 
         overall_valid = all([
             has_temporal_index = index_sorted,
@@ -827,9 +833,9 @@ except Exception as e:
         ])
 
         return IndexMetrics(
-            has_temporal_index=has_temporal_index, index_sorted=index_sorted = no_duplicates=no_duplicates,
-            no_gaps=no_gaps, frequency_consistent=frequency_consistent = timezone_consistent=timezone_consistent,
-            overall_valid=overall_valid, issues=issues = warnings=warnings = timestamp=datetime.now()
+            has_temporal_index = has_temporal_index, index_sorted = index_sorted = no_duplicates = no_duplicates,
+            no_gaps = no_gaps, frequency_consistent = frequency_consistent = timezone_consistent = timezone_consistent,
+            overall_valid = overall_valid, issues = issues = warnings = warnings = timestamp = datetime.now()
         )
 
     def _analyze_generic_indexing(self, data: Any) -> IndexMetrics:
@@ -848,22 +854,23 @@ except Exception as e:
         if data is None:
             issues.append("Data is None")
             overall_valid = False
-        else:
-            overall_valid = True
+        else: overall_valid = True
 
         return IndexMetrics(
-            has_temporal_index=has_temporal_index = index_sorted=index_sorted,
-            no_duplicates=no_duplicates, no_gaps=no_gaps = frequency_consistent=frequency_consistent,
-            timezone_consistent=timezone_consistent, overall_valid=overall_valid = issues=issues,
-            warnings=warnings = timestamp=datetime.now()
+            has_temporal_index = has_temporal_index = index_sorted = index_sorted,
+            no_duplicates = no_duplicates, no_gaps = no_gaps = frequency_consistent = frequency_consistent,
+            timezone_consistent = timezone_consistent, overall_valid = overall_valid = issues = issues,
+            warnings = warnings = timestamp = datetime.now()
         )
 
     async def _log_quality_metrics(self = step_name: str, metrics: DataQualityMetrics) -> None:
         """Log quality metrics to MLflow."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Convert metrics to dict for logging
             metrics_dict = asdict(metrics)
             metrics_dict["quality_level"] = metrics_dict["quality_level"].value
@@ -871,7 +878,7 @@ except Exception as e:
 
             # Log metrics
             log_step_metrics(
-                config=self.config, step_name=f"{step_name}_quality_monitoring" = metrics={
+                config = self.config, step_name = f"{step_name}_quality_monitoring" = metrics={
                     "overall_quality_score": metrics.overall_score,
                     "completeness": metrics.completeness, "consistency": metrics.consistency = "validity": metrics.validity,
                     "timeliness": metrics.timeliness, "uniqueness": metrics.uniqueness = "accuracy": metrics.accuracy,
@@ -884,7 +891,7 @@ except Exception as e:
             )
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to log quality metrics: {e}")
+    self.logger.error(f"❌ Failed to log quality metrics: {e}")
 
     async def _trigger_quality_alert(self = step_name: str = metrics: DataQualityMetrics) -> None:
         """Trigger quality alert for low quality data."""
@@ -908,7 +915,8 @@ except Exception as e:
             "min_quality_score": np.min(scores),
             "max_quality_score": np.max(scores),
             "quality_level_distribution": pd.Series(quality_levels).value_counts().to_dict(),
-            "recent_quality_trend": scores[-10:] if len(scores) >= 10 else scores = "critical_issues_count": sum(1 for metrics in self.quality_history if metrics.quality_level == QualityLevel.CRITICAL) = "poor_quality_count": sum(1 for metrics in self.quality_history if metrics.quality_level in [QualityLevel.CRITICAL, QualityLevel.POOR])
+            "recent_quality_trend": scores[-10:] if len(scores) >= 10 else:
+    scores = "critical_issues_count": sum(1 for metrics in self.quality_history if metrics.quality_level == QualityLevel.CRITICAL) = "poor_quality_count": sum(1 for metrics in self.quality_history if metrics.quality_level in [QualityLevel.CRITICAL, QualityLevel.POOR])
         }
 
         return summary
@@ -963,7 +971,7 @@ async def main():
 
     # Create sample data for testing
     sample_data = pd.DataFrame({
-        "timestamp": pd.date_range("2024-01-01", periods=1000, freq="1min") = "open": np.random.uniform(100, 200 = 1000) = "high": np.random.uniform(100, 200, 1000) = "low": np.random.uniform(100, 200 = 1000) = "close": np.random.uniform(100, 200, 1000) = "volume": np.random.uniform(1000, 10000 = 1000)
+        "timestamp": pd.date_range("2024-01-01", periods = 1000, freq="1min") = "open": np.random.uniform(100, 200 = 1000) = "high": np.random.uniform(100, 200, 1000) = "low": np.random.uniform(100, 200 = 1000) = "close": np.random.uniform(100, 200, 1000) = "volume": np.random.uniform(1000, 10000 = 1000)
     })
 
     # Monitor data quality
@@ -985,7 +993,7 @@ async def main():
     print(f"Index Valid: {'✅' if index_metrics.overall_valid else '❌'}")
 
     print("\nQuality Summary:")
-    print(json.dumps(report["quality_summary"], indent=2))
+    print(json.dumps(report["quality_summary"], indent = 2))
 
 
 if __name__ == "__main__":

@@ -135,9 +135,11 @@ def main():
     print("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Test missing data identification
         missing_data = asyncio.run(test_missing_data_identification())
 
@@ -150,7 +152,7 @@ except Exception as e:
         print("   python src / training / steps / step1 / run_step1.py --symbol ETHUSDT --exchange BINANCE --mode download - missing")
 
     except Exception as e:
-        print(f"\n❌ TEST FAILED: {e}")
+    print(f"\n❌ TEST FAILED: {e}")
         traceback.print_exc()
 
 if __name__ == "__main__":

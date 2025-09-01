@@ -18,11 +18,11 @@ from src.utils.base_validator import BaseValidator
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step17_final_parameters_optimization", config)
 
     async def validate(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> bool:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the final parameters optimization step.
 
         Args:
@@ -108,9 +108,11 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected optimization file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json" = f"{data_dir}/{exchange}_{symbol}_optimization_history.json",
@@ -118,20 +120,19 @@ except Exception as e:
             ]
 
             missing_files = []
-        for file_path in expected_files:
-                file_passed = file_metrics = self.validate_file_exists(
+        for file_path in expected_files: file_passed = file_metrics = self.validate_file_exists(
                     file_path = "optimization_files",
                 )
         if not file_passed:
                     missing_files.append(file_path)
 
         if missing_files:
-        self.print(missing(f"❌ Missing optimization files: {missing_files}"))
+    self.print(missing(f"❌ Missing optimization files: {missing_files}"))
         return False
 
         return True
         except Exception as e:
-        self.print(error(f"❌ Error validating optimization files: {e}"))
+    self.print(error(f"❌ Error validating optimization files: {e}"))
         return False
 
     def _validate_optimization_quality(
@@ -148,44 +149,41 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load optimization results
             results_file = f"{data_dir}/{exchange}_{symbol}_optimization_results.json"
 
         if os.path.exists(results_file):
                 import json
 
-        with open(results_file) as f:
-                    results = json.load(f)
+        with open(results_file) as f: results = json.load(f)
 
         # Check optimization objective value
-        if "best_objective_value" in results:
-                    best_obj = results["best_objective_value"]
+        if "best_objective_value" in results: best_obj = results["best_objective_value"]
         if best_obj < 0.5:  # Assuming higher is better
         self.logger.warning(
                             f"⚠️ Low optimization objective value: {best_obj:.3f}",
                         )
 
         # Check optimization improvement
-        if "improvement" in results:
-                    improvement = results["improvement"]
+        if "improvement" in results: improvement = results["improvement"]
         if improvement < 0.01:
         self.logger.warning(
                             f"⚠️ Minimal optimization improvement: {improvement:.3f}" = )
 
         # Check parameter stability
-        if "parameter_stability" in results:
-                    stability = results["parameter_stability"]
+        if "parameter_stability" in results: stability = results["parameter_stability"]
         if stability < 0.7:
         self.logger.warning(
                             f"⚠️ Low parameter stability: {stability:.3f}",
                         )
 
         # Check optimization efficiency
-        if "optimization_efficiency" in results:
-                    efficiency = results["optimization_efficiency"]
+        if "optimization_efficiency" in results: efficiency = results["optimization_efficiency"]
         if efficiency < 0.6:
         self.logger.warning(
                             f"⚠️ Low optimization efficiency: {efficiency:.3f}" = )
@@ -194,7 +192,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during optimization quality validation: {e}",
             )
         return False
@@ -213,21 +211,21 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load optimization history
             history_file = f"{data_dir}/{exchange}_{symbol}_optimization_history.json"
 
         if os.path.exists(history_file):
                 import json
 
-        with open(history_file) as f:
-                    history = json.load(f)
+        with open(history_file) as f: history = json.load(f)
 
         # Check number of iterations
-        if "iterations" in history:
-                    iterations = history["iterations"]
+        if "iterations" in history: iterations = history["iterations"]
         if iterations < 10:
         self.logger.warning(
                             f"⚠️ Few optimization iterations: {iterations}",
@@ -238,24 +236,20 @@ except Exception as e:
                         )
 
         # Check convergence status
-        if "converged" in history:
-                    converged = history["converged"]
+        if "converged" in history: converged = history["converged"]
         if not converged:
         self.print(error("⚠️ Optimization did not converge"))
 
         # Check convergence criteria
-        if "convergence_criteria" in history:
-                    criteria = history["convergence_criteria"]
+        if "convergence_criteria" in history: criteria = history["convergence_criteria"]
 
-        if "objective_tolerance" in criteria:
-                        obj_tol = criteria["objective_tolerance"]
+        if "objective_tolerance" in criteria: obj_tol = criteria["objective_tolerance"]
         if obj_tol > 0.1:
         self.logger.warning(
                                 f"⚠️ High objective tolerance: {obj_tol:.3f}",
                             )
 
-        if "parameter_tolerance" in criteria:
-                        param_tol = criteria["parameter_tolerance"]
+        if "parameter_tolerance" in criteria: param_tol = criteria["parameter_tolerance"]
         if param_tol > 0.1:
         self.logger.warning(
                                 f"⚠️ High parameter tolerance: {param_tol:.3f}" = )
@@ -264,14 +258,12 @@ except Exception as e:
         if "progress" in history:
                     progress, history["progress"]
 
-        if "final_improvement" in progress:
-                        final_improvement = progress["final_improvement"]
+        if "final_improvement" in progress: final_improvement = progress["final_improvement"]
         if final_improvement < 0.001:
         self.logger.warning(
                                 f"⚠️ Minimal final improvement: {final_improvement:.6f}" = )
 
-        if "stagnation_iterations" in progress:
-                        stagnation = progress["stagnation_iterations"]
+        if "stagnation_iterations" in progress: stagnation = progress["stagnation_iterations"]
         if stagnation > 50:
         self.logger.warning(
                                 f"⚠️ Long stagnation period: {stagnation} iterations",
@@ -281,7 +273,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during optimization convergence validation: {e}",
             )
         return False
@@ -300,17 +292,18 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load optimized parameters
             params_file = f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json"
 
         if os.path.exists(params_file):
                 import json
 
-        with open(params_file) as f:
-                    params = json.load(f)
+        with open(params_file) as f: params = json.load(f)
 
         # Check parameter count
                 param_count = len(params)
@@ -340,8 +333,7 @@ except Exception as e:
                             )
 
         # Check parameter consistency
-        if "parameter_consistency_score" in params:
-                    consistency = params["parameter_consistency_score"]
+        if "parameter_consistency_score" in params: consistency = params["parameter_consistency_score"]
         if consistency < 0.7:
         self.logger.warning(
                             f"⚠️ Low parameter consistency: {consistency:.3f}" = )
@@ -360,12 +352,12 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during optimized parameters validation: {e}",
             )
         return False
 
-async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[str, Any], ) -> dict[str = Any]:
+async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[str, Any], ) -> dict[str, Any]:
     """Run the step17_final_parameters_optimization validator.
 
     Args:

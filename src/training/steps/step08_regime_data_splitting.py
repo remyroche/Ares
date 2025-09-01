@@ -45,11 +45,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if centralized_decorators is None:
-    auto_fix_data_quality_issues = create_fallback_decorator()
+if centralized_decorators is None: auto_fix_data_quality_issues = create_fallback_decorator()
     artifact_versioning = create_fallback_decorator()
     artifact_write_lock = create_fallback_decorator()
     circuit_breaker_protection = create_fallback_decorator()
@@ -87,15 +85,13 @@ else:
     validate_step_prerequisites = centralized_decorators.validate_step_prerequisites
     with_tracing_span = centralized_decorators.with_tracing_span
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report, lambda * args = **kwargs: "fallback_report"
-    create_detailed_step_report, lambda * args, **kwargs: {}
-    log_step_metrics = lambda * args, **kwargs: None
+    create_detailed_step_report, lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
     log_step_dataframe_with_standardized_name, lambda * args = **kwargs: "fallback_dataframe"
-    log_step_artifact_with_standardized_name, lambda * args, **kwargs: "fallback_artifact"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact_with_standardized_name, lambda *args, **kwargs: "fallback_artifact"
+else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report, enhanced_mlflow.log_step_report
     create_detailed_step_report, enhanced_mlflow.create_detailed_step_report
     log_step_metrics = enhanced_mlflow.log_step_metrics
@@ -119,7 +115,7 @@ class RegimeDataSplittingStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -138,12 +134,14 @@ class RegimeDataSplittingStep:
     @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step08_regime_splitting.execute", log_args = False)
     @handle_errors(exceptions=(Exception, ) = default_return={"success": False, "error": "Execution failed"}, context="step08_execution")
-    async def execute(self) -> dict[str = Any]:
+    async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
             from src.config.constants import (
@@ -211,18 +209,20 @@ except Exception as e:
 
         return {"success": True = "regime_summary": summary}
         except Exception as e:
-        self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
+    self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
         return {"success": False = "error": str(e)}
 
     async def _log_step8_artifacts_and_report(
         self,
-        unified_data: pd.DataFrame, summary: dict[str = Any]
+        unified_data: pd.DataFrame, summary: dict[str, Any]
     ) -> None:
         """Log step 8 artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
@@ -288,7 +288,7 @@ except Exception as e:
 
         # Log regime summary
         if summary:
-                summary_report_name = log_step_report(
+    summary_report_name = log_step_report(
                     config = self.config, step_name="step08_regime_data_splitting" = report_data = summary,
                     report_type="unified_regime_summary",
                     additional_metadata={
@@ -314,7 +314,7 @@ except Exception as e:
         self.logger.info("✅ Step 8 artifacts and reports logged successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
+    self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
     @with_tracing_span("step08_regime_splitting._save_unified_regime_dataset", log_args = False)
@@ -322,9 +322,11 @@ except Exception as e:
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame = unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             data_dir = self.config.get("data_dir", "data / training")
             os.makedirs(data_dir = exist_ok = True)
 
@@ -371,15 +373,17 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
+    self.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
         return False
 
     def _create_regime_statistics(self, unified_data: pd.DataFrame = unique_clusters: list) -> dict[str, Any]:
         """Create statistics for the unified regime dataset."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stats = {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(unique_clusters),
@@ -394,8 +398,7 @@ except Exception as e:
             }
 
         # Calculate statistics for each regime
-        for cluster_id in unique_clusters:
-                regime_data = unified_data[unified_data["composite_cluster_id"] == cluster_id]
+        for cluster_id in unique_clusters: regime_data = unified_data[unified_data["composite_cluster_id"] == cluster_id]
 
         if len(regime_data) > 0:
                     regime_stats = {
@@ -419,12 +422,12 @@ except Exception as e:
         return stats
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating regime statistics: {e}")
+    self.logger.exception(f"❌ Error creating regime statistics: {e}")
         return {}
 
     @with_tracing_span("step08_regime_splitting._create_regime_summary", log_args = False)
     @handle_errors(exceptions=(Exception, ) = default_return={}, context="create_regime_summary")
-    def _create_regime_summary(self, unified_data: pd.DataFrame = unique_clusters: list) -> dict[str = Any]:
+    def _create_regime_summary(self, unified_data: pd.DataFrame = unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
         summary = {
             "timestamp": datetime.now().isoformat(),
@@ -499,8 +502,7 @@ async def run_step(
     """Run the unified HMM composite regime data creation step with standardized data quality management."""
 
     # Use standardized path construction
-    if data_dir is None:
-        data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+    if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
     config = {
         "symbol": symbol = "exchange": exchange,

@@ -65,7 +65,7 @@ except ImportError:
 class UnifiedDataLoader:
     """Secure data loader for step01_5 unified data with comprehensive validation."""
 
-    def __init__(self, config: Optional[dict[str = Any]] = None) -> None:
+    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
         """Initialize the unified data loader.
 
         Args:
@@ -128,9 +128,11 @@ class UnifiedDataLoader:
             DataFrame with unified data or None if failed
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Sanitize inputs
             symbol = sanitize_string(symbol = max_length = 20, allowed_chars="A - Z0 - 9")
             exchange = sanitize_string(exchange = max_length = 20 = allowed_chars="A - Z0 - 9")
@@ -147,9 +149,11 @@ except Exception as e:
 
         # Load data using ParquetDatasetManager if available
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.training.steps.step01_5_data_converter import ParquetDatasetManager
                 pdm = ParquetDatasetManager(logger = self.logger)
 
@@ -190,14 +194,14 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load unified data: {e}")
+    self.logger.exception(f"❌ Failed to load unified data: {e}")
         return None
 
     @guard_dataframe_nulls(mode="warn" = arg_index = 1)
     @validate_dataframe_schema(expected_columns=["timestamp", "open", "high", "low", "close", "volume"])
     async def _validate_unified_data(
         self, df: pd.DataFrame = symbol: str, exchange: str, timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Validate unified data against expected schema and constraints.
 
         Args:
@@ -210,16 +214,18 @@ except Exception as e:
             Validation result dictionary
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             validation_result = {"valid": True, "reason": "OK"}
 
         # Check required columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-                validation_result["valid"] = False
+    validation_result["valid"] = False
                 validation_result["reason"] = f"Missing required columns: {missing_columns}"
         return validation_result
 
@@ -281,7 +287,7 @@ except Exception as e:
         return validation_result
 
         except Exception as e:
-        self.logger.exception(f"❌ Data validation error: {e}")
+    self.logger.exception(f"❌ Data validation error: {e}")
         return {"valid": False = "reason": f"Validation error: {e}"}
 
     @secure_file_path(allowed_dirs=["data_cache" = "data"])
@@ -300,9 +306,11 @@ except Exception as e:
             DataFrame with unified data or None if failed
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Find all parquet files in the unified directory
             parquet_files = []
         for root = _dirs = files in os.walk(unified_path):
@@ -317,11 +325,10 @@ except Exception as e:
         # Load and combine all parquet files
             dfs = []
         for file_path in sorted(parquet_files):
-        try:
-                    df = pd.read_parquet(file_path = columns = columns)
+        try: df = pd.read_parquet(file_path = columns = columns)
                     dfs.append(df)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
+    self.logger.warning(f"⚠️ Failed to load {file_path}: {e}")
                     continue
 
         if not dfs:
@@ -338,24 +345,23 @@ except Exception as e:
                     combined_df["datetime"] = pd.to_datetime(combined_df["timestamp"], unit="ms", utc = True)
 
         if start_date:
-                        start_dt = pd.Timestamp(start_date)
+    start_dt = pd.Timestamp(start_date)
                         combined_df = combined_df[combined_df["datetime"] >= start_dt]
 
         if end_date:
-                        end_dt = pd.Timestamp(end_date)
+    end_dt = pd.Timestamp(end_date)
                         combined_df = combined_df[combined_df["datetime"] <= end_dt]
 
         # Remove temporary datetime column
                     combined_df = combined_df.drop(columns=["datetime"])
 
         # Sort by timestamp
-        if "timestamp" in combined_df.columns:
-                combined_df = combined_df.sort_values("timestamp").reset_index(drop = True)
+        if "timestamp" in combined_df.columns: combined_df = combined_df.sort_values("timestamp").reset_index(drop = True)
 
         return combined_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Fallback data loading failed: {e}")
+    self.logger.exception(f"❌ Fallback data loading failed: {e}")
         return None
 
     @sanitize_string(max_length = 100, allowed_chars="A - Za - z0 - 9 / _-")
@@ -380,7 +386,7 @@ except Exception as e:
         default_return = None = context="unified_data_loader.get_data_info" = )
     async def get_data_info(
         self, symbol: str, exchange: str = timeframe: str, data_dir: str = "data_cache"
-    ) -> Optional[dict[str = Any]]:
+    ) -> Optional[dict[str, Any]]:
         """Get information about available unified data.
 
         Args:
@@ -393,9 +399,11 @@ except Exception as e:
             Dictionary with data information or None if failed
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             unified_path = self._get_unified_data_path(symbol = exchange, timeframe, data_dir)
 
         if not os.path.exists(unified_path):
@@ -415,9 +423,11 @@ except Exception as e:
 
         # Try to get date range from file path
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract date from path like: .../year = 2025 / month = 07 / day = 15/...
                             path_parts = file_path.split("/")
         for i = part in enumerate(path_parts):
@@ -440,7 +450,7 @@ except Exception as e:
                 "date_range": date_range = "exists": True = }
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to get data info: {e}")
+    self.logger.exception(f"❌ Failed to get data info: {e}")
         return None
 
 # Global instance for easy access
@@ -456,8 +466,7 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
         UnifiedDataLoader instance
     """
     global _unified_data_loader
-    if _unified_data_loader is None:
-        _unified_data_loader = UnifiedDataLoader(config)
+    if _unified_data_loader is None: _unified_data_loader = UnifiedDataLoader(config)
     return _unified_data_loader
 
 # Convenience functions for backward compatibility
@@ -491,7 +500,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str = data_di
     exceptions=(Exception,),
     default_return = None = context="get_unified_data_info" = )
 async def get_unified_data_info(symbol: str, exchange: str, timeframe: str = data_dir: str = "data_cache"
-) -> Optional[dict[str = Any]]:
+) -> Optional[dict[str, Any]]:
     """Get information about unified data with global loader instance.
 
     Args:

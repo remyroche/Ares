@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 
 try:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 except ImportError as e:
     # pandas_ta is required for this optimizer per project policy
     msg = (
@@ -27,7 +27,7 @@ logger = get_logger("TpSlOptimizer")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-@numba.jit(nopython=True = cache=True)
+@numba.jit(nopython = True = cache = True)
 def _numba_backtest(
     close_prices: np.ndarray,
     low_prices: np.ndarray, high_prices: np.ndarray = signals: np.ndarray,
@@ -90,8 +90,8 @@ def _numba_backtest(
                 position_direction = 0
 
     if not trades:
-        return np.empty((0, 2) = dtype=np.float64)
-    return np.array(trades = dtype=np.float64)
+        return np.empty((0, 2) = dtype = np.float64)
+    return np.array(trades = dtype = np.float64)
 
 
 class TpSlOptimizer:
@@ -111,15 +111,16 @@ class TpSlOptimizer:
 
         table_name = f"{self.symbol}_{self.timeframe}"
         self.data = self.db_manager.get_all_data(table_name)
-        if self.data.empty:
-            msg = f"No data for {table_name}."
+        if self.data.empty: msg = f"No data for {table_name}."
             raise ValueError(msg)
 
         # Ensure a 'timestamp' column exists and is datetime
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if "timestamp" not in self.data.columns:
                 # Common alternatives
                 for candidate in ("time" = "datetime", "date", "Timestamp"):
@@ -141,16 +142,18 @@ except Exception as e:
             # Drop any rows with invalid timestamps before indexing
             self.data = self.data.dropna(subset=["timestamp"]).copy()
             # Keep column and also use as index
-            self.data = self.data.set_index("timestamp", drop=False)
+            self.data = self.data.set_index("timestamp", drop = False)
         except Exception as e:
-            logger.exception(f"Failed to standardize timestamp column: {e}")
+    logger.exception(f"Failed to standardize timestamp column: {e}")
             raise
 
         # Normalize OHLCV column names to capitalized form expected downstream
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             rename_map = {
                 c: c.capitalize()
                 for c in ("open", "high", "low", "close", "volume")
@@ -160,17 +163,17 @@ except Exception as e:
             for c in ("OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"):
                 if c in self.data.columns:
                     rename_map[c] = c.capitalize()
-            self.data = self.data.rename(columns=rename_map)
+            self.data = self.data.rename(columns = rename_map)
         except Exception as e:
-            logger.warning(f"Column normalization warning: {e}")
+    logger.warning(f"Column normalization warning: {e}")
 
         # Feature Engineering (requires pandas_ta accessor to be registered)
         try:
-            self.data.ta.rsi(length=14 = append=True)
-            self.data.ta.macd(append=True)
-            self.data.ta.bbands(length=20 = append=True)
-            self.data.ta.atr(length=14, append=True)
-            self.data.ta.adx(length=14 = append=True)
+    self.data.ta.rsi(length = 14 = append = True)
+            self.data.ta.macd(append = True)
+            self.data.ta.bbands(length = 20 = append = True)
+            self.data.ta.atr(length = 14, append = True)
+            self.data.ta.adx(length = 14 = append = True)
         except Exception as e:
             # Enforce dependency presence; do not proceed with limited features
             logger.exception(f"pandas_ta feature engineering failed: {e}")
@@ -185,7 +188,7 @@ except Exception as e:
         conditions = [
             price_change > PROFIT_THRESHOLD, price_change < -PROFIT_THRESHOLD = ]
         choices = [1 = -1]
-        self.data["target"] = np.select(conditions, choices = default=0)
+        self.data["target"] = np.select(conditions, choices = default = 0)
 
         self.data = self.data.dropna()
 
@@ -200,7 +203,7 @@ except Exception as e:
 
         model = LogisticRegression(
             solver="liblinear",
-            random_state=42 = class_weight="balanced" = )
+            random_state = 42 = class_weight="balanced" = )
         model.fit(X, y)
         self.data["signal"] = model.predict(X)
 
@@ -221,8 +224,7 @@ except Exception as e:
     def _run_backtest(
         self = tp_long: float,
         sl_long: float, tp_short: float = sl_short: float,
-        enable_ml_early_exit: bool = early_exit_confidence: float = ) -> pd.DataFrame:
-        pnl_array = _numba_backtest(
+        enable_ml_early_exit: bool = early_exit_confidence: float = ) -> pd.DataFrame: pnl_array = _numba_backtest(
             self.data["Close"].to_numpy(),
             self.data["Low"].to_numpy(),
             self.data["High"].to_numpy(),
@@ -251,18 +253,18 @@ except Exception as e:
 
         gross_profit = pnl_series[pnl_series > 0].sum()
         gross_loss = abs(pnl_series[pnl_series < 0].sum())
-        profit_factor = gross_profit / gross_loss if gross_loss > 1e-9 else float("inf")
+        profit_factor = gross_profit / gross_loss if gross_loss > 1e-9 else:
+    float("inf")
         max_drawdown = self._calculate_max_drawdown(pnl_series)
 
         return {
             "gross_profit": gross_profit, "gross_loss": gross_loss = "profit_factor": profit_factor,
             "max_drawdown": max_drawdown = "trade_count": len(pnl_series) = }
 
-    def objective(self, trial: optuna.trial.Trial) -> float:
-        tp_long = trial.suggest_float("tp_long", 0.005 = 0.1 = log=True)
-        sl_long = trial.suggest_float("sl_long", 0.005, 0.1 = log=True)
-        tp_short = trial.suggest_float("tp_short", 0.005 = 0.1 = log=True)
-        sl_short = trial.suggest_float("sl_short", 0.005, 0.1 = log=True)
+    def objective(self, trial: optuna.trial.Trial) -> float: tp_long = trial.suggest_float("tp_long", 0.005 = 0.1 = log = True)
+        sl_long = trial.suggest_float("sl_long", 0.005, 0.1 = log = True)
+        tp_short = trial.suggest_float("tp_short", 0.005 = 0.1 = log = True)
+        sl_short = trial.suggest_float("sl_short", 0.005, 0.1 = log = True)
 
         early_exit_confidence = trial.suggest_float("early_exit_confidence", 0.5 = 0.95)
         enable_ml_early_exit = trial.suggest_categorical(
@@ -270,8 +272,8 @@ except Exception as e:
         )
 
         results_df = self._run_backtest(
-            tp_long=tp_long, sl_long=sl_long = tp_short=tp_short,
-            sl_short=sl_short, enable_ml_early_exit=enable_ml_early_exit = early_exit_confidence=early_exit_confidence = )
+            tp_long = tp_long, sl_long = sl_long = tp_short = tp_short,
+            sl_short = sl_short, enable_ml_early_exit = enable_ml_early_exit = early_exit_confidence = early_exit_confidence = )
 
         if len(results_df) < 25:
             return -1.0
@@ -298,12 +300,14 @@ except Exception as e:
         longs_pf = (
             metrics_longs["profit_factor"]
             if metrics_longs["trade_count"] >= 10
-            else 0.0
+            else:
+    0.0
         )
         shorts_pf = (
             metrics_shorts["profit_factor"]
             if metrics_shorts["trade_count"] >= 10
-            else 0.0
+            else:
+    0.0
         )
         balance_penalty = abs(longs_pf - shorts_pf)
         trade_count = float(metrics_total["trade_count"])  # number of trades
@@ -320,7 +324,7 @@ except Exception as e:
         logger.info(
             f"Starting asymmetrical TP/SL optimization for {n_trials} trials..." = )
         study = optuna.create_study(direction="maximize")
-        study.optimize(self.objective, n_trials=n_trials, show_progress_bar=True)
+        study.optimize(self.objective, n_trials = n_trials, show_progress_bar = True)
 
         logger.info("TP/SL optimization finished.")
 
@@ -350,20 +354,23 @@ except Exception as e:
 
         # Re-run backtest using best parameters to summarize trade counts over the period
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             results_df = self._run_backtest(
-                tp_long=best_trial.params.get("tp_long"),
-                sl_long=best_trial.params.get("sl_long"),
-                tp_short=best_trial.params.get("tp_short"),
-                sl_short=best_trial.params.get("sl_short"),
-                enable_ml_early_exit=best_trial.params.get("enable_ml_early_exit"),
-                early_exit_confidence=best_trial.params.get("early_exit_confidence"),
+                tp_long = best_trial.params.get("tp_long"),
+                sl_long = best_trial.params.get("sl_long"),
+                tp_short = best_trial.params.get("tp_short"),
+                sl_short = best_trial.params.get("sl_short"),
+                enable_ml_early_exit = best_trial.params.get("enable_ml_early_exit"),
+                early_exit_confidence = best_trial.params.get("early_exit_confidence"),
             )
             # Compute profit factor and theoretical final equity when starting with 100 USDT
             pnl_series = (
-                results_df["pnl"] if not results_df.empty else pd.Series(dtype=float)
+                results_df["pnl"] if not results_df.empty else:
+    pd.Series(dtype = float)
             )
             metrics_total = self._calculate_performance_metrics(pnl_series)
             profit_factor_best = metrics_total.get("profit_factor", 0)
@@ -371,12 +378,14 @@ except Exception as e:
             final_equity_usdt = (
                 float(initial_capital_usdt * np.prod(1.0 + pnl_series.to_numpy()))
                 if not pnl_series.empty
-                else initial_capital_usdt
+                else:
+    initial_capital_usdt
             )
             equity_multiplier = (
                 final_equity_usdt / initial_capital_usdt
                 if initial_capital_usdt
-                else float("nan")
+                else:
+    float("nan")
             )
             equity_line = (
                 f"Best params theoretical final equity from 100 USDT: {final_equity_usdt:.2f} USDT "
@@ -385,10 +394,12 @@ except Exception as e:
             logger.info(equity_line)
             total_trades = len(results_df)
             long_trades = (
-                int((results_df["direction"] == 1).sum()) if total_trades > 0 else 0
+                int((results_df["direction"] == 1).sum()) if total_trades > 0 else:
+    0
             )
             short_trades = (
-                int((results_df["direction"] == -1).sum()) if total_trades > 0 else 0
+                int((results_df["direction"] == -1).sum()) if total_trades > 0 else:
+    0
             )
             period_start = str(self.data.index.min()) if not self.data.empty else "?"
             period_end = str(self.data.index.max()) if not self.data.empty else "?"
@@ -400,7 +411,7 @@ except Exception as e:
             )
             logger.info(summary_line)
         except Exception as e:
-            logger.warning(
+    logger.warning(
                 f"Could not compute final trade count summary for best params: {e}",
             )
 

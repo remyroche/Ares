@@ -28,8 +28,8 @@ def get_data_manager(
 
     """
     return UnifiedDataManager(
-        data_dir=data_dir, symbol=symbol,
-        exchange=exchange, lookback_days=lookback_days or 730)
+        data_dir = data_dir, symbol = symbol,
+        exchange = exchange, lookback_days = lookback_days or 730)
 
 
 def load_training_data(
@@ -64,7 +64,7 @@ def load_training_data(
 
 
 def load_validation_data_for_optimization(
-    data_dir: str = symbol: str = "ETHUSDT",
+    data_dir: str, symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
     label_column: str = "tactician_label",
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -77,19 +77,22 @@ def load_validation_data_for_optimization(
         label_column: Name of the label column
 
     Returns:
-        Tuple of (X_val = y_val) as numpy arrays
+        Tuple of (X_val, y_val) as numpy arrays
 
     """
     logger = system_logger.getChild("DataAccessUtils")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         X_val, y_val = load_training_data(
-            data_dir, symbol = exchange,
+            data_dir, symbol, exchange,
             "validation",
-            label_column, )
+            label_column
+        )
 
         # Convert to numpy arrays and handle missing values
         X_val_np = X_val.fillna(0).values
@@ -136,7 +139,7 @@ def get_dataset_metadata(
 
 
 def validate_dataset_integrity(
-    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT", exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Validate the integrity of the dataset.
 
@@ -149,11 +152,9 @@ def validate_dataset_integrity(
         Dictionary containing validation results
 
     """
-    try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+    try: data_manager = get_data_manager(data_dir, symbol, exchange)
         return data_manager.validate_database_integrity()
-    except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+    except Exception as e: logger = system_logger.getChild("DataAccessUtils")
         error_msg = (
             f"Error validating dataset integrity for {symbol} on {exchange}: {e}"
         )
@@ -182,12 +183,11 @@ def update_dataset_with_new_features(
     """
     logger = system_logger.getChild("DataAccessUtils")
 
-    try:
-        data_manager = get_data_manager(data_dir, symbol = exchange)
+    try: data_manager = get_data_manager(data_dir, symbol = exchange)
         data_manager.update_data_split(split_type, updated_data)
         logger.info(f"Successfully updated {split_type} dataset with new features")
     except Exception as e:
-        error_msg = (
+    error_msg = (
             f"Error updating {split_type} dataset for {symbol} on {exchange}: {e}"
         )
         logger.exception(error_msg)
@@ -209,9 +209,11 @@ def check_unified_database_exists(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         data_manager = get_data_manager(data_dir, symbol = exchange)
 
         # Check if main database file exists
@@ -225,8 +227,7 @@ except Exception as e:
         # Try to load a small sample to verify accessibility
         return data_manager.get_metadata()
 
-    except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+    except Exception as e: logger = system_logger.getChild("DataAccessUtils")
         logger.warning(
             f"Error checking unified database existence for {symbol} on {exchange}: {e}",
         )
@@ -247,11 +248,9 @@ def get_time_splits_info(
         Dictionary containing split information
 
     """
-    try:
-        metadata = get_dataset_metadata(data_dir, symbol, exchange)
+    try: metadata = get_dataset_metadata(data_dir, symbol, exchange)
         return metadata.get("splits", {})
-    except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+    except Exception as e: logger = system_logger.getChild("DataAccessUtils")
         error_msg = f"Error getting time splits info for {symbol} on {exchange}: {e}"
         logger.exception(error_msg)
         return {}
@@ -274,9 +273,11 @@ def ensure_temporal_consistency(
     logger = system_logger.getChild("DataAccessUtils")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         data_manager = get_data_manager(data_dir, symbol = exchange)
         validation_results = data_manager.validate_database_integrity()
 
@@ -288,13 +289,13 @@ except Exception as e:
         ]
 
         if temporal_issues:
-            return False
+    return False
 
         logger.info("✅ Temporal consistency verified")
         return True
 
     except Exception as e:
-        error_msg = (
+    error_msg = (
             f"Error checking temporal consistency for {symbol} on {exchange}: {e}"
         )
         logger.exception(error_msg)
@@ -331,11 +332,9 @@ def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
     Returns:
         Full dataset as DataFrame
     """
-    try:
-        data_manager = get_data_manager(data_dir, **kwargs)
+    try: data_manager = get_data_manager(data_dir, **kwargs)
         return data_manager.load_data_split("full")
-    except Exception as e:
-        logger = system_logger.getChild("DataAccessUtils")
+    except Exception as e: logger = system_logger.getChild("DataAccessUtils")
         error_msg = f"Error loading full dataset from {data_dir}: {e}"
         logger.exception(error_msg)
         raise

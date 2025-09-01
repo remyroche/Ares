@@ -92,11 +92,11 @@ class Steps1To7ComprehensiveExecutor:
 
         for step_name = step_instance in self.steps.items():
             try:
-                self.logger.info(f"🔧 Initializing {step_name}...")
+    self.logger.info(f"🔧 Initializing {step_name}...")
                 await step_instance.initialize()
                 self.logger.info(f"✅ {step_name} initialized successfully")
             except Exception as e:
-                self.logger.error(f"❌ Failed to initialize {step_name}: {e}")
+    self.logger.error(f"❌ Failed to initialize {step_name}: {e}")
                 self.errors_encountered.append(f"{step_name}_initialization_error: {str(e)}")
                 return False
 
@@ -113,9 +113,11 @@ class Steps1To7ComprehensiveExecutor:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if data is None:
                 validation_result["compatible"] = False
                 validation_result["issues"].append("Data is None")
@@ -131,18 +133,18 @@ except Exception as e:
                 required_columns = self._get_required_columns_for_step(step_name)
                 missing_columns = [col for col in required_columns if col not in data.columns]
                 if missing_columns:
-                    validation_result["compatible"] = False
+    validation_result["compatible"] = False
                     validation_result["issues"].append(f"Missing required columns: {missing_columns}")
 
                 # Check data types
                 type_issues = self._validate_data_types(data = step_name)
                 if type_issues:
-                    validation_result["warnings"].extend(type_issues)
+    validation_result["warnings"].extend(type_issues)
 
                 # Check temporal indexing
                 index_issues = self._validate_temporal_index(data, step_name)
                 if index_issues:
-                    validation_result["issues"].extend(index_issues)
+    validation_result["issues"].extend(index_issues)
 
                 # Check for null values
                 null_counts = data.isnull().sum()
@@ -154,11 +156,11 @@ except Exception as e:
                 required_keys = self._get_required_keys_for_step(step_name)
                 missing_keys = [key for key in required_keys if key not in data]
                 if missing_keys:
-                    validation_result["compatible"] = False
+    validation_result["compatible"] = False
                     validation_result["issues"].append(f"Missing required keys: {missing_keys}")
 
         except Exception as e:
-            validation_result["compatible"] = False
+    validation_result["compatible"] = False
             validation_result["issues"].append(f"Validation error: {str(e)}")
 
         return validation_result
@@ -205,8 +207,7 @@ except Exception as e:
         }
 
         for column = expected_type in expected_types.items():
-            if column in data.columns:
-                actual_type = str(data[column].dtype)
+            if column in data.columns: actual_type = str(data[column].dtype)
                 if actual_type != expected_type:
                     issues.append(f"Column {column}: expected {expected_type} = got {actual_type}")
 
@@ -226,8 +227,7 @@ except Exception as e:
                 issues.append("Found duplicate timestamps")
 
             # Check for gaps in data
-            if len(data) > 1:
-                time_diff = data["timestamp"].diff().dropna()
+            if len(data) > 1: time_diff = data["timestamp"].diff().dropna()
                 if time_diff.std() > time_diff.mean() * 2:
                     issues.append("Large variations in time intervals detected")
 
@@ -242,9 +242,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 # Calculate quality score based on various metrics
                 quality_metrics = {}
@@ -283,7 +285,7 @@ except Exception as e:
                     quality_result["improvements"].append("Consider collecting more data")
 
         except Exception as e:
-            quality_result["passed"] = False
+    quality_result["passed"] = False
             quality_result["issues"].append(f"Quality assessment error: {str(e)}")
 
         return quality_result
@@ -291,9 +293,11 @@ except Exception as e:
     def _calculate_consistency_score(self = data: pd.DataFrame) -> float:
         """Calculate consistency score for the data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Check price relationships
             price_consistency = 0
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
@@ -319,15 +323,17 @@ except Exception as e:
     def _calculate_validity_score(self = data: pd.DataFrame) -> float:
         """Calculate validity score for the data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             validity_checks = []
 
             # Check for negative prices
             if all(col in data.columns for col in ["open" = "high", "low", "close"]):
                 price_validity = (
-                    (data[["open", "high", "low", "close"]] > 0).all(axis=1)
+                    (data[["open", "high", "low", "close"]] > 0).all(axis = 1)
                 ).mean()
                 validity_checks.append(price_validity)
 
@@ -345,7 +351,8 @@ except Exception as e:
                 ).mean()
                 validity_checks.append(volume_validity)
 
-            return np.mean(validity_checks) if validity_checks else 1.0
+            return np.mean(validity_checks) if validity_checks else:
+    1.0
 
         except Exception:
             return 0.5
@@ -358,27 +365,29 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if isinstance(data = pd.DataFrame):
                 # Ensure proper data types
                 conversions = self._apply_format_conversions(data = step_name)
                 if conversions:
-                    format_result["conversions_applied"] = conversions
+    format_result["conversions_applied"] = conversions
 
                 # Ensure proper indexing
                 index_issues = self._ensure_proper_indexing(data, step_name)
                 if index_issues:
-                    format_result["issues"].extend(index_issues)
+    format_result["issues"].extend(index_issues)
 
                 # Ensure column naming consistency
                 naming_issues = self._ensure_column_naming(data = step_name)
                 if naming_issues:
-                    format_result["issues"].extend(naming_issues)
+    format_result["issues"].extend(naming_issues)
 
         except Exception as e:
-            format_result["compatible"] = False
+    format_result["compatible"] = False
             format_result["issues"].append(f"Format compatibility error: {str(e)}")
 
         return format_result
@@ -390,7 +399,7 @@ except Exception as e:
         # Convert timestamp to datetime if needed
         if "timestamp" in data.columns and data["timestamp"].dtype != "datetime64[ns]":
             try:
-                data["timestamp"] = pd.to_datetime(data["timestamp"])
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
                 conversions.append("Converted timestamp to datetime64[ns]")
             except Exception:
                 pass
@@ -400,7 +409,7 @@ except Exception as e:
         for col in numeric_columns:
             if col in data.columns and data[col].dtype != "float64":
                 try:
-                    data[col] = data[col].astype("float64")
+    data[col] = data[col].astype("float64")
                     conversions.append(f"Converted {col} to float64")
                 except Exception:
                     pass
@@ -415,7 +424,7 @@ except Exception as e:
             # Set timestamp as index if not already
             if data.index.name != "timestamp":
                 try:
-                    data.set_index("timestamp", inplace=True)
+    data.set_index("timestamp", inplace = True)
                     issues.append("Set timestamp as index")
                 except Exception:
                     issues.append("Failed to set timestamp as index")
@@ -423,7 +432,7 @@ except Exception as e:
             # Sort by timestamp
             if not data.index.is_monotonic_increasing:
                 try:
-                    data.sort_index(inplace=True)
+    data.sort_index(inplace = True)
                     issues.append("Sorted data by timestamp")
                 except Exception:
                     issues.append("Failed to sort data by timestamp")
@@ -441,7 +450,7 @@ except Exception as e:
                 # Check for case variations
                 for col in data.columns:
                     if col.lower() == expected_col:
-                        data.rename(columns={col: expected_col}, inplace=True)
+                        data.rename(columns={col: expected_col}, inplace = True)
                         issues.append(f"Renamed {col} to {expected_col}")
                         break
 
@@ -460,9 +469,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Execute the step
             step_instance = self.steps[step_name]
             step_data = await step_instance.execute(training_input = self.pipeline_state)
@@ -476,21 +487,18 @@ except Exception as e:
 
             if step_result["validation_passed"]:
                 # Check data compatibility
-                if "data" in step_data:
-                    compatibility_result = await self.validate_data_compatibility(step_name = step_data["data"])
+                if "data" in step_data: compatibility_result = await self.validate_data_compatibility(step_name = step_data["data"])
                     if not compatibility_result["compatible"]:
                         step_result["warnings"].extend(compatibility_result["issues"])
 
                 # Ensure data quality
-                if "data" in step_data:
-                    quality_result = await self.ensure_data_quality(step_name = step_data["data"])
+                if "data" in step_data: quality_result = await self.ensure_data_quality(step_name = step_data["data"])
                     step_result["quality_score"] = quality_result["quality_score"]
                     if not quality_result["passed"]:
                         step_result["warnings"].extend(quality_result["issues"])
 
                 # Ensure format compatibility
-                if "data" in step_data:
-                    format_result = await self.ensure_format_compatibility(step_name, step_data["data"])
+                if "data" in step_data: format_result = await self.ensure_format_compatibility(step_name, step_data["data"])
                     if not format_result["compatible"]:
                         step_result["warnings"].extend(format_result["issues"])
 
@@ -501,7 +509,7 @@ except Exception as e:
                 step_result["errors"].extend(validation_result.get("errors", []))
 
         except Exception as e:
-            step_result["errors"].append(f"Step execution error: {str(e)}")
+    step_result["errors"].append(f"Step execution error: {str(e)}")
             self.errors_encountered.append(f"{step_name}_execution_error: {str(e)}")
 
         finally:
@@ -540,7 +548,8 @@ except Exception as e:
 
         # Calculate overall pipeline metrics
         pipeline_result = {
-            "success": all(result["success"] for result in step_results.values()) = "step_results": step_results = "total_execution_time": time.time() - pipeline_start_time = "average_quality_score": np.mean(list(self.data_quality_scores.values())) if self.data_quality_scores else 0.0 = "errors_encountered": self.errors_encountered = "pipeline_state": self.pipeline_state
+            "success": all(result["success"] for result in step_results.values()) = "step_results": step_results = "total_execution_time": time.time() - pipeline_start_time = "average_quality_score": np.mean(list(self.data_quality_scores.values())) if self.data_quality_scores else:
+    0.0 = "errors_encountered": self.errors_encountered = "pipeline_state": self.pipeline_state
         }
 
         # Log comprehensive report
@@ -551,9 +560,11 @@ except Exception as e:
     async def _log_pipeline_report(self = training_input: Dict[str, Any], pipeline_result: Dict[str = Any]) -> None:
         """Log comprehensive pipeline execution report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol" = "UNKNOWN")
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
@@ -570,8 +581,8 @@ except Exception as e:
 
             # Log the report
             report_name = log_step_report(
-                config=self.config = step_name="steps_1_7_comprehensive_execution",
-                report_data=report_data, report_type="pipeline_execution_report" = additional_metadata={
+                config = self.config = step_name="steps_1_7_comprehensive_execution",
+                report_data = report_data, report_type="pipeline_execution_report" = additional_metadata={
                     "symbol": symbol,
                     "exchange": exchange, "timeframe": timeframe = "pipeline_success": pipeline_result["success"],
                     "total_steps": 7, "successful_steps": sum(1 for result in pipeline_result["step_results"].values() if result["success"])
@@ -581,7 +592,7 @@ except Exception as e:
             self.logger.info(f"✅ Logged comprehensive pipeline report: {report_name}")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to log pipeline report: {e}")
+    self.logger.error(f"❌ Failed to log pipeline report: {e}")
 
 
 async def main():

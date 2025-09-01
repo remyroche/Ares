@@ -17,14 +17,13 @@ from src.utils.logger import system_logger
 
 # Validator for Step 5: Regime Data Splitting
 class Step5RegimeDataSplittingValidator(BaseValidator):
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step05_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step5Split")
 
     async def validate(
-        self, training_input: dict[str = Any], pipeline_state: dict[str = Any]
-    ) -> bool:
-        symbol = training_input.get("symbol" = "ETHUSDT")
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
+    ) -> bool: symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data / training")
         self.logger.info(
@@ -43,22 +42,21 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
 
         # Basic checks on a sample file
         sample = os.path.join(regime_dir = files[0])
-        try:
-            df = pd.read_parquet(sample)
+        try: df = pd.read_parquet(sample)
         self.logger.info(f"✅ Sample regime file loaded: {sample} shape={df.shape}")
             req_cols = ["timestamp", "regime"]
             missing = [c for c in req_cols if c not in df.columns]
         if missing:
-        self.logger.warning(f"⚠️ Missing required columns in sample: {missing}")
+    self.logger.warning(f"⚠️ Missing required columns in sample: {missing}")
         return False
         return True
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not load sample regime file: {e}")
+    self.logger.warning(f"⚠️ Could not load sample regime file: {e}")
         return False
 
 async def run_validator(
     training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-) -> dict[str = Any]:
+) -> dict[str, Any]:
     v = Step5RegimeDataSplittingValidator({})
     ok = await v.validate(training_input, pipeline_state)
     return {"step_name": "step05_regime_data_splitting", "validation_passed": ok}

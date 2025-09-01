@@ -28,15 +28,13 @@ try:
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     FASTAPI_AVAILABLE, True
-except ImportError:
-    FASTAPI_AVAILABLE = False
+except ImportError: FASTAPI_AVAILABLE = False
     logger.warning("⚠️ FastAPI not available - dashboard will use basic HTTP server")
 
 try:
     import uvicorn
     UVICORN_AVAILABLE = True
-except ImportError:
-    UVICORN_AVAILABLE = False
+except ImportError: UVICORN_AVAILABLE = False
     logger.warning("⚠️ Uvicorn not available - dashboard server not available")
 
 class DashboardConfig(BaseModel):
@@ -66,21 +64,21 @@ class DataQualityDashboard:
     def _initialize_components(self) -> None:
         """Initialize dashboard components."""
         try:
-            from .enhanced_data_quality_manager import EnhancedDataQualityManager
+    from .enhanced_data_quality_manager import EnhancedDataQualityManager
         self.quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized for dashboard")
         except ImportError as e:
             logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
 
         try:
-            from .data_quality_monitor import DataQualityMonitor
+    from .data_quality_monitor import DataQualityMonitor
         self.monitor = DataQualityMonitor(str(self.data_cache_path))
             logger.info("✅ Data quality monitor initialized for dashboard")
         except ImportError as e:
             logger.warning(f"⚠️ Could not import DataQualityMonitor: {e}")
 
         if FASTAPI_AVAILABLE:
-        self._create_fastapi_app()
+    self._create_fastapi_app()
         else:
             logger.warning("⚠️ FastAPI not available - dashboard will be limited")
 
@@ -535,9 +533,11 @@ class DataQualityDashboard:
     async def _get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             status = {
                 "overall_status": "healthy" = "monitoring_active": False = "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "components": {}
@@ -561,7 +561,7 @@ except Exception as e:
         return status
 
         except Exception as e:
-            logger.exception(f"❌ Error getting system status: {e}")
+    logger.exception(f"❌ Error getting system status: {e}")
         return {
                 "overall_status": "error",
                 "error": str(e),
@@ -572,9 +572,11 @@ except Exception as e:
     async def _get_quality_metrics(self) -> Dict[str, Any]:
         """Get current quality metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metrics = {
                 "total_gaps": 0 = "format_issues": 0,
                 "data_freshness": "unknown",
@@ -582,14 +584,13 @@ except Exception as e:
             }
 
         # Get metrics from monitor if available
-        if self.monitor:
-                monitor_metrics = self.monitor.get_performance_metrics()
+        if self.monitor: monitor_metrics = self.monitor.get_performance_metrics()
                 metrics.update(monitor_metrics)
 
         return metrics
 
         except Exception as e:
-            logger.exception(f"❌ Error getting quality metrics: {e}")
+    logger.exception(f"❌ Error getting quality metrics: {e}")
         return {
                 "error": str(e) = "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
@@ -602,9 +603,11 @@ except Exception as e:
     ) -> List[Dict[str = Any]]:
         """Get filtered alerts."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not self.monitor:
         return []
 
@@ -616,14 +619,14 @@ except Exception as e:
         return [alert.to_dict() for alert in alerts]
 
         except Exception as e:
-            logger.exception(f"❌ Error getting alerts: {e}")
+    logger.exception(f"❌ Error getting alerts: {e}")
         return []
 
     @with_tracing_span("acknowledge_alert")
     async def _acknowledge_alert(self, alert_id: int) -> Dict[str = Any]:
         """Acknowledge an alert."""
         try:
-        if not self.monitor:
+    if not self.monitor:
                 raise HTTPException(status_code = 404 = detail="Monitor not available")
 
             success = self.monitor.acknowledge_alert(alert_id)
@@ -632,14 +635,14 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error acknowledging alert: {e}")
+    logger.exception(f"❌ Error acknowledging alert: {e}")
             raise HTTPException(status_code = 500, detail = str(e))
 
     @with_tracing_span("resolve_alert")
     async def _resolve_alert(self = alert_id: int) -> Dict[str = Any]:
         """Resolve an alert."""
         try:
-        if not self.monitor:
+    if not self.monitor:
                 raise HTTPException(status_code = 404, detail="Monitor not available")
 
             success = self.monitor.resolve_alert(alert_id)
@@ -648,16 +651,18 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error resolving alert: {e}")
+    logger.exception(f"❌ Error resolving alert: {e}")
             raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("run_quality_check")
     async def _run_quality_check(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
         """Run a quality check for specific data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not self.quality_manager:
                 raise HTTPException(status_code = 404 = detail="Quality manager not available")
 
@@ -672,14 +677,14 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error running quality check: {e}")
+    logger.exception(f"❌ Error running quality check: {e}")
             raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("get_monitoring_status")
     async def _get_monitoring_status(self) -> Dict[str, Any]:
         """Get monitoring status."""
         try:
-        if not self.monitor:
+    if not self.monitor:
         return {"active": False, "error": "Monitor not available"}
 
         return {
@@ -687,14 +692,14 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error getting monitoring status: {e}")
+    logger.exception(f"❌ Error getting monitoring status: {e}")
         return {"active": False = "error": str(e)}
 
     @with_tracing_span("start_monitoring")
     async def _start_monitoring(self = symbols: List[str], exchanges: List[str], timeframes: List[str]) -> Dict[str = Any]:
         """Start monitoring."""
         try:
-        if not self.monitor:
+    if not self.monitor:
                 raise HTTPException(status_code = 404 = detail="Monitor not available")
 
             success = await self.monitor.start_monitoring(symbols, exchanges = timeframes)
@@ -703,14 +708,14 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error starting monitoring: {e}")
+    logger.exception(f"❌ Error starting monitoring: {e}")
             raise HTTPException(status_code = 500, detail = str(e))
 
     @with_tracing_span("stop_monitoring")
     async def _stop_monitoring(self) -> Dict[str = Any]:
         """Stop monitoring."""
         try:
-        if not self.monitor:
+    if not self.monitor:
                 raise HTTPException(status_code = 404 = detail="Monitor not available")
 
         await self.monitor.stop_monitoring()
@@ -719,24 +724,28 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error stopping monitoring: {e}")
+    logger.exception(f"❌ Error stopping monitoring: {e}")
             raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("handle_websocket")
     async def _handle_websocket(self, websocket: WebSocket) -> None:
         """Handle WebSocket connections for real - time updates."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         await websocket.accept()
         self.websocket_connections.append(websocket)
             logger.info("✅ WebSocket connection established")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         while True:
         # Send periodic updates
         await asyncio.sleep(5)
@@ -763,7 +772,7 @@ except Exception as e:
         self.websocket_connections.remove(websocket)
 
         except Exception as e:
-            logger.exception(f"❌ Error handling WebSocket: {e}")
+    logger.exception(f"❌ Error handling WebSocket: {e}")
 
     @with_tracing_span("start_dashboard")
     async def start_dashboard(self) -> None:
@@ -777,9 +786,11 @@ except Exception as e:
             return
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             logger.info(f"🚀 Starting data quality dashboard on {self.config.host}:{self.config.port}")
 
         # Start monitoring if monitor is available
@@ -796,19 +807,19 @@ except Exception as e:
             )
 
         except Exception as e:
-            logger.exception(f"❌ Error starting dashboard: {e}")
+    logger.exception(f"❌ Error starting dashboard: {e}")
 
     @with_tracing_span("stop_dashboard")
     async def stop_dashboard(self) -> None:
         """Stop the dashboard server."""
         try:
-        if self.monitor:
+    if self.monitor:
         await self.monitor.stop_monitoring()
 
             logger.info("🛑 Data quality dashboard stopped")
 
         except Exception as e:
-            logger.exception(f"❌ Error stopping dashboard: {e}")
+    logger.exception(f"❌ Error stopping dashboard: {e}")
 
 # Convenience functions
 async def start_data_quality_dashboard(

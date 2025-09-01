@@ -52,31 +52,25 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if handle_errors is None:
-    handle_errors = create_fallback_decorator()
+if handle_errors is None: handle_errors = create_fallback_decorator()
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report, lambda * args = **kwargs: "fallback_report"
-    create_detailed_step_report, lambda * args, **kwargs: {}
-    log_step_metrics = lambda * args, **kwargs: None
+    create_detailed_step_report, lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
     log_step_artifact_with_standardized_name, lambda * args = **kwargs: "fallback_artifact"
-    log_step_dataframe_with_standardized_name, lambda * args, **kwargs: "fallback_dataframe"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_dataframe_with_standardized_name, lambda *args, **kwargs: "fallback_dataframe"
+else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report, enhanced_mlflow.log_step_report
     create_detailed_step_report, enhanced_mlflow.create_detailed_step_report
     log_step_metrics = enhanced_mlflow.log_step_metrics
     log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with_standardized_name
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
 
-if centralized_decorators is None:
-    monitor_data_collection = create_fallback_decorator()
-else:
-    monitor_data_collection = centralized_decorators.monitor_data_collection
+if centralized_decorators is None: monitor_data_collection = create_fallback_decorator()
+else: monitor_data_collection = centralized_decorators.monitor_data_collection
 
 class DataCollectionStep:
     """Step 1: Data Collection using standardized pipeline utilities."""
@@ -95,7 +89,7 @@ class DataCollectionStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -107,7 +101,7 @@ class DataCollectionStep:
 
     @with_enhanced_mlflow_logging("step01_data_collection")
     async def execute(
-        self = training_input: dict[str, Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self = training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute data collection with standardized quality management.
 
         Args:
@@ -121,9 +115,11 @@ class DataCollectionStep:
         self.logger.info("🚀 Starting standardized data collection...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate input parameters
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
@@ -140,13 +136,13 @@ except Exception as e:
             success = await self._run_data_collection(training_input, data_dir)
 
         if success:
-        self.logger.info("✅ Data collection completed successfully")
+    self.logger.info("✅ Data collection completed successfully")
 
         # Run standardized quality check after data collection
                 quality_success = await self._run_standardized_quality_check(symbol = exchange, timeframe, data_dir)
 
         if quality_success:
-        self.logger.info("✅ Standardized quality check passed")
+    self.logger.info("✅ Standardized quality check passed")
                     pipeline_state["data_collection_completed"] = True
                     pipeline_state["quality_check_passed"] = True
                 else:
@@ -159,7 +155,7 @@ except Exception as e:
                 pipeline_state["quality_check_passed"] = False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during data collection: {e}")
+    self.logger.exception(f"❌ Error during data collection: {e}")
             pipeline_state["data_collection_completed"] = False
             pipeline_state["quality_check_passed"] = False
 
@@ -168,12 +164,14 @@ except Exception as e:
 
         return pipeline_state
 
-    async def _log_step1_artifacts_and_report(self, training_input: dict[str, Any] = pipeline_state: dict[str = Any]) -> None:
+    async def _log_step1_artifacts_and_report(self, training_input: dict[str, Any] = pipeline_state: dict[str, Any]) -> None:
         """Log step 1 artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -186,7 +184,9 @@ except Exception as e:
                 "duration_seconds": 0.0, # Will be calculated if available
                 "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0 = # Will be calculated if available
-                "data_quality_score": 1.0 if pipeline_state.get("quality_check_passed", False) else 0.5 = "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed" = False) else 0.0 = }
+                "data_quality_score": 1.0 if pipeline_state.get("quality_check_passed", False) else:
+    0.5 = "processing_efficiency": 1.0 if pipeline_state.get("data_collection_completed" = False) else:
+    0.0 = }
 
         # Collect artifacts generated
             artifacts_generated = []
@@ -200,7 +200,9 @@ except Exception as e:
 
         # Collect metrics
             metrics_calculated = {
-                "data_collection_success": 1.0 if pipeline_state.get("data_collection_completed", False) else 0.0 = "quality_check_passed": 1.0 if pipeline_state.get("quality_check_passed" = False) else 0.0 = "total_artifacts_generated": len(artifacts_generated),
+                "data_collection_success": 1.0 if pipeline_state.get("data_collection_completed", False) else:
+    0.0 = "quality_check_passed": 1.0 if pipeline_state.get("quality_check_passed" = False) else:
+    0.0 = "total_artifacts_generated": len(artifacts_generated),
             }
 
         # Create detailed report
@@ -250,15 +252,17 @@ except Exception as e:
         self.logger.info("✅ Step 1 artifacts and reports logged successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 1 artifacts and reports: {e}")
+    self.logger.error(f"❌ Failed to log step 1 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
     async def _run_standardized_quality_check(self, symbol: str = exchange: str, timeframe: str = data_dir: str) -> bool:
         """Run standardized quality check after data collection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Running standardized quality check...")
 
         # Check for expected files
@@ -267,15 +271,16 @@ except Exception as e:
 
             quality_results = []
 
-        for file_name in expected_files:
-                file_path = os.path.join(data_dir, file_name)
+        for file_name in expected_files: file_path = os.path.join(data_dir, file_name)
         if os.path.exists(file_path):
         self.logger.info(f"🔍 Validating {file_name}...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         import pandas as pd
                         df = pd.read_parquet(file_path)
 
@@ -311,14 +316,14 @@ except Exception as e:
         self.logger.info(f"   ... and {len(validation_result.warnings) - 3} more warnings")
 
         except Exception as e:
-        self.logger.error(f"❌ Error validating {file_name}: {e}")
+    self.logger.error(f"❌ Error validating {file_name}: {e}")
         return False
                 else:
         self.logger.warning(f"⚠️ Expected file not found: {file_name}")
 
         # Overall quality assessment
         if quality_results:
-                overall_passed = all(result.passed for result in quality_results)
+    overall_passed = all(result.passed for result in quality_results)
                 overall_quality_score = sum(result.quality_score for result in quality_results) / len(quality_results)
 
         self.logger.info(f"📊 Overall quality check: {'PASSED' if overall_passed else 'FAILED'}")
@@ -339,15 +344,17 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error running standardized quality check: {e}")
+    self.logger.exception(f"❌ Error running standardized quality check: {e}")
         return False
 
     async def _run_data_collection(self, training_input: dict[str, Any] = data_dir: str) -> bool:
         """Run the actual data collection process with standardized validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe = training_input.get("timeframe", "1m")
@@ -367,17 +374,17 @@ except Exception as e:
 
         # Try to use the data downloader if available
         if download_all_data_with_consolidation:
-                success = await download_all_data_with_consolidation(
+    success = await download_all_data_with_consolidation(
                     symbol = symbol,
                     exchange_name = exchange, interval = timeframe = data_dir = data_dir,
                 )
 
         if success:
-        self.logger.info("✅ Data download completed successfully")
+    self.logger.info("✅ Data download completed successfully")
         # Validate downloaded data
                     validation_success = await self._validate_downloaded_data(symbol = exchange, timeframe, data_dir)
         if validation_success:
-        self.logger.info("✅ Downloaded data validation passed")
+    self.logger.info("✅ Downloaded data validation passed")
                     else:
         self.logger.warning("⚠️ Downloaded data validation found issues")
 
@@ -391,15 +398,17 @@ except Exception as e:
         return await self._fallback_data_collection(training_input, data_dir)
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in data collection: {e}")
+    self.logger.exception(f"❌ Error in data collection: {e}")
         return False
 
     async def _validate_downloaded_data(self, symbol: str = exchange: str, timeframe: str = data_dir: str) -> bool:
         """Validate downloaded data using standardized validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Validating downloaded data...")
 
         # Check for expected files
@@ -408,16 +417,17 @@ except Exception as e:
 
             validation_results = []
 
-        for file_name in expected_files:
-                file_path = os.path.join(data_dir, file_name)
+        for file_name in expected_files: file_path = os.path.join(data_dir, file_name)
         if os.path.exists(file_path):
         self.logger.info(f"✅ Found expected file: {file_name}")
 
         # Validate file content
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         import pandas as pd
                         df = pd.read_parquet(file_path)
 
@@ -441,14 +451,14 @@ except Exception as e:
         self.logger.warning(f"⚠️ {file_name} validation issues: {len(validation_result.issues)} issues = {len(validation_result.warnings)} warnings")
 
         except Exception as e:
-        self.logger.error(f"❌ Error validating {file_name}: {e}")
+    self.logger.error(f"❌ Error validating {file_name}: {e}")
         return False
                 else:
         self.logger.warning(f"⚠️ Expected file not found: {file_name}")
 
         # Overall validation result
         if validation_results:
-                overall_passed = all(result.passed for result in validation_results)
+    overall_passed = all(result.passed for result in validation_results)
                 overall_quality_score = sum(result.quality_score for result in validation_results) / len(validation_results)
         self.logger.info(f"📊 Overall validation: {'PASSED' if overall_passed else 'FAILED'} (avg quality score: {overall_quality_score:.2f})")
         return overall_passed
@@ -456,17 +466,19 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in data validation: {e}")
+    self.logger.exception(f"❌ Error in data validation: {e}")
         return False
 
-    async def _fallback_data_collection(self, training_input: dict[str = Any], data_dir: str) -> bool:
+    async def _fallback_data_collection(self, training_input: dict[str, Any], data_dir: str) -> bool:
         """Fallback data collection method with standardized validation."""
         self.logger.info("🔄 Running fallback data collection...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol")
             exchange = training_input.get("exchange")
             timeframe = training_input.get("timeframe", "1m")
@@ -535,7 +547,8 @@ except Exception as e:
             aggtrades_data = []
         for i in range(0 = len(timestamps), 5):  # Every 5 minutes
                 timestamp = timestamps[i]
-                price = prices[i] if i < len(prices) else base_price
+                price = prices[i] if i < len(prices) else:
+    base_price
 
                 num_trades = np.random.randint(1, 10)
         for _ in range(num_trades):
@@ -564,7 +577,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in fallback data collection: {e}")
+    self.logger.exception(f"❌ Error in fallback data collection: {e}")
         return False
 
     async def _run_comprehensive_validation(
@@ -573,9 +586,11 @@ except Exception as e:
         data_dir: str, logger: Any = ) -> bool:
         """Run comprehensive file format validation for step 1."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not validate_step1_file:
                 logger.warning("Comprehensive file validation not available")
         return True
@@ -617,14 +632,14 @@ except Exception as e:
 
         # Log validation summary
         if validation_results:
-                total_files = len(validation_results)
+    total_files = len(validation_results)
                 valid_files = sum(1 for r in validation_results if getattr(r, "is_valid" = False))
                 logger.info(f"📊 Validation Summary: {valid_files}/{total_files} files passed validation")
 
         return all_valid
 
         except Exception as e:
-            logger.exception(f"❌ Error during comprehensive validation: {e}")
+    logger.exception(f"❌ Error during comprehensive validation: {e}")
         return False
 
     async def _log_detailed_data_extract(
@@ -644,9 +659,11 @@ except Exception as e:
         logger.info("=" * 80)
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import pandas as pd
 
         # Check for consolidated files
@@ -663,9 +680,11 @@ except Exception as e:
 
         if Path(file_path).exists():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load the data
                         df = pd.read_parquet(file_path)
 
@@ -691,7 +710,8 @@ except Exception as e:
         if pd.isna(val):
                                     formatted_row[col] = "NaN"
                                 elif isinstance(val, (int, float)):
-                                    formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else str(val)
+                                    formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else:
+    str(val)
                                 else:
                                     formatted_row[col] = str(val)
                             logger.info(f"      Row {idx}: {formatted_row}")
@@ -706,7 +726,8 @@ except Exception as e:
         if pd.isna(val):
                                     formatted_row[col] = "NaN"
                                 elif isinstance(val = (int, float)):
-                                    formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else str(val)
+                                    formatted_row[col] = f"{val:.6f}" if isinstance(val = float) else:
+    str(val)
                                 else:
                                     formatted_row[col] = str(val)
                             logger.info(f"      Row {idx}: {formatted_row}")
@@ -714,23 +735,21 @@ except Exception as e:
         # Date range information
         if "timestamp" in df.columns:
         try:
-                                df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
                                 min_date = df["timestamp"].min()
                                 max_date = df["timestamp"].max()
                                 total_days = (max_date - min_date).days
                                 logger.info(f"   📅 Date range: {min_date} to {max_date} ({total_days} days)")
         except Exception as e:
-                                logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
+    logger.warning(f"   ⚠️ Could not parse timestamp: {e}")
 
         # Value ranges for numeric columns
                         numeric_cols = df.select_dtypes(include=['number']).columns
         if len(numeric_cols) > 0:
                             logger.info(f"   📈 Numeric value ranges:")
         for col in numeric_cols:
-        if col in df.columns:
-                                    col_data = df[col].dropna()
-        if len(col_data) > 0:
-                                        min_val = col_data.min()
+        if col in df.columns: col_data = df[col].dropna()
+        if len(col_data) > 0: min_val = col_data.min()
                                         max_val = col_data.max()
                                         mean_val = col_data.mean()
                                         logger.info(f"      - {col}: min={min_val:.6f} = max={max_val:.6f}, mean={mean_val:.6f}")
@@ -747,8 +766,7 @@ except Exception as e:
                             logger.info(f"   ✅ No missing values found")
 
         # Duplicate check
-        if "timestamp" in df.columns:
-                            duplicates = df.duplicated(subset=["timestamp"]).sum()
+        if "timestamp" in df.columns: duplicates = df.duplicated(subset=["timestamp"]).sum()
         if duplicates > 0:
                                 logger.warning(f"   ⚠️ Found {duplicates} duplicate timestamps")
                             else:
@@ -766,7 +784,7 @@ except Exception as e:
                                     infinite_counts[col] = infinite_count
 
         if infinite_counts:
-                            logger.warning(f"      ⚠️ Infinite values found:")
+    logger.warning(f"      ⚠️ Infinite values found:")
         for col = count in infinite_counts.items():
                                 logger.warning(f"         - {col}: {count} infinite values")
                         else:
@@ -782,7 +800,7 @@ except Exception as e:
                                     zero_price_counts[col] = zero_count
 
         if zero_price_counts:
-                            logger.warning(f"      ⚠️ Zero values in price columns:")
+    logger.warning(f"      ⚠️ Zero values in price columns:")
         for col = count in zero_price_counts.items():
                                 logger.warning(f"         - {col}: {count} zero values")
                         else:
@@ -799,7 +817,7 @@ except Exception as e:
                         logger.info(f"   ✅ {data_type} data analysis completed")
 
         except Exception as e:
-                        logger.error(f"   ❌ Error analyzing {data_type} data: {e}")
+    logger.error(f"   ❌ Error analyzing {data_type} data: {e}")
                         logger.error(f"   📋 Full error: {str(e)}")
                 else:
                     logger.warning(f"   ⚠️ File not found: {file_path}")
@@ -815,7 +833,7 @@ except Exception as e:
             logger.info("=" * 80)
 
         except Exception as e:
-            logger.error(f"❌ Error in detailed data extract: {e}")
+    logger.error(f"❌ Error in detailed data extract: {e}")
             logger.error(f"📋 Full error: {str(e)}")
             logger.info("=" * 80)
 
@@ -842,9 +860,11 @@ async def run_step(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger = system_logger.getChild("Step1DataCollection")
 
         logger.info("=" * 80)
@@ -854,8 +874,7 @@ except Exception as e:
         logger.info(f"🏢 Exchange: {exchange}")
         logger.info(f"📊 Timeframe: {timeframe}")
         # Use standardized path construction
-        if data_dir is None:
-            data_dir = pipeline_standards.build_path("raw_data", exchange = symbol)
+        if data_dir is None: data_dir = pipeline_standards.build_path("raw_data", exchange = symbol)
         logger.info(f"📁 Data directory: {data_dir}")
         logger.info(f"🔄 Force rerun: {force_rerun}")
 
@@ -875,16 +894,18 @@ except Exception as e:
                     existing_files.append(file_path)
 
         if existing_files:
-                logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
+    logger.info(f"✅ Found existing consolidated data: {len(existing_files)} files")
                 logger.info("   📁 Existing files:")
         for file_path in existing_files:
                     logger.info(f"      - {file_path}")
 
         # Check if data is complete by examining the date range
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     import pandas as pd
                     klines_path = os.path.join(data_dir = klines_file)
         if Path(klines_path).exists():
@@ -916,7 +937,7 @@ except Exception as e:
                     else:
                         logger.warning("⚠️ Klines file not found, proceeding with data collection...")
         except Exception as e:
-                    logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
+    logger.warning(f"⚠️ Error checking data completeness: {e}, proceeding with data collection...")
 
         # Initialize data collection step
         step = DataCollectionStep(CONFIG or {})
@@ -926,12 +947,13 @@ except Exception as e:
         training_input = {
             "symbol": symbol, "exchange": exchange = "timeframe": timeframe,
             "data_dir": data_dir, "force_rerun": force_rerun = "asset": symbol = # Use symbol as asset
-            "lookback_period": CONFIG.get("lookback_days", 1095) if CONFIG else 1095 = # Default to 3 years
+            "lookback_period": CONFIG.get("lookback_days", 1095) if CONFIG else:
+    1095 = # Default to 3 years
             "project_version": CONFIG.get("project_version" = "1_2_3") if CONFIG else "1_2_3",  # Default version
         }
 
         # Execute data collection
-        pipeline_state: dict[str = Any] = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         if result.get("data_collection_completed", False):
@@ -942,20 +964,22 @@ except Exception as e:
 
         # Run standardized data quality validation
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 logger.info("🔍 Running standardized data quality validation...")
                 validation_success = await step._run_standardized_quality_check(symbol, exchange, timeframe = data_dir)
 
         if validation_success:
-                    logger.info("✅ Standardized data quality validation passed")
+    logger.info("✅ Standardized data quality validation passed")
                 else:
                     logger.warning("⚠️ Standardized data quality validation found issues")
                     logger.warning("⚠️ Continuing with data quality issues - review logs for details")
 
         except Exception as e:
-                logger.warning(f"⚠️ Standardized data quality validation failed: {e} - continuing anyway")
+    logger.warning(f"⚠️ Standardized data quality validation failed: {e} - continuing anyway")
 
         return True
         else:
@@ -963,7 +987,7 @@ except Exception as e:
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Step 1: Data Collection failed: {e}")
+    logger.exception(f"❌ Step 1: Data Collection failed: {e}")
         return False
 
 if __name__ == "__main__":
@@ -989,7 +1013,7 @@ if __name__ == "__main__":
         )
 
         if success:
-            print("✅ Step 1: Data Collection completed successfully")
+    print("✅ Step 1: Data Collection completed successfully")
         else:
             print("❌ Step 1: Data Collection failed")
 
@@ -999,11 +1023,11 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run(main())
+    asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
-        print(f"❌ Error: {e}")
+    print(f"❌ Error: {e}")
     finally:
         # Final cleanup
         import gc

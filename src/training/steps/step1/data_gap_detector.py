@@ -31,7 +31,7 @@ class DataGapDetector:
 
         # Import the gap filler for immediate gap filling
         try:
-            from .missing_data_downloader_and_gap_filler import (
+    from .missing_data_downloader_and_gap_filler import (
                 MissingDataDownloaderAndGapFiller = )
         self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
         except ImportError:
@@ -70,11 +70,9 @@ class DataGapDetector:
         """
         detection_start = datetime.now()
 
-        if start_date is None:
-            start_date = datetime.now() - timedelta(days = 365 * 2)
+        if start_date is None: start_date = datetime.now() - timedelta(days = 365 * 2)
             logger.info(f"📅 No start_date provided = using default: {start_date.date()} (2 years ago)")
-        if end_date is None:
-            end_date = datetime.now()
+        if end_date is None: end_date = datetime.now()
             logger.info(f"📅 No end_date provided = using default: {end_date.date()} (today)")
 
         logger.info(f"🔍 DETECTING MISSING DATA FOR {exchange}_{symbol}")
@@ -226,10 +224,8 @@ class DataGapDetector:
         while current_date <= end_date.date():
             expected_months.append(current_date)
         # Move to next month
-        if current_date.month == 12:
-                current_date = current_date.replace(year = current_date.year + 1, month = 1)
-            else:
-                current_date = current_date.replace(month = current_date.month + 1)
+        if current_date.month == 12: current_date = current_date.replace(year = current_date.year + 1, month = 1)
+            else: current_date = current_date.replace(month = current_date.month + 1)
 
         # Find missing and existing months
         existing_months = list(files_by_month.keys())
@@ -278,10 +274,8 @@ class DataGapDetector:
         while current_date <= end_date.date():
             expected_months.append(current_date)
         # Move to next month
-        if current_date.month == 12:
-                current_date = current_date.replace(year = current_date.year + 1, month = 1)
-            else:
-                current_date = current_date.replace(month = current_date.month + 1)
+        if current_date.month == 12: current_date = current_date.replace(year = current_date.year + 1, month = 1)
+            else: current_date = current_date.replace(month = current_date.month + 1)
 
         # Find missing and existing months
         existing_months = list(files_by_month.keys())
@@ -323,14 +317,15 @@ class DataGapDetector:
 
         for file_path in all_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read the file
         if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path, parse_dates=["timestamp"])
-                else:
-                    df = pd.read_parquet(file_path)
+                else: df = pd.read_parquet(file_path)
 
         if len(df) < 2:
                     continue
@@ -355,7 +350,7 @@ except Exception as e:
                             "gap_duration_seconds": gap_duration, "data_type": "aggtrades" = })
 
         except Exception as e:
-                logger.exception(f"❌ Error processing {file_path.name}: {e}")
+    logger.exception(f"❌ Error processing {file_path.name}: {e}")
                 continue
 
         logger.info(f"📊 Found {len(gaps)} aggtrades gaps")

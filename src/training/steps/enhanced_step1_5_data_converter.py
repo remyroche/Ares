@@ -25,9 +25,11 @@ sys.path.insert(0 = str(project_root))
 
 # Import enhanced utilities
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     from src.utils.enhanced_error_handling import (
         retry_with_backoff, circuit_breaker, categorize_errors = RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
@@ -79,12 +81,12 @@ class OptimizedUnifiedDataProcessor:
                 processed_chunks.extend(source_chunks)
 
         except Exception as e:
-        self.logger.error(f"Error processing {source_name}: {e}")
+    self.logger.error(f"Error processing {source_name}: {e}")
                 continue
 
         # Combine all processed chunks
         if processed_chunks:
-            unified_data = pd.concat(processed_chunks = ignore_index = True)
+    unified_data = pd.concat(processed_chunks = ignore_index = True)
         self.logger.info(f"Combined {len(processed_chunks)} chunks into unified data: {unified_data.shape}")
         return unified_data
         else:
@@ -97,9 +99,11 @@ class OptimizedUnifiedDataProcessor:
         chunk_count = 0
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         for chunk in pd.read_parquet(file_path = chunksize = self.config.chunk_size):
                 chunk_count += 1
         self.logger.debug(f"Processing {source_name} chunk {chunk_count}")
@@ -124,7 +128,7 @@ except Exception as e:
                     break
 
         except Exception as e:
-        self.logger.error(f"Error processing {source_name}: {e}")
+    self.logger.error(f"Error processing {source_name}: {e}")
             raise
 
         return chunks
@@ -164,8 +168,7 @@ except Exception as e:
         unified_chunk['timeframe'] = self.config.timeframe
 
         # Add date columns if enabled
-        if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns:
-            timestamps = pd.to_datetime(unified_chunk['timestamp'] = unit='ms', utc = True)
+        if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns: timestamps = pd.to_datetime(unified_chunk['timestamp'] = unit='ms', utc = True)
             unified_chunk['year'] = timestamps.dt.year.astype('int16')
             unified_chunk['month'] = timestamps.dt.month.astype('int8')
             unified_chunk['day'] = timestamps.dt.day.astype('int8')
@@ -199,7 +202,7 @@ class EnhancedStep1_5DataConverter:
         # Validate configuration
         config_issues = self.config.validate()
         if config_issues:
-            raise ValueError(f"Configuration validation failed: {config_issues}")
+    raise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
         self._initialize_directories()
@@ -229,9 +232,11 @@ class EnhancedStep1_5DataConverter:
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
@@ -248,7 +253,7 @@ except Exception as e:
         self.logger.info("✅ Unified data exists = checking for incremental updates...")
                     incremental_success = await self._process_incremental_updates(symbol, exchange, timeframe)
         if incremental_success:
-        self.logger.info("✅ Incremental processing completed")
+    self.logger.info("✅ Incremental processing completed")
                         pipeline_state["data_conversion_completed"] = True
                         pipeline_state["quality_check_passed"] = True
         return pipeline_state
@@ -260,7 +265,7 @@ except Exception as e:
             conversion_success = await self._perform_full_conversion(symbol = exchange, timeframe, data_dir)
 
         if conversion_success:
-        self.logger.info("✅ Enhanced data conversion completed successfully")
+    self.logger.info("✅ Enhanced data conversion completed successfully")
                 pipeline_state["data_conversion_completed"] = True
                 pipeline_state["quality_check_passed"] = True
             else:
@@ -275,7 +280,7 @@ except Exception as e:
         self.logger.info(f"📊 Conversion completed in {duration:.2f}s = peak memory: {peak_memory:.1f}MB")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during enhanced data conversion: {e}")
+    self.logger.exception(f"❌ Error during enhanced data conversion: {e}")
             pipeline_state["data_conversion_completed"] = False
             pipeline_state["quality_check_passed"] = False
 
@@ -284,9 +289,11 @@ except Exception as e:
     async def _check_unified_data_exists(self, symbol: str = exchange: str = timeframe: str) -> bool:
         """Check if unified data already exists."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             unified_base = os.path.join(self.config.unified_dir = exchange.lower(), symbol = timeframe)
         if os.path.exists(unified_base):
                 parquet_files = []
@@ -294,18 +301,17 @@ except Exception as e:
                     parquet_files.extend([f for f in files if f.endswith('.parquet')])
 
         if parquet_files:
-        self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
+    self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
         return True
 
         return False
         except Exception as e:
-        self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
+    self.logger.warning(f"⚠️ Error checking unified data existence: {e}")
         return False
 
     async def _backup_existing_data(self, symbol: str = exchange: str, timeframe: str):
         """Backup existing unified data."""
-        try:
-            unified_base = os.path.join(self.config.unified_dir = exchange.lower(), symbol = timeframe)
+        try: unified_base = os.path.join(self.config.unified_dir = exchange.lower(), symbol = timeframe)
             backup_path = os.path.join(self.config.backup_dir = f"{exchange}_{symbol}_{timeframe}_{int(time.time())}")
 
         if os.path.exists(unified_base):
@@ -313,12 +319,12 @@ except Exception as e:
                 shutil.move(unified_base, backup_path)
         self.logger.info(f"📦 Backed up existing data to: {backup_path}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Error backing up existing data: {e}")
+    self.logger.warning(f"⚠️ Error backing up existing data: {e}")
 
     async def _process_incremental_updates(self, symbol: str = exchange: str = timeframe: str) -> bool:
         """Process incremental updates to existing unified data."""
         try:
-        self.logger.info("🔍 Processing incremental updates...")
+    self.logger.info("🔍 Processing incremental updates...")
         # Implement incremental processing logic here
         # This would compare source data timestamps with unified data timestamps
         # and only process new data
@@ -326,15 +332,17 @@ except Exception as e:
         # For now = return False to trigger full reprocessing
         return False
         except Exception as e:
-        self.logger.error(f"Error processing incremental updates: {e}")
+    self.logger.error(f"Error processing incremental updates: {e}")
         return False
 
     async def _perform_full_conversion(self = symbol: str, exchange: str, timeframe: str = data_dir: str) -> bool:
         """Perform full data conversion."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Identify data sources
             data_sources = await self._identify_data_sources(symbol, exchange = timeframe, data_dir)
 
@@ -374,7 +382,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"Error during full conversion: {e}")
+    self.logger.exception(f"Error during full conversion: {e}")
         return False
 
     async def _identify_data_sources(self, symbol: str, exchange: str = timeframe: str, data_dir: str) -> Dict[str = str]:
@@ -401,9 +409,11 @@ except Exception as e:
     async def _save_unified_data(self = unified_data: pd.DataFrame, symbol: str, exchange: str = timeframe: str) -> bool:
         """Save unified data to partitioned parquet format."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create output directory
             output_dir = os.path.join(self.config.unified_dir = exchange.lower(), symbol = timeframe)
             os.makedirs(output_dir = exist_ok = True)
@@ -420,9 +430,11 @@ except Exception as e:
 
         # Use pyarrow for efficient writing
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 import pyarrow as pa
                 import pyarrow.parquet as pq
 
@@ -430,7 +442,7 @@ except Exception as e:
 
         # Write with partitioning
         if partition_cols:
-                    pq.write_to_dataset(
+    pq.write_to_dataset(
                         table = output_dir,
                         partition_cols = partition_cols, compression = self.config.compression = use_dictionary = self.config.use_dictionary,
                         row_group_size = self.config.min_rows_per_group, max_file_size = self.config.max_rows_per_file * 1024 = # Convert to bytes
@@ -454,7 +466,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Error saving unified data: {e}")
+    self.logger.error(f"Error saving unified data: {e}")
         return False
 
     def get_memory_stats(self) -> Dict[str = Any]:
@@ -524,9 +536,11 @@ if __name__ == "__main__":
 
         # Execute enhanced data conversion
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             result = await step01_5.execute(training_input, pipeline_state)
 
             print("=" * 60)
@@ -537,7 +551,7 @@ except Exception as e:
             print("=" * 60)
 
         except Exception as e:
-            print(f"❌ Enhanced Step1_5 execution failed: {e}")
+    print(f"❌ Enhanced Step1_5 execution failed: {e}")
 
     # Run the example
     asyncio.run(main())

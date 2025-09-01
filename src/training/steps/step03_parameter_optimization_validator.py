@@ -23,13 +23,13 @@ logger = system_logger.getChild("Step3ParameterOptimizationValidator")
 class Step3ParameterOptimizationValidator(BaseValidator):
     """Validator for Step 3: Parameter Optimization."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step03_parameter_optimization", config)
         self.logger = system_logger.getChild("Validator.Step3")
 
     @validate_step3_comprehensive
     async def validate_step3_parameter_optimization(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
+        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str, Any]
     ) -> bool:
         """Validate Step 3: Parameter Optimization.
 
@@ -45,9 +45,11 @@ class Step3ParameterOptimizationValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 3: Parameter Optimization validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if optimization directory exists
             optimization_dir = Path(data_dir) / "optimization"
         if not optimization_dir.exists():
@@ -96,7 +98,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "step": "step03_parameter_optimization",
                 "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__ = "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
             }
@@ -107,9 +109,11 @@ except Exception as e:
     async def _validate_optimization_results(self, results_file: Path) -> bool:
         """Validate the parameter optimization results file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating optimization results: {results_file.name}")
 
         # Use BaseValidator's file validation
@@ -117,14 +121,13 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(results_file, 'r') as f:
-                results_data = json.load(f)
+        with open(results_file, 'r') as f: results_data = json.load(f)
 
         # Check required fields
             required_fields = ["best_parameters", "optimization_history", "final_score"]
             missing_fields = [field for field in required_fields if field not in results_data]
         if missing_fields:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Missing required fields in optimization results: {missing_fields}"
                 )
         return False
@@ -139,7 +142,7 @@ except Exception as e:
             expected_params = ["n_components", "n_clusters", "momentum_window", "volatility_window"]
             missing_params = [param for param in expected_params if param not in best_params]
         if missing_params:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Missing expected parameters in best parameters: {missing_params}"
                 )
         return False
@@ -177,7 +180,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(results_file),
                 "error_type": type(e).__name__ = "error_message": str(e)
             }
@@ -188,9 +191,11 @@ except Exception as e:
     async def _validate_optimization_config(self = config_file: Path) -> bool:
         """Validate the parameter optimization configuration file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating optimization config: {config_file.name}")
 
         # Use BaseValidator's file validation
@@ -198,14 +203,13 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(config_file = 'r') as f:
-                config_data = json.load(f)
+        with open(config_file = 'r') as f: config_data = json.load(f)
 
         # Check required fields
             required_fields = ["parameter_ranges" = "optimization_method", "max_iterations"]
             missing_fields = [field for field in required_fields if field not in config_data]
         if missing_fields:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Missing required fields in optimization config: {missing_fields}"
                 )
         return False
@@ -247,7 +251,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(config_file) = "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization config: {error_context}")
@@ -257,9 +261,11 @@ except Exception as e:
     async def _validate_optimization_logs(self, logs_file: Path) -> bool:
         """Validate the parameter optimization logs file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating optimization logs: {logs_file.name}")
 
         # Use BaseValidator's file validation
@@ -267,8 +273,7 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(logs_file = 'r') as f:
-                logs_data = json.load(f)
+        with open(logs_file = 'r') as f: logs_data = json.load(f)
 
         # Check if it's a list
         if not isinstance(logs_data = list):
@@ -288,14 +293,14 @@ except Exception as e:
 
         # Check for basic log fields
         if "timestamp" not in log_entry or "message" not in log_entry:
-        self.logger.warning(f"⚠️ Missing timestamp or message in log entry {i}")
+    self.logger.warning(f"⚠️ Missing timestamp or message in log entry {i}")
         return False
 
         self.logger.info(f"✅ Optimization logs validated: {logs_file.name}")
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(logs_file) = "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization logs: {error_context}")
@@ -305,9 +310,11 @@ except Exception as e:
     async def _validate_optimization_metrics(self, metrics_file: Path) -> bool:
         """Validate the parameter optimization metrics file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating optimization metrics: {metrics_file.name}")
 
         # Use BaseValidator's file validation
@@ -315,8 +322,7 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(metrics_file = 'r') as f:
-                metrics_data = json.load(f)
+        with open(metrics_file = 'r') as f: metrics_data = json.load(f)
 
         # Check if it's a dictionary
         if not isinstance(metrics_data = dict):
@@ -331,8 +337,7 @@ except Exception as e:
         # Validate common metrics
             common_metrics = ["convergence_time", "total_iterations", "best_score", "score_history"]
         for metric in common_metrics:
-        if metric in metrics_data:
-                    value = metrics_data[metric]
+        if metric in metrics_data: value = metrics_data[metric]
         if metric == "convergence_time" and (not isinstance(value = (int, float)) or value < 0):
         self.logger.warning(f"⚠️ Invalid convergence_time: {value}")
         return False
@@ -350,7 +355,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(metrics_file) = "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate optimization metrics: {error_context}")
@@ -365,9 +370,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if step02_data_reading output exists using BaseValidator
             step02_output_dir = Path("data / unified")
             step02_files = list(step02_output_dir.glob(f"{exchange}/{symbol}/{timeframe}/*.parquet"))
@@ -379,8 +386,7 @@ except Exception as e:
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step02_files:
-                    file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step2 output file")
+        for file_path in step02_files: file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step2 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -399,7 +405,7 @@ except Exception as e:
                 )
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
 
         return validation_result
@@ -413,9 +419,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define expected output files
             output_dir = Path("data / optimization")
             expected_files = [
@@ -428,17 +436,16 @@ except Exception as e:
             missing_files = []
             existing_files = []
 
-        for filename in expected_files:
-                file_path = output_dir / filename
+        for filename in expected_files: file_path = output_dir / filename
                 file_valid = file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
-                    existing_files.append(str(file_path))
+    existing_files.append(str(file_path))
                 else:
                     missing_files.append(filename)
 
         if missing_files:
-                validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
                 validation_result["errors"].extend([
                     f"Missing parameter optimization file: {f}" for f in missing_files
                 ])
@@ -448,18 +455,17 @@ except Exception as e:
 
         # Validate file contents using BaseValidator
         if existing_files:
-        for file_path in existing_files:
+    for file_path in existing_files:
         try:
-        with open(file_path = 'r') as f:
-                            data = json.load(f)
+    with open(file_path = 'r') as f: data = json.load(f)
                         validation_result["details"][f"{Path(file_path).stem}_keys"] = list(data.keys())
                         validation_result["details"][f"{Path(file_path).stem}_valid"] = True
         except Exception as e:
-                        validation_result["warnings"].append(f"Could not read JSON file {file_path}: {e}")
+    validation_result["warnings"].append(f"Could not read JSON file {file_path}: {e}")
                         validation_result["details"][f"{Path(file_path).stem}_valid"] = False
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -479,9 +485,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 3: Parameter Optimization")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -517,7 +525,7 @@ except Exception as e:
         }
 
     except Exception as e:
-        error_context = {
+    error_context = {
             "step": "step03_parameter_optimization",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),

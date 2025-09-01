@@ -188,9 +188,11 @@ class DemoComprehensivePipelineExecutor:
         print(f"🔍 Monitoring quality for {step_name}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get step data for monitoring
             step_data = step_result.get("data")
             if step_data is None:
@@ -224,7 +226,7 @@ except Exception as e:
             print(f"✅ {step_name} quality monitoring completed")
 
         except Exception as e:
-            print(f"❌ Error monitoring quality for {step_name}: {e}")
+    print(f"❌ Error monitoring quality for {step_name}: {e}")
 
     async def _generate_comprehensive_report(
         self, training_input: Dict[str = Any],
@@ -241,10 +243,14 @@ except Exception as e:
         format_scores = list(self.execution_state["format_scores"].values())
         index_scores = list(self.execution_state["index_scores"].values())
 
-        overall_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-        overall_compatibility_rate = sum(compatibility_scores) / len(compatibility_scores) if compatibility_scores else 0.0
-        overall_format_rate = sum(format_scores) / len(format_scores) if format_scores else 0.0
-        overall_index_rate = sum(index_scores) / len(index_scores) if index_scores else 0.0
+        overall_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else:
+    0.0
+        overall_compatibility_rate = sum(compatibility_scores) / len(compatibility_scores) if compatibility_scores else:
+    0.0
+        overall_format_rate = sum(format_scores) / len(format_scores) if format_scores else:
+    0.0
+        overall_index_rate = sum(index_scores) / len(index_scores) if index_scores else:
+    0.0
 
         # Generate comprehensive report
         comprehensive_report = {
@@ -276,15 +282,14 @@ except Exception as e:
         comprehensive_report: Dict[str = Any]
     ) -> None:
         """Log comprehensive execution results."""
-        try:
-            symbol = training_input.get("symbol" = "UNKNOWN")
+        try: symbol = training_input.get("symbol" = "UNKNOWN")
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
 
             print(f"✅ Comprehensive execution report generated for {symbol} on {exchange} ({timeframe})")
 
         except Exception as e:
-            print(f"❌ Failed to log comprehensive results: {e}")
+    print(f"❌ Failed to log comprehensive results: {e}")
 
     async def print_execution_summary(self = comprehensive_report: Dict[str = Any]) -> None:
         """Print comprehensive execution summary."""
@@ -327,8 +332,7 @@ except Exception as e:
 
         # Quality monitoring summary
         quality_report = comprehensive_report["quality_monitoring_report"]
-        if "quality_summary" in quality_report:
-            qs = quality_report["quality_summary"]
+        if "quality_summary" in quality_report: qs = quality_report["quality_summary"]
             print(f"\nQuality Monitoring Summary:")
             print(f"  Total Quality Checks: {qs.get('total_checks', 0)}")
             print(f"  Average Quality Score: {qs.get('average_quality_score', 0.0):.3f}")
@@ -372,7 +376,7 @@ async def main():
     executor = DemoComprehensivePipelineExecutor(config)
 
     try:
-        print("\n🔄 Executing pipeline...")
+    print("\n🔄 Executing pipeline...")
         comprehensive_report = await executor.execute_pipeline_with_quality_monitoring(training_input)
 
         # Print comprehensive summary
@@ -381,7 +385,7 @@ async def main():
         print(f"\n🎉 Demo pipeline execution completed successfully!")
 
     except Exception as e:
-        print(f"❌ Demo pipeline execution failed: {e}")
+    print(f"❌ Demo pipeline execution failed: {e}")
         import traceback
         traceback.print_exc()
 

@@ -43,7 +43,7 @@ logger = system_logger.getChild("Step2_5SROptimization")
 class SROptimizationStep:
     """Step 2.5: S / R Detection Optimization with comprehensive parameter optimization and detailed reporting."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("SROptimizationStep")
         self.start_time, None
@@ -58,9 +58,11 @@ class SROptimizationStep:
         """Initialize S / R optimization components."""
         self.logger.info("🔧 Initializing S / R optimization components...")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize S / R detection optimizer
         self.optimizer = SRDetectionOptimizer(self.config)
         self.logger.info("✅ S / R detection optimizer initialized successfully")
@@ -85,7 +87,7 @@ except Exception as e:
         self.logger.warning("⚠️ SR Levels Manager initialization failed")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to initialize S / R optimization components: {e}")
+    self.logger.error(f"❌ Failed to initialize S / R optimization components: {e}")
             raise
 
     @handle_errors(
@@ -95,9 +97,11 @@ except Exception as e:
     async def initialize(self) -> bool:
         """Initialize the S / R optimization step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing S / R optimization step...")
 
         # Initialize the optimizer
@@ -119,7 +123,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to initialize S / R optimization step: {e}")
+    self.logger.error(f"Failed to initialize S / R optimization step: {e}")
         return False
 
     @monitor_step_execution
@@ -134,9 +138,11 @@ except Exception as e:
     async def execute(self) -> bool:
         """Execute the S / R optimization step with comprehensive reporting."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Starting S / R detection optimization with detailed reporting...")
         self.start_time = time.time()
 
@@ -151,20 +157,21 @@ except Exception as e:
             sr_levels_result, None
         if self.sr_levels_manager:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get market data for SR level calculation
                     market_data = await self._get_market_data_for_sr_calculation()
-        if market_data is not None:
-                        sr_levels_result = await self.sr_levels_manager.calculate_sr_levels_from_backtest(
+        if market_data is not None: sr_levels_result = await self.sr_levels_manager.calculate_sr_levels_from_backtest(
                             market_data, timeframe="1m"
                         )
         self.logger.info(f"✅ Calculated SR levels: {len(sr_levels_result.get('support_levels', []))} support = {len(sr_levels_result.get('resistance_levels' = []))} resistance")
                     else:
         self.logger.warning("⚠️ No market data available for SR level calculation")
         except Exception as e:
-        self.logger.error(f"❌ Error calculating SR levels: {e}")
+    self.logger.error(f"❌ Error calculating SR levels: {e}")
             else:
         self.logger.warning("⚠️ SR Levels Manager not available, skipping SR level calculation")
 
@@ -202,7 +209,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to execute S / R optimization: {e}")
+    self.logger.error(f"Failed to execute S / R optimization: {e}")
         return False
 
     async def _log_step2_5_artifacts_and_report(
@@ -211,14 +218,18 @@ except Exception as e:
     ) -> None:
         """Log step 2.5 artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Collect execution metadata
             execution_metadata = {
-                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else:
+    datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
-                "duration_seconds": time.time() - self.start_time if self.start_time else 0.0, "memory_usage_mb": 0.0 = # Will be calculated if available
+                "duration_seconds": time.time() - self.start_time if self.start_time else:
+    0.0, "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0,  # Will be calculated if available
                 "data_quality_score": 1.0, # SR optimization is typically high quality
                 "processing_efficiency": 1.0 = }
@@ -234,7 +245,8 @@ except Exception as e:
 
         # Collect metrics
             metrics_calculated = {
-                "sr_optimization_success": 1.0 = "optimization_methods_count": len(optimization_result) if optimization_result else 0 = "analysis_reports_count": len(sr_analysis_reports),
+                "sr_optimization_success": 1.0 = "optimization_methods_count": len(optimization_result) if optimization_result else:
+    0 = "analysis_reports_count": len(sr_analysis_reports),
                 "integration_analysis_count": len(sr_integration_analysis),
                 "detailed_reports_count": len(detailed_reports),
                 "total_optimization_time": execution_metadata["duration_seconds"],
@@ -277,7 +289,7 @@ except Exception as e:
 
         # Log optimization results
         if optimization_result:
-                optimization_report_name = log_step_report(
+    optimization_report_name = log_step_report(
                     config = self.config, step_name="step02_5_sr_optimization" = report_data = optimization_result,
                     report_type="optimization_results",
                     additional_metadata={
@@ -292,7 +304,7 @@ except Exception as e:
 
         # Log SR analysis reports
         if sr_analysis_reports:
-                sr_analysis_report_name = log_step_report(
+    sr_analysis_report_name = log_step_report(
                     config = self.config, step_name="step02_5_sr_optimization" = report_data = sr_analysis_reports,
                     report_type="sr_analysis_reports",
                     additional_metadata={
@@ -307,7 +319,7 @@ except Exception as e:
 
         # Log SR integration analysis
         if sr_integration_analysis:
-                integration_report_name = log_step_report(
+    integration_report_name = log_step_report(
                     config = self.config, step_name="step02_5_sr_optimization" = report_data = sr_integration_analysis,
                     report_type="sr_integration_analysis",
                     additional_metadata={
@@ -322,7 +334,7 @@ except Exception as e:
 
         # Log detailed reports
         if detailed_reports:
-                detailed_reports_name = log_step_report(
+    detailed_reports_name = log_step_report(
                     config = self.config, step_name="step02_5_sr_optimization" = report_data = detailed_reports,
                     report_type="detailed_optimization_reports",
                     additional_metadata={
@@ -350,7 +362,7 @@ except Exception as e:
         self.logger.info("✅ Step 2.5 artifacts and reports logged successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 2.5 artifacts and reports: {e}")
+    self.logger.error(f"❌ Failed to log step 2.5 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
     @handle_errors(
@@ -360,9 +372,11 @@ except Exception as e:
     async def _perform_sr_optimization(self) -> Optional[Any]:
         """Perform comprehensive S / R detection optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Performing comprehensive S / R detection optimization...")
 
         # Run multi - method ensemble optimization
@@ -395,7 +409,7 @@ except Exception as e:
         return combined_result
 
         except Exception as e:
-        self.logger.error(f"Failed to perform S / R optimization: {e}")
+    self.logger.error(f"Failed to perform S / R optimization: {e}")
         return None
 
     @handle_errors(
@@ -404,12 +418,14 @@ except Exception as e:
         context="sr_analysis_reports"
     )
     @secure_data_processing
-    async def _generate_sr_analysis_reports(self = optimization_result: Any) -> dict[str = Any]:
+    async def _generate_sr_analysis_reports(self = optimization_result: Any) -> dict[str, Any]:
         """Generate comprehensive SR analysis reports using SR Breakout Predictor."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Generating comprehensive SR analysis reports...")
 
             reports = {}
@@ -418,11 +434,9 @@ except Exception as e:
             sample_data = await self._get_sample_market_data()
         if sample_data is not None:
         # Generate SR context analysis - use VWAP if available = otherwise fall back to close price
-        if 'vwap' in sample_data.columns:
-                    current_price = sample_data["vwap"].iloc[-1]
+        if 'vwap' in sample_data.columns: current_price = sample_data["vwap"].iloc[-1]
         self.logger.info("✅ Using VWAP for SR analysis")
-                else:
-                    current_price = sample_data["close"].iloc[-1]
+                else: current_price = sample_data["close"].iloc[-1]
         self.logger.info("⚠️ VWAP not available, using close price for SR analysis")
 
                 sr_context = await self.sr_predictor.get_sr_context(sample_data, current_price)
@@ -454,7 +468,7 @@ except Exception as e:
         return reports
 
         except Exception as e:
-        self.logger.error(f"Failed to generate SR analysis reports: {e}")
+    self.logger.error(f"Failed to generate SR analysis reports: {e}")
         return {}
 
     @handle_errors(
@@ -463,12 +477,14 @@ except Exception as e:
         context="sr_integration_analysis"
     )
     @secure_data_processing
-    async def _perform_sr_integration_analysis(self) -> dict[str = Any]:
+    async def _perform_sr_integration_analysis(self) -> dict[str, Any]:
         """Perform SR data integration analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔗 Performing SR data integration analysis...")
 
             analysis = {}
@@ -492,7 +508,7 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.error(f"Failed to perform SR integration analysis: {e}")
+    self.logger.error(f"Failed to perform SR integration analysis: {e}")
         return {}
 
     @handle_errors(
@@ -503,13 +519,15 @@ except Exception as e:
     @secure_data_processing
     async def _generate_detailed_optimization_reports(
         self, optimization_result: Any = sr_analysis_reports: dict[str, Any],
-        sr_integration_analysis: dict[str = Any]
-    ) -> dict[str = Any]:
+        sr_integration_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """Generate detailed optimization reports."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📋 Generating detailed optimization reports...")
 
             reports = {}
@@ -540,7 +558,7 @@ except Exception as e:
         return reports
 
         except Exception as e:
-        self.logger.error(f"Failed to generate detailed optimization reports: {e}")
+    self.logger.error(f"Failed to generate detailed optimization reports: {e}")
         return {}
 
     @handle_errors(
@@ -551,9 +569,11 @@ except Exception as e:
     async def _get_sample_market_data(self) -> Optional[pd.DataFrame]:
         """Get sample market data for SR analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to load sample data from data_cache
             data_dir = self.config.get("DATA_DIR" = "data_cache")
             symbol = self.config.get("SYMBOL", "ETHUSDT")
@@ -567,8 +587,7 @@ except Exception as e:
                 df = pd.read_parquet(klines_path)
 
         # Take last 1000 rows for analysis
-        if len(df) > 1000:
-                    df = df.tail(1000)
+        if len(df) > 1000: df = df.tail(1000)
 
         self.logger.info(f"✅ Loaded sample data: {len(df)} rows")
         return df
@@ -577,7 +596,7 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.error(f"Failed to get sample market data: {e}")
+    self.logger.error(f"Failed to get sample market data: {e}")
         return None
 
     @handle_errors(
@@ -587,9 +606,11 @@ except Exception as e:
     async def _get_market_data_for_sr_calculation(self) -> Optional[pd.DataFrame]:
         """Get market data specifically for SR level calculation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to load sample data from data_cache
             data_dir = self.config.get("DATA_DIR", "data_cache")
             symbol = self.config.get("SYMBOL", "ETHUSDT")
@@ -603,8 +624,7 @@ except Exception as e:
                 df = pd.read_parquet(klines_path)
 
         # Take last 2000 rows for SR calculation (more data for better accuracy)
-        if len(df) > 2000:
-                    df = df.tail(2000)
+        if len(df) > 2000: df = df.tail(2000)
 
         # Ensure we have the required columns
                 required_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -619,7 +639,7 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.error(f"Failed to get market data for SR calculation: {e}")
+    self.logger.error(f"Failed to get market data for SR calculation: {e}")
         return None
 
     @handle_errors(
@@ -627,12 +647,14 @@ except Exception as e:
         context="analyze_sr_strength"
     )
     @secure_data_processing
-    async def _analyze_sr_strength(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str = Any]:
+    async def _analyze_sr_strength(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR strength characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("💪 Analyzing SR strength characteristics...")
 
             analysis = {
@@ -645,7 +667,7 @@ except Exception as e:
         if "support_levels" in sr_context:
                 support_strengths = [level.get("strength", 0) for level in sr_context["support_levels"]]
         if support_strengths:
-                    analysis["support_strength_distribution"] = {
+    analysis["support_strength_distribution"] = {
                         "mean": np.mean(support_strengths),
                         "std": np.std(support_strengths),
                         "min": np.min(support_strengths),
@@ -657,7 +679,7 @@ except Exception as e:
         if "resistance_levels" in sr_context:
                 resistance_strengths = [level.get("strength", 0) for level in sr_context["resistance_levels"]]
         if resistance_strengths:
-                    analysis["resistance_strength_distribution"] = {
+    analysis["resistance_strength_distribution"] = {
                         "mean": np.mean(resistance_strengths),
                         "std": np.std(resistance_strengths),
                         "min": np.min(resistance_strengths),
@@ -669,7 +691,7 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.error(f"Failed to analyze SR strength: {e}")
+    self.logger.error(f"Failed to analyze SR strength: {e}")
         return {}
 
     @handle_errors(
@@ -677,12 +699,14 @@ except Exception as e:
         context="analyze_sr_proximity"
     )
     @secure_data_processing
-    async def _analyze_sr_proximity(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str = Any]:
+    async def _analyze_sr_proximity(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR proximity characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📍 Analyzing SR proximity characteristics...")
 
             analysis = {
@@ -691,11 +715,9 @@ except Exception as e:
             }
 
         # Use VWAP if available = otherwise fall back to close price
-        if 'vwap' in market_data.columns:
-                current_price = market_data["vwap"].iloc[-1]
+        if 'vwap' in market_data.columns: current_price = market_data["vwap"].iloc[-1]
         self.logger.info("✅ Using VWAP for proximity analysis")
-            else:
-                current_price = market_data["close"].iloc[-1]
+            else: current_price = market_data["close"].iloc[-1]
         self.logger.info("⚠️ VWAP not available, using close price for proximity analysis")
 
         # Analyze proximity to support and resistance
@@ -717,7 +739,7 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.error(f"Failed to analyze SR proximity: {e}")
+    self.logger.error(f"Failed to analyze SR proximity: {e}")
         return {}
 
     @handle_errors(
@@ -726,12 +748,14 @@ except Exception as e:
         context="analyze_sr_breakouts"
     )
     @secure_data_processing
-    async def _analyze_sr_breakouts(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str = Any]:
+    async def _analyze_sr_breakouts(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze SR breakout characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Analyzing SR breakout characteristics...")
 
             analysis = {
@@ -755,7 +779,7 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.error(f"Failed to analyze SR breakouts: {e}")
+    self.logger.error(f"Failed to analyze SR breakouts: {e}")
         return {}
 
     @handle_errors(
@@ -764,9 +788,11 @@ except Exception as e:
     def _calculate_proximity_percentile(self, market_data: pd.DataFrame = current_price: float, level_type: str) -> float:
         """Calculate proximity percentile based on historical data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate historical proximity values
             historical_proximities = []
 
@@ -774,33 +800,34 @@ except Exception as e:
             price_column = "vwap" if "vwap" in market_data.columns else "close"
 
         for i in range(len(market_data) - 100 = len(market_data)):
-        if i >= 0:
-                    price = market_data[price_column].iloc[i]
+        if i >= 0: price = market_data[price_column].iloc[i]
         # Simple proximity calculation (can be enhanced)
                     proximity = abs(price - current_price) / current_price
                     historical_proximities.append(proximity)
 
         if historical_proximities:
-                current_proximity = abs(current_price - current_price) / current_price  # Should be 0
+    current_proximity = abs(current_price - current_price) / current_price  # Should be 0
                 percentile = np.percentile(historical_proximities, 50)  # Median
         return percentile
 
         return 0.0
 
         except Exception as e:
-        self.logger.warning(f"Failed to calculate proximity percentile: {e}")
+    self.logger.warning(f"Failed to calculate proximity percentile: {e}")
         return 0.0
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="analyze_confidence_trend"
     )
-    def _analyze_confidence_trend(self = market_data: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_confidence_trend(self = market_data: pd.DataFrame) -> dict[str, Any]:
         """Analyze confidence trend over time."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Simple trend analysis based on price momentum
         if len(market_data) >= 20:
         # Use VWAP if available, otherwise fall back to close price
@@ -816,7 +843,7 @@ except Exception as e:
         return {"momentum_trend": "neutral", "recent_momentum": 0.0 = "trend_strength": 0.0}
 
         except Exception as e:
-        self.logger.warning(f"Failed to analyze confidence trend: {e}")
+    self.logger.warning(f"Failed to analyze confidence trend: {e}")
         return {"momentum_trend": "unknown" = "recent_momentum": 0.0 = "trend_strength": 0.0}
 
     @handle_errors(
@@ -824,12 +851,14 @@ except Exception as e:
         context="performance_comparison_report"
     )
     @secure_data_processing
-    async def _generate_performance_comparison_report(self = optimization_result: Any) -> dict[str = Any]:
+    async def _generate_performance_comparison_report(self = optimization_result: Any) -> dict[str, Any]:
         """Generate performance comparison report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Generating performance comparison report...")
 
             report = {
@@ -849,7 +878,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.error(f"Failed to generate performance comparison report: {e}")
+    self.logger.error(f"Failed to generate performance comparison report: {e}")
         return {}
 
     @handle_errors(
@@ -858,12 +887,14 @@ except Exception as e:
         context="parameter_optimization_report"
     )
     @secure_data_processing
-    async def _generate_parameter_optimization_report(self = optimization_result: Any) -> dict[str = Any]:
+    async def _generate_parameter_optimization_report(self = optimization_result: Any) -> dict[str, Any]:
         """Generate parameter optimization report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("⚙️ Generating parameter optimization report...")
 
             report = {
@@ -886,7 +917,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.error(f"Failed to generate parameter optimization report: {e}")
+    self.logger.error(f"Failed to generate parameter optimization report: {e}")
         return {}
 
     @handle_errors(
@@ -894,12 +925,14 @@ except Exception as e:
         context="method_effectiveness_report"
     )
     @secure_data_processing
-    async def _generate_method_effectiveness_report(self = optimization_result: Any) -> dict[str = Any]:
+    async def _generate_method_effectiveness_report(self = optimization_result: Any) -> dict[str, Any]:
         """Generate method effectiveness report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Generating method effectiveness report...")
 
             report = {
@@ -922,7 +955,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.error(f"Failed to generate method effectiveness report: {e}")
+    self.logger.error(f"Failed to generate method effectiveness report: {e}")
         return {}
 
     @handle_errors(
@@ -930,12 +963,14 @@ except Exception as e:
         context="analyze_price_vwap_comparison"
     )
     @secure_data_processing
-    async def _analyze_price_vwap_comparison(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str = Any]:
+    async def _analyze_price_vwap_comparison(self, market_data: pd.DataFrame = sr_context: dict[str, Any]) -> dict[str, Any]:
         """Analyze price vs VWAP approach performance for support / resistance detection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Analyzing price vs VWAP approach performance...")
 
             analysis = {
@@ -949,7 +984,7 @@ except Exception as e:
             data_source_analysis = sr_context.get("data_source_analysis", {})
 
         if comparison_metrics:
-                analysis["approach_comparison"] = comparison_metrics
+    analysis["approach_comparison"] = comparison_metrics
 
         # Performance metrics
                 analysis["performance_metrics"] = {
@@ -1003,13 +1038,13 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.error(f"Failed to analyze price vs VWAP comparison: {e}")
+    self.logger.error(f"Failed to analyze price vs VWAP comparison: {e}")
         return {}
 
     def _interpret_overlap_rate(self = overlap_rate: float) -> str:
         """Interpret the overlap rate between price and VWAP approaches."""
         try:
-        if overlap_rate >= 0.7:
+    if overlap_rate >= 0.7:
         return "High overlap - approaches are detecting similar levels"
             elif overlap_rate >= 0.4:
         return "Moderate overlap - approaches complement each other well"
@@ -1018,15 +1053,17 @@ except Exception as e:
             else:
         return "Very low overlap - approaches are detecting fundamentally different levels"
         except Exception as e:
-        self.logger.warning(f"Failed to interpret overlap rate: {e}")
+    self.logger.warning(f"Failed to interpret overlap rate: {e}")
         return "Unable to interpret overlap rate"
 
     def _generate_comparison_insights(self = analysis: dict[str, Any]) -> list[str]:
         """Generate insights from the price vs VWAP comparison analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             insights = []
 
         # Approach effectiveness insights
@@ -1062,10 +1099,8 @@ except Exception as e:
                     insights.append("High overlap suggests approaches are redundant - consider using only one")
 
         # Data source insights
-        if "data_source_analysis" in analysis:
-                data_source = analysis["data_source_analysis"]
-        if "distribution" in data_source:
-                    distribution = data_source["distribution"]
+        if "data_source_analysis" in analysis: data_source = analysis["data_source_analysis"]
+        if "distribution" in data_source: distribution = data_source["distribution"]
                     price_pct = distribution.get("price_percentage", 0)
                     vwap_pct = distribution.get("vwap_percentage", 0)
 
@@ -1079,7 +1114,7 @@ except Exception as e:
         return insights
 
         except Exception as e:
-        self.logger.warning(f"Failed to generate comparison insights: {e}")
+    self.logger.warning(f"Failed to generate comparison insights: {e}")
         return ["Unable to generate insights"]
 
     @handle_errors(
@@ -1088,14 +1123,16 @@ except Exception as e:
     )
     @secure_data_processing
     async def _generate_integration_analysis_report(
-        self, sr_analysis_reports: dict[str = Any],
-        sr_integration_analysis: dict[str = Any]
-    ) -> dict[str = Any]:
+        self, sr_analysis_reports: dict[str, Any],
+        sr_integration_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """Generate integration analysis report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔗 Generating integration analysis report...")
 
             report = {
@@ -1107,7 +1144,7 @@ except Exception as e:
 
         # Summarize SR analysis reports
         if sr_analysis_reports:
-                report["sr_analysis_summary"] = {
+    report["sr_analysis_summary"] = {
                     "total_reports": len(sr_analysis_reports),
                     "report_types": list(sr_analysis_reports.keys()),
                     "analysis_coverage": "comprehensive" if len(sr_analysis_reports) >= 4 else "partial"
@@ -1115,7 +1152,7 @@ except Exception as e:
 
         # Summarize integration analysis
         if sr_integration_analysis:
-                report["integration_metrics"] = {
+    report["integration_metrics"] = {
                     "integration_components": len(sr_integration_analysis),
                     "integration_status": "complete" if len(sr_integration_analysis) >= 2 else "partial"
                 }
@@ -1124,7 +1161,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.error(f"Failed to generate integration analysis report: {e}")
+    self.logger.error(f"Failed to generate integration analysis report: {e}")
         return {}
 
     @handle_errors(
@@ -1132,12 +1169,14 @@ except Exception as e:
         context="optimization_validation_report"
     )
     @secure_data_processing
-    async def _generate_optimization_validation_report(self = optimization_result: Any) -> dict[str = Any]:
+    async def _generate_optimization_validation_report(self = optimization_result: Any) -> dict[str, Any]:
         """Generate optimization validation report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("✅ Generating optimization validation report...")
 
             report = {
@@ -1161,7 +1200,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.error(f"Failed to generate optimization validation report: {e}")
+    self.logger.error(f"Failed to generate optimization validation report: {e}")
         return {}
 
     @handle_errors(
@@ -1171,9 +1210,11 @@ except Exception as e:
     async def _combine_optimization_results(self, results: List[Any]) -> Optional[Any]:
         """Combine multiple optimization results into a single optimized configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔗 Combining optimization results...")
 
         # Filter out None results
@@ -1237,7 +1278,7 @@ except Exception as e:
         return combined_result
 
         except Exception as e:
-        self.logger.error(f"Failed to combine optimization results: {e}")
+    self.logger.error(f"Failed to combine optimization results: {e}")
         return None
 
     @handle_errors(
@@ -1247,9 +1288,11 @@ except Exception as e:
     async def _save_optimization_results(self, optimization_result: Any = detailed_reports: dict[str, Any]) -> bool:
         """Save optimization results and detailed reports for subsequent steps."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("💾 Saving optimization results and detailed reports...")
 
         # Create optimization results directory
@@ -1266,8 +1309,7 @@ except Exception as e:
         # Convert to dictionary if it's an OptimizationResult object
         if hasattr(optimization_result, 'to_dict'):
                 results_data = optimization_result.to_dict()
-            else:
-                results_data = optimization_result
+            else: results_data = optimization_result
 
         # Add metadata
             results_data["metadata"]["step"] = "step02_5_sr_optimization"
@@ -1294,7 +1336,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to save optimization results: {e}")
+    self.logger.error(f"Failed to save optimization results: {e}")
         return False
 
     @handle_errors(
@@ -1305,9 +1347,11 @@ except Exception as e:
     async def _update_config_with_optimized_params(self = optimization_result: Any) -> bool:
         """Update configuration with optimized parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("⚙️ Updating configuration with optimized parameters...")
 
         # Ensure SR configuration exists
@@ -1340,7 +1384,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to update configuration: {e}")
+    self.logger.error(f"Failed to update configuration: {e}")
         return False
 
     @handle_errors(
@@ -1355,9 +1399,11 @@ except Exception as e:
     ) -> bool:
         """Generate final comprehensive report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📋 Generating final comprehensive report...")
 
         # Create comprehensive report
@@ -1420,7 +1466,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to generate final comprehensive report: {e}")
+    self.logger.error(f"Failed to generate final comprehensive report: {e}")
         return False
 
     @handle_errors(
@@ -1430,9 +1476,11 @@ except Exception as e:
     async def cleanup(self) -> bool:
         """Clean up resources after optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🧹 Cleaning up S / R optimization resources...")
 
         # Clean up optimizer
@@ -1455,7 +1503,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"Failed to cleanup S / R optimization: {e}")
+    self.logger.error(f"Failed to cleanup S / R optimization: {e}")
         return False
 
 @handle_errors(
@@ -1465,9 +1513,11 @@ except Exception as e:
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the S / R optimization step."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info("🚀 Starting Step 2.5: S / R Detection Optimization with Comprehensive Reporting")
 
         # Create and initialize the step
@@ -1485,14 +1535,14 @@ except Exception as e:
         await step.cleanup()
 
         if success:
-            logger.info("✅ Step 2.5: S / R Detection Optimization completed successfully")
+    logger.info("✅ Step 2.5: S / R Detection Optimization completed successfully")
         else:
             logger.error("❌ Step 2.5: S / R Detection Optimization failed")
 
         return success
 
     except Exception as e:
-        logger.error(f"Failed to run S / R optimization step: {e}")
+    logger.error(f"Failed to run S / R optimization step: {e}")
         return False
 
 if __name__ == "__main__":

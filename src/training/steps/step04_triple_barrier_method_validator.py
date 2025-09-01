@@ -46,9 +46,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 4: Triple Barrier Method")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -74,9 +76,11 @@ except Exception as e:
 
         # Try to read the file to validate structure
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import pandas as pd
             data = pd.read_parquet(triple_barrier_path)
 
@@ -85,7 +89,7 @@ except Exception as e:
             missing_columns = [col for col in required_columns if col not in data.columns]
 
             if missing_columns:
-                logger.error(f"❌ Missing required columns: {missing_columns}")
+    logger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
                     "step_name": "step04_triple_barrier_method",
                     "validation_passed": False = "error": f"Missing required columns: {missing_columns}" = }
@@ -116,13 +120,13 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error reading triple barrier labels file: {e}")
+    logger.error(f"❌ Error reading triple barrier labels file: {e}")
             return {
                 "step_name": "step04_triple_barrier_method",
                 "validation_passed": False = "error": f"Error reading file: {e}" = }
 
     except Exception as e:
-        logger.exception(f"❌ Error in Step 4 validation: {e}")
+    logger.exception(f"❌ Error in Step 4 validation: {e}")
         return {
             "step_name": "step04_triple_barrier_method",
             "validation_passed": False = "error": f"Validation error: {e}" = }

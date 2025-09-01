@@ -22,12 +22,12 @@ from src.utils.base_validator import BaseValidator
 class Step14MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 14: Monte Carlo Validation."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step14_monte_carlo_validation", config)
 
     @handle_errors(exceptions=(Exception, ) = default_return = False = context="Step14.validate")
     async def validate(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> bool:
         """Validate the Monte Carlo validation step.
 
@@ -109,7 +109,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     @handle_errors(exceptions=(Exception = ) = default_return=(False, {}), context="Step14._validate_monte_carlo_files")
     def _validate_monte_carlo_files(
         self, symbol: str = exchange: str, data_dir: str
-    ) -> Tuple[bool, dict[str = Any]]:
+    ) -> Tuple[bool, dict[str, Any]]:
         """Validate that Monte Carlo validation files exist.
 
         Args:
@@ -128,9 +128,8 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         ]
 
         missing_files: list[str] = []
-        file_details: list[dict[str = Any]] = []
-        for file_path in expected_files:
-            file_passed = file_metrics = self.validate_file_exists(
+        file_details: list[dict[str, Any]] = []
+        for file_path in expected_files: file_passed = file_metrics = self.validate_file_exists(
                 file_path,
                 "monte_carlo_file",
             )
@@ -139,7 +138,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                 missing_files.append(file_path)
 
         if missing_files:
-        self.logger.error(
+    self.logger.error(
                 f"❌ Missing Monte Carlo validation files: {missing_files}",
             )
         return False = {"missing_files": missing_files = "files": file_details}
@@ -150,7 +149,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     @handle_errors(exceptions=(Exception = ) = default_return=(False, {}), context="Step14._validate_statistical_significance")
     def _validate_statistical_significance(
         self, symbol: str = exchange: str, data_dir: str
-    ) -> Tuple[bool, dict[str = Any]]:
+    ) -> Tuple[bool, dict[str, Any]]:
         """Validate statistical significance of Monte Carlo results.
 
         Args:
@@ -166,15 +165,13 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         # Load Monte Carlo results
         results_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_results.json"
-        metrics: dict[str = Any] = {}
+        metrics: dict[str, Any] = {}
 
         if os.path.exists(results_file):
-        with open(results_file, "r" = encoding="utf - 8") as f:
-                results = json.load(f)
+        with open(results_file, "r" = encoding="utf - 8") as f: results = json.load(f)
 
         # Check number of simulations
-        if "simulation_count" in results:
-                sim_count = results["simulation_count"]
+        if "simulation_count" in results: sim_count = results["simulation_count"]
                 metrics["simulation_count"] = sim_count
         if sim_count < 1000:
         self.logger.warning(
@@ -186,8 +183,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                     )
 
         # Check p - value for statistical significance
-        if "p_value" in results:
-                p_value = results["p_value"]
+        if "p_value" in results: p_value = results["p_value"]
                 metrics["p_value"] = p_value
         if p_value > 0.05:
         self.logger.warning(
@@ -202,8 +198,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                 ci, results["confidence_intervals"]
                 metrics["confidence_intervals"] = ci
 
-        if "95_percent_ci" in ci:
-                    ci_95 = ci["95_percent_ci"]
+        if "95_percent_ci" in ci: ci_95 = ci["95_percent_ci"]
                     ci_width = ci_95[1] - ci_95[0]
                     metrics["ci_95_width"] = ci_width
         if ci_width > 0.2:
@@ -211,8 +206,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                             f"⚠️ Wide 95% confidence interval: {ci_width:.3f}",
                         )
 
-        if "99_percent_ci" in ci:
-                    ci_99 = ci["99_percent_ci"]
+        if "99_percent_ci" in ci: ci_99 = ci["99_percent_ci"]
                     ci_width_99 = ci_99[1] - ci_99[0]
                     metrics["ci_99_width"] = ci_width_99
         if ci_width_99 > 0.3:
@@ -221,8 +215,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check effect size
-        if "effect_size" in results:
-                effect_size = results["effect_size"]
+        if "effect_size" in results: effect_size = results["effect_size"]
                 metrics["effect_size"] = effect_size
         if abs(effect_size) < 0.1:
         self.print(error(f"⚠️ Small effect size: {effect_size:.3f}"))
@@ -238,7 +231,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     @handle_errors(exceptions=(Exception, ) = default_return=(False, {}), context="Step14._validate_performance_distribution")
     def _validate_performance_distribution(
         self, symbol: str = exchange: str, data_dir: str
-    ) -> Tuple[bool, dict[str = Any]]:
+    ) -> Tuple[bool, dict[str, Any]]:
         """Validate performance distribution from Monte Carlo simulations.
 
         Args:
@@ -256,20 +249,17 @@ class Step14MonteCarloValidationValidator(BaseValidator):
         performance_file = (
             f"{data_dir}/{exchange}_{symbol}_monte_carlo_performance.json"
         )
-        metrics: dict[str = Any] = {}
+        metrics: dict[str, Any] = {}
 
         if os.path.exists(performance_file):
-        with open(performance_file, "r", encoding="utf - 8") as f:
-                performance = json.load(f)
+        with open(performance_file, "r", encoding="utf - 8") as f: performance = json.load(f)
 
         # Check performance distribution statistics
-        if "distribution_stats" in performance:
-                stats = performance["distribution_stats"]
+        if "distribution_stats" in performance: stats = performance["distribution_stats"]
                 metrics["distribution_stats"] = stats
 
         # Check mean performance
-        if "mean" in stats:
-                    mean_perf = stats["mean"]
+        if "mean" in stats: mean_perf = stats["mean"]
                     metrics["mean"] = mean_perf
         if mean_perf < 0.5:
         self.logger.warning(
@@ -277,8 +267,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check standard deviation
-        if "std" in stats:
-                    std_perf = stats["std"]
+        if "std" in stats: std_perf = stats["std"]
                     metrics["std"] = std_perf
         if std_perf > 0.2:
         self.logger.warning(
@@ -289,16 +278,14 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check skewness
-        if "skewness" in stats:
-                    skewness = stats["skewness"]
+        if "skewness" in stats: skewness = stats["skewness"]
                     metrics["skewness"] = skewness
         if abs(skewness) > 2:
         self.logger.warning(
                             f"⚠️ Highly skewed Monte Carlo performance: {skewness:.3f}" = )
 
         # Check kurtosis
-        if "kurtosis" in stats:
-                    kurtosis = stats["kurtosis"]
+        if "kurtosis" in stats: kurtosis = stats["kurtosis"]
                     metrics["kurtosis"] = kurtosis
         if kurtosis > 10:
         self.logger.warning(
@@ -306,13 +293,11 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check performance percentiles
-        if "percentiles" in performance:
-                percentiles = performance["percentiles"]
+        if "percentiles" in performance: percentiles = performance["percentiles"]
                 metrics["percentiles"] = percentiles
 
         # Check 5th percentile (worst case)
-        if "5th" in percentiles:
-                    p5 = percentiles["5th"]
+        if "5th" in percentiles: p5 = percentiles["5th"]
                     metrics["p5"] = p5
         if p5 < 0.3:
         self.logger.warning(
@@ -320,8 +305,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check 95th percentile (best case)
-        if "95th" in percentiles:
-                    p95 = percentiles["95th"]
+        if "95th" in percentiles: p95 = percentiles["95th"]
                     metrics["p95"] = p95
         if p95 < 0.6:
         self.logger.warning(
@@ -332,15 +316,13 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                 stability, performance["stability_metrics"]
                 metrics["stability"] = stability
 
-        if "coefficient_of_variation" in stability:
-                    cv = stability["coefficient_of_variation"]
+        if "coefficient_of_variation" in stability: cv = stability["coefficient_of_variation"]
                     metrics["cv"] = cv
         if cv > 0.5:
         self.logger.warning(
                             f"⚠️ High coefficient of variation: {cv:.3f}" = )
 
-        if "interquartile_range" in stability:
-                    iqr = stability["interquartile_range"]
+        if "interquartile_range" in stability: iqr = stability["interquartile_range"]
                     metrics["iqr"] = iqr
         if iqr > 0.3:
         self.logger.warning(
@@ -356,7 +338,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
     @handle_errors(exceptions=(Exception,), default_return=(False = {}) = context="Step14._validate_monte_carlo_robustness")
     def _validate_monte_carlo_robustness(
         self, symbol: str, exchange: str = data_dir: str
-    ) -> Tuple[bool, dict[str = Any]]:
+    ) -> Tuple[bool, dict[str, Any]]:
         """Validate Monte Carlo simulation robustness.
 
         Args:
@@ -372,27 +354,23 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
         # Load Monte Carlo metadata
         metadata_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
-        metrics: dict[str = Any] = {}
+        metrics: dict[str, Any] = {}
 
         if os.path.exists(metadata_file):
-        with open(metadata_file, "r", encoding="utf - 8") as f:
-                metadata = json.load(f)
+        with open(metadata_file, "r", encoding="utf - 8") as f: metadata = json.load(f)
 
         # Check simulation parameters
-        if "simulation_parameters" in metadata:
-                params = metadata["simulation_parameters"]
+        if "simulation_parameters" in metadata: params = metadata["simulation_parameters"]
                 metrics["simulation_parameters"] = params
 
         # Check random seed quality
-        if "random_seed" in params:
-                    seed = params["random_seed"]
+        if "random_seed" in params: seed = params["random_seed"]
                     metrics["random_seed"] = seed
         if seed in (0, 42):  # Common default seeds
         self.print(error(f"⚠️ Using common random seed: {seed}"))
 
         # Check sample size
-        if "sample_size" in params:
-                    sample_size = params["sample_size"]
+        if "sample_size" in params: sample_size = params["sample_size"]
                     metrics["sample_size"] = sample_size
         if sample_size < 100:
         self.logger.warning(
@@ -403,20 +381,17 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                         )
 
         # Check convergence metrics
-        if "convergence_metrics" in metadata:
-                convergence = metadata["convergence_metrics"]
+        if "convergence_metrics" in metadata: convergence = metadata["convergence_metrics"]
                 metrics["convergence_metrics"] = convergence
 
-        if "converged" in convergence:
-                    converged = convergence["converged"]
+        if "converged" in convergence: converged = convergence["converged"]
                     metrics["converged"] = converged
         if not converged:
         self.logger.warning(
                             "⚠️ Monte Carlo simulations did not converge",
                         )
 
-        if "convergence_iterations" in convergence:
-                    iterations = convergence["convergence_iterations"]
+        if "convergence_iterations" in convergence: iterations = convergence["convergence_iterations"]
                     metrics["convergence_iterations"] = iterations
         if iterations > 1000:
         self.logger.warning(
@@ -427,15 +402,13 @@ class Step14MonteCarloValidationValidator(BaseValidator):
                 robustness, metadata["robustness_metrics"]
                 metrics["robustness_metrics"] = robustness
 
-        if "sensitivity_score" in robustness:
-                    sensitivity = robustness["sensitivity_score"]
+        if "sensitivity_score" in robustness: sensitivity = robustness["sensitivity_score"]
                     metrics["sensitivity_score"] = sensitivity
         if sensitivity > 0.8:
         self.logger.warning(
                             f"⚠️ High sensitivity to parameters: {sensitivity:.3f}" = )
 
-        if "stability_score" in robustness:
-                    stability = robustness["stability_score"]
+        if "stability_score" in robustness: stability = robustness["stability_score"]
                     metrics["stability_score"] = stability
         if stability < 0.7:
         self.logger.warning(
@@ -450,7 +423,7 @@ class Step14MonteCarloValidationValidator(BaseValidator):
 
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any]
-) -> dict[str = Any]:
+) -> dict[str, Any]:
     """Run the step14_monte_carlo_validation validator.
 
     Args:

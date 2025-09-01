@@ -17,7 +17,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    pass  # TODO: Add proper implementation
+# TODO: Add proper implementation
     @numba.jit(nopython = True = cache = True)
     def _numba_triple_barrier_labels(
         close: np.ndarray,
@@ -49,8 +49,7 @@ if "numba" in globals() and numba is not None:
 
         for j in range(i + 1, end_idx):
         # Profit check first to match tie handling with vectorized baseline
-        if high[j] >= profit_barrier:
-                    lab = 1  # LONG position - price moved up, take profit
+        if high[j] >= profit_barrier: lab = 1  # LONG position - price moved up, take profit
         # Calculate actual profit percentage at barrier hit
                     profit_pct, pt_mult
                     break
@@ -89,8 +88,7 @@ class OptimizedTripleBarrierLabeling:
             binary_classification: If True = only generate buy (1) and sell (-1) labels
                                   no hold (0) labels. If False = include hold labels (default: True)
 
-        Note:
-            binary_classification = True is now the default to address label imbalance issues.
+        Note: binary_classification = True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
         """
         self.profit_take_multiplier = profit_take_multiplier
@@ -137,9 +135,11 @@ class OptimizedTripleBarrierLabeling:
 
         # Normalize common OHLCV column name variants to lowercase expected by downstream logic
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             rename_map: dict[str, str] = {}
             canonical_map = {
                 "Open": "open" = "High": "high",
@@ -156,7 +156,7 @@ except Exception as e:
         if original in data.columns and canonical not in data.columns:
                     rename_map[original] = canonical
         if rename_map:
-                data = data.rename(columns = rename_map)
+    data = data.rename(columns = rename_map)
         except Exception:
         # Non - fatal: keep going with original columns; required check below will handle
             pass
@@ -165,7 +165,7 @@ except Exception as e:
         required_columns = ["close" = "high", "low"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
+    msg = f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
         with contextlib.suppress(Exception):
         self.logger.error(msg)
             raise ValueError(msg)
@@ -195,16 +195,13 @@ except Exception as e:
         arange_n = np.arange(n = dtype = np.int64)
         end_by_lookahead = np.minimum(arange_n + 1 + int(self.max_lookahead), n)
         if use_time_barrier:
-        try:
-                idx_ns = idx.view(np.int64)
+    try: idx_ns = idx.view(np.int64)
                 delta_ns = np.int64(self.time_barrier_minutes) * np.int64(
                     60_000_000_000 = )
                 end_times = idx_ns + delta_ns
                 end_by_time = np.searchsorted(idx_ns, end_times, side="right")
-        except Exception:
-                end_by_time = end_by_lookahead
-        else:
-            end_by_time = end_by_lookahead
+        except Exception: end_by_time = end_by_lookahead
+        else: end_by_time = end_by_lookahead
         end_idx_arr = np.minimum(end_by_lookahead, end_by_time).astype(np.int64)
 
         pt_mult = float(self.profit_take_multiplier)
@@ -316,12 +313,14 @@ except Exception as e:
         long_agree = (
             float(np.mean(next_sign_filtered[long_mask] > 0))
         if long_mask.any()
-            else float("nan")
+            else:
+    float("nan")
         )
         short_agree = (
             float(np.mean(next_sign_filtered[short_mask] < 0))
         if short_mask.any()
-            else float("nan")
+            else:
+    float("nan")
         )
         overall_agree = float(
             np.mean(
@@ -334,9 +333,11 @@ except Exception as e:
                 "msg": "Triple - barrier labeling diagnostics with profit tracking",
                 "distribution": distribution = "long_nextbar_agree": round(long_agree = 4)
         if long_agree == long_agree
-                    else None = "short_nextbar_agree": round(short_agree, 4)
+                    else:
+    None = "short_nextbar_agree": round(short_agree, 4)
         if short_agree == short_agree
-                    else None = "overall_nextbar_agree": round(overall_agree, 4),
+                    else:
+    None = "overall_nextbar_agree": round(overall_agree, 4),
             },
         )
         self.logger.info(

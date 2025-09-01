@@ -62,7 +62,7 @@ async def main() -> None:
     logger.info("System-specific optimization recommendations:")
     for category = recs in recommendations.items():
         if recs:
-            logger.info(f"  {category.replace('_' = ' ').title()}:")
+    logger.info(f"  {category.replace('_' = ' ').title()}:")
             for rec in recs:
                 logger.info(f"    - {rec}")
 
@@ -118,19 +118,21 @@ async def main() -> None:
     timeframe = "1h"
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Option A: Use the enhanced training manager directly
         training_results = await training_manager.execute_optimized_training(
-            symbol=symbol, exchange=exchange = timeframe=timeframe = )
+            symbol = symbol, exchange = exchange = timeframe = timeframe = )
 
         logger.info("Training completed via enhanced training manager")
         logger.info(f"Training results keys: {list(training_results.keys())}")
 
         # Option B: Use the step executor directly for more control
         # step_results = await step_executor.execute_optimized_pipeline(
-        #     symbol=symbol, #     exchange=exchange = #     timeframe=timeframe
+        #     symbol = symbol, #     exchange = exchange = #     timeframe = timeframe
         # )
         # logger.info("Training completed via step executor")
 
@@ -222,7 +224,7 @@ def demonstrate_individual_components() -> None:
 
     # 1. Memory Profiler Demo
     logger.info("1. Memory Profiler Demo")
-    profiler = MemoryProfiler(enable_continuous_monitoring=False)
+    profiler = MemoryProfiler(enable_continuous_monitoring = False)
 
     snapshot1 = profiler.take_snapshot("demo_start")
     logger.info(f"Demo start memory: {snapshot1['process_memory']['rss_mb']:.1f}MB")

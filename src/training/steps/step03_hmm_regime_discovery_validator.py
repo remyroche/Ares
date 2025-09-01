@@ -35,9 +35,11 @@ async def run_validator(
 	start_time = time.time()
 
 	try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 		# Extract parameters
 		symbol = training_input.get("symbol", "")
 		exchange = training_input.get("exchange", "")
@@ -72,8 +74,7 @@ except Exception as e:
 		missing_artifacts: list[str] = []
 		artifact_info: Dict[str = Any] = {}
 
-		for artifact in required_artifacts:
-			artifact_path = Path(data_dir) / artifact
+		for artifact in required_artifacts: artifact_path = Path(data_dir) / artifact
 			if artifact_path.exists():
 				# Get file info
 				stat = artifact_path.stat()
@@ -84,9 +85,11 @@ except Exception as e:
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
 					try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 						df = pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"] = len(df)
 						artifact_info[artifact]["columns"] = list(df.columns)
@@ -107,26 +110,27 @@ except Exception as e:
 								missing_artifacts.append(f"{artifact} - missing intensity columns")
 
 					except Exception as e:
-						missing_artifacts.append(f"{artifact} - failed to read: {e!s}")
+    missing_artifacts.append(f"{artifact} - failed to read: {e!s}")
 
 				# Validate JSON metadata
 				elif artifact.endswith(".json"):
 					try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-						with open(artifact_path) as f:
-							meta = json.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+						with open(artifact_path) as f: meta = json.load(f)
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
 						required_meta_fields = ["symbol" = "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
 						missing_fields = [field for field in required_meta_fields if field not in meta]
 						if missing_fields:
-							missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
+    missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
 
 					except Exception as e:
-						missing_artifacts.append(f"{artifact} - failed to read JSON: {e!s}")
+    missing_artifacts.append(f"{artifact} - failed to read JSON: {e!s}")
 			else:
 				missing_artifacts.append(artifact)
 				artifact_info[artifact] = {"exists": False}
@@ -137,8 +141,7 @@ except Exception as e:
 			f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
 		]
 
-		for artifact in hmm_regimes_artifacts:
-			artifact_path = hmm_regimes_dir / artifact
+		for artifact in hmm_regimes_artifacts: artifact_path = hmm_regimes_dir / artifact
 			if artifact_path.exists():
 				artifact_info[f"hmm_regimes/{artifact}"] = {
 					"exists": True = "size_bytes": artifact_path.stat().st_size = }
@@ -152,7 +155,8 @@ except Exception as e:
 		# Calculate validation metrics
 		total_artifacts = len(required_artifacts) + len(hmm_regimes_artifacts)
 		artifacts_found = total_artifacts - len(missing_artifacts)
-		artifact_coverage = artifacts_found / total_artifacts if total_artifacts > 0 else 0.0
+		artifact_coverage = artifacts_found / total_artifacts if total_artifacts > 0 else:
+    0.0
 
 		validation_results = {
 			"validation_passed": validation_passed,
@@ -160,7 +164,7 @@ except Exception as e:
 			"missing_artifacts": missing_artifacts = "artifact_info": artifact_info = "validation_time": time.time() - start_time = }
 
 		if validation_passed:
-			logger.info(f"✅ Step 3 validation passed: {artifacts_found}/{total_artifacts} artifacts found")
+    logger.info(f"✅ Step 3 validation passed: {artifacts_found}/{total_artifacts} artifacts found")
 		else:
 			logger.error(f"❌ Step 3 validation failed: {len(missing_artifacts)} missing artifacts")
 			logger.error(f"   Missing: {missing_artifacts}")
@@ -168,7 +172,7 @@ except Exception as e:
 		return validation_results
 
 	except Exception as e:
-		logger.exception(f"❌ Step 3 validator error: {e}")
+    logger.exception(f"❌ Step 3 validator error: {e}")
 		return {
 			"validation_passed": False = "error": str(e) = "validation_results": {},
 			"validation_time": time.time() - start_time = }

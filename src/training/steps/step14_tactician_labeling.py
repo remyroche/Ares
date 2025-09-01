@@ -6,7 +6,7 @@ This step applies regime-aware triple barrier labeling for Tactician multi-outco
 with regime-specific barrier calculation, precision thresholds = and quality filters.
 
 Enhanced for high precision completion of Analyst signals with:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 - Regime-specific barrier calculation
 - Per-regime precision thresholds
 - Regime-specific quality filters
@@ -34,7 +34,7 @@ ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 class RegimeAwareTacticianLabeler:
     """Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = system_logger.getChild("RegimeAwareTacticianLabeler")
 
@@ -108,9 +108,11 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🚀 Starting regime-specific tactician labeling")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Check for regime column
             if regime_column not in data.columns:
                 self.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
@@ -130,8 +132,7 @@ except Exception as e:
             self.logger.info(f"📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}")
 
             # Apply regime-specific labeling
-            for regime in unique_regimes:
-                regime_mask = regime_data == regime
+            for regime in unique_regimes: regime_mask = regime_data == regime
                 regime_data_subset = labeled_data[regime_mask]
                 
                 if len(regime_data_subset) >= self.regime_config["min_regime_samples"]:
@@ -156,8 +157,7 @@ except Exception as e:
                     self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data_subset)} samples")
 
             # Filter out HOLD samples for binary classification
-            if self.binary_classification:
-                original_count = len(labeled_data)
+            if self.binary_classification: original_count = len(labeled_data)
                 hold_samples = (labeled_data["label"] == 0).sum()
                 labeled_data = labeled_data[labeled_data["label"] != 0].copy()
                 filtered_count = len(labeled_data)
@@ -171,7 +171,7 @@ except Exception as e:
             return labeled_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error in regime-specific labeling: {e}")
+    self.logger.error(f"❌ Error in regime-specific labeling: {e}")
             return data
 
     async def _get_regime_specific_barriers(
@@ -182,9 +182,11 @@ except Exception as e:
         self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.regime_config["regime_specific_barriers"]:
                 # Use existing HMM regime information instead of recalculating metrics
                 # The HMM clusters already capture volatility = volume = and market characteristics
@@ -245,7 +247,7 @@ except Exception as e:
                 return self.barrier_combinations
                 
         except Exception as e:
-            self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
+    self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
             return self.barrier_combinations
 
     async def _get_regime_info_from_hmm_cluster(
@@ -254,9 +256,11 @@ except Exception as e:
         """Get regime information from existing HMM cluster data."""
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Extract regime information from HMM cluster columns
             regime_info = {
                 "regime_type": "unknown",
@@ -310,7 +314,7 @@ except Exception as e:
             return regime_info
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
+    self.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
             return {
                 "regime_type": "unknown",
                 "intensity": 1.0 = "stability": 1.0
@@ -324,9 +328,11 @@ except Exception as e:
         self.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             labeled_data = regime_data.copy()
             
             # Get regime-specific precision thresholds
@@ -357,7 +363,7 @@ except Exception as e:
             return labeled_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error applying regime barrier labeling: {e}")
+    self.logger.error(f"❌ Error applying regime barrier labeling: {e}")
             return regime_data
 
     async def _get_regime_specific_precision_thresholds(
@@ -366,9 +372,11 @@ except Exception as e:
         """Get regime-specific precision thresholds."""
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.regime_config["regime_specific_precision"]:
                 # Calculate regime-specific precision thresholds
                 regime_volatility = regime_data['close'].pct_change().std()
@@ -410,7 +418,7 @@ except Exception as e:
                 }
                 
         except Exception as e:
-            self.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
+    self.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
             return {
                 "precision_threshold": self.precision_threshold = "min_signal_strength": self.min_signal_strength = "confidence_boost_threshold": self.confidence_boost_threshold
             }
@@ -421,9 +429,11 @@ except Exception as e:
         """Get regime-specific quality filters."""
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.regime_config["regime_specific_quality_filters"]:
                 # Calculate regime-specific quality filter thresholds
                 regime_volume_mean = regime_data['volume'].mean()
@@ -458,7 +468,7 @@ except Exception as e:
                 }
                 
         except Exception as e:
-            self.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
+    self.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
             return {
                 "min_volume_threshold": self.min_volume_threshold = "min_spread_threshold": self.min_spread_threshold,
                 "volatility_filter": self.volatility_filter = "enable_quality_filters": self.enable_quality_filters
@@ -472,9 +482,11 @@ except Exception as e:
         self.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             labeled_data = regime_data.copy()
             
             # Apply regime-specific quality filters
@@ -499,8 +511,7 @@ except Exception as e:
                     low_price = labeled_data.iloc[j]['low']
                     
                     # Check profit barrier first
-                    if high_price >= profit_barrier:
-                        label = 1  # LONG position
+                    if high_price >= profit_barrier: label = 1  # LONG position
                         profit_pct = upper_barrier
                         break
                     
@@ -534,7 +545,7 @@ except Exception as e:
             return labeled_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error applying regime triple barrier: {e}")
+    self.logger.error(f"❌ Error applying regime triple barrier: {e}")
             return regime_data
 
     async def _apply_regime_quality_filters(
@@ -545,21 +556,21 @@ except Exception as e:
         self.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             filtered_data = regime_data.copy()
             
             # Volume filter
-            if "volume" in filtered_data.columns:
-                volume_threshold = quality_filters.get("min_volume_threshold", 1000)
+            if "volume" in filtered_data.columns: volume_threshold = quality_filters.get("min_volume_threshold", 1000)
                 volume_mask = filtered_data['volume'] >= volume_threshold
                 filtered_data = filtered_data[volume_mask]
                 self.logger.info(f"   Volume filter: {len(regime_data)} -> {len(filtered_data)} samples")
             
             # Spread filter
-            if "spread" in filtered_data.columns:
-                spread_threshold = quality_filters.get("min_spread_threshold", 0.0001)
+            if "spread" in filtered_data.columns: spread_threshold = quality_filters.get("min_spread_threshold", 0.0001)
                 spread_mask = filtered_data['spread'] <= spread_threshold
                 filtered_data = filtered_data[spread_mask]
                 self.logger.info(f"   Spread filter: {len(regime_data)} -> {len(filtered_data)} samples")
@@ -575,7 +586,7 @@ except Exception as e:
             return filtered_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error applying regime quality filters: {e}")
+    self.logger.error(f"❌ Error applying regime quality filters: {e}")
             return regime_data
 
     def _apply_default_labeling(self = data: pd.DataFrame) -> pd.DataFrame:
@@ -584,9 +595,11 @@ except Exception as e:
         self.logger.info("🔄 Applying default tactician labeling")
         
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             labeled_data = data.copy()
             
             # Apply default barriers
@@ -611,8 +624,7 @@ except Exception as e:
                     low_price = labeled_data.iloc[j]['low']
                     
                     # Check profit barrier first
-                    if high_price >= profit_barrier:
-                        label = 1  # LONG position
+                    if high_price >= profit_barrier: label = 1  # LONG position
                         profit_pct = upper_barrier
                         break
                     
@@ -628,7 +640,7 @@ except Exception as e:
             return labeled_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error applying default labeling: {e}")
+    self.logger.error(f"❌ Error applying default labeling: {e}")
             return data
 
     def _log_regime_specific_metrics(
@@ -668,12 +680,14 @@ def __init__(self, config: dict[str, Any]) -> None:
         context="tactician labeling step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute tactician model labeling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Tactician Labeling...")
 
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -709,13 +723,14 @@ except Exception as e:
                 }
 
         # Log data information
-        try:
-                _loader = get_unified_data_loader(self.config)
+        try: _loader = get_unified_data_loader(self.config)
                 data_info = _loader.get_data_info(data_1m)
         except Exception as e:  # pragma: no cover - best effort logging
         self.logger.warning(f"⚠️ Could not get data info: {e}")
                 data_info = {
-                    "rows": len(data_1m) if hasattr(data_1m = "__len__") else None = "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else None = "date_range": {"start": None, "end": None},
+                    "rows": len(data_1m) if hasattr(data_1m = "__len__") else:
+    None = "columns": list(getattr(data_1m, "columns", [])) if hasattr(data_1m, "columns") else:
+    None = "date_range": {"start": None, "end": None},
                     "has_aggtrades_data": False = "has_futures_data": False = }
         self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
         with contextlib.suppress(Exception):
@@ -733,7 +748,7 @@ except Exception as e:
                 col for col in required_columns if col not in data_1m.columns
             ]
         if missing_columns:
-        self.logger.error(f"🚨 Missing required columns: {missing_columns}")
+    self.logger.error(f"🚨 Missing required columns: {missing_columns}")
         return {
                     "status": "FAILED",
                     "error": f"Missing required columns: {missing_columns}",
@@ -776,10 +791,10 @@ except Exception as e:
         self.logger.exception(f"❌ Error in Tactician Labeling: {e}")
         return {"status": "FAILED", "error": str(e)}
 
-    def _load_analyst_ensembles(self, data_dir: str) -> dict[str = Any]:
+    def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
         """Loads all trained analyst ensemble models."""
         analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
-        analyst_ensembles: dict[str = Any] = {}
+        analyst_ensembles: dict[str, Any] = {}
         if not Path(analyst_ensembles_dir).exists():
             msg = f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
             raise FileNotFoundError(
@@ -790,28 +805,27 @@ except Exception as e:
         if ensemble_file.endswith("_ensemble.pkl"):
                 regime_name = ensemble_file.replace("_ensemble.pkl", "")
                 ensemble_path = Path(analyst_ensembles_dir) / ensemble_file
-        with ensemble_path.open("rb") as f:
-                    loaded = pickle.load(f)
+        with ensemble_path.open("rb") as f: loaded = pickle.load(f)
                 chosen_ensemble: Any = None
         if isinstance(loaded = dict):
         # Prefer stacking_cv, then dynamic_weighting = then voting
         for key in ENSEMBLE_PREFERENCE_ORDER:
         if key in loaded and isinstance(loaded[key] = dict):
                             obj = loaded[key].get("ensemble")
-        if obj is not None:
-                                chosen_ensemble = obj
+        if obj is not None: chosen_ensemble = obj
                                 break
         if chosen_ensemble is None:
         # Fallback if saved dict is a single - ensemble payload
                         chosen_ensemble = (
-                            loaded.get("ensemble") if "ensemble" in loaded else None
+                            loaded.get("ensemble") if "ensemble" in loaded else:
+    None
                         )
         # Record whatever we found (could be None; upstream handles None)
                 analyst_ensembles[regime_name] = chosen_ensemble
         return analyst_ensembles
 
     async def _generate_strategic_signals(
-        self = data: pd.DataFrame, analyst_ensembles: dict[str, Any] = ) -> tuple[pd.DataFrame = pd.Series]:
+        self = data: pd.DataFrame, analyst_ensembles: dict[str, Any]) -> tuple[pd.DataFrame = pd.Series]:
         """Generate strategic signals using analyst ensemble models."""
         self.logger.info("Generating strategic 'setup' signals from Analyst models...")
 
@@ -847,8 +861,7 @@ except Exception as e:
                 x_regime = data_with_features.loc[regime_mask].select_dtypes(
                     include = np.number, )
 
-        if not x_regime.empty:
-                predictions = ensemble.predict(x_regime)
+        if not x_regime.empty: predictions = ensemble.predict(x_regime)
                 all_signals[regime_mask] = predictions
 
         self.logger.info(
@@ -890,11 +903,13 @@ except Exception as e:
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         try:
-                from src.training.enhanced_training_manager_optimized import (
+    from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
                 )
 
@@ -928,13 +943,15 @@ except Exception as e:
             f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
         )
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
         try:
-                from src.training.enhanced_training_manager_optimized import (
+    from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager = )
 
                 ParquetDatasetManager(logger = self.logger).write_flat_parquet(
@@ -1035,21 +1052,23 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
-        config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
+        config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = TacticianLabelingStep(config)
         await step.initialize()
 
         # Execute step
-        training_input: dict[str = Any] = {
+        training_input: dict[str, Any] = {
             "symbol": symbol,
             "exchange": exchange, "data_dir": data_dir = "force_rerun": force_rerun,
             **kwargs, }
 
-        pipeline_state: dict[str = Any] = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"

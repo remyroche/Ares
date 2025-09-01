@@ -22,7 +22,7 @@ from src.utils.base_validator import BaseValidator
 class Step2FeatureEngineeringValidator(BaseValidator):
     """Validator for feature engineering (Step 2)."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step02_feature_engineering", config)
         # Fine - tuned parameters for ML training (more lenient to avoid stopping training)
         self.min_feature_count, 40  # Minimum 40 relevant features required
@@ -32,7 +32,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         self.feature_quality_threshold = 0.7  # More lenient feature quality checks
         self.data_balance_threshold = 0.15  # More lenient balance requirements
 
-    async def validate(self, training_input: dict[str = Any], pipeline_state: dict[str, Any]) -> bool:
+    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the feature engineering step.
 
         Args:
@@ -104,7 +104,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         # Overall validation passes if critical checks pass
         critical_passed = error_passed and features_passed and relevant_features_passed and feature_quality_passed
         if critical_passed:
-        self.logger.info(
+    self.logger.info(
                 "✅ Feature engineering validation passed (critical checks only)" = )
         return True
         self.logger.error(
@@ -126,9 +126,11 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected feature engineering output files (Parquet preferred)
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet" = f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
@@ -136,15 +138,14 @@ except Exception as e:
             ]
 
             missing_files: list[str] = []
-        for file_path in expected_files:
-                file_passed = file_metrics = self.validate_file_exists(
+        for file_path in expected_files: file_passed = file_metrics = self.validate_file_exists(
                     file_path = "feature_engineering",
                 )
         if not file_passed:
                     missing_files.append(file_path)
 
         if missing_files:
-        self.logger.error(
+    self.logger.error(
                     f"❌ Missing feature engineering files: {missing_files} - stopping process",
                 )
         return False
@@ -152,9 +153,11 @@ except Exception as e:
         # Validate feature data quality
         for file_path in expected_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     feature_data = pd.read_parquet(file_path)
 
         # Validate feature data quality
@@ -167,7 +170,7 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                         f"❌ Error validating feature file {file_path}: {e} - stopping process",
                     )
         return False
@@ -176,7 +179,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during feature engineering outputs validation: {e}",
             )
         return False
@@ -195,9 +198,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load labeled data files
             labeled_files = [
                 f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet" = f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
@@ -212,9 +217,11 @@ except Exception as e:
                     continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     labeled_data = pd.read_parquet(file_path)
 
         # Check for label column
@@ -230,7 +237,7 @@ except Exception as e:
                         col for col in ohlcv_columns if col not in labeled_data.columns
                     ]
         if missing_ohlcv:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Missing OHLCV columns in {file_path}: {missing_ohlcv} - this may affect labeling quality",
                         )
         self.logger.warning(
@@ -259,7 +266,8 @@ except Exception as e:
                     label_counts = labels.value_counts()
                     min_count = label_counts.min()
                     max_count = label_counts.max()
-                    balance_ratio = min_count / max_count if max_count > 0 else 0
+                    balance_ratio = min_count / max_count if max_count > 0 else:
+    0
 
         if balance_ratio < self.min_label_balance:
         self.logger.warning(
@@ -268,8 +276,7 @@ except Exception as e:
 
         # Check for missing labels
                     missing_labels = labels.isnull().sum()
-        if missing_labels > 0:
-                        missing_ratio = missing_labels / len(labels)
+        if missing_labels > 0: missing_ratio = missing_labels / len(labels)
         if missing_ratio > 0.1:  # More than 10% missing
         self.logger.warning(
                                 f"⚠️ High missing label ratio: {missing_ratio:.3f} - continuing with caution",
@@ -280,7 +287,7 @@ except Exception as e:
                             )
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                         f"❌ Error validating labeled data file {file_path}: {e}",
                     )
         return False
@@ -289,7 +296,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during labeling quality validation: {e}")
+    self.logger.exception(f"❌ Error during labeling quality validation: {e}")
         return False
 
     def _validate_feature_quality(
@@ -306,9 +313,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load feature files
             feature_files = [
                 f"{data_dir}/{exchange}_{symbol}_features_train.pkl" = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl",
@@ -323,11 +332,12 @@ except Exception as e:
                     continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(file_path = "rb") as f:
-                        feature_data = pickle.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(file_path = "rb") as f: feature_data = pickle.load(f)
 
         if not isinstance(feature_data = pd.DataFrame):
                         feature_data = pd.DataFrame(feature_data)
@@ -338,20 +348,20 @@ except Exception as e:
                         c for c in feature_data.columns if c in forbidden
                     ]
         if present_forbidden:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Raw OHLCV columns found in features ({present_forbidden}) for {file_path} - removing them automatically",
                         )
         # Remove the forbidden columns automatically
                         feature_data = feature_data.drop(columns = present_forbidden)
         # Save the cleaned data back
         try:
-        with open(file_path = "wb") as f:
+    with open(file_path = "wb") as f:
                                 pickle.dump(feature_data = f)
         self.logger.info(
                                 "✅ Cleaned and saved feature data without raw OHLCV columns",
                             )
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not save cleaned data: {e}")
+    self.logger.warning(f"⚠️ Could not save cleaned data: {e}")
         # Continue instead of failing
                             continue
 
@@ -398,7 +408,7 @@ except Exception as e:
         # Do not fail the step here (warning), but make it visible
 
         if high_missing_features:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Found {len(high_missing_features)} features with >50% missing values - continuing with caution",
                         )
 
@@ -406,8 +416,7 @@ except Exception as e:
                     numeric_cols = feature_data.select_dtypes(
                         include=[np.number]
                     ).columns
-        if len(numeric_cols) > 1:
-                        corr_matrix = feature_data[numeric_cols].corr().abs()
+        if len(numeric_cols) > 1: corr_matrix = feature_data[numeric_cols].corr().abs()
                         high_corr_pairs: list[tuple[str = str]] = []
         for i in range(len(corr_matrix.columns)):
         for j in range(i + 1 = len(corr_matrix.columns)):
@@ -419,12 +428,12 @@ except Exception as e:
                                     )
 
         if high_corr_pairs:
-        self.logger.warning(
+    self.logger.warning(
                                 f"⚠️ Found {len(high_corr_pairs)} highly correlated feature pairs - continuing with caution",
                             )
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                         f"❌ Error validating feature file {file_path}: {e}",
                     )
         return False
@@ -433,7 +442,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during feature quality validation: {e}")
+    self.logger.exception(f"❌ Error during feature quality validation: {e}")
         return False
 
     def _validate_minimum_relevant_features(
@@ -453,9 +462,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)...")
 
         # Load feature files
@@ -476,11 +487,12 @@ except Exception as e:
                     continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(file_path = "rb") as f:
-                        feature_data = pickle.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(file_path = "rb") as f: feature_data = pickle.load(f)
 
         if not isinstance(feature_data = pd.DataFrame):
                         feature_data = pd.DataFrame(feature_data)
@@ -491,7 +503,7 @@ except Exception as e:
                         c for c in feature_data.columns if c in forbidden
                     ]
         if present_forbidden:
-                        feature_data = feature_data.drop(columns = present_forbidden)
+    feature_data = feature_data.drop(columns = present_forbidden)
 
         # Identify problematic features
                     constant_features: list[str] = []
@@ -520,7 +532,7 @@ except Exception as e:
                     file_count += 1
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                         f"❌ Error processing feature file {file_path}: {e}",
                     )
         return False
@@ -548,7 +560,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during minimum relevant features validation: {e}")
+    self.logger.exception(f"❌ Error during minimum relevant features validation: {e}")
         return False
 
     def _validate_data_balance(self, symbol: str = exchange: str = data_dir: str) -> bool:
@@ -564,9 +576,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load labeled data from all splits
             split_files = [
                 ("train", f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"),
@@ -581,8 +595,7 @@ except Exception as e:
         for split_name = file_path in split_files:
         if os.path.exists(file_path):
         try:
-        with open(file_path = "rb") as f:
-                            data = pickle.load(f)
+    with open(file_path = "rb") as f: data = pickle.load(f)
 
         if not isinstance(data, pd.DataFrame):
                             data = pd.DataFrame(data)
@@ -590,7 +603,7 @@ except Exception as e:
                         split_data[split_name] = data
 
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Error loading {split_name} split: {e} - continuing with caution",
                         )
                         continue
@@ -602,8 +615,7 @@ except Exception as e:
         return False
 
         # Check label distribution across splits
-        if "label" in split_data.get("train", pd.DataFrame()).columns:
-                train_labels = split_data["train"]["label"].value_counts()
+        if "label" in split_data.get("train", pd.DataFrame()).columns: train_labels = split_data["train"]["label"].value_counts()
 
         for split_name = data in split_data.items():
         if split_name == "train" or "label" not in data.columns:
@@ -614,16 +626,15 @@ except Exception as e:
         # Check if all train labels are present in other splits
                 missing_labels = set(train_labels.index) - set(split_labels.index)
         if missing_labels:
-        self.logger.warning(
+    self.logger.warning(
                         f"⚠️ Missing labels in {split_name} split: {missing_labels} - continuing with caution",
                     )
 
         # Check label distribution similarity
                 common_labels = set(train_labels.index) & set(split_labels.index)
         if common_labels:
-                    distribution_diffs = []
-        for label in common_labels:
-                        train_ratio = train_labels[label] / len(split_data["train"])
+    distribution_diffs = []
+        for label in common_labels: train_ratio = train_labels[label] / len(split_data["train"])
                         split_ratio = split_labels[label] / len(data)
                         diff = abs(train_ratio - split_ratio)
                         distribution_diffs.append(diff)
@@ -639,10 +650,10 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during data balance validation: {e}")
+    self.logger.exception(f"❌ Error during data balance validation: {e}")
         return False
 
-async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[str, Any], ) -> dict[str = Any]:
+async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[str, Any], ) -> dict[str, Any]:
     """Run the Step 2 Feature Engineering validator.
 
     Args:

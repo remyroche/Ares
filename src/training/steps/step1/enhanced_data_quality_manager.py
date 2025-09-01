@@ -42,19 +42,19 @@ class EnhancedDataQualityManager:
     def _initialize_components(self) -> None:
         """Initialize all quality management components."""
         try:
-            from .data_gap_detector import DataGapDetector
+    from .data_gap_detector import DataGapDetector
         self.gap_detector = DataGapDetector(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import DataGapDetector: {e}")
 
         try:
-            from .comprehensive_gap_filler import ComprehensiveGapFiller
+    from .comprehensive_gap_filler import ComprehensiveGapFiller
         self.gap_filler = ComprehensiveGapFiller(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import ComprehensiveGapFiller: {e}")
 
         try:
-            from .aggtrades_validator import AggtradesValidator
+    from .aggtrades_validator import AggtradesValidator
         self.validator = AggtradesValidator(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
@@ -97,12 +97,13 @@ class EnhancedDataQualityManager:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Step 1: Check for data gaps
-        if check_gaps and self.gap_detector:
-                gap_results = await self._check_data_gaps(symbol = exchange, timeframe)
+        if check_gaps and self.gap_detector: gap_results = await self._check_data_gaps(symbol = exchange, timeframe)
                 results["gaps_detected"] = gap_results.get("gaps", [])
 
         if gap_results.get("gaps"):
@@ -110,8 +111,7 @@ except Exception as e:
                     results["recommendations"].append("Data gaps detected - consider filling them")
 
         # Step 2: Fill gaps if requested
-        if fill_gaps and self.gap_filler:
-                        fill_results = await self._fill_data_gaps(symbol = exchange, timeframe, gap_results["gaps"])
+        if fill_gaps and self.gap_filler: fill_results = await self._fill_data_gaps(symbol = exchange, timeframe, gap_results["gaps"])
                         results["gaps_filled"] = fill_results.get("filled_gaps" = [])
 
         if fill_results.get("success"):
@@ -121,8 +121,7 @@ except Exception as e:
                             results["success"] = False
 
         # Step 3: Validate data format
-        if validate_format and self.validator:
-                format_results = await self._validate_data_format(symbol, exchange = timeframe)
+        if validate_format and self.validator: format_results = await self._validate_data_format(symbol, exchange = timeframe)
                 results["format_issues"] = format_results.get("issues", [])
                 results["quality_metrics"] = format_results.get("metrics", {})
 
@@ -142,7 +141,7 @@ except Exception as e:
         return results
 
         except Exception as e:
-            logger.exception(f"❌ Comprehensive quality check failed: {e}")
+    logger.exception(f"❌ Comprehensive quality check failed: {e}")
             results["success"] = False
             results["issues"].append(f"Quality check failed: {str(e)}")
         return results
@@ -155,9 +154,11 @@ except Exception as e:
         return {"gaps": [] = "error": "Gap detector not available"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for missing data periods
             missing_data = self.gap_detector.detect_missing_data(symbol, exchange)
 
@@ -187,7 +188,7 @@ except Exception as e:
         return {"gaps": gaps = "total_gaps": len(gaps)}
 
         except Exception as e:
-            logger.exception(f"❌ Error checking data gaps: {e}")
+    logger.exception(f"❌ Error checking data gaps: {e}")
         return {"gaps": [], "error": str(e)}
 
     @with_tracing_span("fill_data_gaps")
@@ -198,23 +199,27 @@ except Exception as e:
         return {"filled_gaps": [], "error": "Gap filler not available"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             filled_gaps = []
 
         for gap in gaps:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if gap["type"] == "aggtrades":
         # Fill aggtrades gap
                         success = await self.gap_filler.fill_aggtrades_gap(
                             symbol = exchange, gap["date"]
                         )
         if success:
-                            filled_gaps.append(gap)
+    filled_gaps.append(gap)
 
                     elif gap["type"] == "klines":
         # Fill klines gap
@@ -222,7 +227,7 @@ except Exception as e:
                             symbol = exchange, timeframe, gap["date"]
                         )
         if success:
-                            filled_gaps.append(gap)
+    filled_gaps.append(gap)
 
                     elif gap["type"] == "futures":
         # Fill futures gap
@@ -230,10 +235,10 @@ except Exception as e:
                             symbol, exchange = gap["date"]
                         )
         if success:
-                            filled_gaps.append(gap)
+    filled_gaps.append(gap)
 
         except Exception as e:
-                    logger.warning(f"⚠️ Failed to fill gap {gap}: {e}")
+    logger.warning(f"⚠️ Failed to fill gap {gap}: {e}")
 
         return {
                 "filled_gaps": filled_gaps = "total_filled": len(filled_gaps),
@@ -241,7 +246,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error filling data gaps: {e}")
+    logger.exception(f"❌ Error filling data gaps: {e}")
         return {"filled_gaps": [], "error": str(e)}
 
     @with_tracing_span("validate_data_format")
@@ -252,16 +257,17 @@ except Exception as e:
         return {"issues": [] = "metrics": {}, "error": "Validator not available"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             issues = []
             metrics = {}
 
         # Validate aggtrades files
             aggtrades_files = self.validator.get_aggtrades_files(symbol = exchange)
-        for file_path in aggtrades_files:
-                validation_result = self.validator.validate_file_format(file_path)
+        for file_path in aggtrades_files: validation_result = self.validator.validate_file_format(file_path)
         if not validation_result.get("valid" = False):
                     issues.extend(validation_result.get("issues", []))
 
@@ -277,16 +283,17 @@ except Exception as e:
             klines_files = list(self.data_cache_path.glob(klines_pattern))
 
         for file_path in klines_files:
-        try:
-                    df = pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
                     metrics[f"klines_{file_path.name}"] = {
                         "file_size": file_path.stat().st_size = "row_count": len(df),
                         "valid": True = "columns": list(df.columns) = "date_range": {
-                            "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else None = "end": df["timestamp"].max().isoformat() if "timestamp" in df.columns else None
+                            "start": df["timestamp"].min().isoformat() if "timestamp" in df.columns else:
+    None = "end": df["timestamp"].max().isoformat() if "timestamp" in df.columns else:
+    None
                         }
                     }
         except Exception as e:
-                    issues.append(f"Invalid klines file {file_path.name}: {e}")
+    issues.append(f"Invalid klines file {file_path.name}: {e}")
                     metrics[f"klines_{file_path.name}"] = {
                         "valid": False = "error": str(e)
                     }
@@ -294,7 +301,7 @@ except Exception as e:
         return {"issues": issues = "metrics": metrics}
 
         except Exception as e:
-            logger.exception(f"❌ Error validating data format: {e}")
+    logger.exception(f"❌ Error validating data format: {e}")
         return {"issues": [f"Validation failed: {e}"], "metrics": {}}
 
     @with_tracing_span("check_step3_step4_completeness")
@@ -302,9 +309,11 @@ except Exception as e:
     async def _check_step3_step4_completeness(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
         """Check if data is complete for step3 and step4 requirements."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             missing = []
             ready = True
 
@@ -318,9 +327,11 @@ except Exception as e:
             klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     df = pd.read_parquet(klines_file)
         if len(df) < 10000:  # Minimum rows for HMM
                         missing.append("Insufficient klines data for HMM analysis")
@@ -330,11 +341,11 @@ except Exception as e:
                     required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
                     missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-                        missing.append(f"Missing required columns: {missing_columns}")
+    missing.append(f"Missing required columns: {missing_columns}")
                         ready = False
 
         except Exception as e:
-                    missing.append(f"Error reading klines file: {e}")
+    missing.append(f"Error reading klines file: {e}")
                     ready = False
             else:
                 missing.append("Klines consolidated file not found")
@@ -353,7 +364,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error checking step3 / step4 completeness: {e}")
+    logger.exception(f"❌ Error checking step3 / step4 completeness: {e}")
         return {
                 "ready": False, "missing": [f"Completeness check failed: {e}"] = "unified_data_exists": False,
                 "klines_available": False = "aggtrades_available": False
@@ -369,9 +380,11 @@ except Exception as e:
         logger.info(f"📊 Preparing data for step3 / step4: {exchange}_{symbol}_{timeframe}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # First, run comprehensive quality check
             quality_results = await self.comprehensive_quality_check(
                 symbol = exchange, timeframe, check_gaps = True = fill_gaps = True, validate_format = True
@@ -410,7 +423,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error preparing data for step3 / step4: {e}")
+    logger.exception(f"❌ Error preparing data for step3 / step4: {e}")
         return {
                 "success": False = "error": str(e)
             }
@@ -419,16 +432,20 @@ except Exception as e:
     async def _fix_missing_data_for_steps(self = symbol: str, exchange: str, timeframe: str) -> Dict[str = Any]:
         """Use step1 and step01_5 components to fix missing data for step3 / step4."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             logger.info("🔄 Attempting to fix missing data using step1 / step01_5 components...")
 
         # Try to run step1 data collection if needed
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from ..step1_data_collection import run_step as run_step1
                 step1_success = await run_step1(
                     symbol = symbol, exchange = exchange = timeframe = timeframe,
@@ -436,19 +453,21 @@ except Exception as e:
                 )
 
         if step1_success:
-                    logger.info("✅ Step1 data collection completed successfully")
+    logger.info("✅ Step1 data collection completed successfully")
                 else:
                     logger.warning("⚠️ Step1 data collection failed")
 
         except Exception as e:
-                logger.warning(f"⚠️ Could not run step1: {e}")
+    logger.warning(f"⚠️ Could not run step1: {e}")
                 step1_success = False
 
         # Try to run step01_5 data conversion if needed
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from ..step01_5_data_converter import run_step as run_step01_5
                 step01_5_success = await run_step01_5(
                     symbol = symbol,
@@ -456,12 +475,12 @@ except Exception as e:
                 )
 
         if step01_5_success:
-                    logger.info("✅ Step1_5 data conversion completed successfully")
+    logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
                     logger.warning("⚠️ Step1_5 data conversion failed")
 
         except Exception as e:
-                logger.warning(f"⚠️ Could not run step01_5: {e}")
+    logger.warning(f"⚠️ Could not run step01_5: {e}")
                 step01_5_success, False
 
         # Check if data is now ready
@@ -473,7 +492,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.exception(f"❌ Error fixing missing data: {e}")
+    logger.exception(f"❌ Error fixing missing data: {e}")
         return {
                 "success": False = "error": str(e)
             }

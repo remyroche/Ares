@@ -50,7 +50,7 @@ class FeatureInteractionEngine:
 
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
-            from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+    from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
         self.diverse_optimizer = DiverseLookbackOptimizer(config)
         self.use_dynamic_periods = True
         self.logger.info("✅ Integrated with DiverseLookbackOptimizer for dynamic period selection")
@@ -193,9 +193,11 @@ class FeatureInteractionEngine:
         return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Starting dynamic lookback period optimization...")
 
         # Run diverse lookback optimization
@@ -217,7 +219,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"❌ Dynamic period optimization failed: {e}")
+    self.logger.error(f"❌ Dynamic period optimization failed: {e}")
         self.logger.info("🔄 Falling back to predefined periods")
         return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
@@ -270,11 +272,11 @@ except Exception as e:
         self.logger.info("🔍 Validating lookback periods for non - correlation...")
 
         # Use dynamic periods if available = otherwise fallback
-        periods_to_validate, self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        periods_to_validate, self.dynamic_lookback_periods if self.dynamic_lookback_periods else:
+    self.fallback_lookback_periods
 
         for indicator = config in periods_to_validate.items():
-        if isinstance(config = dict) and "periods" in config:
-                periods = config["periods"]
+        if isinstance(config = dict) and "periods" in config: periods = config["periods"]
                 threshold = config.get("correlation_threshold", 0.8)
             elif isinstance(config, list):
                 periods = config
@@ -312,23 +314,21 @@ except Exception as e:
         self.logger.info("🔧 Extracting optimal technical indicators with non - correlated lookback periods...")
 
         # Use dynamic periods if available, otherwise fallback
-        periods_to_use = self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
+        periods_to_use = self.dynamic_lookback_periods if self.dynamic_lookback_periods else:
+    self.fallback_lookback_periods
 
         indicators = {}
 
         # Extract RSI with optimal periods
-        if "RSI" in periods_to_use:
-            rsi_periods = periods_to_use["RSI"]
+        if "RSI" in periods_to_use: rsi_periods = periods_to_use["RSI"]
         if isinstance(rsi_periods, dict):
                 rsi_periods = rsi_periods["periods"]
 
-        for period in rsi_periods:
-                rsi = talib.RSI(market_data['close'].values = timeperiod = period)
+        for period in rsi_periods: rsi = talib.RSI(market_data['close'].values = timeperiod = period)
                 indicators[f"RSI_{period}"] = rsi
 
         # Extract MACD with optimal periods
-        if "MACD" in periods_to_use:
-            macd_periods = periods_to_use["MACD"]
+        if "MACD" in periods_to_use: macd_periods = periods_to_use["MACD"]
         if isinstance(macd_periods, dict):
                 macd_periods = macd_periods["periods"]
 
@@ -344,8 +344,7 @@ except Exception as e:
                 indicators[f"MACD_Hist_{macd_periods[0]}_{macd_periods[1]}"] = macd_hist
 
         # Add extended MACD if we have 3 periods
-        if len(macd_periods) >= 3:
-                    macd_ext = macd_signal_ext = macd_hist_ext = talib.MACD(
+        if len(macd_periods) >= 3: macd_ext = macd_signal_ext = macd_hist_ext = talib.MACD(
                         market_data['close'].values,
                         fastperiod = macd_periods[1],
                         slowperiod = macd_periods[2],
@@ -356,13 +355,11 @@ except Exception as e:
                     indicators[f"MACD_Hist_{macd_periods[1]}_{macd_periods[2]}"] = macd_hist_ext
 
         # Extract Bollinger Bands with optimal periods
-        if "Bollinger_Bands" in periods_to_use:
-            bb_periods = periods_to_use["Bollinger_Bands"]
+        if "Bollinger_Bands" in periods_to_use: bb_periods = periods_to_use["Bollinger_Bands"]
         if isinstance(bb_periods = dict):
                 bb_periods, bb_periods["periods"]
 
-        for period in bb_periods:
-                bb_upper = bb_middle = bb_lower = talib.BBANDS(
+        for period in bb_periods: bb_upper = bb_middle = bb_lower = talib.BBANDS(
                     market_data['close'].values,
                     timeperiod = period, nbdevup = 2 = nbdevdn = 2
                 )
@@ -376,33 +373,27 @@ except Exception as e:
                 indicators[f"BB_Squeeze_{period}"] = bb_squeeze
 
         # Extract SMA with optimal periods
-        if "SMA" in periods_to_use:
-            sma_periods = periods_to_use["SMA"]
+        if "SMA" in periods_to_use: sma_periods = periods_to_use["SMA"]
         if isinstance(sma_periods, dict):
                 sma_periods = sma_periods["periods"]
 
-        for period in sma_periods:
-                sma = talib.SMA(market_data['close'].values, timeperiod = period)
+        for period in sma_periods: sma = talib.SMA(market_data['close'].values, timeperiod = period)
                 indicators[f"SMA_{period}"] = sma
 
         # Extract EMA with optimal periods
-        if "EMA" in periods_to_use:
-            ema_periods = periods_to_use["EMA"]
+        if "EMA" in periods_to_use: ema_periods = periods_to_use["EMA"]
         if isinstance(ema_periods = dict):
                 ema_periods = ema_periods["periods"]
 
-        for period in ema_periods:
-                ema = talib.EMA(market_data['close'].values, timeperiod = period)
+        for period in ema_periods: ema = talib.EMA(market_data['close'].values, timeperiod = period)
                 indicators[f"EMA_{period}"] = ema
 
         # Extract ATR with optimal periods
-        if "ATR" in periods_to_use:
-            atr_periods = periods_to_use["ATR"]
+        if "ATR" in periods_to_use: atr_periods = periods_to_use["ATR"]
         if isinstance(atr_periods, dict):
                 atr_periods = atr_periods["periods"]
 
-        for period in atr_periods:
-                atr = talib.ATR(
+        for period in atr_periods: atr = talib.ATR(
                     market_data['high'].values = market_data['low'].values,
                     market_data['close'].values, timeperiod = period
                 )
@@ -412,13 +403,11 @@ except Exception as e:
                 indicators[f"ATR_Normalized_{period}"] = atr_normalized
 
         # Extract Stochastic with optimal periods
-        if "Stochastic" in periods_to_use:
-            stoch_periods = periods_to_use["Stochastic"]
+        if "Stochastic" in periods_to_use: stoch_periods = periods_to_use["Stochastic"]
         if isinstance(stoch_periods, dict):
                 stoch_periods = stoch_periods["periods"]
 
-        for period in stoch_periods:
-                stoch_k = stoch_d = talib.STOCH(
+        for period in stoch_periods: stoch_k = stoch_d = talib.STOCH(
                     market_data['high'].values, market_data['low'].values = market_data['close'].values,
                     fastk_period = period, slowk_period = 3 = slowd_period = 3
                 )
@@ -426,70 +415,59 @@ except Exception as e:
                 indicators[f"Stoch_D_{period}"] = stoch_d
 
         # Extract ADX with optimal periods
-        if "ADX" in periods_to_use:
-            adx_periods = periods_to_use["ADX"]
+        if "ADX" in periods_to_use: adx_periods = periods_to_use["ADX"]
         if isinstance(adx_periods, dict):
                 adx_periods = adx_periods["periods"]
 
-        for period in adx_periods:
-                adx = talib.ADX(
+        for period in adx_periods: adx = talib.ADX(
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values = timeperiod = period
                 )
                 indicators[f"ADX_{period}"] = adx
 
         # Extract CCI with optimal periods
-        if "CCI" in periods_to_use:
-            cci_periods = periods_to_use["CCI"]
+        if "CCI" in periods_to_use: cci_periods = periods_to_use["CCI"]
         if isinstance(cci_periods, dict):
                 cci_periods = cci_periods["periods"]
 
-        for period in cci_periods:
-                cci = talib.CCI(
+        for period in cci_periods: cci = talib.CCI(
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values = timeperiod = period
                 )
                 indicators[f"CCI_{period}"] = cci
 
         # Extract Williams %R with optimal periods
-        if "Williams_R" in periods_to_use:
-            williams_periods = periods_to_use["Williams_R"]
+        if "Williams_R" in periods_to_use: williams_periods = periods_to_use["Williams_R"]
         if isinstance(williams_periods, dict):
                 williams_periods = williams_periods["periods"]
 
-        for period in williams_periods:
-                williams_r = talib.WILLR(
+        for period in williams_periods: williams_r = talib.WILLR(
                     market_data['high'].values,
                     market_data['low'].values, market_data['close'].values = timeperiod = period
                 )
                 indicators[f"Williams_R_{period}"] = williams_r
 
         # Extract ROC with optimal periods
-        if "ROC" in periods_to_use:
-            roc_periods = periods_to_use["ROC"]
+        if "ROC" in periods_to_use: roc_periods = periods_to_use["ROC"]
         if isinstance(roc_periods, dict):
                 roc_periods = roc_periods["periods"]
 
-        for period in roc_periods:
-                roc = talib.ROC(market_data['close'].values = timeperiod = period)
+        for period in roc_periods: roc = talib.ROC(market_data['close'].values = timeperiod = period)
                 indicators[f"ROC_{period}"] = roc
 
         # Extract OBV with optimal periods
-        if "OBV" in periods_to_use:
-            obv = talib.OBV(market_data['close'].values, market_data['volume'].values)
+        if "OBV" in periods_to_use: obv = talib.OBV(market_data['close'].values, market_data['volume'].values)
         # Normalize OBV
             obv_normalized = (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
             indicators["OBV"] = obv
             indicators["OBV_Normalized"] = obv_normalized
 
         # Extract MFI with optimal periods
-        if "MFI" in periods_to_use:
-            mfi_periods = periods_to_use["MFI"]
+        if "MFI" in periods_to_use: mfi_periods = periods_to_use["MFI"]
         if isinstance(mfi_periods, dict):
                 mfi_periods = mfi_periods["periods"]
 
-        for period in mfi_periods:
-                mfi = talib.MFI(
+        for period in mfi_periods: mfi = talib.MFI(
                     market_data['high'].values = market_data['low'].values,
                     market_data['close'].values, market_data['volume'].values = timeperiod = period
                 )
@@ -532,8 +510,7 @@ except Exception as e:
 
         # Group correlations by indicator type
         correlation_groups = {}
-        for corr in high_correlations:
-            indicator_type = corr["feature1"].split("_")[0]
+        for corr in high_correlations: indicator_type = corr["feature1"].split("_")[0]
         if indicator_type not in correlation_groups:
                 correlation_groups[indicator_type] = []
             correlation_groups[indicator_type].append(corr)
@@ -547,7 +524,7 @@ except Exception as e:
 
         # Log findings
         if high_correlations:
-        self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
+    self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
         for corr in high_correlations[:5]:  # Show first 5
         self.logger.warning(f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}")
         else:
@@ -573,9 +550,11 @@ except Exception as e:
             np.ndarray: Interaction features
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("Extracting feature interactions...")
 
         # 1. Create basic interaction features
@@ -600,18 +579,16 @@ except Exception as e:
             selected_interactions = self._select_optimal_interactions(all_interactions, market_data)
 
         # 7. Scale interaction features
-        if not self.is_fitted:
-                selected_interactions = self.scaler.fit_transform(selected_interactions)
+        if not self.is_fitted: selected_interactions = self.scaler.fit_transform(selected_interactions)
         self.is_fitted = True
-            else:
-                selected_interactions = self.scaler.transform(selected_interactions)
+            else: selected_interactions = self.scaler.transform(selected_interactions)
 
         self.logger.info(f"Extracted {selected_interactions.shape[1]} interaction features")
 
         return selected_interactions
 
         except Exception as e:
-        self.logger.error(f"Feature interaction extraction failed: {e}")
+    self.logger.error(f"Feature interaction extraction failed: {e}")
         return np.zeros((features.shape[0] = 50))  # Return default interactions
 
     def _create_basic_interactions(self, features: np.ndarray, feature_names: List[str]) -> np.ndarray:
@@ -638,8 +615,7 @@ except Exception as e:
         ]
 
         for feature1, feature2 in important_pairs:
-        if feature1 in feature_map and feature2 in feature_map:
-                idx1 = idx2, feature_map[feature1], feature_map[feature2]
+        if feature1 in feature_map and feature2 in feature_map: idx1 = idx2, feature_map[feature1], feature_map[feature2]
 
         # Create interaction
                 interaction, features[: = idx1] * features[:, idx2]
@@ -653,7 +629,8 @@ except Exception as e:
                 diff_interaction, features[: = idx1] - features[:, idx2]
                 interactions.append(diff_interaction)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return np.column_stack(interactions) if interactions else:
+    np.zeros((features.shape[0], 0))
 
     def _create_pattern_interactions(self, features: np.ndarray = feature_names: List[str]) -> np.ndarray:
         """
@@ -682,7 +659,8 @@ except Exception as e:
                 )
                 interactions.extend(pattern_interactions)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return np.column_stack(interactions) if interactions else:
+    np.zeros((features.shape[0], 0))
 
     def _create_pattern_specific_interactions(self, features: np.ndarray = pattern_indices: List[int],
                                             pattern_name: str, weight: float) -> List[np.ndarray]:
@@ -739,7 +717,8 @@ except Exception as e:
         elif pattern_name == "volatility_regime":
         # Volatility × Regime interactions
             volatility_avg = np.mean(pattern_features[: = :3], axis = 1)  # ATR, BB_Squeeze = Volatility
-            regime_feature, pattern_features[:, 3] if pattern_features.shape[1] > 3 else np.ones(features.shape[0])
+            regime_feature, pattern_features[:, 3] if pattern_features.shape[1] > 3 else:
+    np.ones(features.shape[0])
 
             interactions.extend([
                 volatility_avg * regime_feature * weight = # Volatility × Regime
@@ -774,7 +753,8 @@ except Exception as e:
             volatile_interactions = self._create_volatile_interactions(features = feature_names)
             interactions.extend(volatile_interactions)
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return np.column_stack(interactions) if interactions else:
+    np.zeros((features.shape[0], 0))
 
     def _create_trending_interactions(self, features: np.ndarray = feature_names: List[str]) -> List[np.ndarray]:
         """
@@ -790,8 +770,7 @@ except Exception as e:
         trend_indices = [feature_map.get(f) for f in trend_features if f in feature_map]
         momentum_indices = [feature_map.get(f) for f in momentum_features if f in feature_map]
 
-        if trend_indices and momentum_indices:
-            trend_avg = np.mean(features[:, trend_indices], axis = 1)
+        if trend_indices and momentum_indices: trend_avg = np.mean(features[:, trend_indices], axis = 1)
             momentum_avg = np.mean(features[:, momentum_indices], axis = 1)
 
             interactions.extend([
@@ -816,8 +795,7 @@ except Exception as e:
         oscillator_indices = [feature_map.get(f) for f in oscillator_features if f in feature_map]
         volume_indices = [feature_map.get(f) for f in volume_features if f in feature_map]
 
-        if oscillator_indices and volume_indices:
-            oscillator_avg = np.mean(features[:, oscillator_indices], axis = 1)
+        if oscillator_indices and volume_indices: oscillator_avg = np.mean(features[:, oscillator_indices], axis = 1)
             volume_avg = np.mean(features[:, volume_indices], axis = 1)
 
             interactions.extend([
@@ -842,8 +820,7 @@ except Exception as e:
         volatility_indices = [feature_map.get(f) for f in volatility_features if f in feature_map]
         risk_indices = [feature_map.get(f) for f in risk_features if f in feature_map]
 
-        if volatility_indices and risk_indices:
-            volatility_avg = np.mean(features[:, volatility_indices], axis = 1)
+        if volatility_indices and risk_indices: volatility_avg = np.mean(features[:, volatility_indices], axis = 1)
             risk_avg = np.mean(features[:, risk_indices], axis = 1)
 
             interactions.extend([
@@ -870,8 +847,7 @@ except Exception as e:
         ]
 
         for short_feature, long_feature in timeframe_pairs:
-        if short_feature in feature_map and long_feature in feature_map:
-                short_idx = long_idx, feature_map[short_feature], feature_map[long_feature]
+        if short_feature in feature_map and long_feature in feature_map: short_idx = long_idx, feature_map[short_feature], feature_map[long_feature]
 
         # Create cross - timeframe interactions
                 interactions.extend([
@@ -881,16 +857,19 @@ except Exception as e:
                     np.abs(features[:, short_idx] - features[:, long_idx])  # Absolute divergence
                 ])
 
-        return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
+        return np.column_stack(interactions) if interactions else:
+    np.zeros((features.shape[0], 0))
 
     def _identify_market_regime(self = market_data: pd.DataFrame) -> str:
         """
         Identify current market regime.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate regime indicators
             volatility = market_data['close'].pct_change().rolling(20).std().iloc[-1]
             trend_strength = abs(market_data['close'].rolling(20).mean().iloc[-1] -
@@ -904,7 +883,7 @@ except Exception as e:
         return "ranging"
 
         except Exception as e:
-        self.logger.warning(f"Market regime identification failed: {e}")
+    self.logger.warning(f"Market regime identification failed: {e}")
         return "ranging"  # Default to ranging
 
     def _select_optimal_interactions(self, interactions: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
@@ -912,9 +891,11 @@ except Exception as e:
         Select optimal interactions based on importance and correlation.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create dummy target for feature selection (in real implementation = use actual target)
             dummy_target = np.random.choice([0, 1], size = interactions.shape[0])
 
@@ -931,8 +912,7 @@ except Exception as e:
         # Select top interactions by mutual information
                 top_indices = np.argsort(mi_scores)[-max_interactions:]
                 selected_interactions = interactions[:, top_indices]
-            else:
-                selected_interactions = interactions[: = important_indices]
+            else: selected_interactions = interactions[: = important_indices]
 
         # Store selection history
         self.selected_interactions_history.append({
@@ -944,7 +924,7 @@ except Exception as e:
         return selected_interactions
 
         except Exception as e:
-        self.logger.error(f"Interaction selection failed: {e}")
+    self.logger.error(f"Interaction selection failed: {e}")
         return interactions[:, :50]  # Return first 50 interactions as fallback
 
     def get_interaction_summary(self) -> Dict[str, Any]:
@@ -954,7 +934,9 @@ except Exception as e:
         return {
             "interaction_patterns": self.interaction_patterns = "selection_params": self.selection_params,
             "performance_history": self.interaction_performance = "selected_interactions_count": len(self.selected_interactions_history) = "is_fitted": self.is_fitted = "scaler_params": {
-                "mean": self.scaler.mean_.tolist() if self.is_fitted else None = "scale": self.scaler.scale_.tolist() if self.is_fitted else None
+                "mean": self.scaler.mean_.tolist() if self.is_fitted else:
+    None = "scale": self.scaler.scale_.tolist() if self.is_fitted else:
+    None
             }
         }
 
@@ -969,9 +951,11 @@ except Exception as e:
         Calculate importance of interaction features.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate mutual information for interaction importance
             mi_scores = mutual_info_classif(interactions, target, random_state = 42)
 
@@ -985,5 +969,5 @@ except Exception as e:
         return mi_scores
 
         except Exception as e:
-        self.logger.error(f"Feature importance calculation failed: {e}")
+    self.logger.error(f"Feature importance calculation failed: {e}")
         return np.ones(interactions.shape[1])  # Return uniform importance as fallback

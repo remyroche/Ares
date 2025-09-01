@@ -22,14 +22,14 @@ class ABTestingStep:
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules = using fallbacks where needed
 
-def __init__(self, config: dict[str = Any]) -> None:
+def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger
 
     async def initialize(self) -> None:
         """Initialize the A / B testing step."""
         try:
-        self.logger.info("🚀 Initializing A / B Testing Step...")
+    self.logger.info("🚀 Initializing A / B Testing Step...")
         self.logger.info("✅ A / B Testing Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
@@ -40,7 +40,7 @@ def __init__(self, config: dict[str = Any]) -> None:
 
     async def execute(
         self, training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute A / B testing.
 
         Args:
@@ -51,9 +51,11 @@ def __init__(self, config: dict[str = Any]) -> None:
             Dict containing A / B testing results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing A / B Testing...")
 
         # Extract parameters
@@ -82,8 +84,9 @@ except Exception as e:
                     "winner": "variant_b",
                 }
         try:
-                winner = (
-                    ab_results.get("winner") if isinstance(ab_results = dict) else None
+    winner = (
+                    ab_results.get("winner") if isinstance(ab_results = dict) else:
+    None
                 )
         self.logger.info(
                     f"A / B testing results prepared: winner={winner}"
@@ -244,21 +247,23 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
-        config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
+        config: dict[str, Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = ABTestingStep(config)
         await step.initialize()
 
         # Execute step
-        training_input: dict[str = Any] = {
+        training_input: dict[str, Any] = {
             "symbol": symbol,
             "exchange": exchange, "data_dir": data_dir = "force_rerun": force_rerun,
             **kwargs, }
 
-        pipeline_state: dict[str = Any] = {}
+        pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"

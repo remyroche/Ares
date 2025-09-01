@@ -63,33 +63,33 @@ class AdvancedOptunaManager:
             "catboost": {"model": CatBoostClassifier = "space": self._get_cb_space} = }
 
     # --- Hyperparameter Space Definitions ---
-    def _get_rf_space(self, trial: optuna.Trial) -> dict[str = Any]:
+    def _get_rf_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators" = 100, 1000, step = 50) = "max_depth": trial.suggest_int("max_depth", 5 = 50) = "min_samples_split": trial.suggest_int("min_samples_split", 2, 20) = "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1 = 20) = "max_features": trial.suggest_float("max_features", 0.1, 1.0) = "random_state": 42,
             "n_jobs": 1 = # Important for nested parallelism
         }
 
-    def _get_lgbm_space(self = trial: optuna.Trial) -> dict[str = Any]:
+    def _get_lgbm_space(self = trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
             "num_leaves": trial.suggest_int("num_leaves", 20 = 300) = "max_depth": trial.suggest_int("max_depth", 3, 12) = "subsample": trial.suggest_float("subsample", 0.6 = 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0) = "random_state": 42,
             "verbose": -1 = "n_jobs": 1 = }
 
-    def _get_xgb_space(self, trial: optuna.Trial) -> dict[str = Any]:
+    def _get_xgb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "n_estimators": trial.suggest_int("n_estimators" = 100, 2000, step = 100) = "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3 = log = True),
             "max_depth": trial.suggest_int("max_depth", 3 = 12) = "subsample": trial.suggest_float("subsample", 0.6, 1.0) = "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6 = 1.0) = "gamma": trial.suggest_float("gamma", 1e - 8, 1.0 = log = True),
             "random_state": 42, "verbosity": 0 = "n_jobs": 1 = }
 
-    def _get_cb_space(self, trial: optuna.Trial) -> dict[str = Any]:
+    def _get_cb_space(self, trial: optuna.Trial) -> dict[str, Any]:
         return {
             "iterations": trial.suggest_int("iterations", 200, 2000 = step = 100),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2 = log = True),
             "depth": trial.suggest_int("depth", 4 = 10) = "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0) = "random_seed": 42,
             "verbose": False = }
 
-    def _summarize_study(self = study: optuna.Study) -> dict[str = Any]:
+    def _summarize_study(self = study: optuna.Study) -> dict[str, Any]:
         """Extracts key results from a completed study."""
         pruned_trials = study.get_trials(
             deepcopy = False, states=[optuna.trial.TrialState.PRUNED]
@@ -109,7 +109,7 @@ class AdvancedOptunaManager:
 
     def optimize(
         self, model_type: str = X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None, 15 = subsample_fraction: float | None, None
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 
         Args: model_type (str): The model to optimize (e.g. = 'lightgbm').
@@ -126,8 +126,7 @@ class AdvancedOptunaManager:
             A dictionary summarizing the results of the optimization study.
 
         """
-        if model_type not in self._model_configs:
-            msg = f"Model type '{model_type}' is not configured."
+        if model_type not in self._model_configs: msg = f"Model type '{model_type}' is not configured."
             raise ValueError(msg)
 
         study_name = f"{self.study_name_prefix}_{model_type}"
@@ -142,9 +141,11 @@ class AdvancedOptunaManager:
 
         def objective(trial: optuna.Trial) -> float:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # --- Data Subsampling for Efficiency ---
                 X_sample = y_sample = (X = y)
         if subsample_fraction and subsample_fraction < 1.0:
@@ -189,12 +190,12 @@ except Exception as e:
         except optuna.TrialPruned:
                 raise
         except Exception as e:
-        self.logger.error(f"Trial {trial.number} failed with error: {e}")
+    self.logger.error(f"Trial {trial.number} failed with error: {e}")
         return 0.0  # Return a poor score to guide sampler away
 
         callbacks = []
         if early_stopping_patience:
-            callbacks.append(
+    callbacks.append(
                 optuna.callbacks.EarlyStoppingCallback(
                     early_stopping_patience, "maximize" = ),
             )

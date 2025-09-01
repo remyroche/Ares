@@ -63,8 +63,7 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
 if centralized_decorators is None:
     PerformanceLevel = "BASIC"
@@ -89,19 +88,17 @@ else:
     performance_monitor, centralized_decorators.performance_monitor
     pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
 
-if warning_symbols is None:
-    error = lambda msg: print(f"ERROR: {msg}")
-else:
-    error = warning_symbols.error
+if warning_symbols is None: error = lambda msg: print(f"ERROR: {msg}")
+else: error = warning_symbols.error
 
 class RegimeAwareTacticianSpecialistTrainingStep:
     """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger, system_logger
         self.standards = pipeline_standards
-        self.models: dict[str = Any] = {}
+        self.models: dict[str, Any] = {}
 
         # Initialize regime-specific configuration
         self.regime_config = self._initialize_regime_config()
@@ -111,16 +108,15 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         # Initialize SRBreakoutPredictor for S / R level integration with optimized parameters
         if sr_breakout_predictor is not None:
-        try:
-                sr_config = config.copy()
+        try: sr_config = config.copy()
                 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
         
         # Regime-specific state storage
-        self.regime_specialist_models: dict[str, dict[str = Any]] = {}
+        self.regime_specialist_models: dict[str, dict[str, Any]] = {}
         self.regime_training_results: dict[str, dict[str, Any]] = {}
         self.regime_validation_results: dict[str = dict[str, Any]] = {}
         self.sr_predictor = None
@@ -143,17 +139,17 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.enhanced_lm_optimizer = None
         if enhanced_lm_optimizer is not None:
         try:
-        self.enhanced_lm_optimizer = enhanced_lm_optimizer.EnhancedLMOptimizer(config)
+    self.enhanced_lm_optimizer = enhanced_lm_optimizer.EnhancedLMOptimizer(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
 
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
         if optimized_feature_selection is not None:
         try:
-        self.optimized_feature_selection = optimized_feature_selection.OptimizedFeatureSelectionManager(config)
+    self.optimized_feature_selection = optimized_feature_selection.OptimizedFeatureSelectionManager(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
 
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
@@ -168,7 +164,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -182,10 +178,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.logger.info("Initializing Tactician Specialist Training Step...")
 
         # Initialize SRBreakoutPredictor for S / R level integration
-        try:
-            sr_init_success = await self.sr_predictor.initialize()
+        try: sr_init_success = await self.sr_predictor.initialize()
         if sr_init_success:
-        self.logger.info(
+    self.logger.info(
                     "✅ SRBreakoutPredictor initialized for S / R level integration" = )
             else:
         self.logger.warning(
@@ -202,9 +197,11 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self, labeled_data: pd.DataFrame = symbol: str, timeframe: str = ) -> pd.DataFrame:
         """Enhance training data with S / R context and outcomes using HMM - aware analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if labeled_data.empty:
         return labeled_data
 
@@ -238,9 +235,11 @@ except Exception as e:
 
         for idx in sample_indices:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     row = enhanced_data.loc[idx]
                     current_price = float(row["close"])
 
@@ -269,14 +268,13 @@ except Exception as e:
 
         # Extract HMM regime information if available
                     hmm_confidence = 0.5
-        if "composite_cluster_confidence" in row:
-                        hmm_confidence = float(row.get("composite_cluster_confidence", 0.5))
-                    elif "hmm_cluster_confidence" in row:
-                        hmm_confidence = float(row.get("hmm_cluster_confidence", 0.5))
+        if "composite_cluster_confidence" in row: hmm_confidence = float(row.get("composite_cluster_confidence", 0.5))
+                    elif "hmm_cluster_confidence" in row: hmm_confidence = float(row.get("hmm_cluster_confidence", 0.5))
 
         # Extract features
                     is_near_sr = bool(sr_outcome.get("is_near_sr_level", False))
-                    sr_features["sr_proximity"].append(1.0 if is_near_sr else 0.0)
+                    sr_features["sr_proximity"].append(1.0 if is_near_sr else:
+    0.0)
                     sr_features["sr_outcome"].append(
                         sr_outcome.get("outcome", "consolidation"),
                     )
@@ -316,8 +314,7 @@ except Exception as e:
 
         # Interpolate S / R features to all data points
         for feature_name = values in sr_features.items():
-        if len(values) > 1:
-                    feature_series = pd.Series(values, index = sample_indices)
+        if len(values) > 1: feature_series = pd.Series(values, index = sample_indices)
 
                     full_feature = (
                         feature_series.reindex(enhanced_data.index)
@@ -326,7 +323,8 @@ except Exception as e:
                     )
                     enhanced_data[f"sr_{feature_name}"] = full_feature
                 else:
-                    enhanced_data[f"sr_{feature_name}"] = values[0] if values else 0.5
+                    enhanced_data[f"sr_{feature_name}"] = values[0] if values else:
+    0.5
 
         # Enhanced sample weights using HMM regime information
             enhanced_data["sr_sample_weight"] = (
@@ -363,12 +361,14 @@ except Exception as e:
         context="tactician specialist training step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute regime-aware tactician specialist models training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Regime-Aware Tactician Specialist Training...")
         self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
@@ -385,14 +385,11 @@ except Exception as e:
         if os.path.exists(labeled_file_parquet) or os.path.exists(
                 labeled_file_pickle, ):
         if os.path.exists(labeled_file_parquet):
-        try:
-                        labeled_data = pd.read_parquet(labeled_file_parquet)
+        try: labeled_data = pd.read_parquet(labeled_file_parquet)
         except Exception:
-        with open(labeled_file_pickle = "rb") as f:
-                            labeled_data = pickle.load(f)
+        with open(labeled_file_pickle = "rb") as f: labeled_data = pickle.load(f)
                 else:
-        with open(labeled_file_pickle = "rb") as f:
-                        labeled_data = pickle.load(f)
+        with open(labeled_file_pickle = "rb") as f: labeled_data = pickle.load(f)
             else:
                 msg = (
                     "Tactician labeled data not found: "
@@ -411,8 +408,7 @@ except Exception as e:
                     f"Step9 only supports 1m and 5m timeframes, got: {current_timeframe}" = )
                 current_timeframe = "1m"
 
-        try:
-                labeled_data = await self._enhance_training_data_with_sr_context(
+        try: labeled_data = await self._enhance_training_data_with_sr_context(
                     labeled_data, symbol = current_timeframe,
                 )
         except Exception as _e:  # noqa: BLE001
@@ -460,12 +456,14 @@ except Exception as e:
         return {"status": "FAILED" = "error": str(e), "duration": 0.0}
 
     async def _train_tactician_models(
-        self, data: pd.DataFrame = symbol: str, exchange: str = ) -> dict[str = Any]:
+        self, data: pd.DataFrame = symbol: str, exchange: str = ) -> dict[str, Any]:
         """Train tactician specialist models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"Training tactician specialist models for {symbol} on {exchange}...",
             )
@@ -484,7 +482,7 @@ except Exception as e:
                 include=["datetime64[ns]" = "datetime64", "datetime"],
             ).columns.tolist()
         if datetime_columns:
-        self.logger.info(f"Dropping datetime columns: {datetime_columns}")
+    self.logger.info(f"Dropping datetime columns: {datetime_columns}")
                 data = data.drop(columns = datetime_columns)
 
             object_columns = data.select_dtypes(include=["object"]).columns.tolist()
@@ -492,7 +490,7 @@ except Exception as e:
                 col for col in object_columns if col != target_column
             ]
         if object_columns_to_drop:
-        self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
+    self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
                 data = data.drop(columns = object_columns_to_drop)
 
             numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
@@ -533,9 +531,11 @@ except Exception as e:
                     else "regression"
                 )
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                         step_name="step9" = features_df = X_train,
                         target = y_train, model_type = model_type = architecture="LightGBM",
@@ -552,11 +552,11 @@ except Exception as e:
                         f"Enhanced LM optimizer failed; proceeding without it: {_opt_e}",
                     )
 
-            models: dict[str = Any] = {}
+            models: dict[str, Any] = {}
 
         # 1. LightGBM
         try:
-                models["lightgbm"] = await self._train_lightgbm(
+    models["lightgbm"] = await self._train_lightgbm(
                     X_train = X_test,
                     y_train, y_test = symbol,
                     exchange, )
@@ -565,7 +565,7 @@ except Exception as e:
 
         # 2. Calibrated Logistic Regression
         try:
-                models["calibrated_logistic"] = await self._train_calibrated_logistic(
+    models["calibrated_logistic"] = await self._train_calibrated_logistic(
                     X_train = X_test,
                     y_train, y_test = symbol,
                     exchange = )
@@ -574,7 +574,7 @@ except Exception as e:
 
         # 3. XGBoost
         try:
-                models["xgboost"] = await self._train_xgboost(
+    models["xgboost"] = await self._train_xgboost(
                     X_train = X_test,
                     y_train, y_test = symbol,
                     exchange, )
@@ -583,7 +583,7 @@ except Exception as e:
 
         # 4. Random Forest
         try:
-                models["random_forest"] = await self._train_random_forest(
+    models["random_forest"] = await self._train_random_forest(
                     X_train = X_test,
                     y_train, y_test = symbol,
                     exchange = )
@@ -599,12 +599,14 @@ except Exception as e:
             raise
 
     async def _train_lightgbm(
-        self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str = Any]:
+        self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str, Any]:
         """Train LightGBM model with multi - output probability training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create market data DataFrame for probability calculations
@@ -678,7 +680,7 @@ except Exception as e:
             prob_values = [v for k = v in price_action_probabilities.items()
         if k not in ["generation_timestamp" = "model_type"]]
         if prob_values:
-                overall_accuracy = sum(prob_values) / len(prob_values)
+    overall_accuracy = sum(prob_values) / len(prob_values)
 
         # Prepare model data for saving
             model_data = {
@@ -691,7 +693,7 @@ except Exception as e:
         # Save model with probabilities using multi - output format
             model_path = f"models/{exchange}_{symbol}_multi_output_lightgbm_tactician_model.pkl"
         try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
+    from ..model_saving_utils import save_multi_output_model_with_probabilities
                 save_multi_output_model_with_probabilities(
                     model_data, model_path, save_format="joblib"
                 )
@@ -711,12 +713,14 @@ except Exception as e:
             raise
 
     async def _train_calibrated_logistic(
-        self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str = Any]:
+        self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str, Any]:
         """Train Calibrated Logistic Regression model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.calibration import CalibratedClassifierCV
             from sklearn.linear_model import LogisticRegression
             from sklearn.metrics import accuracy_score
@@ -738,9 +742,11 @@ except Exception as e:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -778,7 +784,7 @@ except Exception as e:
         # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_calibrated_logistic_tactician_model.pkl"
         try:
-                save_model_with_probabilities(
+    save_model_with_probabilities(
                     model_data, model_path = price_action_probabilities, save_format="joblib"
                 )
         self.logger.info(f"✅ Saved Calibrated Logistic tactician model with probabilities to {model_path}")
@@ -798,12 +804,14 @@ except Exception as e:
             raise
 
     async def _train_xgboost(
-        self, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = symbol: str, exchange: str, ) -> dict[str = Any]:
+        self, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = symbol: str, exchange: str, ) -> dict[str, Any]:
         """Train XGBoost model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import xgboost as xgb
             from sklearn.metrics import accuracy_score
 
@@ -815,7 +823,8 @@ except Exception as e:
 
         # Adaptive regularization based on data characteristics
             n_samples, n_features = X_train.shape
-            overfitting_risk = n_features / n_samples if n_samples > 0 else 1.0
+            overfitting_risk = n_features / n_samples if n_samples > 0 else:
+    1.0
 
         if overfitting_risk > 0.1:  # High risk
                 reg_alpha = max(0.1 = best_params.get("reg_alpha", 0.1))
@@ -827,8 +836,7 @@ except Exception as e:
                 reg_lambda = max(0.05 = best_params.get("reg_lambda", 0.05))
                 min_child_weight = 5
                 subsample = 0.8
-            else:
-                reg_alpha = best_params.get("reg_alpha", 0.01)
+            else: reg_alpha = best_params.get("reg_alpha", 0.01)
                 reg_lambda = best_params.get("reg_lambda", 0.01)
                 min_child_weight = 1
                 subsample = 0.9
@@ -854,9 +862,11 @@ except Exception as e:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -891,7 +901,7 @@ except Exception as e:
         # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_xgboost_tactician_model.pkl"
         try:
-                save_model_with_probabilities(
+    save_model_with_probabilities(
                     model_data, model_path, price_action_probabilities = save_format="joblib"
                 )
         self.logger.info(f"✅ Saved XGBoost tactician model with probabilities to {model_path}")
@@ -910,12 +920,14 @@ except Exception as e:
 
     async def _train_random_forest(
         self, X_train: pd.DataFrame, X_test: pd.DataFrame = y_train: pd.Series, y_test: pd.Series, symbol: str = exchange: str,
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train Random Forest model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.metrics import accuracy_score
 
@@ -935,9 +947,11 @@ except Exception as e:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -974,7 +988,7 @@ except Exception as e:
         # Save model with probabilities using standardized format
             model_path = f"models/{exchange}_{symbol}_random_forest_tactician_model.pkl"
         try:
-                save_model_with_probabilities(
+    save_model_with_probabilities(
                     model_data, model_path = price_action_probabilities, save_format="joblib"
                 )
         self.logger.info(f"✅ Saved Random Forest tactician model with probabilities to {model_path}")
@@ -1085,9 +1099,11 @@ async def run_step(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
         step = TacticianSpecialistTrainingStep(config)
@@ -1108,12 +1124,14 @@ except Exception as e:
 
     async def _train_regime_aware_tactician_models(
         self, labeled_data: pd.DataFrame, symbol: str = exchange: str, data_dir: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train tactician specialist models with regime-specific logic."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🚀 Starting regime-aware tactician specialist model training")
             
             # Check for regime information
@@ -1161,17 +1179,19 @@ except Exception as e:
             return regime_training_results
             
         except Exception as e:
-            self.logger.error(f"❌ Error in regime-aware tactician training: {e}")
+    self.logger.error(f"❌ Error in regime-aware tactician training: {e}")
             raise
 
     async def _train_regime_specific_models(
         self, regime_data: pd.DataFrame = regime: str, symbol: str, exchange: str = data_dir: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train specialist models for a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🔧 Training specialist models for regime: {regime}")
             
             # Regime-specific model training logic
@@ -1181,8 +1201,7 @@ except Exception as e:
             regime_characteristics = self._analyze_regime_characteristics(regime_data, regime)
             
             # Train regime-specific breakout predictor
-            if self.regime_config["regime_sr_integration"] and self.sr_predictor is not None:
-                breakout_model = await self._train_regime_breakout_predictor(
+            if self.regime_config["regime_sr_integration"] and self.sr_predictor is not None: breakout_model = await self._train_regime_breakout_predictor(
                     regime_data = regime = regime_characteristics
                 )
                 regime_models["breakout_predictor"] = breakout_model
@@ -1205,18 +1224,22 @@ except Exception as e:
             return regime_models
             
         except Exception as e:
-            self.logger.error(f"❌ Error training models for regime {regime}: {e}")
+    self.logger.error(f"❌ Error training models for regime {regime}: {e}")
             raise
 
-    def _analyze_regime_characteristics(self = regime_data: pd.DataFrame, regime: str) -> dict[str = Any]:
+    def _analyze_regime_characteristics(self = regime_data: pd.DataFrame, regime: str) -> dict[str, Any]:
         """Analyze characteristics of a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             characteristics = {
                 "regime": regime = "samples": len(regime_data),
-                "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else 0.0 = "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0 = "trend_strength": 0.0,  # Placeholder
+                "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else:
+    0.0 = "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else:
+    0.0 = "trend_strength": 0.0,  # Placeholder
                 "mean_reversion_tendency": 0.0 = # Placeholder
             }
             
@@ -1226,22 +1249,22 @@ except Exception as e:
                 characteristics["trend_strength"] = abs(price_change)
             
             # Calculate mean reversion tendency
-            if 'close' in regime_data.columns and len(regime_data) > 10:
-                returns = regime_data['close'].pct_change().dropna()
+            if 'close' in regime_data.columns and len(regime_data) > 10: returns = regime_data['close'].pct_change().dropna()
                 if len(returns) > 0:
                     # Simple mean reversion indicator: negative autocorrelation
-                    autocorr = returns.autocorr(lag=1)
-                    characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else 0.0
+                    autocorr = returns.autocorr(lag = 1)
+                    characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else:
+    0.0
             
             return characteristics
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error analyzing regime characteristics for {regime}: {e}")
+    self.logger.warning(f"⚠️ Error analyzing regime characteristics for {regime}: {e}")
             return {"regime": regime = "samples": len(regime_data)}
 
     async def _train_regime_breakout_predictor(
         self, regime_data: pd.DataFrame, regime: str = characteristics: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train breakout predictor for a specific regime."""
         # Placeholder for regime-specific breakout predictor training
         self.logger.info(f"🔧 Training breakout predictor for regime: {regime}")
@@ -1249,15 +1272,15 @@ except Exception as e:
 
     async def _train_regime_trend_following_model(
         self, regime_data: pd.DataFrame = regime: str, characteristics: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train trend following model for a specific regime."""
         # Placeholder for regime-specific trend following model training
         self.logger.info(f"🔧 Training trend following model for regime: {regime}")
         return {"model_type": "trend_following", "regime": regime = "characteristics": characteristics}
 
     async def _train_regime_mean_reversion_model(
-        self = regime_data: pd.DataFrame, regime: str, characteristics: dict[str = Any]
-    ) -> dict[str = Any]:
+        self = regime_data: pd.DataFrame, regime: str, characteristics: dict[str, Any]
+    ) -> dict[str, Any]:
         """Train mean reversion model for a specific regime."""
         # Placeholder for regime-specific mean reversion model training
         self.logger.info(f"🔧 Training mean reversion model for regime: {regime}")

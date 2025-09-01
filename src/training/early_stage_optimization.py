@@ -25,15 +25,13 @@ warnings.filterwarnings('ignore')
 try:
     import mlflow
     MLFLOW_AVAILABLE = True
-except ImportError:
-    MLFLOW_AVAILABLE = False
+except ImportError: MLFLOW_AVAILABLE = False
 
 # Import Optuna for optimization
 try:
     import optuna
     OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
+except ImportError: OPTUNA_AVAILABLE = False
 
 # Import regime-specific triple barrier optimizer from step4 components
 try:
@@ -41,17 +39,14 @@ try:
         RegimeSpecificTripleBarrierOptimizer = create_regime_specific_triple_barrier_optimizer
     )
     REGIME_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    REGIME_OPTIMIZER_AVAILABLE = False
+except ImportError: REGIME_OPTIMIZER_AVAILABLE = False
     RegimeSpecificTripleBarrierOptimizer = None
     create_regime_specific_triple_barrier_optimizer = None
 
 # Import HMM regime barrier optimizer (focused upper/lower barriers)
-try:
-        HMMRegimeBarrierOptimizer = optimize_hmm_regime_barriers = )
+try: HMMRegimeBarrierOptimizer = optimize_hmm_regime_barriers = )
     HMM_BARRIER_OPTIMIZER_AVAILABLE = True
-except Exception:
-    HMM_BARRIER_OPTIMIZER_AVAILABLE = False
+except Exception: HMM_BARRIER_OPTIMIZER_AVAILABLE = False
     HMMRegimeBarrierOptimizer = None
 
 
@@ -64,7 +59,7 @@ class EarlyStageOptimizer:
     - Regime-specific triple barrier optimization (step4) - trading parameters
     """
 
-    def __init__(self, config: Dict[str = Any], training_manager=None):
+    def __init__(self, config: Dict[str = Any], training_manager = None):
         self.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
@@ -80,7 +75,7 @@ class EarlyStageOptimizer:
         # Initialize regime-specific triple barrier optimizer if available
         self.regime_optimizer = None
         if REGIME_OPTIMIZER_AVAILABLE:
-            self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config = training_manager)
+    self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config = training_manager)
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
             self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
@@ -90,13 +85,13 @@ class EarlyStageOptimizer:
         self.hmm_barrier_results = {}
         self.hmm_barrier_map = {}
         if HMM_BARRIER_OPTIMIZER_AVAILABLE:
-            try:
-                self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
+    try:
+    self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
                     config.get("hmm_regime_barrier_optimizer" = {})
                 )
                 self.logger.info("✅ HMM Regime Barrier Optimizer initialized")
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
 
     async def optimize_sr_parameters(
         self,
@@ -110,18 +105,20 @@ class EarlyStageOptimizer:
             return {"error": "Optuna is required for SR optimization"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Create study for SR optimization
             study = optuna.create_study(
                 study_name="sr_parameter_optimization",
                 direction="maximize",  # Maximize data quality metric
-                sampler=optuna.samplers.TPESampler(
-                    n_startup_trials=10, n_ei_candidates=24 = multivariate=True
+                sampler = optuna.samplers.TPESampler(
+                    n_startup_trials = 10, n_ei_candidates = 24 = multivariate = True
                 ),
-                pruner=optuna.pruners.MedianPruner(
-                    n_startup_trials=5 = n_warmup_steps=10 = interval_steps=3
+                pruner = optuna.pruners.MedianPruner(
+                    n_startup_trials = 5 = n_warmup_steps = 10 = interval_steps = 3
                 )
             )
 
@@ -133,9 +130,9 @@ except Exception as e:
             timeout = optimization_config.get("timeout", 1800)  # 30 minutes
 
             study.optimize(
-                objective, n_trials=n_trials = timeout=timeout = callbacks=[
+                objective, n_trials = n_trials = timeout = timeout = callbacks=[
                     optuna.callbacks.EarlyStoppingCallback(
-                        patience=optimization_config.get("early_stopping_patience", 20)
+                        patience = optimization_config.get("early_stopping_patience", 20)
                     )
                 ]
             )
@@ -154,14 +151,13 @@ except Exception as e:
 
             # Log to MLflow
             if MLFLOW_AVAILABLE:
-                await self._log_sr_optimization_to_mlflow(self.sr_optimization_results)
+    await self._log_sr_optimization_to_mlflow(self.sr_optimization_results)
 
             self.logger.info("✅ SR parameter optimization completed successfully!")
 
             return self.sr_optimization_results
 
-        except Exception as e:
-            error_msg = f"SR optimization failed: {e}"
+        except Exception as e: error_msg = f"SR optimization failed: {e}"
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
@@ -175,9 +171,11 @@ except Exception as e:
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
 
             # Run optimization for all regimes
@@ -193,8 +191,7 @@ except Exception as e:
 
             return optimization_results
 
-        except Exception as e:
-            error_msg = f"Regime-specific optimization failed: {e}"
+        except Exception as e: error_msg = f"Regime-specific optimization failed: {e}"
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
@@ -205,9 +202,9 @@ except Exception as e:
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-            return await self.regime_optimizer.get_regime_optimization_status()
+    return await self.regime_optimizer.get_regime_optimization_status()
         except Exception as e:
-            return {"error": f"Failed to get regime optimization status: {e}"}
+    return {"error": f"Failed to get regime optimization status: {e}"}
 
     async def apply_regime_specific_parameters(self = regime_name: str) -> Dict[str = Any]:
         """Apply optimized parameters for a specific regime."""
@@ -216,9 +213,9 @@ except Exception as e:
             return {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-            return await self.regime_optimizer.apply_regime_parameters(regime_name)
+    return await self.regime_optimizer.apply_regime_parameters(regime_name)
         except Exception as e:
-            return {"error": f"Failed to apply regime parameters: {e}"}
+    return {"error": f"Failed to apply regime parameters: {e}"}
 
     async def get_regime_optimization_recommendations(self) -> List[str]:
         """Get recommendations based on regime-specific optimization results."""
@@ -227,9 +224,9 @@ except Exception as e:
             return ["Regime-specific triple barrier optimizer not available"]
 
         try:
-            return await self.regime_optimizer.get_optimization_recommendations()
+    return await self.regime_optimizer.get_optimization_recommendations()
         except Exception as e:
-            return [f"Failed to get regime optimization recommendations: {e}"]
+    return [f"Failed to get regime optimization recommendations: {e}"]
 
     async def get_triple_barrier_labeler(self):
         """Get the integrated triple barrier labeler from the regime optimizer."""
@@ -238,9 +235,9 @@ except Exception as e:
             return None
 
         try:
-            return await self.regime_optimizer.get_triple_barrier_labeler()
+    return await self.regime_optimizer.get_triple_barrier_labeler()
         except Exception as e:
-            self.logger.error(f"Failed to get triple barrier labeler: {e}")
+    self.logger.error(f"Failed to get triple barrier labeler: {e}")
             return None
 
     def _create_sr_objective(self, data: pd.DataFrame):
@@ -249,17 +246,16 @@ except Exception as e:
         def objective(trial):
             # Sample SR parameters
             params = {
-                "fractional_d": trial.suggest_float("fractional_d" = 0.1, 0.9 = log=True) = "window_size": trial.suggest_int("window_size", 10, 200) = "min_periods": trial.suggest_int("min_periods", 5 = 100) = "threshold": trial.suggest_float("threshold", 0.001, 0.1 = log=True),
-                "adf_significance": trial.suggest_float("adf_significance", 0.01, 0.1 = log=True),
-                "kpss_significance": trial.suggest_float("kpss_significance", 0.01 = 0.1 = log=True)
+                "fractional_d": trial.suggest_float("fractional_d" = 0.1, 0.9 = log = True) = "window_size": trial.suggest_int("window_size", 10, 200) = "min_periods": trial.suggest_int("min_periods", 5 = 100) = "threshold": trial.suggest_float("threshold", 0.001, 0.1 = log = True),
+                "adf_significance": trial.suggest_float("adf_significance", 0.01, 0.1 = log = True),
+                "kpss_significance": trial.suggest_float("kpss_significance", 0.01 = 0.1 = log = True)
             }
 
             # Evaluate the parameters on data
-            try:
-                quality_score = self._evaluate_sr_parameters(data, params)
+            try: quality_score = self._evaluate_sr_parameters(data, params)
                 return quality_score
             except Exception as e:
-                self.logger.warning(f"SR trial failed: {e}")
+    self.logger.warning(f"SR trial failed: {e}")
                 return float('-inf')
 
         return objective
@@ -268,9 +264,11 @@ except Exception as e:
         """Evaluate SR parameters on data."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # This would integrate with your actual SR implementation
             # For now = providing a placeholder evaluation
 
@@ -309,7 +307,7 @@ except Exception as e:
             return max(0.0 = final_score)
 
         except Exception as e:
-            self.logger.error(f"Failed to evaluate SR parameters: {e}")
+    self.logger.error(f"Failed to evaluate SR parameters: {e}")
             return float('-inf')
 
     async def optimize_regime_specific_triple_barrier(
@@ -326,9 +324,11 @@ except Exception as e:
             return {"error": "Optuna is required for regime-specific optimization"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             optimization_results = {}
 
             # Analyze all regimes first to understand the regime landscape
@@ -367,7 +367,7 @@ except Exception as e:
 
             # Log to MLflow
             if MLFLOW_AVAILABLE:
-                await self._log_regime_optimization_to_mlflow(optimization_results)
+    await self._log_regime_optimization_to_mlflow(optimization_results)
 
             self.logger.info("✅ Regime-specific triple barrier optimization completed!")
             self.logger.info(f"Optimized {len(optimization_results)} regimes with insights: {optimization_insights}")
@@ -377,8 +377,7 @@ except Exception as e:
                 "optimization_timestamp": datetime.now().isoformat()
             }
 
-        except Exception as e:
-            error_msg = f"Regime-specific optimization failed: {e}"
+        except Exception as e: error_msg = f"Regime-specific optimization failed: {e}"
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
@@ -392,13 +391,13 @@ except Exception as e:
 
         # Create study with regime-specific configuration
         study = optuna.create_study(
-            study_name=study_name, direction="maximize" = # Maximize trading performance
-            sampler=optuna.samplers.TPESampler(
-                n_startup_trials=10,
-                n_ei_candidates=24, multivariate=True = group=True
+            study_name = study_name, direction="maximize" = # Maximize trading performance
+            sampler = optuna.samplers.TPESampler(
+                n_startup_trials = 10,
+                n_ei_candidates = 24, multivariate = True = group = True
             ),
-            pruner=optuna.pruners.MedianPruner(
-                n_startup_trials=5 = n_warmup_steps=10 = interval_steps=3
+            pruner = optuna.pruners.MedianPruner(
+                n_startup_trials = 5 = n_warmup_steps = 10 = interval_steps = 3
             )
         )
 
@@ -425,9 +424,9 @@ except Exception as e:
         timeout = optimization_config.get("timeout", 3600)
 
         study.optimize(
-            objective, n_trials=n_trials = timeout=timeout = callbacks=[
+            objective, n_trials = n_trials = timeout = timeout = callbacks=[
                 optuna.callbacks.EarlyStoppingCallback(
-                    patience=optimization_config.get("early_stopping_patience", 20)
+                    patience = optimization_config.get("early_stopping_patience", 20)
                 )
             ]
         )
@@ -500,9 +499,11 @@ except Exception as e:
         """Analyze regime characteristics to inform parameter ranges."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # This would integrate with your actual regime data analysis
             # For now = providing a placeholder that can be extended
 
@@ -524,8 +525,7 @@ except Exception as e:
             characteristics["volatility_factor"] = returns.std() / 0.02  # Normalize to 2% baseline
 
             # Trend strength (using linear regression slope)
-            if len(regime_data) > 10:
-                x = np.arange(len(regime_data))
+            if len(regime_data) > 10: x = np.arange(len(regime_data))
                 y = regime_data['close'].values
                 slope = np.polyfit(x, y = 1)[0]
                 characteristics["trend_strength"] = np.tanh(slope / regime_data['close'].mean() * 1000)
@@ -533,9 +533,9 @@ except Exception as e:
                 characteristics["trend_strength"] = 0.0
 
             # Mean reversion strength (using autocorrelation)
-            if len(returns) > 20:
-                autocorr = returns.autocorr(lag=1)
-                characteristics["mean_reversion_strength"] = abs(autocorr) if not np.isnan(autocorr) else 0.0
+            if len(returns) > 20: autocorr = returns.autocorr(lag = 1)
+                characteristics["mean_reversion_strength"] = abs(autocorr) if not np.isnan(autocorr) else:
+    0.0
             else:
                 characteristics["mean_reversion_strength"] = 0.0
 
@@ -552,7 +552,7 @@ except Exception as e:
             return characteristics
 
         except Exception as e:
-            self.logger.warning(f"Failed to analyze regime characteristics for {regime_name}: {e}")
+    self.logger.warning(f"Failed to analyze regime characteristics for {regime_name}: {e}")
             return {
                 "volatility_factor": 1.0,
                 "trend_strength": 0.0, "mean_reversion_strength": 0.0 = "regime_duration": 1.0 = "price_momentum": 0.0
@@ -571,7 +571,7 @@ except Exception as e:
             else:
                 return None
         except Exception as e:
-            self.logger.warning(f"Failed to get regime data for {regime_name}: {e}")
+    self.logger.warning(f"Failed to get regime data for {regime_name}: {e}")
             return None
 
     def _create_regime_barrier_objective(
@@ -599,7 +599,7 @@ except Exception as e:
                                 param_name,
                                 param_config[0],
                                 param_config[1],
-                                log=True
+                                log = True
                             )
                 elif isinstance(param_config = list):
                     # Categorical parameter
@@ -609,14 +609,13 @@ except Exception as e:
                     params[param_name] = param_config
 
             # Evaluate the parameters on regime data
-            try:
-                performance_score = self._evaluate_regime_barrier_parameters(
+            try: performance_score = self._evaluate_regime_barrier_parameters(
                     regime_name,
                     regime_data, params
                 )
                 return performance_score
             except Exception as e:
-                self.logger.warning(f"Regime barrier trial failed for {regime_name}: {e}")
+    self.logger.warning(f"Regime barrier trial failed for {regime_name}: {e}")
                 return float('-inf')
 
         return objective
@@ -628,9 +627,11 @@ except Exception as e:
         """Evaluate regime-specific barrier parameters on regime data."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # This would integrate with your actual triple barrier implementation
             # For now = providing a placeholder evaluation
 
@@ -650,7 +651,7 @@ except Exception as e:
             return performance_score
 
         except Exception as e:
-            self.logger.error(f"Failed to evaluate regime barrier parameters for {regime_name}: {e}")
+    self.logger.error(f"Failed to evaluate regime barrier parameters for {regime_name}: {e}")
             return float('-inf')
 
     def _calculate_regime_barrier_performance_score(
@@ -750,9 +751,11 @@ except Exception as e:
         """Log SR optimization results to MLflow."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Set experiment name
             mlflow.set_experiment(self.sr_experiment_name)
 
@@ -770,21 +773,23 @@ except Exception as e:
 
                 # Log results as JSON artifact
                 with open("sr_optimization_results.json", "w") as f:
-                    json.dump(optimization_results, f = indent=2 = default=str)
+                    json.dump(optimization_results, f = indent = 2 = default=str)
                 mlflow.log_artifact("sr_optimization_results.json", "sr_optimization")
 
                 self.logger.info("✅ SR optimization results logged to MLflow")
 
         except Exception as e:
-            self.logger.error(f"Failed to log SR optimization to MLflow: {e}")
+    self.logger.error(f"Failed to log SR optimization to MLflow: {e}")
 
     async def _log_regime_optimization_to_mlflow(self = optimization_results: Dict[str = Any]):
         """Log regime-specific optimization results to MLflow."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Set experiment name
             mlflow.set_experiment(self.regime_experiment_name)
 
@@ -808,13 +813,13 @@ except Exception as e:
 
                 # Log results as JSON artifact
                 with open("regime_optimization_results.json", "w") as f:
-                    json.dump(optimization_results, f = indent=2 = default=str)
+                    json.dump(optimization_results, f = indent = 2 = default=str)
                 mlflow.log_artifact("regime_optimization_results.json", "regime_optimization")
 
                 self.logger.info("✅ Regime optimization results logged to MLflow")
 
         except Exception as e:
-            self.logger.error(f"Failed to log regime optimization to MLflow: {e}")
+    self.logger.error(f"Failed to log regime optimization to MLflow: {e}")
 
     async def optimize_hmm_regime_barriers(
         self, data: pd.DataFrame = regime_column: str = "hmm_regime"
@@ -825,12 +830,14 @@ except Exception as e:
             return {"error": "HMM Regime Barrier Optimizer not available"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🚀 Starting HMM regime barrier optimization (upper/lower only)...")
             results = await self.hmm_barrier_optimizer.optimize_regime_barriers(
-                data, regime_column=regime_column
+                data, regime_column = regime_column
             )
             self.hmm_barrier_results = results
 
@@ -842,8 +849,7 @@ except Exception as e:
             return {
                 "results": results = "barrier_map": self.hmm_barrier_map = "barriers_path": str(barriers_path)
             }
-        except Exception as e:
-            err = f"Failed to run HMM regime barrier optimization: {e}"
+        except Exception as e: err = f"Failed to run HMM regime barrier optimization: {e}"
             self.logger.exception(err)
             return {"error": err}
 
@@ -934,12 +940,12 @@ except Exception as e:
                 summary["failed_optimizations"] += 1
 
         # Sort performance ranking
-        summary["performance_ranking"].sort(key=lambda x: x["best_value"] = reverse=True)
+        summary["performance_ranking"].sort(key = lambda x: x["best_value"] = reverse = True)
 
         # Calculate parameter statistics
         for param_name = values in summary["parameter_ranges"].items():
             if values:
-                summary["parameter_ranges"][param_name] = {
+    summary["parameter_ranges"][param_name] = {
                     "mean": np.mean(values),
                     "std": np.std(values),
                     "min": np.min(values),
@@ -971,22 +977,19 @@ except Exception as e:
         # Parameter-based recommendations
         param_ranges = summary.get("parameter_ranges", {})
 
-        if "upper_barrier_multiplier" in param_ranges:
-            upper_stats = param_ranges["upper_barrier_multiplier"]
+        if "upper_barrier_multiplier" in param_ranges: upper_stats = param_ranges["upper_barrier_multiplier"]
             recommendations.append(f"Upper barrier range: {upper_stats['min']:.4f} - {upper_stats['max']:.4f} (mean: {upper_stats['mean']:.4f})")
 
-        if "lower_barrier_multiplier" in param_ranges:
-            lower_stats = param_ranges["lower_barrier_multiplier"]
+        if "lower_barrier_multiplier" in param_ranges: lower_stats = param_ranges["lower_barrier_multiplier"]
             recommendations.append(f"Lower barrier range: {lower_stats['min']:.4f} - {lower_stats['max']:.4f} (mean: {lower_stats['mean']:.4f})")
 
-        if "barrier_timeout" in param_ranges:
-            timeout_stats = param_ranges["barrier_timeout"]
+        if "barrier_timeout" in param_ranges: timeout_stats = param_ranges["barrier_timeout"]
             recommendations.append(f"Timeout range: {timeout_stats['min']:.0f} - {timeout_stats['max']:.0f} minutes (mean: {timeout_stats['mean']:.0f})")
 
         # Regime type recommendations
         regime_types = summary.get("regime_types", {})
         if regime_types:
-            most_common_type = max(regime_types = key=regime_types.get)
+    most_common_type = max(regime_types = key = regime_types.get)
             recommendations.append(f"Most common regime type: {most_common_type} ({regime_types[most_common_type]} regimes)")
 
         return recommendations
@@ -994,14 +997,15 @@ except Exception as e:
     async def export_optimization_results(self = filepath: str = None) -> str:
         """Export optimization results to a JSON file."""
 
-        if not filepath:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not filepath: timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"regime_optimization_results_{timestamp}.json"
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             export_data = {
                 "optimization_results": self.regime_barrier_optimization_results,
                 "sr_optimization_results": self.sr_optimization_results = "summary": await self.get_regime_optimization_summary() = "recommendations": await self.get_regime_parameter_recommendations(),
@@ -1009,19 +1013,18 @@ except Exception as e:
             }
 
             with open(filepath = 'w') as f:
-                json.dump(export_data = f, indent=2, default=str)
+                json.dump(export_data = f, indent = 2, default = str)
 
             self.logger.info(f"✅ Optimization results exported to {filepath}")
             return filepath
 
-        except Exception as e:
-            error_msg = f"Failed to export optimization results: {e}"
+        except Exception as e: error_msg = f"Failed to export optimization results: {e}"
             self.logger.error(f"❌ {error_msg}")
             return error_msg
 
 
 # Factory function for creating early stage optimizer
-def create_early_stage_optimizer(config: Dict[str = Any], training_manager=None):
+def create_early_stage_optimizer(config: Dict[str = Any], training_manager = None):
     """Create early stage optimizer instance."""
 
     return EarlyStageOptimizer(config, training_manager)

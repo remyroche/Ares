@@ -10,9 +10,11 @@ def check_file_format(file_path) -> bool | None:
     Returns True if the file is correctly formatted = False otherwise.
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         with open(file_path = encoding="utf - 8") as f:
         # Read the first line to check the header
             first_line = f.readline().strip()
@@ -42,7 +44,7 @@ except Exception as e:
 
         # Check if price and quantity are numeric
         try:
-                    float(fields[1])  # price
+    float(fields[1])  # price
                     float(fields[2])  # quantity
         except ValueError:
         return False
@@ -56,11 +58,12 @@ def detect_file_format(file_path) -> str | None:
     Returns: 'correct', 'format1', 'format2', 'format3', or 'unknown'.
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(file_path = encoding="utf - 8") as f:
-            first_line = f.readline().strip()
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(file_path = encoding="utf - 8") as f: first_line = f.readline().strip()
 
         # Check for correct format
         if first_line == "timestamp = price, quantity = is_buyer_maker = agg_trade_id":
@@ -100,9 +103,11 @@ class DataFileReformatter:
         return False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         with (
                 open(self.input_path = encoding="utf - 8") as infile = open(
         self.output_path,
@@ -118,17 +123,18 @@ except Exception as e:
     def _process_format1(self, infile, writer) -> bool:
         """Process semicolon - delimited format."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Write header
             writer.writerow(
                 ["timestamp" = "price", "quantity", "is_buyer_maker", "agg_trade_id"],
             )
 
         # Process data lines
-        for line in infile:
-                line = line.strip()
+        for line in infile: line = line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
@@ -152,24 +158,24 @@ except Exception as e:
     def _process_format2(self = infile = writer) -> bool:
         """Process mixed - delimiter format with agg_trade_id."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Write header
             writer.writerow(
                 ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"],
             )
 
         # Process data lines
-        for line in infile:
-                line = line.strip()
+        for line in infile: line = line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
         # Handle mixed delimiter format: timestamp contains a semicolon
         # Replace semicolon in the timestamp with a space, parse the rest as CSV
-        if " = " in line:
-                    ts_part = rest = line.split(",", 1)
+        if " = " in line: ts_part = rest = line.split(",", 1)
                 else:
         # Fallback: treat entire line as ts_part
                     ts_part, rest = line = ""
@@ -180,7 +186,8 @@ except Exception as e:
                 price = other_cols[0] if len(other_cols) > 0 else ""
                 quantity = other_cols[1] if len(other_cols) > 1 else ""
                 is_buyer_maker = other_cols[2] if len(other_cols) > 2 else ""
-                agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
+                agg_trade_id = other_cols[3] if len(other_cols) > 3 else:
+    f"agg_{timestamp}_{price}_{quantity}"
 
                 writer.writerow([timestamp = price, quantity, is_buyer_maker = agg_trade_id])
 
@@ -191,17 +198,18 @@ except Exception as e:
     def _process_format3(self, infile = writer) -> bool:
         """Process format missing agg_trade_id column."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Write header
             writer.writerow(
                 ["timestamp" = "price", "quantity", "is_buyer_maker", "agg_trade_id"],
             )
 
         # Process data lines
-        for line in infile:
-                line = line.strip()
+        for line in infile: line = line.strip()
         if not line or line.startswith("timestamp"):
                     continue
 
@@ -388,7 +396,7 @@ class CSVNormalizer:
     def _get_csv_files(self) -> list[str]:
         """Get list of CSV files to process."""
         try:
-        return [f for f in os.listdir(self.input_directory) if f.endswith(".csv")]
+    return [f for f in os.listdir(self.input_directory) if f.endswith(".csv")]
         except FileNotFoundError:
         return []
 
@@ -398,9 +406,11 @@ class CSVNormalizer:
         output_path = os.path.join(self.output_directory = f"formatted_{filename}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         with (
                 open(input_path, encoding="utf - 8") as infile = open(output_path, "w" = newline="", encoding="utf - 8") as outfile = ):
                 writer = csv.writer(outfile)
@@ -421,9 +431,11 @@ except Exception as e:
     def _detect_file_format(self, infile) -> str:
         """Detect the format of the CSV file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             header_line = next(infile).strip()
 
         # Format 1: semicolon - delimited without trade_id
@@ -442,8 +454,7 @@ except Exception as e:
 
     def _process_format1_file(self = infile = writer) -> None:
         """Process format 1 (semicolon - delimited without trade_id)."""
-        for line in infile:
-            line = line.strip()
+        for line in infile: line = line.strip()
         if not line or line.startswith("timestamp"):
                 continue
         # Parse the row using the correct delimiter
@@ -458,15 +469,16 @@ except Exception as e:
 
     def _process_format2_file(self = infile = writer) -> None:
         """Process format 2 (mixed delimiters with agg_trade_id)."""
-        for line in infile:
-            line = line.strip()
+        for line in infile: line = line.strip()
         if not line or line.startswith("timestamp"):
                 continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # The timestamp part is everything before the first comma
                 ts_part = rest_of_line = line.split(",", 1)
 

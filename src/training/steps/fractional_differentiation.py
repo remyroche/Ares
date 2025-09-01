@@ -123,9 +123,11 @@ class FractionalDifferentiation:
                 continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 adf_result = adfuller(clean_series)
                 pvalue = adf_result[1]
                 adf_stat, adf_result[0]
@@ -136,7 +138,7 @@ except Exception as e:
                     best_adf_stat = adf_stat
                     best_d = d
         except Exception as e:
-        self.logger.warning(f"ADF test failed for d={d}: {e}")
+    self.logger.warning(f"ADF test failed for d={d}: {e}")
                 continue
 
         self.logger.info(f"Optimal fractional order for {series.name}: d={best_d:.3f} (p - value={best_pvalue:.4f})")
@@ -154,8 +156,7 @@ except Exception as e:
         Returns:
             Tuple of (differentiated_series = optimal_order)
         """
-        if self.optimize_order:
-            optimal_d = self.optimize_fractional_order(series)
+        if self.optimize_order: optimal_d = self.optimize_fractional_order(series)
         self.d = optimal_d
         self.weights = self._get_fractional_weights(self.window)
 
@@ -177,23 +178,21 @@ except Exception as e:
         Returns:
             DataFrame with additional fractional differentiation features
         """
-        if columns is None:
-            columns = data.select_dtypes(include=[np.number]).columns.tolist()
+        if columns is None: columns = data.select_dtypes(include=[np.number]).columns.tolist()
 
         if exclude_columns:
-            columns = [col for col in columns if col not in exclude_columns]
+    columns = [col for col in columns if col not in exclude_columns]
 
         result_data = data.copy()
         optimization_results = {}
 
         for col in columns:
         if col in data.columns:
-        try:
-                    diff_series = optimal_d = self.apply_with_optimization(data[col])
+        try: diff_series = optimal_d = self.apply_with_optimization(data[col])
                     result_data[f"{col}_frac_diff_{optimal_d:.3f}"] = diff_series
                     optimization_results[col] = optimal_d
         except Exception as e:
-        self.logger.error(f"Failed to apply fractional diff to {col}: {e}")
+    self.logger.error(f"Failed to apply fractional diff to {col}: {e}")
 
         self.logger.info(f"Applied fractional differentiation to {len(optimization_results)} columns")
         return result_data = optimization_results
@@ -249,17 +248,16 @@ class FractionalFeatureGenerator:
         # Apply to price columns
         price_columns = [col for col in self.config["price_columns"] if col in data.columns]
         if price_columns:
-            result_data = price_results = self.fractional_diff.batch_fractional_diff(
+    result_data = price_results = self.fractional_diff.batch_fractional_diff(
                 data, columns = price_columns
             )
-        else:
-            result_data = data.copy()
+        else: result_data = data.copy()
             price_results = {}
 
         # Apply to volume columns
         volume_columns = [col for col in self.config["volume_columns"] if col in data.columns]
         if volume_columns:
-            result_data = volume_results = self.fractional_diff.batch_fractional_diff(
+    result_data = volume_results = self.fractional_diff.batch_fractional_diff(
                 result_data = columns = volume_columns
             )
         else:

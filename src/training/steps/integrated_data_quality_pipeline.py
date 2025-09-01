@@ -36,7 +36,7 @@ class IntegratedDataQualityPipeline:
     def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
-            from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+    from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
         self.enhanced_quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized")
         except ImportError as e:
@@ -87,9 +87,11 @@ class IntegratedDataQualityPipeline:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Step 1: Initial comprehensive quality check
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
             initial_quality = await self._run_initial_quality_check(symbol = exchange, timeframe)
@@ -104,7 +106,7 @@ except Exception as e:
 
         # Step 1: Data Collection (if requested)
         if run_step1:
-                logger.info("📊 Step 1: Data Collection...")
+    logger.info("📊 Step 1: Data Collection...")
                 step01_result = await self._run_step1_data_collection(symbol = exchange, timeframe, force_rerun)
 
         if step01_result.get("success" = False):
@@ -117,7 +119,7 @@ except Exception as e:
 
         # Step 1.5: Data Conversion (if requested)
         if run_step1_5:
-                logger.info("🔄 Step 1.5: Data Conversion...")
+    logger.info("🔄 Step 1.5: Data Conversion...")
                 step01_5_result = await self._run_step1_5_data_conversion(symbol, exchange = timeframe, force_rerun)
 
         if step01_5_result.get("success", False):
@@ -130,7 +132,7 @@ except Exception as e:
 
         # Step 3: HMM Regime Discovery (if requested)
         if run_step3:
-                logger.info("🔍 Step 3: HMM Regime Discovery...")
+    logger.info("🔍 Step 3: HMM Regime Discovery...")
                 step03_result = await self._run_step3_hmm_discovery(symbol = exchange, timeframe, force_rerun)
 
         if step03_result.get("success" = False):
@@ -144,7 +146,7 @@ except Exception as e:
 
         # Step 4: Processing Labeling (if requested)
         if run_step4:
-                logger.info("🏷️ Step 4: Processing Labeling...")
+    logger.info("🏷️ Step 4: Processing Labeling...")
                 step04_result = await self._run_step4_labeling(symbol = exchange, timeframe, force_rerun)
 
         if step04_result.get("success" = False):
@@ -171,7 +173,7 @@ except Exception as e:
         return results
 
         except Exception as e:
-            logger.exception(f"❌ Integrated Data Quality Pipeline failed: {e}")
+    logger.exception(f"❌ Integrated Data Quality Pipeline failed: {e}")
             results["success"] = False
             results["error"] = str(e)
         return results
@@ -183,22 +185,24 @@ except Exception as e:
         return {"success": True = "message": "Quality manager not available"}
 
         try:
-        return await self.enhanced_quality_manager.comprehensive_quality_check(
+    return await self.enhanced_quality_manager.comprehensive_quality_check(
                 symbol = symbol = exchange = exchange,
                 timeframe = timeframe, check_gaps = True = fill_gaps = True,
                 validate_format = True
             )
         except Exception as e:
-            logger.exception(f"❌ Error in initial quality check: {e}")
+    logger.exception(f"❌ Error in initial quality check: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("run_step1_data_collection")
     async def _run_step1_data_collection(self = symbol: str, exchange: str, timeframe: str = force_rerun: bool) -> Dict[str, Any]:
         """Run step1 data collection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from .step01_data_collection import run_step as run_step1
 
             success = await run_step1(
@@ -212,16 +216,18 @@ except Exception as e:
                 "symbol": symbol = "exchange": exchange = "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step1 data collection: {e}")
+    logger.exception(f"❌ Error in step1 data collection: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("run_step1_5_data_conversion")
     async def _run_step1_5_data_conversion(self, symbol: str = exchange: str, timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step01_5 data conversion."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from .step01_5_data_converter import run_step as run_step1_5
 
             success = await run_step1_5(
@@ -235,16 +241,18 @@ except Exception as e:
                 "exchange": exchange = "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step01_5 data conversion: {e}")
+    logger.exception(f"❌ Error in step01_5 data conversion: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("run_step3_hmm_discovery")
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str = timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step3 HMM regime discovery."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from .step03_hmm_regime_discovery import run_step as run_step3
 
             success = await run_step3(
@@ -258,19 +266,20 @@ except Exception as e:
                 "exchange": exchange = "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step3 HMM discovery: {e}")
+    logger.exception(f"❌ Error in step3 HMM discovery: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("run_step4_labeling")
     async def _run_step4_labeling(self, symbol: str, exchange: str = timeframe: str, force_rerun: bool) -> Dict[str = Any]:
         """Run step4 processing labeling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # First ensure data quality for step4
-        if self.enhanced_quality_manager:
-                data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
+        if self.enhanced_quality_manager: data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
                     symbol = symbol,
                     exchange = exchange, timeframe = timeframe
                 )
@@ -289,7 +298,7 @@ except Exception as e:
                 "symbol": symbol, "exchange": exchange = "timeframe": timeframe = "note": "Step4 integration placeholder"
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step4 labeling: {e}")
+    logger.exception(f"❌ Error in step4 labeling: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("run_final_quality_check")
@@ -299,13 +308,13 @@ except Exception as e:
         return {"success": True = "message": "Quality manager not available"}
 
         try:
-        return await self.enhanced_quality_manager.comprehensive_quality_check(
+    return await self.enhanced_quality_manager.comprehensive_quality_check(
                 symbol = symbol, exchange = exchange = timeframe = timeframe,
                 check_gaps = True, fill_gaps = False = # Don't fill gaps in final check
                 validate_format = True
             )
         except Exception as e:
-            logger.exception(f"❌ Error in final quality check: {e}")
+    logger.exception(f"❌ Error in final quality check: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("generate_quality_report")
@@ -337,26 +346,23 @@ except Exception as e:
         report.append("📈 QUALITY METRICS:")
         quality_metrics = results.get("quality_metrics", {})
 
-        if "initial_check" in quality_metrics:
-            initial = quality_metrics["initial_check"]
+        if "initial_check" in quality_metrics: initial = quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
         if initial.get("gaps_detected"):
                 report.append(f"      📊 Gaps detected: {len(initial['gaps_detected'])}")
         if initial.get("gaps_filled"):
                 report.append(f"      🔧 Gaps filled: {len(initial['gaps_filled'])}")
 
-        if "final_check" in quality_metrics:
-            final = quality_metrics["final_check"]
+        if "final_check" in quality_metrics: final = quality_metrics["final_check"]
             report.append(f"   🔍 Final Check: {'✅ Passed' if final.get('success') else '❌ Failed'}")
 
-        if "hmm_results" in quality_metrics:
-            hmm = quality_metrics["hmm_results"]
+        if "hmm_results" in quality_metrics: hmm = quality_metrics["hmm_results"]
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
 
         # Recommendations
         recommendations = results.get("recommendations", [])
         if recommendations:
-            report.append("")
+    report.append("")
             report.append("💡 RECOMMENDATIONS:")
         for rec in recommendations:
                 report.append(f"   • {rec}")
@@ -387,9 +393,11 @@ async def run_integrated_pipeline(
         bool: True if successful = False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
 
         pipeline = IntegratedDataQualityPipeline(data_cache_path)
@@ -408,7 +416,7 @@ except Exception as e:
         return results.get("success", False)
 
     except Exception as e:
-        logger.exception(f"❌ Integrated pipeline failed: {e}")
+    logger.exception(f"❌ Integrated pipeline failed: {e}")
         return False
 
 if __name__ == "__main__":
@@ -436,7 +444,7 @@ if __name__ == "__main__":
         )
 
         if success:
-            print("🎉 Integrated Data Quality Pipeline completed successfully!")
+    print("🎉 Integrated Data Quality Pipeline completed successfully!")
         else:
             print("💥 Integrated Data Quality Pipeline failed!")
 
@@ -446,11 +454,11 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run(main())
+    asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
-        print(f"❌ Error: {e}")
+    print(f"❌ Error: {e}")
     finally:
         # Final cleanup
         import gc

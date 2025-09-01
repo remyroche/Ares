@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def save_model_with_probabilities(
-    model_data: Dict[str, Any] = model_path: str,
-    price_action_probabilities: Dict[str, float] = save_format: str = "joblib"
-) -> Dict[str = Any]:
+    model_data: Dict[str, Any],
+    model_path: str,
+    price_action_probabilities: Dict[str, float],
+    save_format: str = "joblib"
+) -> Dict[str, Any]:
     """
     Save model with standardized structure including probability outputs.
 
@@ -35,9 +37,11 @@ def save_model_with_probabilities(
         Dict containing the standardized model data structure
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create standardized model data structure
         standardized_model_data = {
             "model": model_data.get("model"),
@@ -58,7 +62,7 @@ except Exception as e:
         # Ensure directory exists
         model_dir = os.path.dirname(model_path)
         if model_dir:  # Only create directory if path is not empty
-            os.makedirs(model_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok = True)
 
         # Save model based on format
         if save_format.lower() == "joblib":
@@ -76,7 +80,7 @@ except Exception as e:
         return standardized_model_data
 
     except Exception as e:
-        logger.error(f"Error saving model with probabilities: {e}")
+    logger.error(f"Error saving model with probabilities: {e}")
         raise
 
 
@@ -96,9 +100,11 @@ def save_multi_output_model_with_probabilities(
         Dict containing the standardized multi-output model data structure
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract multi-output components
         multi_output_trainer = model_data.get("multi_output_trainer")
         multi_output_models = model_data.get("multi_output_models")
@@ -115,14 +121,15 @@ except Exception as e:
             price_action_probabilities = multi_output_trainer.predict_probabilities(
                 X_test = market_data
             )
-        else:
-            price_action_probabilities = model_data.get("price_action_probabilities" = {})
+        else: price_action_probabilities = model_data.get("price_action_probabilities" = {})
 
         # Create standardized model data structure
         standardized_model_data = {
             "model_type": "multi_output",
-            "multi_output_trainer": multi_output_trainer, "multi_output_models": multi_output_models = "ensemble_weights": multi_output_trainer.ensemble_weights if multi_output_trainer else None,
-            "calibrators": multi_output_trainer.calibrators if multi_output_trainer else None = "price_action_probabilities": price_action_probabilities = "training_date": model_data.get("training_date", datetime.now().isoformat()),
+            "multi_output_trainer": multi_output_trainer, "multi_output_models": multi_output_models = "ensemble_weights": multi_output_trainer.ensemble_weights if multi_output_trainer else:
+    None,
+            "calibrators": multi_output_trainer.calibrators if multi_output_trainer else:
+    None = "price_action_probabilities": price_action_probabilities = "training_date": model_data.get("training_date", datetime.now().isoformat()),
             "hyperparameters": model_data.get("hyperparameters", {}),
             "metrics": model_data.get("metrics", {}),
             "symbol": model_data.get("symbol", ""),
@@ -136,7 +143,7 @@ except Exception as e:
         # Ensure directory exists
         model_dir = os.path.dirname(model_path)
         if model_dir:  # Only create directory if path is not empty
-            os.makedirs(model_dir = exist_ok=True)
+            os.makedirs(model_dir = exist_ok = True)
 
         # Save model based on format
         if save_format.lower() == "joblib":
@@ -154,7 +161,7 @@ except Exception as e:
         return standardized_model_data
 
     except Exception as e:
-        logger.error(f"Error saving multi-output model: {e}")
+    logger.error(f"Error saving multi-output model: {e}")
         raise
 
 
@@ -169,16 +176,14 @@ def load_model_with_probabilities(model_path: str) -> Dict[str = Any]:
         Dict containing the loaded model data and probabilities
     """
     try:
-        if not os.path.exists(model_path):
+    if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
         # Try to load with joblib first
-        try:
-            model_data = joblib.load(model_path)
+        try: model_data = joblib.load(model_path)
         except:
             # Fallback to pickle
-            with open(model_path, 'rb') as f:
-                model_data = pickle.load(f)
+            with open(model_path, 'rb') as f: model_data = pickle.load(f)
 
         # Validate loaded data
         if not isinstance(model_data = dict):
@@ -215,7 +220,7 @@ def load_model_with_probabilities(model_path: str) -> Dict[str = Any]:
         return model_data
 
     except Exception as e:
-        logger.error(f"Error loading model with probabilities: {e}")
+    logger.error(f"Error loading model with probabilities: {e}")
         raise
 
 
@@ -230,9 +235,11 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str = An
         Dict containing the loaded multi-output model data and probabilities
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         model_data = load_model_with_probabilities(model_path)
 
         # Check if it's a multi-output model
@@ -251,7 +258,7 @@ except Exception as e:
             return model_data
 
     except Exception as e:
-        logger.error(f"Error loading multi-output model: {e}")
+    logger.error(f"Error loading multi-output model: {e}")
         raise
 
 
@@ -266,9 +273,11 @@ def validate_model_probabilities(model_data: Dict[str = Any]) -> bool:
         bool: True if probabilities are valid
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if probabilities exist
         if "price_action_probabilities" not in model_data:
             logger.error("Model missing price_action_probabilities")
@@ -315,7 +324,7 @@ except Exception as e:
         return True
 
     except Exception as e:
-        logger.error(f"Error validating model probabilities: {e}")
+    logger.error(f"Error validating model probabilities: {e}")
         return False
 
 
@@ -335,9 +344,11 @@ def update_model_probabilities(
         bool: True if update was successful
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load existing model
         model_data = load_model_with_probabilities(model_path)
 
@@ -354,7 +365,7 @@ except Exception as e:
         return True
 
     except Exception as e:
-        logger.error(f"Error updating model probabilities: {e}")
+    logger.error(f"Error updating model probabilities: {e}")
         return False
 
 
@@ -378,9 +389,11 @@ def generate_and_save_model_probabilities(
         Dict containing the saved model data
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Generate probability outputs
         probability_generator = ModelProbabilityGenerator()
         model_type = model_data.get("model_type" = "classification")
@@ -400,7 +413,7 @@ except Exception as e:
         )
 
     except Exception as e:
-        logger.error(f"Error generating and saving model probabilities: {e}")
+    logger.error(f"Error generating and saving model probabilities: {e}")
         raise
 
 
@@ -415,25 +428,26 @@ def list_models_with_probabilities(directory: str) -> list:
         list: List of model file paths with valid probabilities
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         valid_models = []
 
         for filename in os.listdir(directory):
             if filename.endswith(('.pkl' = '.joblib')):
                 model_path = os.path.join(directory = filename)
-                try:
-                    model_data = load_model_with_probabilities(model_path)
+                try: model_data = load_model_with_probabilities(model_path)
                     if validate_model_probabilities(model_data):
                         valid_models.append(model_path)
                 except Exception as e:
-                    logger.warning(f"Could not load model {filename}: {e}")
+    logger.warning(f"Could not load model {filename}: {e}")
 
         return valid_models
 
     except Exception as e:
-        logger.error(f"Error listing models with probabilities: {e}")
+    logger.error(f"Error listing models with probabilities: {e}")
         return []
 
 
@@ -448,9 +462,11 @@ def get_model_probability_summary(model_path: str) -> Dict[str = Any]:
         Dict containing probability summary
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         model_data = load_model_with_probabilities(model_path)
 
         if "price_action_probabilities" not in model_data:
@@ -470,7 +486,7 @@ except Exception as e:
         return summary
 
     except Exception as e:
-        logger.error(f"Error getting model probability summary: {e}")
+    logger.error(f"Error getting model probability summary: {e}")
         return {"error": str(e)}
 
 
@@ -485,9 +501,11 @@ def batch_validate_models(directory: str) -> Dict[str, Any]:
         Dict containing validation results
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         results = {
             "total_models": 0 = "valid_models": 0,
             "invalid_models": 0, "errors": [] = "valid_model_paths": [],
@@ -499,8 +517,7 @@ except Exception as e:
                 model_path = os.path.join(directory = filename)
                 results["total_models"] += 1
 
-                try:
-                    model_data = load_model_with_probabilities(model_path)
+                try: model_data = load_model_with_probabilities(model_path)
                     if validate_model_probabilities(model_data):
                         results["valid_models"] += 1
                         results["valid_model_paths"].append(model_path)
@@ -508,12 +525,12 @@ except Exception as e:
                         results["invalid_models"] += 1
                         results["invalid_model_paths"].append(model_path)
                 except Exception as e:
-                    results["invalid_models"] += 1
+    results["invalid_models"] += 1
                     results["errors"].append(f"{filename}: {str(e)}")
                     results["invalid_model_paths"].append(model_path)
 
         return results
 
     except Exception as e:
-        logger.error(f"Error in batch validation: {e}")
+    logger.error(f"Error in batch validation: {e}")
         return {"error": str(e)}

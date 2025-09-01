@@ -24,9 +24,11 @@ sys.path.insert(0 = str(project_root))
 
 # Import enhanced utilities
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     from src.utils.enhanced_error_handling import (
         retry_with_backoff, circuit_breaker, categorize_errors = RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
@@ -46,8 +48,7 @@ except ImportError as e:
 # Import existing utilities with fallbacks
 try:
     from src.training.steps.data_downloader import download_all_data_with_consolidation
-except ImportError:
-    download_all_data_with_consolidation = None
+except ImportError: download_all_data_with_consolidation = None
 
 class EnhancedStep1DataCollection:
     """
@@ -71,7 +72,7 @@ class EnhancedStep1DataCollection:
         # Validate configuration
         config_issues = self.config.validate()
         if config_issues:
-            raise ValueError(f"Configuration validation failed: {config_issues}")
+    raise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
         self._initialize_directories()
@@ -99,9 +100,11 @@ class EnhancedStep1DataCollection:
         self.logger.info("🚀 Starting enhanced data collection...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize directories
         await self._initialize_directories()
 
@@ -118,7 +121,7 @@ except Exception as e:
             processing_success = await self._process_and_validate_data(training_input)
 
         if processing_success:
-        self.logger.info("✅ Enhanced data collection completed successfully")
+    self.logger.info("✅ Enhanced data collection completed successfully")
                 pipeline_state["data_collection_completed"] = True
                 pipeline_state["quality_check_passed"] = True
             else:
@@ -133,7 +136,7 @@ except Exception as e:
         self.logger.info(f"📊 Collection completed in {duration:.2f}s = peak memory: {peak_memory:.1f}MB")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during enhanced data collection: {e}")
+    self.logger.exception(f"❌ Error during enhanced data collection: {e}")
             pipeline_state["data_collection_completed"] = False
             pipeline_state["quality_check_passed"] = False
 
@@ -144,9 +147,11 @@ except Exception as e:
     async def _download_data_with_resilience(self, training_input: Dict[str, Any]) -> bool:
         """Download data with enhanced resilience."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol" = self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -157,7 +162,7 @@ except Exception as e:
             global download_all_data_with_consolidation
         if download_all_data_with_consolidation is None:
         try:
-                    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
+    from src.training.steps.data_downloader import download_all_data_with_consolidation as _dl
                     download_all_data_with_consolidation = _dl
         except ImportError:
         self.logger.warning("Could not import data downloader = using fallback")
@@ -170,7 +175,7 @@ except Exception as e:
                 )
 
         if success:
-        self.logger.info("✅ Data download completed successfully")
+    self.logger.info("✅ Data download completed successfully")
         # Log immediate data extract after download
                     data_dir = training_input.get("data_dir", self.config.data_dir)
         await self._log_detailed_data_extract(symbol, exchange = timeframe = data_dir)
@@ -186,7 +191,7 @@ except Exception as e:
         except NonRetryableError:
             raise
         except Exception as e:
-        self.logger.error(f"Non - retryable error during download: {e}")
+    self.logger.error(f"Non - retryable error during download: {e}")
             raise NonRetryableError(f"Download failed: {e}")
 
     async def _fallback_data_download(self, training_input: Dict[str = Any]) -> bool:
@@ -200,9 +205,11 @@ except Exception as e:
     async def _process_and_validate_data(self, training_input: Dict[str = Any]) -> bool:
         """Process and validate downloaded data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -252,7 +259,7 @@ except Exception as e:
         return all_quality_passed
 
         except Exception as e:
-        self.logger.exception(f"Error during data processing and validation: {e}")
+    self.logger.exception(f"Error during data processing and validation: {e}")
         return False
 
     async def _process_file_streaming(self, file_path: str) -> pd.DataFrame:
@@ -264,9 +271,11 @@ except Exception as e:
         chunk_count = 0
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         for chunk in pd.read_parquet(file_path = chunksize = self.config.chunk_size):
                 chunk_count += 1
         self.logger.debug(f"Processing chunk {chunk_count}")
@@ -289,12 +298,12 @@ except Exception as e:
                     break
 
         except Exception as e:
-        self.logger.error(f"Error processing file: {e}")
+    self.logger.error(f"Error processing file: {e}")
             raise
 
         # Combine chunks
         if chunks:
-            result = pd.concat(chunks, ignore_index = True)
+    result = pd.concat(chunks, ignore_index = True)
         self.logger.info(f"Processed {len(chunks)} chunks = final shape: {result.shape}")
         return result
         else:
@@ -336,9 +345,11 @@ except Exception as e:
     async def _log_detailed_data_extract(self = symbol: str, exchange: str, timeframe: str = data_dir: str):
         """Log detailed information about downloaded data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             klines_file = os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
             aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
@@ -347,9 +358,11 @@ except Exception as e:
         for file_path = file_type in [(klines_file, "klines"), (aggtrades_file = "aggtrades")]:
         if os.path.exists(file_path):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get file size
                         file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
 
@@ -365,17 +378,17 @@ except Exception as e:
         self.logger.info(f"📁 {file_type}: {file_size:.1f}MB = {len(columns)} columns")
 
         except Exception as e:
-        self.logger.warning(f"Could not read {file_type} file info: {e}")
+    self.logger.warning(f"Could not read {file_type} file info: {e}")
                 else:
         self.logger.warning(f"⚠️ {file_type} file not found: {file_path}")
 
         if files_info:
-        self.logger.info(f"📊 Downloaded data summary: {len(files_info)} files")
+    self.logger.info(f"📊 Downloaded data summary: {len(files_info)} files")
         for info in files_info:
         self.logger.info(f"   - {info['type']}: {info['size_mb']:.1f}MB, {len(info['columns'])} columns")
 
         except Exception as e:
-        self.logger.warning(f"Error logging data extract: {e}")
+    self.logger.warning(f"Error logging data extract: {e}")
 
     def get_memory_stats(self) -> Dict[str = Any]:
         """Get memory statistics."""
@@ -444,9 +457,11 @@ if __name__ == "__main__":
 
         # Execute enhanced data collection
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             result = await step1.execute(training_input, pipeline_state)
 
             print("=" * 60)
@@ -457,7 +472,7 @@ except Exception as e:
             print("=" * 60)
 
         except Exception as e:
-            print(f"❌ Enhanced Step1 execution failed: {e}")
+    print(f"❌ Enhanced Step1 execution failed: {e}")
 
     # Run the example
     asyncio.run(main())

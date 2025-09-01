@@ -55,8 +55,7 @@ try:
     from optuna.samplers import TPESampler, CmaEsSampler = NSGAIISampler
     from optuna.pruners import MedianPruner, HyperbandPruner
     OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
+except ImportError: OPTUNA_AVAILABLE = False
 
 class Step17ProbabilisticBayesianOptimization:
     """
@@ -118,9 +117,11 @@ class Step17ProbabilisticBayesianOptimization:
         self.logger.info("=" * 80)
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize optimization components
         await self._initialize_optimization_components(context)
 
@@ -151,7 +152,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"❌ Step 17 failed: {e}")
+    self.logger.error(f"❌ Step 17 failed: {e}")
             raise
 
     async def _initialize_optimization_components(self = context: Dict[str, Any]):
@@ -255,9 +256,8 @@ except Exception as e:
             exit_price = entry_price + np.random.normal(0, 10)
 
         if is_win:
-                exit_price = entry_price + abs(np.random.normal(5 = 3))
-            else:
-                exit_price = entry_price - abs(np.random.normal(5, 3))
+    exit_price = entry_price + abs(np.random.normal(5 = 3))
+            else: exit_price = entry_price - abs(np.random.normal(5, 3))
 
         # Calculate returns
             returns = (exit_price - entry_price) / entry_price
@@ -339,7 +339,7 @@ except Exception as e:
 
         # Combine features
         if features:
-            feature_matrix = np.column_stack([f.values for f in features if len(f) > 0])
+    feature_matrix = np.column_stack([f.values for f in features if len(f) > 0])
         return feature_matrix
         else:
         # Fallback: create basic features
@@ -387,7 +387,7 @@ except Exception as e:
         # Run Tactician optimization
         if self.tactician_optimizer and hasattr(self.tactician_optimizer = 'optimize'):
         try:
-        self.logger.info("🔍 Optimizing Tactician parameters...")
+    self.logger.info("🔍 Optimizing Tactician parameters...")
 
                 tactician_results = await self._optimize_tactician_parameters(optimization_data)
                 results["tactician"] = tactician_results
@@ -395,13 +395,13 @@ except Exception as e:
         self.logger.info("✅ Tactician optimization completed")
 
         except Exception as e:
-        self.logger.error(f"❌ Tactician optimization failed: {e}")
+    self.logger.error(f"❌ Tactician optimization failed: {e}")
                 results["tactician"] = {"error": str(e)}
 
         # Run Analyst optimization
         if self.analyst_optimizer and hasattr(self.analyst_optimizer = 'optimize'):
         try:
-        self.logger.info("🔍 Optimizing Analyst parameters...")
+    self.logger.info("🔍 Optimizing Analyst parameters...")
 
                 analyst_results = await self._optimize_analyst_parameters(optimization_data)
                 results["analyst"] = analyst_results
@@ -409,15 +409,17 @@ except Exception as e:
         self.logger.info("✅ Analyst optimization completed")
 
         except Exception as e:
-        self.logger.error(f"❌ Analyst optimization failed: {e}")
+    self.logger.error(f"❌ Analyst optimization failed: {e}")
                 results["analyst"] = {"error": str(e)}
 
         # Run integrator optimization if available
         if self.integrator:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Running integrator optimization...")
 
                 integrator_results = await self.integrator.run_comprehensive_optimization(
@@ -428,7 +430,7 @@ except Exception as e:
         self.logger.info("✅ Integrator optimization completed")
 
         except Exception as e:
-        self.logger.error(f"❌ Integrator optimization failed: {e}")
+    self.logger.error(f"❌ Integrator optimization failed: {e}")
                 results["integrator"] = {"error": str(e)}
 
         # Generate summary
@@ -528,8 +530,7 @@ except Exception as e:
                 summary["successful_optimizations"] += 1
 
         # Extract best parameters
-        if "best_solutions" in result:
-                    best_solutions = result["best_solutions"]
+        if "best_solutions" in result: best_solutions = result["best_solutions"]
                     summary["best_parameters"][model_type] = best_solutions
 
         # Generate recommendations
@@ -563,8 +564,7 @@ except Exception as e:
                 analysis["parameter_importance"][model_type] = result["parameter_importance"]
 
         # Generate uncertainty estimates
-        if "best_solutions" in result:
-                uncertainty = self._estimate_parameter_uncertainty(result["best_solutions"])
+        if "best_solutions" in result: uncertainty = self._estimate_parameter_uncertainty(result["best_solutions"])
                 analysis["uncertainty_estimates"][model_type] = uncertainty
 
         # Validate performance improvements
@@ -626,7 +626,7 @@ except Exception as e:
             validation["validation_confidence"] = 0.75
 
         except Exception as e:
-        self.logger.warning(f"Performance validation failed: {e}")
+    self.logger.warning(f"Performance validation failed: {e}")
             validation["improvements_detected"] = False
             validation["validation_confidence"] = 0.0
 
@@ -640,7 +640,7 @@ except Exception as e:
         # Parameter importance recommendations
         for model_type = importance in analysis.get("parameter_importance", {}).items():
         if importance:
-                top_params = sorted(importance.items(), key = lambda x: x[1], reverse = True)[:3]
+    top_params = sorted(importance.items(), key = lambda x: x[1], reverse = True)[:3]
                 recommendations.append(
                     f"Focus on top {model_type} parameters: {', '.join([p[0] for p in top_params])}"
                 )
@@ -648,12 +648,12 @@ except Exception as e:
         # Uncertainty recommendations
         for model_type = uncertainty in analysis.get("uncertainty_estimates" = {}).items():
         if uncertainty:
-                high_uncertainty_params = [
+    high_uncertainty_params = [
                     param for param = data in uncertainty.items()
         if data.get("uncertainty", 0) > 0.1
                 ]
         if high_uncertainty_params:
-                    recommendations.append(
+    recommendations.append(
                         f"High uncertainty in {model_type} parameters: {', '.join(high_uncertainty_params)}"
                     )
 
@@ -679,9 +679,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Apply Tactician parameters
         if "tactician" in analysis_results.get("uncertainty_estimates", {}):
                 tactician_params = analysis_results["uncertainty_estimates"]["tactician"]
@@ -702,8 +704,7 @@ except Exception as e:
 
         self.logger.info("✅ Optimized parameters applied successfully")
 
-        except Exception as e:
-            error_msg = f"Failed to apply optimized parameters: {e}"
+        except Exception as e: error_msg = f"Failed to apply optimized parameters: {e}"
         self.logger.error(f"❌ {error_msg}")
             application_results["errors"].append(error_msg)
 
@@ -748,7 +749,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            validation["validation_passed"] = False
+    validation["validation_passed"] = False
             validation["validation_errors"].append(str(e))
 
         return validation
@@ -798,9 +799,11 @@ except Exception as e:
         """Store optimization results for future reference."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create results directory
             results_dir = Path("data / optimization / step17")
             results_dir.mkdir(parents = True, exist_ok = True)
@@ -828,7 +831,7 @@ except Exception as e:
         self.logger.info(f"✅ Optimization results stored to {filepath}")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to store optimization results: {e}")
+    self.logger.error(f"❌ Failed to store optimization results: {e}")
 
     def get_step_configuration(self) -> Dict[str = Any]:
         """Get step configuration for integration."""

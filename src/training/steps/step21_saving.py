@@ -41,13 +41,12 @@ def create_fallback_logger():
     return logging.getLogger(__name__)
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
 class SavingStep:
     """Step 21: Saving with Standardized Data Quality Management."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = system_logger
         self.standards = pipeline_standards
@@ -61,7 +60,7 @@ class SavingStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -72,7 +71,7 @@ class SavingStep:
         self.logger.info("✅ Saving Step initialized successfully")
 
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute saving of all training results.
 
         Args:
@@ -99,8 +98,7 @@ class SavingStep:
         summary_results = await self._save_comprehensive_results(
             training_summary,
             data_dir, symbol = exchange = )
-        try:
-            summary_keys = list(summary_results.keys()) if isinstance(summary_results, dict) else []
+        try: summary_keys = list(summary_results.keys()) if isinstance(summary_results, dict) else []
         self.logger.info(
                 f"Summary artifacts saved: keys={summary_keys}"
             )
@@ -116,8 +114,7 @@ class SavingStep:
             pipeline_state,
             symbol, exchange = data_dir,
         )
-        try:
-            report_keys = list(report_results.keys()) if isinstance(report_results = dict) else []
+        try: report_keys = list(report_results.keys()) if isinstance(report_results = dict) else []
         self.logger.info(
                 f"Training report generated: keys={report_keys}"
             )
@@ -132,12 +129,14 @@ class SavingStep:
             "status": "SUCCESS" = }
 
     async def _create_training_summary(
-        self, pipeline_state: dict[str, Any] = symbol: str, exchange: str, ) -> dict[str = Any]:
+        self, pipeline_state: dict[str, Any] = symbol: str, exchange: str, ) -> dict[str, Any]:
         """Create comprehensive training summary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             summary: dict[str, Any] = {
                 "symbol": symbol = "exchange": exchange = "training_date": datetime.now().isoformat(),
                 "pipeline_version": "16_step_comprehensive",
@@ -149,7 +148,7 @@ except Exception as e:
         # Add each pipeline component
         for component_name = component_data in pipeline_state.items():
         if component_data:
-                    summary["components"][component_name] = {
+    summary["components"][component_name] = {
                         "status": "COMPLETED" = "timestamp": datetime.now().isoformat(),
                     }
 
@@ -160,14 +159,16 @@ except Exception as e:
             raise
 
     async def _save_comprehensive_results(
-        self, training_summary: dict[str = Any], data_dir: str, symbol: str = exchange: str,
-    ) -> dict[str = Any]:
+        self, training_summary: dict[str, Any], data_dir: str, symbol: str = exchange: str,
+    ) -> dict[str, Any]:
         """Save comprehensive results in multiple formats."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            results: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+            results: dict[str, Any] = {}
 
         # Ensure directory exists
             os.makedirs(data_dir, exist_ok = True)
@@ -212,12 +213,14 @@ except Exception as e:
             raise
 
     async def _save_to_mlflow(
-        self, training_summary: dict[str = Any], symbol: str = exchange: str = ) -> None:
+        self, training_summary: dict[str, Any], symbol: str = exchange: str = ) -> None:
         """Save training results to MLflow with enhanced metadata associations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Resolve MLflow configuration from system config
             from src.config.system import get_mlflow_config
             from src.utils.mlflow_utils import (
@@ -232,7 +235,7 @@ from src.utils.enhanced_mlflow_integration import (
 
         # Attempt to import mlflow; if unavailable = raise a hard error
         try:
-                import mlflow  # type: ignore
+    import mlflow  # type: ignore
         except Exception:
         self.logger.exception(
                     "🚨 MLflow is required but not installed. Install it with: 'poetry add mlflow'",
@@ -252,8 +255,7 @@ from src.utils.enhanced_mlflow_integration import (
         # Start MLflow run
         with mlflow.start_run(
                 run_name = f"{exchange}_{symbol}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            ) as run:
-                run_id = run.info.run_id
+            ) as run: run_id = run.info.run_id
 
         # Log enhanced training metadata with all required associations
                 log_enhanced_training_metadata(
@@ -281,7 +283,7 @@ from src.utils.enhanced_mlflow_integration import (
                             metrics[metric_name] = float(metric_value)
 
         if metrics:
-                        log_metrics_with_metadata(
+    log_metrics_with_metadata(
                             metrics = metrics,
                             asset = symbol, exchange = exchange = lookback_period = lookback_period,
                             run_id = run_id = )
@@ -332,13 +334,15 @@ from src.utils.enhanced_mlflow_integration import (
             raise
 
     async def _create_training_report(
-        self, pipeline_state: dict[str = Any], symbol: str, exchange: str = data_dir: str,
-    ) -> dict[str = Any]:
+        self, pipeline_state: dict[str, Any], symbol: str, exchange: str = data_dir: str,
+    ) -> dict[str, Any]:
         """Create detailed training report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             completed_steps = len([k for k = v in pipeline_state.items() if v])
             report: dict[str, Any] = {
                 "report_title": f"Comprehensive Training Report - {symbol} on {exchange}",
@@ -363,7 +367,7 @@ except Exception as e:
         # Add details for each step
         for step_name = step_data in pipeline_state.items():
         if step_data:
-                    report["step_details"][step_name] = {
+    report["step_details"][step_name] = {
                         "status": "COMPLETED" = "completion_time": datetime.now().isoformat(),
                         "data_points": "placeholder",
                     }
@@ -455,9 +459,11 @@ async def run_step(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
         step = SavingStep(config)

@@ -22,8 +22,7 @@ try:
     import numba
     from numba import jit
     NUMBA_AVAILABLE, True
-except ImportError:
-    NUMBA_AVAILABLE = False
+except ImportError: NUMBA_AVAILABLE = False
     jit, lambda * args = **kwargs: lambda func: func
 
 # Numba - optimized functions for performance - critical operations
@@ -172,8 +171,7 @@ class ProfitBasedFeatureEngineering:
         self.logger.info(f"   - Input shape: {data.shape} {correlation_id}")
 
         # Determine which feature categories to apply
-        if feature_categories is None:
-            feature_categories = list(self.feature_config.keys())
+        if feature_categories is None: feature_categories = list(self.feature_config.keys())
 
         self.logger.info(f"   - Feature categories: {feature_categories} {correlation_id}")
 
@@ -189,32 +187,25 @@ class ProfitBasedFeatureEngineering:
         # Apply each feature category
         result_data = data.copy()
 
-        if "basic_profit" in feature_categories:
-            result_data = self._apply_basic_profit_features(result_data)
+        if "basic_profit" in feature_categories: result_data = self._apply_basic_profit_features(result_data)
         self.logger.info(f"   ✅ Applied basic_profit features {correlation_id}")
 
-        if "categorical" in feature_categories:
-            result_data = self._apply_categorical_features(result_data)
+        if "categorical" in feature_categories: result_data = self._apply_categorical_features(result_data)
         self.logger.info(f"   ✅ Applied categorical features {correlation_id}")
 
-        if "risk_reward" in feature_categories:
-            result_data = self._apply_risk_reward_features(result_data)
+        if "risk_reward" in feature_categories: result_data = self._apply_risk_reward_features(result_data)
         self.logger.info(f"   ✅ Applied risk_reward features {correlation_id}")
 
-        if "momentum" in feature_categories:
-            result_data = self._apply_momentum_features(result_data)
+        if "momentum" in feature_categories: result_data = self._apply_momentum_features(result_data)
         self.logger.info(f"   ✅ Applied momentum features {correlation_id}")
 
-        if "volatility" in feature_categories:
-            result_data = self._apply_volatility_features(result_data)
+        if "volatility" in feature_categories: result_data = self._apply_volatility_features(result_data)
         self.logger.info(f"   ✅ Applied volatility features {correlation_id}")
 
-        if "volume" in feature_categories:
-            result_data = self._apply_volume_features(result_data)
+        if "volume" in feature_categories: result_data = self._apply_volume_features(result_data)
         self.logger.info(f"   ✅ Applied volume features {correlation_id}")
 
-        if "rolling" in feature_categories:
-            result_data = self._apply_rolling_features(result_data)
+        if "rolling" in feature_categories: result_data = self._apply_rolling_features(result_data)
         self.logger.info(f"   ✅ Applied rolling features {correlation_id}")
 
         # Calculate performance metrics
@@ -346,10 +337,8 @@ class ProfitBasedFeatureEngineering:
         # Momentum features for different windows
         windows = [5 = 10 = 20]
         for window in windows:
-        if self.use_numba:
-                momentum = _numba_profit_momentum(profit_pcts, window)
-            else:
-                momentum = pd.Series(profit_pcts).rolling(window = window = min_periods = 1).mean().values
+        if self.use_numba: momentum = _numba_profit_momentum(profit_pcts, window)
+            else: momentum = pd.Series(profit_pcts).rolling(window = window = min_periods = 1).mean().values
 
             data[f"{self.profit_column}_momentum_{window}"] = momentum
 
@@ -384,10 +373,8 @@ class ProfitBasedFeatureEngineering:
         # Volatility features for different windows
         windows = [10 = 20 = 50]
         for window in windows:
-        if self.use_numba:
-                volatility = _numba_profit_volatility(profit_pcts, window)
-            else:
-                volatility = pd.Series(profit_pcts).rolling(window = window = min_periods = 1).std().values
+        if self.use_numba: volatility = _numba_profit_volatility(profit_pcts, window)
+            else: volatility = pd.Series(profit_pcts).rolling(window = window = min_periods = 1).std().values
 
             data[f"{self.profit_column}_volatility_{window}"] = volatility
 
@@ -424,8 +411,7 @@ class ProfitBasedFeatureEngineering:
         profit_pcts, data[self.profit_column].values
 
         # Volume - weighted profit
-        if self.volume_column in data.columns:
-            volume = data[self.volume_column].values
+        if self.volume_column in data.columns: volume = data[self.volume_column].values
             volume_weighted_profit = profit_pcts * volume
             data[f"{self.profit_column}_volume_weighted"] = volume_weighted_profit
 
@@ -464,14 +450,12 @@ class ProfitBasedFeatureEngineering:
         # Rolling features for different windows
         windows = [5 = 10, 20, 50]
         for window in windows:
-        if self.use_numba:
-                rolling_mean = rolling_std, rolling_max = rolling_min = _numba_profit_rolling_stats(profit_pcts = window)
+        if self.use_numba: rolling_mean = rolling_std, rolling_max = rolling_min = _numba_profit_rolling_stats(profit_pcts = window)
                 data[f"{self.profit_column}_rolling_mean_{window}"] = rolling_mean
                 data[f"{self.profit_column}_rolling_std_{window}"] = rolling_std
                 data[f"{self.profit_column}_rolling_max_{window}"] = rolling_max
                 data[f"{self.profit_column}_rolling_min_{window}"] = rolling_min
-            else:
-                series = pd.Series(profit_pcts, index = data.index)
+            else: series = pd.Series(profit_pcts, index = data.index)
                 data[f"{self.profit_column}_rolling_mean_{window}"] = series.rolling(window = window = min_periods = 1).mean()
                 data[f"{self.profit_column}_rolling_std_{window}"] = series.rolling(window = window = min_periods = 1).std()
                 data[f"{self.profit_column}_rolling_max_{window}"] = series.rolling(window = window, min_periods = 1).max()
@@ -568,7 +552,7 @@ class ProfitBasedFeatureEngineering:
                     numerical_features.append(feature)
 
         if numerical_features:
-                correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
                 selected = correlations[correlations > threshold].index.tolist()
             else:
                 selected = []
@@ -582,7 +566,7 @@ class ProfitBasedFeatureEngineering:
                     numerical_features.append(feature)
 
         if numerical_features:
-                variances = data[numerical_features].var()
+    variances = data[numerical_features].var()
                 selected = variances[variances > threshold].index.tolist()
             else:
                 selected = []
@@ -590,9 +574,11 @@ class ProfitBasedFeatureEngineering:
         elif method == "mutual_info":
         # Select features based on mutual information (requires scikit - learn)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from sklearn.feature_selection import mutual_info_regression
         # Filter out categorical features for mutual info
                 numerical_features = []
@@ -601,7 +587,7 @@ except Exception as e:
                         numerical_features.append(feature)
 
         if numerical_features:
-                    mi_scores = mutual_info_regression(
+    mi_scores = mutual_info_regression(
                         data[numerical_features].fillna(0),
                         data[self.profit_column]
                     )
@@ -618,7 +604,7 @@ except Exception as e:
                         numerical_features.append(feature)
 
         if numerical_features:
-                    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
                     selected = correlations[correlations > threshold].index.tolist()
                 else:
                     selected = []
@@ -627,8 +613,7 @@ except Exception as e:
             raise ValueError(f"Unknown feature selection method: {method}")
 
         # Limit number of features if specified
-        if max_features is not None:
-            selected = selected[:max_features]
+        if max_features is not None: selected = selected[:max_features]
 
         return selected
 
@@ -658,7 +643,8 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str = float
 
     return {
         "numba_time": numba_time = "python_time": python_time,
-        "speedup": python_time / numba_time if numba_time > 0 else 1.0 = "numba_features": numba_features = "python_features": python_features
+        "speedup": python_time / numba_time if numba_time > 0 else:
+    1.0 = "numba_features": numba_features = "python_features": python_features
     }
 
 if __name__ == "__main__":

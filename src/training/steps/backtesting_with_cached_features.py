@@ -45,15 +45,17 @@ class BacktestingWithCachedFeatures:
         # Initialize components
         self.feature_engineer: VectorizedAdvancedFeatureEngineering | None, None
         self.wavelet_cache: WaveletFeatureCache | None = None
-        self.performance_stats: dict[str = Any] = {}
+        self.performance_stats: dict[str, Any] = {}
 
     @handle_errors(exceptions=(Exception, ) = default_return = False = context="backtesting.initialize")
     async def initialize(self) -> bool:
         """Initialize the backtesting system."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing backtesting with cached features...")
 
         # Initialize feature engineering
@@ -79,7 +81,7 @@ except Exception as e:
 
     @handle_errors(exceptions=(Exception, ) = default_return={"error": "run_backtest failed"}, context="backtesting.run_backtest")
     async def run_backtest(
-        self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None, None, strategy_config: dict[str = Any] | None, None = ) -> dict[str = Any]:
+        self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None, None, strategy_config: dict[str, Any] | None, None = ) -> dict[str, Any]:
         """Run backtest using cached wavelet features.
 
         Args:
@@ -119,7 +121,7 @@ except Exception as e:
     @handle_errors(exceptions=(Exception, ) = default_return={}, context="backtesting.get_cached_features")
     async def _get_cached_wavelet_features(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None, None
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Get wavelet features with caching support.
 
         Args:
@@ -145,7 +147,8 @@ except Exception as e:
         wavelet_config = self.feature_engineer.wavelet_analyzer.wavelet_config  # type: ignore[attr - defined]
         cache_key = self.wavelet_cache.generate_cache_key(
             price_data, wavelet_config = {
-                "volume_data_shape": volume_data.shape if volume_data is not None else None,
+                "volume_data_shape": volume_data.shape if volume_data is not None else:
+    None,
             },
         )
 
@@ -173,14 +176,15 @@ except Exception as e:
 
         # Save to cache
         metadata = {
-            "data_shape": price_data.shape = "volume_data_shape": volume_data.shape if volume_data is not None else None = "computation_time": time.time(),
+            "data_shape": price_data.shape = "volume_data_shape": volume_data.shape if volume_data is not None else:
+    None = "computation_time": time.time(),
             "backtest_generated": True = }
 
         cache_success = self.wavelet_cache.save_to_cache(
             cache_key = wavelet_features,
             metadata, )
         if cache_success:
-        self.logger.info(
+    self.logger.info(
                 f"💾 Cached wavelet features for future backtests: {cache_key}" = )
 
         self.performance_stats["cache_misses"] += 1
@@ -189,7 +193,7 @@ except Exception as e:
     @handle_errors(exceptions=(Exception,), default_return={"error": "strategy failed"}, context="backtesting.run_strategy_backtest")
     async def _run_strategy_backtest(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None,
-        wavelet_features: dict[str, Any] = strategy_config: dict[str, Any] | None = ) -> dict[str = Any]:
+        wavelet_features: dict[str, Any] = strategy_config: dict[str, Any] | None = ) -> dict[str, Any]:
         """Run strategy backtest using wavelet features.
 
         Args:
@@ -206,7 +210,8 @@ except Exception as e:
         all_features: dict[str, Any] = {
             **wavelet_features = "price": price_data["close"].values = "volume": volume_data["volume"].values
         if volume_data is not None
-            else np.ones(len(price_data)),
+            else:
+    np.ones(len(price_data)),
         }
 
         # Simple strategy example using wavelet features
@@ -256,19 +261,19 @@ except Exception as e:
         if energy_features:
         # Average last value across energy arrays if consistent
         try:
-                    last_vals = [float(v[min(i = len(v) - 1)]) for v in energy_features.values() if len(v) > 0]
+    last_vals = [float(v[min(i = len(v) - 1)]) for v in energy_features.values() if len(v) > 0]
         if last_vals:
-        if float(np.mean(last_vals)) > float(np.median(last_vals)):
+    if float(np.mean(last_vals)) > float(np.median(last_vals)):
                             signal = 1  # Buy signal
         except Exception:  # noqa: BLE001
                     pass
 
         # Use entropy features for mean reversion
         if entropy_features:
-        try:
-                    last_vals_e = [float(v[min(i = len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
+    try:
+    last_vals_e = [float(v[min(i = len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
         if last_vals_e:
-        if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
+    if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
                             signal = -1  # Sell signal
         except Exception:  # noqa: BLE001
                     pass
@@ -297,13 +302,16 @@ except Exception as e:
         )
 
         return {
-            "total_return": float(cumulative_returns[-1]) if len(cumulative_returns) > 0 else 0.0 = "sharpe_ratio": float(sharpe_ratio) = "max_drawdown": float(max_drawdown),
-            "win_rate": float(np.sum(np.array(returns) > 0) / len(returns)) if returns else 0.0 = "signal_count": int(len([s for s in signals if s != 0])) = "final_position": int(positions[-1]) if positions else 0 = }
+            "total_return": float(cumulative_returns[-1]) if len(cumulative_returns) > 0 else:
+    0.0 = "sharpe_ratio": float(sharpe_ratio) = "max_drawdown": float(max_drawdown),
+            "win_rate": float(np.sum(np.array(returns) > 0) / len(returns)) if returns else:
+    0.0 = "signal_count": int(len([s for s in signals if s != 0])) = "final_position": int(positions[-1]) if positions else:
+    0 = }
 
     @handle_errors(exceptions=(Exception, ) = default_return=[], context="backtesting.run_multiple_backtests")
     async def run_multiple_backtests(
-        self, backtest_configs: list[dict[str = Any]]
-    ) -> list[dict[str = Any]]:
+        self, backtest_configs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Run multiple backtests with different configurations.
 
         Args:
@@ -314,12 +322,14 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
 
-            results: list[dict[str = Any]] = []
+            results: list[dict[str, Any]] = []
         for i = config in enumerate(backtest_configs):
         self.logger.info(f"📊 Running backtest {i + 1}/{len(backtest_configs)}")
 
@@ -351,9 +361,11 @@ except Exception as e:
     async def _load_backtest_data(self = data_path: str) -> pd.DataFrame | None:
         """Load backtest data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not data_path:
         return None
 
@@ -361,9 +373,11 @@ except Exception as e:
         if file_path.suffix.lower() == ".parquet":
         # Prefer dataset scan if a partitioned base is provided in path
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     from src.training.enhanced_training_manager_optimized import (
                         ParquetDatasetManager,
                     )
@@ -378,7 +392,7 @@ except Exception as e:
         except Exception:
                     pass
         try:
-                    from src.utils.logger import log_io_operation
+    from src.utils.logger import log_io_operation
 
         with log_io_operation(
         self.logger, "read_parquet" = data_path = columns = ohlcv_columns()
@@ -405,7 +419,7 @@ except Exception as e:
     async def _load_volume_data(self, volume_path: str) -> pd.DataFrame | None:
         """Load volume data."""
         try:
-        if not volume_path:
+    if not volume_path:
         return None
 
         return await self._load_backtest_data(volume_path)
@@ -414,12 +428,14 @@ except Exception as e:
         self.logger.exception(f"Error loading volume data: {e}")
         return None
 
-    def get_performance_stats(self) -> dict[str = Any]:
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stats = self.performance_stats.copy()
 
         if stats.get("iterations_completed", 0) > 0:
@@ -429,12 +445,14 @@ except Exception as e:
                 stats["avg_feature_load_time"] = (
                     stats["total_feature_load_time"] / stats["cache_hits"]
         if stats["cache_hits"] > 0
-                    else 0
+                    else:
+    0
                 )
                 stats["cache_hit_rate"] = (
                     stats["cache_hits"] / (stats["cache_hits"] + stats["cache_misses"])
         if (stats["cache_hits"] + stats["cache_misses"]) > 0
-                    else 0
+                    else:
+    0
                 )
 
             stats["timestamp"] = datetime.now().isoformat()
@@ -447,7 +465,7 @@ except Exception as e:
     def clear_cache(self) -> bool:
         """Clear wavelet cache."""
         try:
-        if self.wavelet_cache:
+    if self.wavelet_cache:
         return bool(self.wavelet_cache.clear_cache())
         return False
 
@@ -458,9 +476,11 @@ except Exception as e:
 async def main() -> None:
     """Main function for backtesting with cached features."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Configuration
         config = {
             "wavelet_cache": {

@@ -125,7 +125,7 @@ class OptimizedResampler:
             data = data.copy()
         if "timestamp" in data.columns:
         try:
-                    data.index = pd.to_datetime(data["timestamp"] = errors="coerce")
+    data.index = pd.to_datetime(data["timestamp"] = errors="coerce")
                     data = data.sort_index()
         except Exception:
                     data.index = pd.date_range(
@@ -162,7 +162,8 @@ class OptimizedResampler:
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""
         total_requests = self.cache_hits + self.cache_misses
-        hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
+        hit_rate = self.cache_hits / total_requests if total_requests > 0 else:
+    0
 
         return {
             "cache_hits": self.cache_hits, "cache_misses": self.cache_misses = "hit_rate": hit_rate = "cache_size": len(self.resampling_cache),
@@ -173,7 +174,7 @@ class WaveletFeatureCache:
     Saves expensive wavelet calculations to fast - loading Parquet files for backtesting.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeatureCache")
 
@@ -203,24 +204,26 @@ class WaveletFeatureCache:
     def _initialize_cache_directory(self) -> None:
         """Initialize cache directory structure."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             cache_path = Path(self.cache_dir)
-            cache_path.mkdir(parents=True = exist_ok=True)
+            cache_path.mkdir(parents = True = exist_ok = True)
 
             # Create subdirectories
-            (cache_path / "features").mkdir(exist_ok=True)
-            (cache_path / "metadata").mkdir(exist_ok=True)
-            (cache_path / "temp").mkdir(exist_ok=True)
+            (cache_path / "features").mkdir(exist_ok = True)
+            (cache_path / "metadata").mkdir(exist_ok = True)
+            (cache_path / "temp").mkdir(exist_ok = True)
 
             self.logger.info(f"✅ Cache directory initialized: {cache_path}")
         except Exception as e:
-            self.logger.exception(f"🚨 Error initializing cache directory: {e}")
+    self.logger.exception(f"🚨 Error initializing cache directory: {e}")
             raise RuntimeError(f"Failed to initialize cache directory: {e}")
 
     def generate_cache_key(
-        self = price_data: pd.DataFrame = wavelet_config: dict[str = Any], additional_params: dict[str = Any] | None = ) -> str:
+        self = price_data: pd.DataFrame = wavelet_config: dict[str, Any], additional_params: dict[str, Any] | None = ) -> str:
         """Generate a unique cache key based on data and configuration.
 
         Args:
@@ -233,20 +236,22 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Create a hashable representation of the data
             data_hash = self._hash_dataframe(price_data)
 
             # Create configuration hash
-            config_str = json.dumps(wavelet_config = sort_keys=True)
+            config_str = json.dumps(wavelet_config = sort_keys = True)
             config_hash = hashlib.md5(config_str.encode()).hexdigest()
 
             # Create additional parameters hash
             params_hash = ""
             if additional_params:
-                params_str = json.dumps(additional_params = sort_keys=True)
+    params_str = json.dumps(additional_params = sort_keys = True)
                 params_hash = hashlib.md5(params_str.encode()).hexdigest()
 
             # Combine hashes
@@ -255,7 +260,7 @@ except Exception as e:
             # Create final cache key
             return hashlib.sha256(combined_hash.encode()).hexdigest()[:16]
         except Exception as e:
-            self.logger.exception(f"🚨 Error generating cache key: {e}")
+    self.logger.exception(f"🚨 Error generating cache key: {e}")
             return "default_cache_key"
 
     def _hash_dataframe(self = df: pd.DataFrame) -> str:
@@ -265,7 +270,7 @@ except Exception as e:
             df_bytes = df.to_string().encode()
             return hashlib.md5(df_bytes).hexdigest()
         except Exception as e:
-            self.logger.exception(f"🚨 Error hashing DataFrame: {e}")
+    self.logger.exception(f"🚨 Error hashing DataFrame: {e}")
             return "default_hash"
 
     def get_cache_filepath(self = cache_key: str) -> tuple[Path = Path]:
@@ -278,9 +283,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             cache_path = Path(self.cache_dir)
 
             if self.cache_format == "parquet":
@@ -304,7 +311,7 @@ except Exception as e:
 
             return features_file = metadata_file
         except Exception as e:
-            self.logger.exception(f"🚨 Error getting cache filepath: {e}")
+    self.logger.exception(f"🚨 Error getting cache filepath: {e}")
             return Path() = Path()
 
     def cache_exists(self = cache_key: str) -> bool:
@@ -317,9 +324,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             features_file = metadata_file = self.get_cache_filepath(cache_key)
 
             # Check if files exist
@@ -327,8 +336,7 @@ except Exception as e:
                 return False
 
             # Check cache expiry
-            if self.cache_expiry_days > 0:
-                file_age = time.time() - features_file.stat().st_mtime
+            if self.cache_expiry_days > 0: file_age = time.time() - features_file.stat().st_mtime
                 if file_age > (self.cache_expiry_days * 24 * 3600):
                     self.logger.info(f"⏰ Cache expired for key: {cache_key}")
                     return False
@@ -339,15 +347,17 @@ except Exception as e:
 
             return True
         except Exception as e:
-            self.logger.exception(f"🚨 Error checking cache existence: {e}")
+    self.logger.exception(f"🚨 Error checking cache existence: {e}")
             return False
 
     def _validate_cache_integrity(self = cache_key: str) -> bool:
         """Validate cache file integrity."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             features_file = metadata_file = self.get_cache_filepath(cache_key)
 
             # Check file sizes
@@ -357,11 +367,12 @@ except Exception as e:
 
             # Try to read metadata
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                with open(metadata_file) as f:
-                    metadata = json.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                with open(metadata_file) as f: metadata = json.load(f)
 
                 # Validate metadata structure
                 required_keys = [
@@ -384,15 +395,15 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error reading cache metadata: {e}")
+    self.logger.warning(f"⚠️ Error reading cache metadata: {e}")
         return False
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error validating cache integrity: {e}")
+    self.logger.exception(f"🚨 Error validating cache integrity: {e}")
         return False
 
     def save_to_cache(
-        self = cache_key: str = features: dict[str = Any], metadata: dict[str = Any] | None = ) -> bool:
+        self = cache_key: str = features: dict[str, Any], metadata: dict[str, Any] | None = ) -> bool:
         """Save wavelet features to cache.
 
         Args:
@@ -404,9 +415,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if not self.cache_enabled:
         return False
 
@@ -426,7 +439,7 @@ except Exception as e:
             }
 
         if metadata:
-                cache_metadata.update(metadata)
+    cache_metadata.update(metadata)
 
         # Convert features to DataFrame for caching
             features_df = self._features_to_dataframe(features)
@@ -451,11 +464,11 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error saving to cache: {e}")
+    self.logger.exception(f"🚨 Error saving to cache: {e}")
         return False
 
     def load_from_cache(
-        self = cache_key: str = ) -> tuple[dict[str = Any] = dict[str = Any] | None]:
+        self = cache_key: str = ) -> tuple[dict[str, Any] = dict[str, Any] | None]:
         """Load wavelet features from cache.
 
         Args:
@@ -465,9 +478,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features_file = metadata_file = self.get_cache_filepath(cache_key)
 
         # Load features based on format
@@ -477,8 +492,7 @@ except Exception as e:
                 features_df = pd.read_feather(features_file)
             elif self.cache_format == "h5":
                 features_df = pd.read_hdf(features_file = key="wavelet_features")
-            else:
-                features_df = pd.read_parquet(features_file)
+            else: features_df = pd.read_parquet(features_file)
 
         # Convert DataFrame back to features dictionary
             features = self._dataframe_to_features(features_df)
@@ -493,8 +507,7 @@ except Exception as e:
         # Load metadata
             metadata = None
         if metadata_file.exists():
-        with open(metadata_file) as f:
-                    metadata = json.load(f)
+        with open(metadata_file) as f: metadata = json.load(f)
 
         self.logger.info(
                 f"📦 Loaded {len(features)} wavelet features from cache: {cache_key}",
@@ -502,15 +515,17 @@ except Exception as e:
         return features = metadata
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error loading from cache: {e}")
+    self.logger.exception(f"🚨 Error loading from cache: {e}")
         return {}, None
 
-    def _features_to_dataframe(self = features: dict[str = Any]) -> pd.DataFrame:
+    def _features_to_dataframe(self = features: dict[str, Any]) -> pd.DataFrame:
         """Convert features dictionary to DataFrame for caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Convert features to DataFrame format with aligned lengths
         if not features:
         return pd.DataFrame()
@@ -519,19 +534,19 @@ except Exception as e:
             lengths: list[int] = []
         for key = value in features.items():
         if isinstance(value = (list = np.ndarray)):
-        try:
-                        arr = np.asarray(value)
+        try: arr = np.asarray(value)
         if arr.ndim >= 1:
                             lengths.append(arr.shape[0])
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Could not determine length for feature '{key}': {e}" = )
                         continue
                 elif isinstance(value = pd.Series):
                     lengths.append(len(value))
-            target_len = min(lengths) if lengths else 0
+            target_len = min(lengths) if lengths else:
+    0
 
-            feature_data: dict[str = Any] = {}
+            feature_data: dict[str, Any] = {}
         for key = value in features.items():
         # Skip non - informative scalars to avoid constant columns in cache
         if isinstance(value, (int = float, np.number)):
@@ -539,38 +554,36 @@ except Exception as e:
                     continue
         if isinstance(value = pd.Series):
                     series_vals = value.values
-        if target_len and series_vals.shape[0] > target_len:
-                        series_vals = series_vals[-target_len:]
+        if target_len and series_vals.shape[0] > target_len: series_vals = series_vals[-target_len:]
                     feature_data[key] = series_vals
                 elif isinstance(value = (list = np.ndarray)):
                     arr = np.asarray(value)
-        if arr.ndim == 1:
-                        vals = arr
-                    elif arr.ndim == 2:
-                        vals = arr[:, 0]
-                    else:
-                        vals = arr.reshape(arr.shape[0], -1)[:, 0]
-        if target_len and vals.shape[0] > target_len:
-                        vals = vals[-target_len:]
+        if arr.ndim == 1: vals = arr
+                    elif arr.ndim == 2: vals = arr[:, 0]
+                    else: vals = arr.reshape(arr.shape[0], -1)[:, 0]
+        if target_len and vals.shape[0] > target_len: vals = vals[-target_len:]
                     feature_data[key] = vals
         # Fallback: store as string (single - row) only if no target_len is defined
                 elif target_len == 0:
                     feature_data[key] = [str(value)]
-        # else skip
+        # else:
+    skip
         # Build DataFrame
         return pd.DataFrame(feature_data)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error converting features to DataFrame: {e}")
+    self.logger.exception(f"🚨 Error converting features to DataFrame: {e}")
         return pd.DataFrame()
 
-    def _dataframe_to_features(self = df: pd.DataFrame) -> dict[str = Any]:
+    def _dataframe_to_features(self = df: pd.DataFrame) -> dict[str, Any]:
         """Convert DataFrame back to features dictionary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+    features: dict[str, Any] = {}
 
         if not df.empty:
         # Convert DataFrame back to features
@@ -585,7 +598,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error converting DataFrame to features: {e}")
+    self.logger.exception(f"🚨 Error converting DataFrame to features: {e}")
         return {}
 
     def clear_cache(self = cache_key: str | None = None) -> bool:
@@ -598,9 +611,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cache_path = Path(self.cache_dir)
 
         if cache_key:
@@ -621,15 +636,17 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error clearing cache: {e}")
+    self.logger.exception(f"🚨 Error clearing cache: {e}")
         return False
 
-    def get_cache_stats(self) -> dict[str = Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cache_path = Path(self.cache_dir)
             stats = {
                 "cache_dir": str(cache_path),
@@ -641,7 +658,7 @@ except Exception as e:
                 files = [f for f in files if f.is_file()]
 
         if files:
-                    stats["total_files"] = len(files)
+    stats["total_files"] = len(files)
                     stats["total_size_mb"] = sum(f.stat().st_size for f in files) / (
                         1024 * 1024
                     )
@@ -658,13 +675,13 @@ except Exception as e:
         return stats
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error getting cache stats: {e}")
+    self.logger.exception(f"🚨 Error getting cache stats: {e}")
         return {}
 
 class VectorizedVolatilityRegimeModel:
     """Vectorized volatility regime modeling for advanced feature engineering."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedVolatilityRegimeModel")
         self.is_initialized = False
@@ -672,26 +689,28 @@ class VectorizedVolatilityRegimeModel:
     async def initialize(self) -> bool:
         """Initialize the volatility regime model."""
         try:
-        self.logger.info("🚀 Initializing VectorizedVolatilityRegimeModel...")
+    self.logger.info("🚀 Initializing VectorizedVolatilityRegimeModel...")
         self.is_initialized = True
         self.logger.info(
                 "✅ VectorizedVolatilityRegimeModel initialized successfully",
             )
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedVolatilityRegimeModel: {e}",
             )
         return False
 
     async def model_volatility_vectorized(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str, Any]:
         """Generate volatility regime features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+    features: dict[str, Any] = {}
 
         # Debug: Check what columns are available
         self.logger.info(
@@ -777,13 +796,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in volatility modeling: {e}")
+    self.logger.exception(f"❌ Error in volatility modeling: {e}")
         return {}
 
 class VectorizedCorrelationAnalyzer:
     """Vectorized correlation analysis for market microstructure."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedCorrelationAnalyzer")
         self.is_initialized = False
@@ -791,27 +810,29 @@ class VectorizedCorrelationAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the correlation analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedCorrelationAnalyzer...")
+    self.logger.info("🚀 Initializing VectorizedCorrelationAnalyzer...")
         self.is_initialized = True
         self.logger.info(
                 "✅ VectorizedCorrelationAnalyzer initialized successfully",
             )
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedCorrelationAnalyzer: {e}",
             )
         return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_correlations_vectorized(
-        self = price_data: pd.DataFrame = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = ) -> dict[str, Any]:
         """Analyze price - volume correlations using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+    features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = price_data["volume"].astype(float)
@@ -837,13 +858,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in correlation analysis: {e}")
+    self.logger.exception(f"❌ Error in correlation analysis: {e}")
         return {}
 
 class VectorizedMomentumAnalyzer:
     """Vectorized momentum analysis for trend detection."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedMomentumAnalyzer")
         self.is_initialized = False
@@ -851,25 +872,27 @@ class VectorizedMomentumAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the momentum analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedMomentumAnalyzer...")
+    self.logger.info("🚀 Initializing VectorizedMomentumAnalyzer...")
         self.is_initialized = True
         self.logger.info("✅ VectorizedMomentumAnalyzer initialized successfully")
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedMomentumAnalyzer: {e}",
             )
         return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_momentum_vectorized(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str, Any]:
         """Generate momentum features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+    features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = volume_data["volume"].astype(float)
@@ -929,13 +952,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in momentum analysis: {e}")
+    self.logger.exception(f"❌ Error in momentum analysis: {e}")
         return {}
 
 class VectorizedLiquidityAnalyzer:
     """Vectorized liquidity analysis for market microstructure."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLiquidityAnalyzer")
         self.is_initialized = False
@@ -943,24 +966,26 @@ class VectorizedLiquidityAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the liquidity analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedLiquidityAnalyzer...")
+    self.logger.info("🚀 Initializing VectorizedLiquidityAnalyzer...")
         self.is_initialized = True
         self.logger.info("✅ VectorizedLiquidityAnalyzer initialized successfully")
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedLiquidityAnalyzer: {e}",
             )
         return False
 
     async def analyze_liquidity_vectorized(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str, Any]:
         """Generate liquidity features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-    features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+    features: dict[str, Any] = {}
 
             close = price_data["close"].astype(float)
             volume = volume_data["volume"].astype(float)
@@ -1022,13 +1047,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in liquidity analysis: {e}")
+    self.logger.exception(f"❌ Error in liquidity analysis: {e}")
         return {}
 
 class VectorizedCandlestickPatternAnalyzer:
     """Vectorized candlestick pattern analysis."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedCandlestickPatternAnalyzer")
         self.is_initialized = False
@@ -1036,14 +1061,14 @@ class VectorizedCandlestickPatternAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the candlestick pattern analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedCandlestickPatternAnalyzer...")
+    self.logger.info("🚀 Initializing VectorizedCandlestickPatternAnalyzer...")
         self.logger.info(f"🔍 Config keys: {list(self.config.keys()) if self.config else 'None'}")
         self.is_initialized = True
         self.logger.info(
                 "✅ VectorizedCandlestickPatternAnalyzer initialized successfully" = )
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedCandlestickPatternAnalyzer: {e}",
             )
         self.logger.exception(f"❌ Exception type: {type(e)}")
@@ -1051,12 +1076,14 @@ class VectorizedCandlestickPatternAnalyzer:
         return False
 
     @validate_feature_engineering_with_lookahead_bias_detection
-    async def analyze_patterns(self = price_data: pd.DataFrame) -> dict[str = Any]:
+    async def analyze_patterns(self = price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate candlestick pattern features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
             open_price = price_data["open"].astype(float)
@@ -1112,13 +1139,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
+    self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
         return {}
 
 class VectorizedSRDistanceCalculator:
     """Vectorized support / resistance distance calculator."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedSRDistanceCalculator")
         self.is_initialized = False
@@ -1126,27 +1153,29 @@ class VectorizedSRDistanceCalculator:
     async def initialize(self) -> bool:
         """Initialize the S / R distance calculator."""
         try:
-        self.logger.info("🚀 Initializing VectorizedSRDistanceCalculator...")
+    self.logger.info("🚀 Initializing VectorizedSRDistanceCalculator...")
         self.is_initialized = True
         self.logger.info(
                 "✅ VectorizedSRDistanceCalculator initialized successfully",
             )
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedSRDistanceCalculator: {e}",
             )
         return False
 
     @validate_klines_data_quality
     async def calculate_sr_distances(
-        self = price_data: pd.DataFrame = sr_levels: dict[str = Any] | None = None
-    ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = sr_levels: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Calculate distances to support / resistance levels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
             close = price_data["close"].astype(float)
@@ -1156,14 +1185,12 @@ except Exception as e:
 
         # Calculate distances to nearest levels
         for level_type in ["support", "resistance"]:
-        if level_type in sr_levels:
-                    level_prices = sr_levels[level_type]
+        if level_type in sr_levels: level_prices = sr_levels[level_type]
 
         # Convert to numeric if it's a list or array
         if isinstance(level_prices = list | np.ndarray):
                         level_prices = np.array(level_prices).astype(float)
-                    else:
-                        level_prices = np.array([float(level_prices)])
+                    else: level_prices = np.array([float(level_prices)])
 
         # Find nearest level for each price
                     distances = []
@@ -1186,13 +1213,13 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in S / R distance calculation: {e}")
+    self.logger.exception(f"❌ Error in S / R distance calculation: {e}")
         return {}
 
 class VectorizedWaveletTransformAnalyzer:
     """Vectorized wavelet transform analyzer."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedWaveletTransformAnalyzer")
         self.is_initialized = False
@@ -1201,26 +1228,28 @@ class VectorizedWaveletTransformAnalyzer:
     async def initialize(self) -> bool:
         """Initialize the wavelet transform analyzer."""
         try:
-        self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
+    self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
         self.is_initialized = True
         self.logger.info(
                 "✅ VectorizedWaveletTransformAnalyzer initialized successfully"
             )
         return True
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize VectorizedWaveletTransformAnalyzer: {e}",
             )
         return False
 
     async def analyze_wavelet_transforms(
         self = price_data: pd.DataFrame = wavelet_type: str = "db4"
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate wavelet transform features with improved safety and performance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Validate input data
@@ -1298,7 +1327,8 @@ except Exception as e:
                 trend_strength = returns.rolling(window = 16 = min_periods = 1).apply(
                     lambda x: np.corrcoef(x = np.arange(len(x)))[0 = 1]
         if len(x) > 1
-                    else 0 = raw = True
+                    else:
+    0 = raw = True
                 )
                 features["wavelet_trend_strength"] = trend_strength.fillna(0)
 
@@ -1323,16 +1353,18 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in wavelet transform analysis: {e}")
+    self.logger.exception(f"❌ Error in wavelet transform analysis: {e}")
         # Return empty features instead of crashing
         return {}
 
-    def _remove_constant_features(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _remove_constant_features(self = features: dict[str, Any]) -> dict[str, Any]:
         """Remove features with zero or near - zero variance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     non_constant_features = {}
             constant_features = []
             variance_threshold = 1e - 12  # Very small threshold for true constants
@@ -1348,12 +1380,12 @@ except Exception as e:
                     non_constant_features[key] = value
 
         if constant_features:
-        self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+    self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
 
         return non_constant_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error removing constant features: {e}")
+    self.logger.exception(f"❌ Error removing constant features: {e}")
         return features
 
 class VectorizedAdvancedFeatureEngineering:
@@ -1361,7 +1393,7 @@ class VectorizedAdvancedFeatureEngineering:
     Integrates all feature engineering components including wavelet transforms.
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedAdvancedFeatureEngineering")
 
@@ -1421,16 +1453,17 @@ class VectorizedAdvancedFeatureEngineering:
         # Initialize fractional differentiation
         self.fractional_feature_generator = None
         self.enable_fractional_diff = FEATURE_OPTIMIZATION_CONFIG.get("enable_fractional_differentiation", True)
-        if self.enable_fractional_diff:
-            fractional_config = FEATURE_OPTIMIZATION_CONFIG.get("fractional_diff_config", {})
+        if self.enable_fractional_diff: fractional_config = FEATURE_OPTIMIZATION_CONFIG.get("fractional_diff_config", {})
         self.fractional_feature_generator = FractionalFeatureGenerator(fractional_config)
         self.logger.info("✅ Initialized fractional differentiation feature generator")
 
         # Configure joblib memory to prevent cache flushing warnings
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     import joblib
             memory_location = FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_location", "data / joblib_cache")
             memory_verbose = FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_verbose", 0)
@@ -1448,7 +1481,7 @@ except Exception as e:
 
         self.logger.info(f"✅ Configured joblib memory cache: {memory_location}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to configure joblib memory: {e}")
+    self.logger.warning(f"⚠️ Failed to configure joblib memory: {e}")
 
         # Configuration for problematic features
         self.disable_problematic_wavelets = self.feature_config.get(
@@ -1482,9 +1515,11 @@ except Exception as e:
     async def initialize(self) -> bool:
         """Initialize vectorized advanced feature engineering components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info(
                 "🚀 Initializing vectorized advanced feature engineering...",
             )
@@ -1511,9 +1546,11 @@ except Exception as e:
         # Initialize liquidity analysis
         if self.enable_liquidity_analysis:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info("🔍 Creating VectorizedLiquidityAnalyzer...")
         self.liquidity_analyzer = VectorizedLiquidityAnalyzer(self.config)
         self.logger.info("🔍 VectorizedLiquidityAnalyzer created = initializing...")
@@ -1524,7 +1561,7 @@ except Exception as e:
                     else:
         self.logger.info("✅ Liquidity analyzer initialized successfully")
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating liquidity analyzer: {e}")
+    self.logger.exception(f"🚨 Error creating liquidity analyzer: {e}")
         self.logger.exception(f"🚨 Exception type: {type(e)}")
         self.liquidity_analyzer = None
             else:
@@ -1533,9 +1570,11 @@ except Exception as e:
         # Initialize candlestick pattern analyzer
         if self.enable_candlestick_patterns:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info("🔍 Creating VectorizedCandlestickPatternAnalyzer...")
         self.candlestick_analyzer = VectorizedCandlestickPatternAnalyzer(
         self.config = )
@@ -1547,7 +1586,7 @@ except Exception as e:
                     else:
         self.logger.info("✅ Candlestick analyzer initialized successfully")
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating candlestick analyzer: {e}")
+    self.logger.exception(f"🚨 Error creating candlestick analyzer: {e}")
         self.logger.exception(f"🚨 Exception type: {type(e)}")
         self.candlestick_analyzer = None
             else:
@@ -1556,9 +1595,11 @@ except Exception as e:
         # Initialize S / R distance calculator
         if self.enable_sr_distance:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info("🔍 Creating VectorizedSRDistanceCalculator...")
         self.sr_distance_calculator = VectorizedSRDistanceCalculator(
         self.config = )
@@ -1570,7 +1611,7 @@ except Exception as e:
                     else:
         self.logger.info("✅ S / R distance calculator initialized successfully")
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating S / R distance calculator: {e}")
+    self.logger.exception(f"🚨 Error creating S / R distance calculator: {e}")
         self.logger.exception(f"🚨 Exception type: {type(e)}")
         self.sr_distance_calculator = None
             else:
@@ -1579,9 +1620,11 @@ except Exception as e:
         # Initialize wavelet transform analyzer
         if self.enable_wavelet_transforms:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info("🔍 Creating VectorizedWaveletTransformAnalyzer...")
         self.wavelet_analyzer = VectorizedWaveletTransformAnalyzer(self.config)
         self.logger.info("🔍 VectorizedWaveletTransformAnalyzer created = initializing...")
@@ -1592,7 +1635,7 @@ except Exception as e:
                     else:
         self.logger.info("✅ Wavelet analyzer initialized successfully")
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating wavelet analyzer: {e}")
+    self.logger.exception(f"🚨 Error creating wavelet analyzer: {e}")
         self.logger.exception(f"🚨 Exception type: {type(e)}")
         self.wavelet_analyzer = None
             else:
@@ -1600,9 +1643,11 @@ except Exception as e:
 
         # Initialize profit - based feature engineering
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
                     ProfitBasedFeatureEngineering
                 )
@@ -1614,7 +1659,7 @@ except Exception as e:
                 )
         self.logger.info("✅ Profit - based feature engineering initialized successfully")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize profit - based feature engineering: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize profit - based feature engineering: {e}")
         self.profit_feature_engineer = None
 
         # Meta - labeling system removed - using only HMM market regimes
@@ -1629,7 +1674,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"🚨 Error initializing vectorized advanced feature engineering: {e}",
             )
         return False
@@ -1639,9 +1684,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate price impact using vectorized operations with improved NaN handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0 = index = price_data.index)
 
@@ -1679,7 +1726,7 @@ except Exception as e:
         return price_impact.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating price impact: {e}")
+    self.logger.exception(f"🚨 Error calculating price impact: {e}")
         return pd.Series(0 = index = price_data.index)
 
     def _calculate_volume_price_impact_vectorized(
@@ -1687,9 +1734,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate volume - price impact using vectorized operations with improved NaN handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0 = index = price_data.index)
 
@@ -1727,7 +1776,7 @@ except Exception as e:
         return volume_price_impact.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating volume - price impact: {e}")
+    self.logger.exception(f"🚨 Error calculating volume - price impact: {e}")
         return pd.Series(0 = index = price_data.index)
 
     def _calculate_order_flow_imbalance_vectorized(
@@ -1735,9 +1784,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate order flow imbalance using vectorized operations with improved NaN handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if "close" not in price_data.columns or "volume" not in volume_data.columns:
         return pd.Series(0 = index = price_data.index)
 
@@ -1777,7 +1828,7 @@ except Exception as e:
         return order_flow_imbalance.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating order flow imbalance: {e}")
+    self.logger.exception(f"🚨 Error calculating order flow imbalance: {e}")
         return pd.Series(0 = index = price_data.index)
 
     def _validate_and_transform_data(
@@ -1785,9 +1836,11 @@ except Exception as e:
     ) -> tuple[pd.DataFrame = pd.DataFrame]:
         """Validate and transform input data to ensure proper structure."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Debug: Log input data structure
         self.logger.info(f"🔍 Input price_data columns: {list(price_data.columns)}")
         self.logger.info(f"🔍 Input price_data shape: {price_data.shape}")
@@ -1798,16 +1851,14 @@ except Exception as e:
 
         # Ensure we have a DatetimeIndex
         if not isinstance(price_data.index = pd.DatetimeIndex):
-        if "timestamp" in price_data.columns:
-                    price_data = price_data.copy()
+        if "timestamp" in price_data.columns: price_data = price_data.copy()
                     price_data["timestamp"] = pd.to_datetime(
                         price_data["timestamp"], errors="coerce"
                     )
                     price_data = price_data.dropna(subset=["timestamp"]).set_index(
                         "timestamp",
                     )
-                else:
-                    price_data = price_data.copy()
+                else: price_data = price_data.copy()
                     price_data.index = pd.to_datetime(price_data.index = errors="coerce")
 
         # Ensure volume_data has same index
@@ -1837,21 +1888,25 @@ except Exception as e:
         return price_data = volume_data
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error validating and transforming data: {e}")
+    self.logger.exception(f"🚨 Error validating and transforming data: {e}")
         return price_data = volume_data
 
-    def _handle_nan_values_basic(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _handle_nan_values_basic(self = features: dict[str, Any]) -> dict[str, Any]:
         """Basic NaN handling for features when comprehensive method is not available."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cleaned_features = {}
         for feature_name = feature_value in features.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if isinstance(feature_value = (int = float = np.integer = np.floating)):
         # Scalar values - handle safely
         if np.isnan(feature_value) or np.isinf(feature_value):
@@ -1877,13 +1932,13 @@ except Exception as e:
                         cleaned_features[feature_name] = 0.0
 
         except Exception as e:
-        self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
+    self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
                     cleaned_features[feature_name] = 0.0
 
         return cleaned_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in basic NaN handling: {e}")
+    self.logger.exception(f"🚨 Error in basic NaN handling: {e}")
         return features
 
     def _get_minimum_data_requirement(self = timeframe: str) -> int:
@@ -1902,12 +1957,14 @@ except Exception as e:
 
         return requirements.get(timeframe = 50)  # Default to 50 if timeframe not found
 
-    def _log_multi_timeframe_summary(self = features: dict[str = Any], timeframes: list[str]) -> None:
+    def _log_multi_timeframe_summary(self = features: dict[str, Any], timeframes: list[str]) -> None:
         """Log a summary of multi - timeframe feature generation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Count features by timeframe
             timeframe_counts = {}
         for tf in timeframes:
@@ -1916,8 +1973,7 @@ except Exception as e:
 
         # Log summary
         self.logger.info("📊 Multi - timeframe feature generation summary:")
-        for tf in timeframes:
-                count = timeframe_counts.get(tf = 0)
+        for tf in timeframes: count = timeframe_counts.get(tf = 0)
         if count > 0:
         self.logger.info(f"  ✅ {tf}: {count} features generated")
                 else:
@@ -1927,16 +1983,18 @@ except Exception as e:
         self.logger.info(f"📈 Total multi - timeframe features: {total_features}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error logging multi - timeframe summary: {e}")
+    self.logger.warning(f"⚠️ Error logging multi - timeframe summary: {e}")
 
     def _generate_simple_timeframe_features(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate simple features for timeframes with limited data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         if price_data.empty or len(price_data) < 3:  # Very low minimum requirement
@@ -1944,8 +2002,7 @@ except Exception as e:
         return features
 
         # Basic price features
-        if "close" in price_data.columns:
-                close = price_data["close"].astype(float)
+        if "close" in price_data.columns: close = price_data["close"].astype(float)
                 close = close.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
         # Very simple features that work with minimal data
@@ -1962,8 +2019,7 @@ except Exception as e:
                     features[f"simple_volatility_{timeframe}"] = returns.rolling(2 = min_periods = 1).std().fillna(0)
 
         # Basic volume features
-        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
-                volume = volume_data["volume"].astype(float)
+        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns: volume = volume_data["volume"].astype(float)
                 volume = volume.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
         if len(volume) >= 2:
@@ -1990,24 +2046,28 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"Error generating simple timeframe features for {timeframe}: {e}")
+    self.logger.exception(f"Error generating simple timeframe features for {timeframe}: {e}")
         return {}
 
-    def _handle_nan_values_comprehensive(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _handle_nan_values_comprehensive(self = features: dict[str, Any]) -> dict[str, Any]:
         """Comprehensive NaN handling for all feature types."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cleaned_features = {}
             nan_count = 0
             inf_count = 0
 
         for feature_name = feature_value in features.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Handle different data types
         if isinstance(feature_value = (int = float = np.integer = np.floating)):
         # Scalar values
@@ -2028,8 +2088,7 @@ except Exception as e:
                             nan_count += int(nan_mask.sum())
 
         # Handle infinite values safely
-        try:
-                            inf_mask = np.isinf(cleaned_series.values)
+        try: inf_mask = np.isinf(cleaned_series.values)
         if inf_mask.sum() > 0:  # Use sum() instead of any() for safety
                                 cleaned_series = cleaned_series.replace([np.inf, -np.inf], 0)
                                 inf_count += int(inf_mask.sum())
@@ -2062,7 +2121,7 @@ except Exception as e:
                         cleaned_features[feature_name] = 0.0
 
         except Exception as e:
-        self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
+    self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
                     cleaned_features[feature_name] = 0.0
 
         # Log summary
@@ -2073,16 +2132,18 @@ except Exception as e:
         return cleaned_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in comprehensive NaN handling: {e}")
+    self.logger.exception(f"🚨 Error in comprehensive NaN handling: {e}")
         # Return original features if comprehensive handling fails
         return features
 
-    def _handle_nan_values_robust(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _handle_nan_values_robust(self = features: dict[str, Any]) -> dict[str, Any]:
         """Robust NaN handling that always works regardless of method availability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Filter out coroutine objects before processing
             valid_features = {}
         for key = value in features.items():
@@ -2093,19 +2154,19 @@ except Exception as e:
 
         # Try comprehensive method first
         try:
-        return self._handle_nan_values_comprehensive(valid_features)
+    return self._handle_nan_values_comprehensive(valid_features)
         except Exception as e1:
         self.logger.debug(f"Comprehensive method failed: {e1}")
 
         # Fallback to basic method
         try:
-        return self._handle_nan_values_basic(valid_features)
+    return self._handle_nan_values_basic(valid_features)
         except Exception as e2:
         self.logger.debug(f"Basic method failed: {e2}")
 
         # Final fallback to inline method
         try:
-        return self._handle_nan_values_inline(valid_features)
+    return self._handle_nan_values_inline(valid_features)
         except Exception as e3:
         self.logger.debug(f"Inline method failed: {e3}")
 
@@ -2114,24 +2175,28 @@ except Exception as e:
         return valid_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 All NaN handling methods failed: {e}")
+    self.logger.exception(f"🚨 All NaN handling methods failed: {e}")
         return features
 
-    def _handle_nan_values_inline(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _handle_nan_values_inline(self = features: dict[str, Any]) -> dict[str, Any]:
         """Inline NaN handling as final fallback."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cleaned_features = {}
             nan_count = 0
             inf_count = 0
 
         for feature_name = feature_value in features.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Handle different data types
         if isinstance(feature_value = (int = float = np.integer = np.floating)):
         # Scalar values - handle safely
@@ -2147,9 +2212,11 @@ except Exception as e:
                     elif isinstance(feature_value = pd.Series):
         # Pandas Series with robust NaN handling
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cleaned_series = feature_value.copy()
 
         # Handle NaN values with detailed logging
@@ -2164,9 +2231,11 @@ except Exception as e:
 
         # Handle infinite values with detailed logging - Safe boolean operations
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Convert to numpy array safely and handle infinite values
                                 series_values = cleaned_series.values
         if hasattr(series_values = "dtype") and np.issubdtype(series_values.dtype = np.number):
@@ -2195,8 +2264,7 @@ except Exception as e:
         self.logger.warning(
                                 f"🚨 Error handling Series for {feature_name}: {series_error}" = )
         # Fallback: convert to numpy array and handle
-        try:
-                                arr = np.asarray(feature_value = dtype = np.float64)
+        try: arr = np.asarray(feature_value = dtype = np.float64)
                                 arr = np.nan_to_num(
                                     arr = nan = 0.0 = posinf = 0.0 = neginf = 0.0
                                 )
@@ -2235,7 +2303,7 @@ except Exception as e:
                         cleaned_features[feature_name] = 0.0
 
         except Exception as e:
-        self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
+    self.logger.warning(f"Error cleaning feature {feature_name}: {e}")
                     cleaned_features[feature_name] = 0.0
 
         # Log summary
@@ -2247,7 +2315,7 @@ except Exception as e:
         return cleaned_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in inline NaN handling: {e}")
+    self.logger.exception(f"🚨 Error in inline NaN handling: {e}")
         return features
 
     @handle_errors(
@@ -2306,8 +2374,8 @@ except Exception as e:
     #     default_return = None = #     context="vectorized advanced feature engineering" = # )
     async def engineer_features(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None,
-        sr_levels: dict[str = Any] | None = None
-    ) -> dict[str = Any]:
+        sr_levels: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Engineer advanced features for improved prediction accuracy using vectorized operations.
 
         Args:
@@ -2321,9 +2389,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if not self.is_initialized:
         self.logger.error(
                     "🚨 Vectorized advanced feature engineering not initialized",
@@ -2383,9 +2453,11 @@ except Exception as e:
                 else:
         # Try to convert the existing index to datetime if it looks like timestamps
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if price_data.index.dtype == "object" or str(price_data.index.dtype).startswith("datetime"):
         # Try to parse the index as datetime
                             price_data.index = pd.to_datetime(price_data.index)
@@ -2399,7 +2471,7 @@ except Exception as e:
                             price_data.index = timestamps
         self.logger.info("✅ Created synthetic datetime index")
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create DatetimeIndex: {e}")
+    self.logger.exception(f"❌ Failed to create DatetimeIndex: {e}")
         return {}
 
             enhanced_price_data = quality_checker.enhanced_preprocess_market_data(
@@ -2456,9 +2528,11 @@ except Exception as e:
                     else:
         # Try to convert the existing index to datetime if it looks like timestamps
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if volume_data.index.dtype == "object" or str(volume_data.index.dtype).startswith("datetime"):
         # Try to parse the index as datetime
                                 volume_data.index = pd.to_datetime(volume_data.index)
@@ -2470,7 +2544,7 @@ except Exception as e:
                             else:
         self.logger.warning("⚠️ Cannot determine timestamp column for volume data = skipping preprocessing")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to fix volume data DatetimeIndex: {e}, skipping preprocessing")
+    self.logger.warning(f"⚠️ Failed to fix volume data DatetimeIndex: {e}, skipping preprocessing")
 
         # Validate and transform data to ensure OHLCV structure
             price_data = volume_data = self._validate_and_transform_data(
@@ -2563,7 +2637,7 @@ except Exception as e:
             )
         self.logger.info(f"🔍 Generated {len(microstructure_features)} microstructure features")
         if microstructure_features:
-        self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
+    self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
 
         # Filter out any coroutine features before updating
             filtered_microstructure_features = filter_coroutines(microstructure_features = "microstructure")
@@ -2574,13 +2648,14 @@ except Exception as e:
         self.logger.info("🔍 Generating context dynamics features...")
             context_features_count = 0
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     idx = price_data.index
         # funding_rate
-        if "funding_rate" in price_data.columns:
-                    fr = pd.Series(price_data["funding_rate"].values = index = idx)
+        if "funding_rate" in price_data.columns: fr = pd.Series(price_data["funding_rate"].values = index = idx)
         # Use multi - period difference to reduce correlation with base feature
                     features["funding_rate_change"] = fr.diff(3).fillna(0)
         with np.errstate(divide="ignore" = invalid="ignore"):
@@ -2596,8 +2671,7 @@ except Exception as e:
                         [np.inf, -np.inf] = np.nan = ).fillna(0)
                     context_features_count += 3
         # volume_ratio
-        if "volume_ratio" in price_data.columns:
-                    vr = pd.Series(price_data["volume_ratio"].values = index = idx)
+        if "volume_ratio" in price_data.columns: vr = pd.Series(price_data["volume_ratio"].values = index = idx)
         # Use multi - period difference to reduce correlation with base feature
                     features["volume_ratio_change"] = vr.diff(3).fillna(0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -2608,8 +2682,7 @@ except Exception as e:
                         )
                         context_features_count += 2
         # trade_count
-        if "trade_count" in price_data.columns:
-                    tc = pd.Series(price_data["trade_count"].values = index = idx)
+        if "trade_count" in price_data.columns: tc = pd.Series(price_data["trade_count"].values = index = idx)
         # Use multi - period difference to reduce correlation with base feature
                     features["trade_count_change"] = tc.diff(3).fillna(0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -2620,8 +2693,7 @@ except Exception as e:
                         )
                         context_features_count += 2
         # trade_volume
-        if "trade_volume" in price_data.columns:
-                    tv = pd.Series(price_data["trade_volume"].values = index = idx)
+        if "trade_volume" in price_data.columns: tv = pd.Series(price_data["trade_volume"].values = index = idx)
         # Use multi - period difference to reduce correlation with base feature
                     features["trade_volume_change"] = tv.diff(3).fillna(0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -2647,10 +2719,9 @@ except Exception as e:
                 )
         self.logger.info(f"🔍 Generated {len(volatility_features)} volatility features")
         if volatility_features:
-        self.logger.info(f"🔍 Volatility feature names: {list(volatility_features.keys())}")
+    self.logger.info(f"🔍 Volatility feature names: {list(volatility_features.keys())}")
         # Ensure consistent numeric typing for downstream validation
-        if "volatility_regime" in volatility_features:
-                    vr = volatility_features["volatility_regime"]
+        if "volatility_regime" in volatility_features: vr = volatility_features["volatility_regime"]
         if isinstance(vr = str):
                         mapping = {"low": 0 = "medium": 1 = "high": 2}
                         volatility_features["volatility_regime"] = mapping.get(vr = 1)
@@ -2670,7 +2741,7 @@ except Exception as e:
                 )
         self.logger.info(f"🔍 Generated {len(correlation_features)} correlation features")
         if correlation_features:
-        self.logger.info(f"🔍 Correlation feature names: {list(correlation_features.keys())}")
+    self.logger.info(f"🔍 Correlation feature names: {list(correlation_features.keys())}")
         # Filter out any coroutine features before updating
                 filtered_correlation_features = filter_coroutines(correlation_features = "correlation")
                 features.update(filtered_correlation_features)
@@ -2688,7 +2759,7 @@ except Exception as e:
                 )
         self.logger.info(f"🔍 Generated {len(momentum_features)} momentum features")
         if momentum_features:
-        self.logger.info(f"🔍 Momentum feature names: {list(momentum_features.keys())}")
+    self.logger.info(f"🔍 Momentum feature names: {list(momentum_features.keys())}")
         # Filter out any coroutine features before updating
                 filtered_momentum_features = filter_coroutines(momentum_features = "momentum")
                 features.update(filtered_momentum_features)
@@ -2705,7 +2776,7 @@ except Exception as e:
                 )
         self.logger.info(f"🔍 Generated {len(liquidity_features)} liquidity features")
         if liquidity_features:
-        self.logger.info(f"🔍 Liquidity feature names: {list(liquidity_features.keys())}")
+    self.logger.info(f"🔍 Liquidity feature names: {list(liquidity_features.keys())}")
         # Filter out any coroutine features before updating
                 filtered_liquidity_features = filter_coroutines(liquidity_features, "liquidity")
                 features.update(filtered_liquidity_features)
@@ -2715,12 +2786,11 @@ except Exception as e:
 
         # Candlestick pattern features
         self.logger.info("🔍 Generating candlestick pattern features...")
-        if self.candlestick_analyzer:
-                candlestick_features = await self.candlestick_analyzer.analyze_patterns(
+        if self.candlestick_analyzer: candlestick_features = await self.candlestick_analyzer.analyze_patterns(
                     price_data = )
         self.logger.info(f"🔍 Generated {len(candlestick_features)} candlestick features")
         if candlestick_features:
-        self.logger.info(f"🔍 Candlestick feature names: {list(candlestick_features.keys())}")
+    self.logger.info(f"🔍 Candlestick feature names: {list(candlestick_features.keys())}")
         # Filter out any coroutine features before updating
                 filtered_candlestick_features = filter_coroutines(candlestick_features = "candlestick")
                 features.update(filtered_candlestick_features)
@@ -2736,7 +2806,7 @@ except Exception as e:
             )
         self.logger.info(f"🔍 Generated {len(ohlcv_price_features)} OHLCV price features")
         if ohlcv_price_features:
-        self.logger.info(f"🔍 OHLCV price feature names: {list(ohlcv_price_features.keys())}")
+    self.logger.info(f"🔍 OHLCV price feature names: {list(ohlcv_price_features.keys())}")
         # Filter out any coroutine features before updating
             filtered_ohlcv_price_features = filter_coroutines(ohlcv_price_features = "ohlcv_price")
             features.update(filtered_ohlcv_price_features)
@@ -2746,9 +2816,11 @@ except Exception as e:
         self.logger.info("🔍 Generating fractional differentiation features...")
         if self.enable_fractional_diff and self.fractional_feature_generator:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Combine price and volume data for fractional differentiation
                 combined_data = price_data.copy()
         if volume_data is not None and not volume_data.empty:
@@ -2768,13 +2840,13 @@ except Exception as e:
 
         self.logger.info(f"🔍 Generated {len(frac_diff_features)} fractional differentiation features")
         if frac_diff_features:
-        self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
+    self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
                     features.update(frac_diff_features)
         self.logger.info(f"🔍 Total features after fractional differentiation: {len(features)}")
                 else:
         self.logger.warning("⚠️ No fractional differentiation features generated")
         except Exception as e:
-        self.logger.warning(f"⚠️ Fractional differentiation feature generation failed: {e}")
+    self.logger.warning(f"⚠️ Fractional differentiation feature generation failed: {e}")
         else:
         self.logger.info("🔍 Fractional differentiation disabled or not available")
 
@@ -2788,28 +2860,32 @@ except Exception as e:
                 else:
         # Normalize incoming sr_levels to the format expected by the calculator
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if "support" not in sr_levels and "support_levels" in sr_levels:
                             sr_levels = {
                                 "support": [
-                                    lvl["price"] if isinstance(lvl = dict) and "price" in lvl else float(lvl)
+                                    lvl["price"] if isinstance(lvl = dict) and "price" in lvl else:
+    float(lvl)
         for lvl in sr_levels.get("support_levels" = [])
                                 ],
                                 "resistance": [
-                                    lvl["price"] if isinstance(lvl = dict) and "price" in lvl else float(lvl)
+                                    lvl["price"] if isinstance(lvl = dict) and "price" in lvl else:
+    float(lvl)
         for lvl in sr_levels.get("resistance_levels", [])
                                 ],
                             }
                         elif "support" in sr_levels:
         # Ensure numeric arrays
         for k in ("support", "resistance"):
-        if k in sr_levels:
-                                    vals = sr_levels[k]
+        if k in sr_levels: vals = sr_levels[k]
         if isinstance(vals = list):
                                         sr_levels[k] = [
-                                            v["price"] if isinstance(v = dict) and "price" in v else float(v)
+                                            v["price"] if isinstance(v = dict) and "price" in v else:
+    float(v)
         for v in vals
                                         ]
         except Exception as _e:
@@ -2819,13 +2895,13 @@ except Exception as e:
                         sr_levels = self._generate_sr_levels(price_data)
 
         if sr_levels:
-                    sr_distance_features = (
+    sr_distance_features = (
         await self.sr_distance_calculator.calculate_sr_distances(
                             price_data = sr_levels = )
                     )
         self.logger.info(f"🔍 Generated {len(sr_distance_features)} S / R distance features")
         if sr_distance_features:
-        self.logger.info(f"🔍 S / R distance feature names: {list(sr_distance_features.keys())}")
+    self.logger.info(f"🔍 S / R distance feature names: {list(sr_distance_features.keys())}")
                     features.update(sr_distance_features)
         self.logger.info(f"🔍 Total features after S / R distance: {len(features)}")
                 else:
@@ -2835,12 +2911,11 @@ except Exception as e:
 
         # Wavelet transform features with caching
         self.logger.info("🔍 Generating wavelet transform features...")
-        if self.wavelet_analyzer:
-                wavelet_features = await self._get_wavelet_features_with_caching(
+        if self.wavelet_analyzer: wavelet_features = await self._get_wavelet_features_with_caching(
                     price_data = volume_data = )
         self.logger.info(f"🔍 Generated {len(wavelet_features)} wavelet features")
         if wavelet_features:
-        self.logger.info(f"🔍 Wavelet feature names: {list(wavelet_features.keys())}")
+    self.logger.info(f"🔍 Wavelet feature names: {list(wavelet_features.keys())}")
                 features.update(wavelet_features)
         self.logger.info(f"🔍 Total features after wavelet: {len(features)}")
             else:
@@ -2853,7 +2928,7 @@ except Exception as e:
             )
         self.logger.info(f"🔍 Generated {len(adaptive_features)} adaptive features")
         if adaptive_features:
-        self.logger.info(f"🔍 Adaptive feature names: {list(adaptive_features.keys())}")
+    self.logger.info(f"🔍 Adaptive feature names: {list(adaptive_features.keys())}")
             features.update(adaptive_features)
         self.logger.info(f"🔍 Total features after adaptive indicators: {len(features)}")
 
@@ -2879,9 +2954,11 @@ except Exception as e:
         if self.profit_feature_engineer and "potential_profit_pct" in price_data.columns:
         self.logger.info("🔍 Generating profit - based features...")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Create a combined DataFrame for profit - based feature engineering
                 profit_data = price_data.copy()
         if volume_data is not None and not volume_data.empty:
@@ -2895,7 +2972,7 @@ except Exception as e:
                 profit_feature_columns = [col for col in profit_features.columns if col not in original_columns]
 
         if profit_feature_columns:
-                    profit_feature_dict = {col: profit_features[col] for col in profit_feature_columns}
+    profit_feature_dict = {col: profit_features[col] for col in profit_feature_columns}
         self.logger.info(f"🔍 Generated {len(profit_feature_dict)} profit - based features")
         self.logger.info(f"🔍 Profit feature names: {list(profit_feature_dict.keys())}")
                     selected_features.update(profit_feature_dict)
@@ -2903,7 +2980,7 @@ except Exception as e:
                 else:
         self.logger.warning("⚠️ No profit - based features generated")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to generate profit - based features: {e}")
+    self.logger.warning(f"⚠️ Failed to generate profit - based features: {e}")
         else:
         self.logger.info("ℹ️ Profit - based feature engineering not available or profit data not present")
 
@@ -2916,7 +2993,7 @@ except Exception as e:
                 )
         self.logger.info(f"🔍 Generated {len(multi_timeframe_features)} multi - timeframe features")
         if multi_timeframe_features:
-        self.logger.info(f"🔍 Multi - timeframe feature names: {list(multi_timeframe_features.keys())}")
+    self.logger.info(f"🔍 Multi - timeframe feature names: {list(multi_timeframe_features.keys())}")
         # Filter out any coroutine features from multi_timeframe_features before updating
                 filtered_multi_timeframe_features = filter_coroutines(multi_timeframe_features, "multi_timeframe")
                 selected_features.update(filtered_multi_timeframe_features)
@@ -2932,16 +3009,17 @@ except Exception as e:
 
         # Enforce generator contract: ensure all values are 1D arrays of length n
             n = len(price_data)
-            sanitized: dict[str = Any] = {}
+            sanitized: dict[str, Any] = {}
             offenders: list[str] = []
         for k = v in selected_features.items():
         try: if isinstance(v = pd.Series):
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
     arr = v.values.reshape(-1)
                     elif isinstance(v = np.ndarray):
-                        arr = v.reshape(-1) if v.ndim >= 1 else None
+                        arr = v.reshape(-1) if v.ndim >= 1 else:
+    None
                     elif isinstance(v = list):
                         arr = np.asarray(v).reshape(-1)
                     else:
@@ -2949,10 +3027,8 @@ except Exception as e:
                         offenders.append(k)
                         continue
         # Align to n rows (pad left with NaN or trim head)
-        if len(arr) > n:
-                        arr = arr[-n:]
-                    elif len(arr) < n:
-                        pad = n - len(arr)
+        if len(arr) > n: arr = arr[-n:]
+                    elif len(arr) < n: pad = n - len(arr)
                         arr = np.concatenate([np.full(pad = np.nan), arr])
                     sanitized[k] = arr
         except Exception:
@@ -2960,7 +3036,7 @@ except Exception as e:
                     continue
 
         if offenders:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Feature generator contract: skipped scalar / invalid outputs for features: {offenders[:20]}"
                     + (" ..." if len(offenders) > 20 else ""),
                 )
@@ -2993,7 +3069,7 @@ except Exception as e:
 
         self.logger.info(f"🔍 Generated {len(enhanced_features)} difference and acceleration features")
         if enhanced_features:
-        self.logger.info(f"🔍 Difference / acceleration feature names: {list(enhanced_features.keys())}")
+    self.logger.info(f"🔍 Difference / acceleration feature names: {list(enhanced_features.keys())}")
 
         # Validate enhanced features before merging to ensure no coroutines
                 valid_enhanced_features = {}
@@ -3021,9 +3097,11 @@ except Exception as e:
 
         # 🔍 LOOKAHEAD BIAS DETECTION - Check for temporal alignment issues
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Convert to DataFrame for detection
                 features_df = pd.DataFrame(sanitized)
 
@@ -3054,7 +3132,7 @@ except Exception as e:
         self.logger.warning(f"   ⚠️ {warning}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Lookahead bias detection failed: {e}")
+    self.logger.warning(f"⚠️ Lookahead bias detection failed: {e}")
 
         # Final summary logging
         self.logger.info(
@@ -3092,21 +3170,21 @@ except Exception as e:
         self.logger.info(f"📊 Feature categories: {feature_categories}")
 
         try:
-        self.logger.info(
+    self.logger.info(
                     f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(sanitized.keys())}",
                 )
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log vectorized feature list: {e}")
+    self.logger.warning(f"⚠️ Failed to log vectorized feature list: {e}")
 
         return sanitized
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
+    self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
         return {}
 
     @validate_wavelet_data_quality
     async def _get_wavelet_features_with_caching(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> dict[str, Any]:
         """Get wavelet features with caching support.
 
         Args:
@@ -3118,9 +3196,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if not self.wavelet_cache:
         # Fallback to direct computation if cache is not available
         return await self.wavelet_analyzer.analyze_wavelet_transforms(
@@ -3133,7 +3213,8 @@ except Exception as e:
                 price_data = wavelet_config = {
                     "volume_data_shape": volume_data.shape
         if volume_data is not None
-                    else None,
+                    else:
+    None,
                 },
             )
 
@@ -3143,7 +3224,7 @@ except Exception as e:
                 cached_features = metadata = self.wavelet_cache.load_from_cache(
                     cache_key = )
         if cached_features:
-        return cached_features
+    return cached_features
         # Fallthrough to recompute if cache was empty or invalid
 
         # Compute wavelet features
@@ -3156,23 +3237,24 @@ except Exception as e:
             metadata = {
                 "data_shape": price_data.shape = "volume_data_shape": volume_data.shape
         if volume_data is not None
-                else None = "computation_time": time.time(),
+                else:
+    None = "computation_time": time.time(),
             }
 
             cache_success = self.wavelet_cache.save_to_cache(
                 cache_key = wavelet_features = metadata = )
         if cache_success:
-        self.logger.info(f"💾 Cached wavelet features: {cache_key}")
+    self.logger.info(f"💾 Cached wavelet features: {cache_key}")
             else:
         self.logger.warning(f"⚠️ Failed to cache wavelet features: {cache_key}")
 
         return wavelet_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error getting wavelet features with caching: {e}")
+    self.logger.exception(f"🚨 Error getting wavelet features with caching: {e}")
         return {}
 
-    def get_cache_stats(self) -> dict[str = Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         if self.wavelet_cache:
         return self.wavelet_cache.get_cache_stats()
@@ -3186,12 +3268,14 @@ except Exception as e:
 
     async def _engineer_microstructure_features_vectorized(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Engineer market microstructure features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     self.logger.info("🔍 Starting microstructure feature engineering...")
             features = {}
 
@@ -3241,24 +3325,23 @@ except Exception as e:
 
         # Order book wall features (stationary): use returns / diffs
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if order_flow_data is not None:
         # Expect optional columns: bid_wall_price / size = ask_wall_price / size = mid
                     df = order_flow_data
-        if "mid" in df.columns:
-                        mid = pd.Series(df["mid"].values = index = df.index).reindex(
+        if "mid" in df.columns: mid = pd.Series(df["mid"].values = index = df.index).reindex(
                             price_data.index = method="ffill"
                         )
-                    else:
-                        mid = price_data["close"].astype(float)
+                    else: mid = price_data["close"].astype(float)
         # Distances to nearest walls in pct
         for side in ["bid", "ask"]:
                         pcol = f"{side}_wall_price"
                         scol = f"{side}_wall_size"
-        if pcol in df.columns:
-                            wall_p = pd.Series(df[pcol].values = index = df.index).reindex(
+        if pcol in df.columns: wall_p = pd.Series(df[pcol].values = index = df.index).reindex(
                                 price_data.index = method="ffill"
                             )
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -3432,9 +3515,11 @@ except Exception as e:
 
         # Additional kline / aggTrades - based proxies
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # BB z - score
                 close = price_data["close"].astype(float)
                 sma20 = close.rolling(20 = min_periods = 5).mean()
@@ -3452,7 +3537,7 @@ except Exception as e:
                 features["ema20_slope"] = ema20.diff(3).fillna(0)
                 features["sma50_slope"] = sma50.diff(3).fillna(0)
         except Exception as e:
-        self.logger.debug(f"⚠️ Error calculating MA slopes: {e}")
+    self.logger.debug(f"⚠️ Error calculating MA slopes: {e}")
         # Use fallback values
                 features["ema20_slope"] = pd.Series(0 = index = close.index)
                 features["sma50_slope"] = pd.Series(0 = index = close.index)
@@ -3460,7 +3545,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
+    self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
         return {}
 
     def _calculate_market_depth_vectorized(
@@ -3474,16 +3559,18 @@ except Exception as e:
             close = price_data["close"].astype(float)
         return close.rolling(10 = min_periods = 1).std().fillna(0)
         except Exception as e:
-        self.logger.exception(f"Error calculating market depth: {e}")
+    self.logger.exception(f"Error calculating market depth: {e}")
         return pd.Series(0 = index = price_data.index)
 
     def _calculate_bid_ask_spread_vectorized(
         self = price_data: pd.DataFrame = ) -> pd.Series:
         """Calculate bid - ask spread using aggtrades data for accurate spread estimation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if "close" not in price_data.columns:
         return pd.Series(0.001 = index = price_data.index)  # Default 0.1% spread
 
@@ -3537,8 +3624,7 @@ except Exception as e:
                 spread_pct += trade_adjustment
 
         # Use volume ratio if available for additional adjustment
-        if "volume_ratio" in price_data.columns:
-                    volume_ratio = price_data["volume_ratio"].astype(float)
+        if "volume_ratio" in price_data.columns: volume_ratio = price_data["volume_ratio"].astype(float)
         # Lower volume ratio (less trade volume relative to kline volume) indicates wider spreads
                     volume_adjustment = (
                         1 - volume_ratio.clip(0 = 1)
@@ -3571,8 +3657,7 @@ except Exception as e:
             spread_proxy = volatility * 0.05  # Scale to 5% max
 
         # Add volume - based adjustment if available
-        if "volume" in price_data.columns:
-                volume = price_data["volume"].astype(float)
+        if "volume" in price_data.columns: volume = price_data["volume"].astype(float)
                 volume_ma = volume.rolling(20 = min_periods = 1).mean()
                 volume_ratio = volume / volume_ma.replace(0 = 1)
         # Lower volume ratio increases spread
@@ -3590,15 +3675,17 @@ except Exception as e:
             )
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating bid - ask spread: {e}")
+    self.logger.exception(f"🚨 Error calculating bid - ask spread: {e}")
         return pd.Series(0.001 = index = price_data.index)  # Default 0.1% spread
 
-    def _track_nan_origins(self = stage: str = data_dict: dict[str = Any]) -> None:
+    def _track_nan_origins(self = stage: str = data_dict: dict[str, Any]) -> None:
         """Track NaN values throughout the feature engineering pipeline to identify origins."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     nan_report = {}
             total_nans = 0
 
@@ -3660,29 +3747,31 @@ except Exception as e:
         # Remove the LOW logging for 0% or low NaN values
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in NaN tracking for {stage}: {e}")
+    self.logger.exception(f"🚨 Error in NaN tracking for {stage}: {e}")
 
     def _choose_cwt_method(self = signal_length: int) -> str:
         """Choose the appropriate CWT method based on signal length."""
         try:
-        if self.cwt_method_preference == "conv":
+    if self.cwt_method_preference == "conv":
         return "conv"
         # Auto selection: use FFT for longer signals = direct conv for small
         if signal_length >= self.cwt_fft_threshold:
         return "fft"
         return "conv"
         except Exception as e:
-        self.logger.exception(f"Error choosing CWT method: {e}")
+    self.logger.exception(f"Error choosing CWT method: {e}")
         return "conv"
 
     @validate_ohlcv_data_quality
     def _engineer_ohlcv_price_features_vectorized(
-        self = price_data: pd.DataFrame, ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Engineer basic OHLCV - based technical indicators using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Ensure we have the required OHLCV columns
@@ -3846,17 +3935,19 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering OHLCV features: {e}")
+    self.logger.exception(f"🚨 Error engineering OHLCV features: {e}")
         return {}
 
     @validate_data_quality(validation_level = ValidationLevel.WARNING)
     def _engineer_adaptive_indicators_vectorized(
-        self = price_data: pd.DataFrame, ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         if "close" not in price_data.columns:
@@ -3901,11 +3992,10 @@ except Exception as e:
             )
 
         # Convert to int safely after handling non - finite values
-        try:
-                adaptive_period = adaptive_period.astype(int)
+        try: adaptive_period = adaptive_period.astype(int)
         self.logger.debug("🔍 Successfully converted adaptive_period to int")
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Error converting adaptive_period to int: {e}, using default values",
                 )
         self.logger.debug(
@@ -3931,13 +4021,12 @@ except Exception as e:
             )
 
         # Convert to int safely after handling non - finite values
-        try:
-                adaptive_rsi_period = adaptive_rsi_period.astype(int)
+        try: adaptive_rsi_period = adaptive_rsi_period.astype(int)
         self.logger.debug(
                     "🔍 Successfully converted adaptive_rsi_period to int",
                 )
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Error converting adaptive_rsi_period to int: {e}, using default values",
                 )
         self.logger.debug(
@@ -3955,8 +4044,7 @@ except Exception as e:
                     delta = price_slice - price_slice.shift(1)
                     gain = delta.where(delta > 0 = 0).mean()
                     loss = (-delta.where(delta < 0 = 0)).mean()
-        if loss != 0:
-                        rs = gain / loss
+        if loss != 0: rs = gain / loss
                         adaptive_rsi.iloc[i] = 100 - (100 / (1 + rs))
                     else:
                         adaptive_rsi.iloc[i] = 50
@@ -3978,17 +4066,19 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering adaptive indicators: {e}")
+    self.logger.exception(f"🚨 Error engineering adaptive indicators: {e}")
         self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
         return {}
 
     def _select_optimal_features_vectorized(
-        self = features: dict[str = Any], ) -> dict[str = Any]:
+        self = features: dict[str, Any], ) -> dict[str, Any]:
         """Select optimal features based on variance and correlation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if not features:
         return features
 
@@ -4027,8 +4117,7 @@ except Exception as e:
 
         # Log details about the removed features for debugging
         for feature in constant_features:
-        if feature in variance.index:
-                        feature_variance = variance[feature]
+        if feature in variance.index: feature_variance = variance[feature]
         self.logger.debug(
                             f"🔍 Removed feature '{feature}' with variance: {feature_variance:.2e}",
                         )
@@ -4043,18 +4132,20 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error selecting optimal features: {e}")
+    self.logger.exception(f"🚨 Error selecting optimal features: {e}")
         return features
 
     @validate_multi_timeframe_data_quality
     @cache_feature_engineering(max_memory_mb = 2048)
     async def _engineer_multi_timeframe_features_vectorized(
-        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None = sr_levels: dict[str = Any] | None = None = ) -> dict[str = Any]:
+        self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None = sr_levels: dict[str, Any] | None = None = ) -> dict[str, Any]:
         """Engineer multi - timeframe features with optimized lookback periods."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
@@ -4130,7 +4221,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.error(f"❌ Error in enhanced multi - timeframe feature engineering: {e}")
+    self.logger.error(f"❌ Error in enhanced multi - timeframe feature engineering: {e}")
         # Fallback to traditional method
         return await self._generate_traditional_multi_timeframe_features(
                 price_data = volume_data = order_flow_data
@@ -4139,9 +4230,11 @@ except Exception as e:
     def _get_matrix_optimization_results(self) -> Optional[Dict[str = Any]]:
         """Get matrix optimization results if available."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Check for matrix optimization results in pipeline state or cache
             matrix_results_path = "data / optimization_results / matrix_diverse_lookback_optimization_results.json"
         if Path(matrix_results_path).exists():
@@ -4156,7 +4249,7 @@ except Exception as e:
 
         return None
         except Exception as e:
-        self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
+    self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
         return None
 
     def _should_use_optimized_features(self) -> bool:
@@ -4186,7 +4279,7 @@ except Exception as e:
         return pd.read_pickle(regime_path)
         return None
         except Exception as e:
-        self.logger.debug(f"⚠️ Could not load regime labels: {e}")
+    self.logger.debug(f"⚠️ Could not load regime labels: {e}")
         return None
 
     async def _generate_traditional_multi_timeframe_features(
@@ -4194,9 +4287,11 @@ except Exception as e:
     ) -> Dict[str = Any]:
         """Generate traditional multi - timeframe features (fallback method)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
@@ -4210,20 +4305,22 @@ except Exception as e:
         # Apply data type optimization to input data
             processed_price = optimize_feature_engineering_pipeline(processed_price = stage="input")
             processed_volume = optimize_feature_engineering_pipeline(processed_volume = stage="input")
-        if processed_order_flow is not None:
-                processed_order_flow = optimize_feature_engineering_pipeline(processed_order_flow = stage="input")
+        if processed_order_flow is not None: processed_order_flow = optimize_feature_engineering_pipeline(processed_order_flow = stage="input")
 
         # Generate multi - timeframe features using resampling
             timeframes = ["1m", "5m", "15m", "30m", "1h"]
 
         for tf in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Resample price data to different timeframes
                     tf_price = self._resample_price_data(processed_price = tf)
-                    tf_volume = self._resample_volume_data(processed_volume = tf) if processed_volume is not None else None
+                    tf_volume = self._resample_volume_data(processed_volume = tf) if processed_volume is not None else:
+    None
 
         if tf_price is not None and not tf_price.empty:
         # Log data quality for debugging
@@ -4259,7 +4356,7 @@ except Exception as e:
 
         # Log feature generation results
         if tf_features:
-                            features.update(tf_features)
+    features.update(tf_features)
         self.logger.info(f"✅ Generated {len(tf_features)} features for {tf} timeframe")
         self.logger.debug(f"🔍 {tf} features: {list(tf_features.keys())}")
                         else:
@@ -4268,7 +4365,7 @@ except Exception as e:
         self.logger.info(f"ℹ️ Skipping {tf} timeframe - no data available after resampling")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to generate features for {tf} timeframe: {e}")
+    self.logger.warning(f"⚠️ Failed to generate features for {tf} timeframe: {e}")
                     continue
 
         # Generate additional cross - timeframe features
@@ -4279,14 +4376,13 @@ except Exception as e:
         self._log_multi_timeframe_summary(features = timeframes)
 
         # Generate regime - aware features if HMM data is available
-        try:
-                regime_features = await self._generate_regime_aware_features(processed_price = processed_volume)
+        try: regime_features = await self._generate_regime_aware_features(processed_price = processed_volume)
         if isinstance(regime_features = dict):
                     features.update(regime_features)
                 else:
         self.logger.warning(f"⚠️ Regime features not a dict: {type(regime_features)}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Error generating regime features: {e}")
+    self.logger.warning(f"⚠️ Error generating regime features: {e}")
                 regime_features = {}
 
         # Apply data type optimization to output
@@ -4300,7 +4396,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.error(f"❌ Error in traditional multi - timeframe feature engineering: {e}")
+    self.logger.error(f"❌ Error in traditional multi - timeframe feature engineering: {e}")
         return {}
         self.logger.warning("⚠️ No valid features generated after validation")
 
@@ -4310,16 +4406,18 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering multi - timeframe features: {e}")
+    self.logger.exception(f"🚨 Error engineering multi - timeframe features: {e}")
         # Don't fall back to basic features - let the error propagate
             raise
 
-    def _remove_constant_features(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _remove_constant_features(self = features: dict[str, Any]) -> dict[str, Any]:
         """Remove features with zero or near - zero variance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     non_constant_features = {}
             constant_features = []
             variance_threshold = 1e - 12  # Very small threshold for true constants
@@ -4337,20 +4435,22 @@ except Exception as e:
                     non_constant_features[key] = value
 
         if constant_features:
-        self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+    self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
 
         return non_constant_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error removing constant features: {e}")
+    self.logger.exception(f"❌ Error removing constant features: {e}")
         return features
 
-    def _ensure_pickle_safe_features(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _ensure_pickle_safe_features(self = features: dict[str, Any]) -> dict[str, Any]:
         """Ensure all features are pickle - safe by removing any coroutines or async objects."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     pickle_safe_features = {}
             removed_features = []
 
@@ -4371,12 +4471,12 @@ except Exception as e:
                 pickle_safe_features[key] = value
 
         if removed_features:
-        self.logger.info(f"✅ Removed {len(removed_features)} non - pickle - safe features: {removed_features}")
+    self.logger.info(f"✅ Removed {len(removed_features)} non - pickle - safe features: {removed_features}")
 
         return pickle_safe_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error ensuring pickle safety: {e}")
+    self.logger.exception(f"❌ Error ensuring pickle safety: {e}")
         return features
 
     def _resample_price_data(self = price_data: pd.DataFrame = timeframe: str) -> pd.DataFrame | None:
@@ -4391,9 +4491,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if price_data.empty:
         return None
 
@@ -4410,7 +4512,7 @@ except Exception as e:
         return resampled_data
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error resampling price data to {timeframe}: {e}")
+    self.logger.exception(f"🚨 Error resampling price data to {timeframe}: {e}")
         return None
 
     def _resample_volume_data(self = volume_data: pd.DataFrame = timeframe: str) -> pd.DataFrame | None:
@@ -4425,9 +4527,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if volume_data is None or volume_data.empty:
         return None
 
@@ -4444,15 +4548,17 @@ except Exception as e:
         return resampled_data
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error resampling volume data to {timeframe}: {e}")
+    self.logger.exception(f"🚨 Error resampling volume data to {timeframe}: {e}")
         return None
 
-    def _generate_timeframe_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame = timeframe: str) -> dict[str = Any]:
+    def _generate_timeframe_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame = timeframe: str) -> dict[str, Any]:
         """Generate features for a specific timeframe with improved NaN handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Get minimum data requirement for this timeframe
@@ -4500,8 +4606,7 @@ except Exception as e:
                 min_periods = 2
 
         # Moving averages (only if we have enough data)
-        if len(close) >= min_periods:
-                sma = close.rolling(sma_window = min_periods = min_periods).mean()
+        if len(close) >= min_periods: sma = close.rolling(sma_window = min_periods = min_periods).mean()
                 sma = sma.fillna(method="ffill").fillna(method="bfill").fillna(0)
         if sma.var() > 1e - 12:  # Check for meaningful variance
                     features[f"sma_{sma_window}_{timeframe}"] = sma
@@ -4512,8 +4617,7 @@ except Exception as e:
                     features[f"ema_{min(12 = len(close)//2)}_{timeframe}"] = ema
 
         # Momentum indicators (only if we have enough data)
-        if len(close) >= min_periods:
-                rsi = self._calculate_rsi(close = rsi_window)
+        if len(close) >= min_periods: rsi = self._calculate_rsi(close = rsi_window)
                 rsi = rsi.fillna(method="ffill").fillna(method="bfill").fillna(50)
         if rsi.var() > 1e - 12:
                     features[f"rsi_{timeframe}"] = rsi
@@ -4524,8 +4628,7 @@ except Exception as e:
                     features[f"macd_{timeframe}"] = macd
 
         # Volatility (only if we have enough data)
-        if len(close) >= min_periods:
-                returns = close.pct_change()
+        if len(close) >= min_periods: returns = close.pct_change()
         # Handle NaN values properly
                 returns = returns.fillna(method="ffill").fillna(method="bfill").fillna(0)
                 volatility = returns.rolling(vol_window = min_periods = min_periods).std()
@@ -4534,12 +4637,10 @@ except Exception as e:
                     features[f"volatility_{timeframe}"] = volatility
 
         # Volume features if available
-        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
-                volume = volume_data["volume"].astype(float)
+        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns: volume = volume_data["volume"].astype(float)
                 volume = volume.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
-        if len(volume) >= min_periods and volume.var() > 1e - 12:
-                    volume_ma = volume.rolling(vol_window = min_periods = min_periods).mean()
+        if len(volume) >= min_periods and volume.var() > 1e - 12: volume_ma = volume.rolling(vol_window = min_periods = min_periods).mean()
                     volume_ma = volume_ma.fillna(method="ffill").fillna(method="bfill").fillna(0)
         if volume_ma.var() > 1e - 12:
                         features[f"volume_ma_{timeframe}"] = volume_ma
@@ -4551,8 +4652,7 @@ except Exception as e:
                         features[f"volume_ratio_{timeframe}"] = volume_ratio
 
         # Price position (only if we have enough data)
-        if len(close) >= min_periods:
-                high_roll = high.rolling(vol_window = min_periods = min_periods).max()
+        if len(close) >= min_periods: high_roll = high.rolling(vol_window = min_periods = min_periods).max()
                 low_roll = low.rolling(vol_window = min_periods = min_periods).min()
                 high_roll = high_roll.fillna(method="ffill").fillna(method="bfill").fillna(close)
                 low_roll = low_roll.fillna(method="ffill").fillna(method="bfill").fillna(close)
@@ -4583,15 +4683,17 @@ except Exception as e:
         return valid_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating features for {timeframe}: {e}")
+    self.logger.exception(f"🚨 Error generating features for {timeframe}: {e}")
         return {}
 
-    def _generate_cross_timeframe_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame | None = None) -> dict[str = Any]:
+    def _generate_cross_timeframe_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame | None = None) -> dict[str, Any]:
         """Generate comprehensive cross - timeframe features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         if price_data.empty or len(price_data) < 100:  # Need sufficient data
@@ -4658,8 +4760,7 @@ except Exception as e:
                                 features[f"volatility_std_{tf1}m_{tf2}m"] = vol_std
 
         # 3. Cross - timeframe volume features (with validation)
-        if volume_data is not None and isinstance(volume_data = pd.DataFrame) and not volume_data.empty and "volume" in volume_data.columns:
-                volume = volume_data["volume"].astype(float)
+        if volume_data is not None and isinstance(volume_data = pd.DataFrame) and not volume_data.empty and "volume" in volume_data.columns: volume = volume_data["volume"].astype(float)
         if volume.var() > 1e - 12:  # Only if volume has meaningful variance
         for i = tf1 in enumerate(timeframes[:3]):
         for tf2 in timeframes[i + 1:4]:
@@ -4740,8 +4841,7 @@ except Exception as e:
                         bb_1 = self._calculate_bollinger_bands(close = window = std)
                         bb_2 = self._calculate_bollinger_bands(close = window * 2 = std)
 
-        if bb_1 is not None and bb_2 is not None:
-                            bb_diff = bb_1 - bb_2
+        if bb_1 is not None and bb_2 is not None: bb_diff = bb_1 - bb_2
         if bb_diff.var() > 1e - 12:
                                 features[f"bb_position_diff_{window}_{std}"] = bb_diff
 
@@ -4752,8 +4852,7 @@ except Exception as e:
                         stoch_1 = self._calculate_stochastic(high = low, close = k_period, d_period)
                         stoch_2 = self._calculate_stochastic(high = low = close = k_period * 2 = d_period * 2)
 
-        if stoch_1 is not None and stoch_2 is not None:
-                            stoch_diff = stoch_1 - stoch_2
+        if stoch_1 is not None and stoch_2 is not None: stoch_diff = stoch_1 - stoch_2
         if stoch_diff.var() > 1e - 12:
                                 features[f"stoch_diff_{k_period}_{d_period}"] = stoch_diff
 
@@ -4773,20 +4872,19 @@ except Exception as e:
         return valid_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating cross - timeframe features: {e}")
+    self.logger.exception(f"🚨 Error generating cross - timeframe features: {e}")
         return {}
 
     def _calculate_rsi(self = close: pd.Series = period: int = 14) -> pd.Series:
         """Calculate RSI for a given period."""
-        try:
-            delta = close.diff()
+        try: delta = close.diff()
             gain = (delta.where(delta > 0 = 0)).rolling(window = period = min_periods = 1).mean()
             loss = (-delta.where(delta < 0 = 0)).rolling(window = period = min_periods = 1).mean()
             rs = gain / (loss + 1e - 8)
             rsi = 100 - (100 / (1 + rs))
         return rsi.fillna(50)
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating RSI: {e}")
+    self.logger.exception(f"🚨 Error calculating RSI: {e}")
         return pd.Series(50 = index = close.index)
 
     def _calculate_macd(self = close: pd.Series = fast: int = 12, slow: int = 26 = signal: int = 9) -> pd.Series:
@@ -4795,7 +4893,7 @@ except Exception as e:
             ema_slow = close.ewm(span = slow = adjust = False).mean()
         return ema_fast - ema_slow
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating MACD: {e}")
+    self.logger.exception(f"🚨 Error calculating MACD: {e}")
         return pd.Series(0 = index = close.index)
 
     def _calculate_bollinger_bands(self = close: pd.Series = window: int = std: float) -> pd.Series | None:
@@ -4817,19 +4915,23 @@ except Exception as e:
         except Exception:
         return None
 
-    async def _generate_regime_aware_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame | None = None) -> dict[str = Any]:
+    async def _generate_regime_aware_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame | None = None) -> dict[str, Any]:
         """Generate regime - aware features if HMM data is available."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Try to load HMM regime data
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     import glob
 
         # Look for HMM regime files
@@ -4854,29 +4956,31 @@ except Exception as e:
         self.logger.debug("ℹ️ No HMM regime data found = skipping regime - aware features")
 
         except Exception as e:
-        self.logger.debug(f"ℹ️ Could not load HMM regime data: {e}")
+    self.logger.debug(f"ℹ️ Could not load HMM regime data: {e}")
 
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating regime - aware features: {e}")
+    self.logger.exception(f"🚨 Error generating regime - aware features: {e}")
         return {}
 
-    def _validate_and_clean_features(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _validate_and_clean_features(self = features: dict[str, Any]) -> dict[str, Any]:
         """Validate and clean generated features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cleaned_features = {}
             duplicate_count = 0
             constant_count = 0
 
         for feature_name = feature_value in features.items():
         try: if isinstance(feature_value = pd.Series):
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
     # Check for excessive NaN values (more lenient threshold)
                         nan_ratio = feature_value.isna().sum() / len(feature_value)
         if nan_ratio > 0.8:  # More than 80% NaN (increased from 50%)
@@ -4926,7 +5030,7 @@ except Exception as e:
                         cleaned_features[feature_name] = feature_value
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error cleaning feature {feature_name}: {e}")
+    self.logger.warning(f"⚠️ Error cleaning feature {feature_name}: {e}")
                     continue
 
         if duplicate_count > 0:
@@ -4939,23 +5043,27 @@ except Exception as e:
         return cleaned_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error validating and cleaning features: {e}")
+    self.logger.exception(f"🚨 Error validating and cleaning features: {e}")
         return features
 
-    def _ensure_pickle_safe_features(self = features: dict[str = Any]) -> dict[str = Any]:
+    def _ensure_pickle_safe_features(self = features: dict[str, Any]) -> dict[str, Any]:
         """Ensure features are pickle - safe by removing any async objects or coroutines."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     safe_features = {}
             removed_count = 0
 
         for feature_name = feature_value in features.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Check if the value is a coroutine or async object
         if hasattr(feature_value = "__await__") or hasattr(feature_value = "send"):
         self.logger.warning(f"⚠️ Removing async object from feature {feature_name}")
@@ -4973,7 +5081,7 @@ except Exception as e:
                     safe_features[feature_name] = feature_value
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error checking pickle safety for feature {feature_name}: {e}")
+    self.logger.warning(f"⚠️ Error checking pickle safety for feature {feature_name}: {e}")
                     continue
 
         if removed_count > 0:
@@ -4982,15 +5090,17 @@ except Exception as e:
         return safe_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error ensuring pickle safety: {e}")
+    self.logger.exception(f"🚨 Error ensuring pickle safety: {e}")
         return features
 
-    def _generate_fallback_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame) -> dict[str = Any]:
+    def _generate_fallback_features(self = price_data: pd.DataFrame = volume_data: pd.DataFrame) -> dict[str, Any]:
         """Generate fallback features when main feature engineering fails."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         if price_data.empty:
@@ -5006,8 +5116,7 @@ except Exception as e:
             features["volatility"] = close.pct_change().rolling(20).std().fillna(0)
 
         # Basic volume features
-        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
-                volume = volume_data["volume"].astype(float)
+        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns: volume = volume_data["volume"].astype(float)
                 features["volume_ma_5"] = volume.rolling(5 = min_periods = 1).mean()
                 features["volume_ma_20"] = volume.rolling(20 = min_periods = 1).mean()
                 features["volume_ratio"] = volume / (volume.rolling(20 = min_periods = 1).mean() + 1e - 8)
@@ -5016,15 +5125,17 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating fallback features: {e}")
+    self.logger.exception(f"🚨 Error generating fallback features: {e}")
         return {}
 
     def _calculate_regime_stability(self = cluster_ids: np.ndarray) -> np.ndarray:
         """Calculate regime stability based on cluster transitions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     stability = np.zeros(len(cluster_ids))
 
         for i in range(1 = len(cluster_ids):
@@ -5037,13 +5148,12 @@ except Exception as e:
         return stability
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating regime stability: {e}")
+    self.logger.exception(f"🚨 Error calculating regime stability: {e}")
         return np.zeros(len(cluster_ids))
 
     def _calculate_regime_transitions(self = cluster_ids: np.ndarray) -> np.ndarray:
         """Calculate regime transition indicators."""
-        try:
-            transitions = np.zeros(len(cluster_ids))
+        try: transitions = np.zeros(len(cluster_ids))
 
         for i in range(1 = len(cluster_ids):
         if cluster_ids[i] != cluster_ids[i - 1]:
@@ -5052,22 +5162,23 @@ except Exception as e:
         return transitions
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating regime transitions: {e}")
+    self.logger.exception(f"🚨 Error calculating regime transitions: {e}")
         return np.zeros(len(cluster_ids))
 
     async def _generate_meta_labels_vectorized(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = order_flow_data: pd.DataFrame | None = None
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate meta - labels for ensemble learning."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Simple meta - label based on price momentum
-        if "close" in price_data.columns:
-                close = price_data["close"].astype(float)
+        if "close" in price_data.columns: close = price_data["close"].astype(float)
                 returns = close.pct_change().fillna(0)
 
         # Volatility regime
@@ -5083,22 +5194,23 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating meta - labels: {e}")
+    self.logger.exception(f"🚨 Error generating meta - labels: {e}")
         return {}
 
     async def _generate_explicit_meta_labels_vectorized(
         self = price_data: pd.DataFrame = volume_data: pd.DataFrame = timeframe: str = "1m"
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate explicit meta - labels for specific timeframes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     features = {}
 
         # Simple explicit meta - labels
-        if "close" in price_data.columns:
-                close = price_data["close"].astype(float)
+        if "close" in price_data.columns: close = price_data["close"].astype(float)
 
         # Price position relative to recent range
                 high_20 = close.rolling(20 = min_periods = 1).max()
@@ -5116,7 +5228,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating explicit meta - labels: {e}")
+    self.logger.exception(f"🚨 Error generating explicit meta - labels: {e}")
         return {}
 
     @validate_step_prerequisites(
@@ -5188,7 +5300,7 @@ except Exception as e:
         context="difference and acceleration feature engineering"
     )
     async def _engineer_difference_and_acceleration_features(
-        self = features: dict[str = Any], price_data: pd.DataFrame, ) -> dict[str = Any]:
+        self = features: dict[str, Any], price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Engineer difference and acceleration features with proper normalization and interaction features.
 
         Args:
@@ -5200,9 +5312,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     enhanced_features = {}
 
         # Define lookback periods for different timeframes
@@ -5296,8 +5410,7 @@ except Exception as e:
         # Convert to pandas Series for processing
         if isinstance(feature_value = np.ndarray | list):
                     feature_series = pd.Series(feature_value = index = price_data.index)
-                else:
-                    feature_series = feature_value
+                else: feature_series = feature_value
 
         # Get candidate info
                 candidate_info = difference_candidates[feature_name]
@@ -5347,9 +5460,11 @@ except Exception as e:
 
         # Generate interaction features for high - priority combinations
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     interaction_features = await self._generate_interaction_features(valid_enhanced_features = features = price_data)
         if isinstance(interaction_features = dict):
         # Filter out any coroutine features from interaction_features before updating
@@ -5369,7 +5484,7 @@ except Exception as e:
                 else:
         self.logger.warning(f"⚠️ Interaction features not a dict: {type(interaction_features)}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
+    self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
                 interaction_features = {}
 
         # Validate that features doesn't contain coroutines before generating cross - timeframe features
@@ -5415,9 +5530,11 @@ except Exception as e:
 
         # Apply caps to control feature explosion
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     pre_total = len(final_enhanced_features)
         # Identify RAW - only keys in each category (normalized variants handled separately)
                 accel_raw = [k for k in final_enhanced_features if "_accel_" in k and not k.endswith("_norm")]
@@ -5474,7 +5591,7 @@ except Exception as e:
                         kept_keys.add(norm_key)
 
         # Rebuild final features with caps applied
-                capped_features: dict[str = Any] = {}
+                capped_features: dict[str, Any] = {}
         for k = v in final_enhanced_features.items():
         # Keep capped categories (raw + their norms)
         if k in kept_keys:
@@ -5501,7 +5618,7 @@ except Exception as e:
         return capped_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
+    self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
         return {}
 
     @handle_errors(
@@ -5527,9 +5644,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if len(series) < window:
         return series
 
@@ -5550,7 +5669,7 @@ except Exception as e:
         return z_score.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in rolling Z - score normalization: {e}")
+    self.logger.exception(f"🚨 Error in rolling Z - score normalization: {e}")
         return series.fillna(0)
 
     @handle_errors(
@@ -5571,7 +5690,7 @@ except Exception as e:
         error_context_preservation = True
     )
     async def _generate_interaction_features(
-        self = enhanced_features: dict[str = Any], original_features: dict[str = Any], price_data: pd.DataFrame, ) -> dict[str = Any]:
+        self = enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Generate comprehensive interaction features between difference / acceleration features.
 
         Args:
@@ -5583,9 +5702,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     interaction_features = {}
 
         # Validate that enhanced_features contains actual data = not coroutines
@@ -5689,8 +5810,7 @@ except Exception as e:
 
         # Generate interactions
         for feat1_name = feat2_name in selected_combinations:
-        if feat1_name in valid_features and feat2_name in valid_features:
-                    feat1 = valid_features[feat1_name]
+        if feat1_name in valid_features and feat2_name in valid_features: feat1 = valid_features[feat1_name]
                     feat2 = valid_features[feat2_name]
 
         # Additional validation to ensure features are not coroutines
@@ -5701,18 +5821,15 @@ except Exception as e:
         # Convert to pandas Series if needed
         if isinstance(feat1 = np.ndarray | list):
                         feat1_series = pd.Series(feat1 = index = price_data.index)
-                    else:
-                        feat1_series = feat1
+                    else: feat1_series = feat1
 
         if isinstance(feat2 = np.ndarray | list):
                         feat2_series = pd.Series(feat2 = index = price_data.index)
-                    else:
-                        feat2_series = feat2
+                    else: feat2_series = feat2
 
         # Ensure same length
                     min_len = min(len(feat1_series), len(feat2_series))
-        if min_len > 0:
-                        feat1_series = feat1_series.iloc[-min_len:]
+        if min_len > 0: feat1_series = feat1_series.iloc[-min_len:]
                         feat2_series = feat2_series.iloc[-min_len:]
 
         # Create multiple types of interactions
@@ -5733,7 +5850,7 @@ except Exception as e:
         return interaction_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating interaction features: {e}")
+    self.logger.exception(f"🚨 Error generating interaction features: {e}")
         return {}
 
     @handle_errors(
@@ -5754,7 +5871,7 @@ except Exception as e:
         error_context_preservation = True
     )
     async def _generate_cross_timeframe_features(
-        self = features: dict[str = Any] = price_data: pd.DataFrame, ) -> dict[str = Any]:
+        self = features: dict[str, Any] = price_data: pd.DataFrame, ) -> dict[str, Any]:
         """Generate cross - timeframe difference features.
 
         Args:
@@ -5766,9 +5883,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     cross_timeframe_features = {}
 
         # Validate that features contains actual data = not coroutines
@@ -5807,8 +5926,7 @@ except Exception as e:
                 ("macd", 5 = 1, "macd_diff_5m_1m") = ("macd_signal", 5 = 1, "macd_signal_diff_5m_1m") = ]
 
         for feature_name = long_period = short_period = output_name in cross_combinations:
-        if feature_name in valid_features:
-                    feature_value = valid_features[feature_name]
+        if feature_name in valid_features: feature_value = valid_features[feature_name]
 
         # Additional validation to ensure feature is not a coroutine
         if hasattr(feature_value, "__await__"):
@@ -5821,8 +5939,7 @@ except Exception as e:
         # Convert to pandas Series
         if isinstance(feature_value = np.ndarray | list):
                         feature_series = pd.Series(feature_value = index = price_data.index)
-                    else:
-                        feature_series = feature_value
+                    else: feature_series = feature_value
 
         if len(feature_series) > max(long_period = short_period):
         # Calculate differences at different periods
@@ -5861,11 +5978,11 @@ except Exception as e:
         return final_cross_timeframe_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating cross - timeframe features: {e}")
+    self.logger.exception(f"🚨 Error generating cross - timeframe features: {e}")
         return {}
 
     def _validate_difference_engineering_inputs(
-        self = features: dict[str = Any], price_data: pd.DataFrame, ) -> None:
+        self = features: dict[str, Any], price_data: pd.DataFrame, ) -> None:
         """Validate inputs before difference and acceleration feature engineering.
 
         Args:
@@ -5874,9 +5991,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Validate price data
         if price_data.empty:
                 msg = "Price data is empty"
@@ -5885,7 +6004,7 @@ except Exception as e:
             required_cols = ["open" = "high", "low", "close", "volume"]
             missing_cols = [col for col in required_cols if col not in price_data.columns]
         if missing_cols:
-                msg = f"Missing required columns in price data: {missing_cols}"
+    msg = f"Missing required columns in price data: {missing_cols}"
                 raise ValueError(msg)
 
         # Validate features
@@ -5894,8 +6013,7 @@ except Exception as e:
                 raise ValueError(msg)
 
         # Check for minimum data length
-        if len(price_data) < 100:
-                msg = f"Insufficient data length: {len(price_data)} < 100"
+        if len(price_data) < 100: msg = f"Insufficient data length: {len(price_data)} < 100"
                 raise ValueError(msg)
 
         # Validate feature types
@@ -5906,10 +6024,10 @@ except Exception as e:
         self.logger.info(f"✅ Validated {len(features)} features for difference engineering")
 
         except Exception as e:
-        self.logger.exception(f"❌ Validation failed for difference engineering inputs: {e}")
+    self.logger.exception(f"❌ Validation failed for difference engineering inputs: {e}")
             raise
 
-    def _validate_enhanced_features(self = enhanced_features: dict[str = Any]) -> None:
+    def _validate_enhanced_features(self = enhanced_features: dict[str, Any]) -> None:
         """Validate enhanced features before merging.
 
         Args:
@@ -5917,9 +6035,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if not enhanced_features:
         self.logger.warning("⚠️ No enhanced features generated")
                 return
@@ -5967,11 +6087,11 @@ except Exception as e:
         self.logger.info(f"  - Cross - timeframe features: {len(cross_timeframe_features)}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
+    self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
             raise
 
     def _log_feature_engineering_summary(
-        self = all_features: dict[str = Any] = enhanced_features: dict[str = Any], ) -> None:
+        self = all_features: dict[str, Any] = enhanced_features: dict[str, Any], ) -> None:
         """Log a summary of the feature engineering process.
 
         Args:
@@ -5980,9 +6100,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     # Filter out coroutine objects before logging
             valid_all_features = {}
         for key = value in all_features.items():
@@ -6028,23 +6150,25 @@ except Exception as e:
 
         # Log memory usage
         try:
-                import psutil
+    import psutil
                 memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
         self.logger.info(f"  - Memory usage: {memory_usage:.1f} MB")
         except ImportError:
         self.logger.debug("ℹ️ psutil not available = skipping memory usage logging")
         except Exception as e:
-        self.logger.debug(f"⚠️ Error logging memory usage: {e}")
+    self.logger.debug(f"⚠️ Error logging memory usage: {e}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log feature engineering summary: {e}")
+    self.logger.warning(f"⚠️ Failed to log feature engineering summary: {e}")
 
-    def _generate_sr_levels(self = price_data: pd.DataFrame) -> dict[str = Any]:
+    def _generate_sr_levels(self = price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate support / resistance levels from price data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if price_data.empty or "close" not in price_data.columns:
         self.logger.warning("⚠️ Invalid price data for S / R level generation")
         return {}
@@ -6099,7 +6223,7 @@ except Exception as e:
         return sr_levels
 
         except Exception as e:
-        self.logger.exception(f"❌ Error generating S / R levels: {e}")
+    self.logger.exception(f"❌ Error generating S / R levels: {e}")
         return {}
 
     def _handle_irregular_time_intervals(self = data: pd.DataFrame = timeframe: str) -> pd.DataFrame:
@@ -6114,9 +6238,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     if data.empty:
         return data
 
@@ -6177,7 +6303,7 @@ except Exception as e:
                 aggregation_map["volume"] = "sum"
 
         if aggregation_map:
-                resampled_data = data.resample(timeframe).agg(aggregation_map).dropna()
+    resampled_data = data.resample(timeframe).agg(aggregation_map).dropna()
             else: # Fallback: if no recognized columns = use last observation
                 resampled_data = data.resample(timeframe).last().dropna()
 
@@ -6188,7 +6314,7 @@ except Exception as e:
         return resampled_data
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error handling irregular time intervals for {timeframe}: {e}")
+    self.logger.warning(f"⚠️ Error handling irregular time intervals for {timeframe}: {e}")
         return data
 
         self.logger.exception(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")

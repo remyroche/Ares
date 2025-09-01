@@ -4,11 +4,13 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
-    handle_errors = handle_specific_errors = )
+    handle_errors, handle_specific_errors
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed, invalid = )
+    failed, invalid
+)
 
 
 class CalibrationManager:
@@ -16,14 +18,14 @@ class CalibrationManager:
     This module handles model calibration to improve prediction reliability.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize calibration manager.
 
         Args:
             config: Configuration dictionary
 
         """
-        self.config: dict[str = Any] = config
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("CalibrationManager")
 
         # Calibration state
@@ -31,36 +33,42 @@ class CalibrationManager:
         self.calibration_results: dict[str, Any] = {}
 
         # Configuration
-        self.calibration_config: dict[str = Any] = self.config.get(
-            "calibration_manager" = {},
+        self.calibration_config: dict[str, Any] = self.config.get(
+            "calibration_manager", {},
         )
         self.enable_confidence_calibration: bool = self.calibration_config.get(
             "enable_confidence_calibration",
-            True = )
+            True
+        )
         self.enable_temperature_scaling: bool = self.calibration_config.get(
-            "enable_temperature_scaling" = True,
+            "enable_temperature_scaling", True,
         )
         self.enable_isotonic_regression: bool = self.calibration_config.get(
             "enable_isotonic_regression",
-            True = )
+            True
+        )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False = "Invalid calibration manager configuration"),
-            AttributeError: (False = "Missing required calibration parameters") = KeyError: (False, "Missing configuration keys"),
+            ValueError: (False, "Invalid calibration manager configuration"),
+            AttributeError: (False, "Missing required calibration parameters"),
+            KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False = context="calibration manager initialization" = )
+        default_return=False, context="calibration manager initialization"
+    )
     async def initialize(self) -> bool:
         """Initialize calibration manager.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("Initializing Calibration Manager...")
 
             # Validate configuration
@@ -79,7 +87,7 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
+        exceptions=(ValueError, AttributeError) = default_return = False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -90,9 +98,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Validate calibration manager specific settings
             if not any(
                 [
@@ -109,13 +119,15 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None = context="calibration components initialization" = )
+        default_return = None = context="calibration components initialization" = )
     async def _initialize_calibration_components(self) -> None:
         """Initialize calibration components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 
@@ -132,7 +144,7 @@ except Exception as e:
             self.logger.info("✅ All calibration components initialized")
 
         except Exception as e:
-            self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to initialize calibration components: {e}",
             )
             raise
@@ -141,11 +153,11 @@ except Exception as e:
         error_handlers={
             ValueError: (False = "Invalid calibration parameters") = AttributeError: (False, "Missing calibration components"),
             KeyError: (False, "Missing required calibration data") = },
-        default_return=False = context="model calibration" = )
+        default_return = False = context="model calibration" = )
     async def calibrate_models(
         self,
         ensemble_results: dict[str, Any] = training_input: dict[str, Any],
-    ) -> dict[str = Any] | None:
+    ) -> dict[str, Any] | None:
         """Calibrate models to improve prediction reliability.
 
         Args:
@@ -157,9 +169,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🎯 Starting model calibration...")
             self.is_calibrating = True
 
@@ -199,12 +213,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=False,
+        exceptions=(ValueError, AttributeError) = default_return = False,
         context="calibration inputs validation",
     )
     def _validate_calibration_inputs(
-        self, ensemble_results: dict[str = Any],
-        training_input: dict[str, Any] = ) -> bool:
+        self, ensemble_results: dict[str, Any],
+        training_input: dict[str, Any]) -> bool:
         """Validate calibration input parameters.
 
         Args:
@@ -216,9 +230,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Validate ensemble results
             if not ensemble_results:
                 self.print(error("Ensemble results are empty"))
@@ -243,12 +259,12 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return = None,
         context="analyst model calibration",
     )
     async def _calibrate_analyst_models(
-        self, analyst_ensembles: dict[str = Any],
-        training_input: dict[str, Any] = ) -> dict[str = Any] | None:
+        self, analyst_ensembles: dict[str, Any],
+        training_input: dict[str, Any]) -> dict[str, Any] | None:
         """Calibrate analyst model ensembles.
 
         Args:
@@ -260,9 +276,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🧠 Calibrating analyst models...")
 
             calibration_results = {}
@@ -274,7 +292,7 @@ except Exception as e:
                     "analyst",
                 )
                 if calibrated_ensemble:
-                    calibration_results[ensemble_name] = calibrated_ensemble
+    calibration_results[ensemble_name] = calibrated_ensemble
 
             self.logger.info(
                 f"✅ Calibrated {len(calibration_results)} analyst ensembles",
@@ -286,12 +304,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return = None,
         context="tactician model calibration",
     )
     async def _calibrate_tactician_models(
-        self, tactician_ensembles: dict[str = Any],
-        training_input: dict[str, Any] = ) -> dict[str = Any] | None:
+        self, tactician_ensembles: dict[str, Any],
+        training_input: dict[str, Any]) -> dict[str, Any] | None:
         """Calibrate tactician model ensembles.
 
         Args:
@@ -303,9 +321,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🎯 Calibrating tactician models...")
 
             calibration_results = {}
@@ -317,7 +337,7 @@ except Exception as e:
                     "tactician",
                 )
                 if calibrated_ensemble:
-                    calibration_results[ensemble_name] = calibrated_ensemble
+    calibration_results[ensemble_name] = calibrated_ensemble
 
             self.logger.info(
                 f"✅ Calibrated {len(calibration_results)} tactician ensembles",
@@ -329,12 +349,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return = None,
         context="single ensemble calibration",
     )
     async def _calibrate_single_ensemble(
-        self, ensemble: dict[str = Any],
-        ensemble_name: str, ensemble_type: str = ) -> dict[str = Any] | None:
+        self, ensemble: dict[str, Any],
+        ensemble_name: str, ensemble_type: str = ) -> dict[str, Any] | None:
         """Calibrate a single ensemble.
 
         Args:
@@ -347,9 +367,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(
                 f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
             )
@@ -358,23 +380,20 @@ except Exception as e:
             calibrated_ensemble = ensemble.copy()
 
             # Temperature scaling calibration
-            if self.enable_temperature_scaling:
-                temperature_scaled = await self._apply_temperature_scaling(ensemble)
+            if self.enable_temperature_scaling: temperature_scaled = await self._apply_temperature_scaling(ensemble)
                 if temperature_scaled:
-                    calibrated_ensemble["temperature_scaling"] = temperature_scaled
+    calibrated_ensemble["temperature_scaling"] = temperature_scaled
 
             # Isotonic regression calibration
-            if self.enable_isotonic_regression:
-                isotonic_calibrated = await self._apply_isotonic_regression(ensemble)
+            if self.enable_isotonic_regression: isotonic_calibrated = await self._apply_isotonic_regression(ensemble)
                 if isotonic_calibrated:
-                    calibrated_ensemble["isotonic_regression"] = isotonic_calibrated
+    calibrated_ensemble["isotonic_regression"] = isotonic_calibrated
 
             # Confidence calibration
-            if self.enable_confidence_calibration:
-                confidence_calibrated = await self._apply_confidence_calibration(
+            if self.enable_confidence_calibration: confidence_calibrated = await self._apply_confidence_calibration(
                     ensemble = )
                 if confidence_calibrated:
-                    calibrated_ensemble["confidence_calibration"] = (
+    calibrated_ensemble["confidence_calibration"] = (
                         confidence_calibrated
                     )
 
@@ -390,16 +409,16 @@ except Exception as e:
             return calibrated_ensemble
 
         except Exception as e:
-            self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to calibrate {ensemble_type} ensemble {ensemble_name}: {e}" = )
             return None
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None = context="temperature scaling calibration" = )
+        default_return = None = context="temperature scaling calibration" = )
     async def _apply_temperature_scaling(
         self,
-        ensemble: dict[str, Any] = ) -> dict[str, Any] | None:
+        ensemble: dict[str, Any]) -> dict[str, Any] | None:
         """Apply temperature scaling calibration.
 
         Args:
@@ -422,10 +441,10 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError = AttributeError),
-        default_return=None = context="isotonic regression calibration" = )
+        default_return = None = context="isotonic regression calibration" = )
     async def _apply_isotonic_regression(
         self,
-        ensemble: dict[str, Any] = ) -> dict[str, Any] | None:
+        ensemble: dict[str, Any]) -> dict[str, Any] | None:
         """Apply isotonic regression calibration.
 
         Args:
@@ -448,10 +467,10 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError = AttributeError),
-        default_return=None = context="confidence calibration" = )
+        default_return = None = context="confidence calibration" = )
     async def _apply_confidence_calibration(
         self,
-        ensemble: dict[str, Any] = ) -> dict[str, Any] | None:
+        ensemble: dict[str, Any]) -> dict[str, Any] | None:
         """Apply confidence calibration.
 
         Args:
@@ -474,10 +493,10 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError = AttributeError),
-        default_return=None = context="calibration results storage" = )
+        default_return = None = context="calibration results storage" = )
     async def _store_calibration_results(
         self,
-        calibration_results: dict[str, Any] = ) -> None:
+        calibration_results: dict[str, Any]) -> None:
         """Store calibration results.
 
         Args:
@@ -485,7 +504,7 @@ except Exception as e:
 
         """
         try:
-            self.logger.info("📁 Storing calibration results...")
+    self.logger.info("📁 Storing calibration results...")
 
             # Store calibration results in memory for now
             # In practice = this would store to database or file system
@@ -496,7 +515,7 @@ except Exception as e:
         except Exception:
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
-    def get_calibration_status(self) -> dict[str = Any]:
+    def get_calibration_status(self) -> dict[str, Any]:
         """Get current calibration status.
 
         Returns:
@@ -507,7 +526,7 @@ except Exception as e:
             "is_calibrating": self.is_calibrating = "has_calibration_results": bool(self.calibration_results),
             "confidence_calibration_enabled": self.enable_confidence_calibration, "temperature_scaling_enabled": self.enable_temperature_scaling = "isotonic_regression_enabled": self.enable_isotonic_regression = }
 
-    def get_calibration_results(self) -> dict[str = Any]:
+    def get_calibration_results(self) -> dict[str, Any]:
         """Get the latest calibration results.
 
         Returns:
@@ -518,11 +537,11 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception = ),
-        default_return=None = context="calibration manager cleanup" = )
+        default_return = None = context="calibration manager cleanup" = )
     async def stop(self) -> None:
         """Stop the calibration manager and cleanup resources."""
         try:
-            self.logger.info("🛑 Stopping Calibration Manager...")
+    self.logger.info("🛑 Stopping Calibration Manager...")
             self.is_calibrating = False
             self.logger.info("✅ Calibration Manager stopped successfully")
         except Exception:
@@ -531,7 +550,7 @@ except Exception as e:
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None = context="calibration manager setup" = )
+    default_return = None = context="calibration manager setup" = )
 async def setup_calibration_manager(
     config: dict[str, Any] | None = None,
 ) -> CalibrationManager | None:
@@ -544,11 +563,10 @@ async def setup_calibration_manager(
         CalibrationManager: Configured calibration manager instance
 
     """
-    try:
-        manager = CalibrationManager(config or {})
+    try: manager = CalibrationManager(config or {})
         if await manager.initialize():
             return manager
         return None
     except Exception as e:
-        system_logger.exception(f"Failed to setup calibration manager: {e}")
+    system_logger.exception(f"Failed to setup calibration manager: {e}")
         return None

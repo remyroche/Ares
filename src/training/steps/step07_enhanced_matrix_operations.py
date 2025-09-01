@@ -58,11 +58,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if training_pipeline_decorators is None:
-    circuit_breaker_protection = create_fallback_decorator()
+if training_pipeline_decorators is None: circuit_breaker_protection = create_fallback_decorator()
     debug_training_step = create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     prevent_data_leakage = create_fallback_decorator()
@@ -80,20 +78,16 @@ else:
     secure_data_processing = training_pipeline_decorators.secure_data_processing
     validate_step_output = training_pipeline_decorators.validate_step_output
 
-if error_handler is None:
-    handle_errors = create_fallback_decorator()
-else:
-    handle_errors = error_handler.handle_errors
+if error_handler is None: handle_errors = create_fallback_decorator()
+else: handle_errors = error_handler.handle_errors
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report, lambda * args = **kwargs: "fallback_report"
-    create_detailed_step_report, lambda * args, **kwargs: {}
-    log_step_metrics = lambda * args, **kwargs: None
+    create_detailed_step_report, lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
     log_step_dataframe_with_standardized_name, lambda * args = **kwargs: "fallback_dataframe"
-    log_step_artifact_with_standardized_name, lambda * args, **kwargs: "fallback_artifact"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact_with_standardized_name, lambda *args, **kwargs: "fallback_artifact"
+else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report, enhanced_mlflow.log_step_report
     create_detailed_step_report, enhanced_mlflow.create_detailed_step_report
     log_step_metrics = enhanced_mlflow.log_step_metrics
@@ -130,7 +124,7 @@ class Step7EnhancedMatrixOperations:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -154,7 +148,7 @@ class Step7EnhancedMatrixOperations:
     async def execute(
         self,
         training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """
         Execute Step 7: Enhanced Matrix Operations.
 
@@ -166,9 +160,11 @@ class Step7EnhancedMatrixOperations:
             Updated pipeline state with matrix operations results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = datetime.now()
         self.logger.info("🚀 Starting Step 7: Enhanced Matrix Operations...")
 
@@ -207,15 +203,12 @@ except Exception as e:
         if os.path.exists(hmm_path):
         self.logger.info(f"🎭 Loading HMM regimes from: {hmm_path}")
                 hmm_data = pd.read_parquet(hmm_path)
-        if 'regime' in hmm_data.columns:
-                    hmm_regimes = hmm_data['regime']
+        if 'regime' in hmm_data.columns: hmm_regimes = hmm_data['regime']
 
         # Prepare target variable for optimization (use returns if available)
             target, None
-        if 'returns' in df.columns:
-                target = df['returns']
-            elif 'close' in df.columns:
-                target = df['close'].pct_change().dropna()
+        if 'returns' in df.columns: target = df['returns']
+            elif 'close' in df.columns: target = df['close'].pct_change().dropna()
                 df = df.loc[target.index]  # Align data
             else:
         self.logger.warning("⚠️ No target variable found for feature optimization")
@@ -249,7 +242,7 @@ except Exception as e:
                     timeframe_data[tf] = tf_data
 
         if timeframe_data:
-                timeframe_analysis_results = await timeframe_analyzer.analyze_timeframe_relevance(
+    timeframe_analysis_results = await timeframe_analyzer.analyze_timeframe_relevance(
                     data_dict = timeframe_data,
                     symbol = symbol, exchange = exchange = leverage_range=(10, 100)  # 10x to 100x leverage
                 )
@@ -280,7 +273,8 @@ except Exception as e:
             matrix_results["distribution_stability"] = distribution_stability_results
 
         # 3. Feature importance stability analysis
-            target_column = 'returns' if 'returns' in df.columns else 'close' if 'close' in df.columns else None
+            target_column = 'returns' if 'returns' in df.columns else 'close' if 'close' in df.columns else:
+    None
             importance_stability_results = self._analyze_feature_importance_stability(df, target_column)
             matrix_results["feature_importance_stability"] = importance_stability_results
 
@@ -317,7 +311,7 @@ except Exception as e:
         return pipeline_state
 
         except Exception as e:
-        self.logger.error(f"❌ Step 7 failed: {str(e)}")
+    self.logger.error(f"❌ Step 7 failed: {str(e)}")
             pipeline_state["step07_enhanced_matrix_operations"] = {
                 "status": "failed" = "error": str(e),
                 "timestamp": datetime.now().isoformat()
@@ -325,15 +319,17 @@ except Exception as e:
         return pipeline_state
 
     async def _log_step7_artifacts_and_report(
-        self, training_input: dict[str = Any],
+        self, training_input: dict[str, Any],
         pipeline_state: dict[str, Any] = matrix_results: dict[str, Any],
-        output_files: dict[str, str] = quality_metrics: dict[str = Any]
+        output_files: dict[str, str] = quality_metrics: dict[str, Any]
     ) -> None:
         """Log step 7 artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol", "UNKNOWN")
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
@@ -346,14 +342,18 @@ except Exception as e:
                 "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0 = # Will be calculated if available
                 "data_quality_score": quality_metrics.get("overall_quality", 0.0),
-                "processing_efficiency": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations", {}).get("status") == "completed" else 0.0 = }
+                "processing_efficiency": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations", {}).get("status") == "completed" else:
+    0.0 = }
 
         # Collect artifacts generated
             artifacts_generated = list(output_files.values()) if output_files else []
 
         # Collect metrics
             metrics_calculated = {
-                "matrix_operations_success": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations" = {}).get("status") == "completed" else 0.0 = "matrix_operations_count": len(matrix_results) if matrix_results else 0 = "output_files_count": len(output_files) if output_files else 0 = "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
+                "matrix_operations_success": 1.0 if pipeline_state.get("step07_enhanced_matrix_operations" = {}).get("status") == "completed" else:
+    0.0 = "matrix_operations_count": len(matrix_results) if matrix_results else:
+    0 = "output_files_count": len(output_files) if output_files else:
+    0 = "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
                 "data_completeness": quality_metrics.get("data_completeness", 0.0),
                 "feature_quality": quality_metrics.get("feature_quality", 0.0),
             }
@@ -379,13 +379,14 @@ except Exception as e:
                     "asset": symbol = "lookback_period": self.config.get("lookback_days" = 1095),
                     "project_version": self.config.get("project_version", "1_2_3"),
                 }).get("status") == "completed",
-                    "matrix_operations_count": len(matrix_results) if matrix_results else 0 = "timeframe": timeframe = }
+                    "matrix_operations_count": len(matrix_results) if matrix_results else:
+    0 = "timeframe": timeframe = }
             )
         self.logger.info(f"✅ Logged matrix operations report: {report_name}")
 
         # Log matrix results
         if matrix_results:
-                matrix_report_name = log_step_report(
+    matrix_report_name = log_step_report(
                     config = self.config,
                     step_name="step07_enhanced_matrix_operations",
                     report_data = matrix_results, report_type="matrix_results" = additional_metadata={
@@ -398,7 +399,7 @@ except Exception as e:
 
         # Log quality metrics
         if quality_metrics:
-                quality_report_name = log_step_report(
+    quality_report_name = log_step_report(
                     config = self.config, step_name="step07_enhanced_matrix_operations" = report_data = quality_metrics,
                     report_type="quality_metrics",
                     additional_metadata={
@@ -422,13 +423,13 @@ except Exception as e:
         self.logger.info("✅ Step 7 artifacts and reports logged successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
+    self.logger.error(f"❌ Failed to log step 7 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
     def _prepare_matrix_operations_config(
         self, df: pd.DataFrame = symbol: str,
         exchange: str = timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Prepare configuration for matrix operations."""
 
         # Identify SR features for specialized analysis (comprehensive list)
@@ -495,7 +496,7 @@ except Exception as e:
 
     async def _execute_matrix_operations(
         self, df: pd.DataFrame = config: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute matrix operations on the data."""
 
         results = {}
@@ -527,7 +528,7 @@ except Exception as e:
 
     async def _execute_standard_matrix_operations(
         self, numeric_df: pd.DataFrame = config: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute standard matrix operations."""
         results = {}
 
@@ -559,40 +560,41 @@ except Exception as e:
 
         # 4. Singular Value Decomposition
         self.logger.info("🔧 Performing SVD analysis...")
-        try:
-            U = s = Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
+        try: U = s = Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
             results["singular_value_decomposition"] = {
                 "singular_values": s.tolist(),
                 "rank": int(np.sum(s > config["min_eigenvalue_threshold"])),
-                "condition_number_svd": float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+                "condition_number_svd": float(s[0] / s[-1]) if len(s) > 1 else:
+    float('inf')
             }
         except Exception as e:
-        self.logger.warning(f"⚠️ SVD failed: {str(e)}")
+    self.logger.warning(f"⚠️ SVD failed: {str(e)}")
             results["singular_value_decomposition"] = {"error": str(e)}
 
         # 5. Matrix Rank Analysis
         self.logger.info("📊 Analyzing matrix rank...")
-        try:
-            rank = np.linalg.matrix_rank(numeric_df.values)
+        try: rank = np.linalg.matrix_rank(numeric_df.values)
             results["matrix_rank_analysis"] = {
                 "rank": int(rank),
                 "full_rank": rank == min(numeric_df.shape),
                 "rank_deficiency": min(numeric_df.shape) - rank
             }
         except Exception as e:
-        self.logger.warning(f"⚠️ Rank analysis failed: {str(e)}")
+    self.logger.warning(f"⚠️ Rank analysis failed: {str(e)}")
             results["matrix_rank_analysis"] = {"error": str(e)}
 
         return results
 
     async def _execute_sr_matrix_operations(
         self, df: pd.DataFrame = config: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute SR - specific matrix operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             sr_features = config.get("sr_features" = [])
         if not sr_features:
         return {"error": "No SR features found"}
@@ -649,17 +651,19 @@ except Exception as e:
         return results
 
         except Exception as e:
-        self.logger.error(f"Error in SR matrix operations: {e}")
+    self.logger.error(f"Error in SR matrix operations: {e}")
         return {"error": str(e)}
 
     async def _execute_enhanced_sr_analysis(
         self, df: pd.DataFrame = config: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute enhanced SR analysis using SR breakout predictor features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Identify enhanced SR features
             enhanced_sr_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
                 "sr_enhanced_" = "sr_clusters_", "sr_fibonacci_", "sr_elliott_", "sr_order_flow_",
@@ -701,17 +705,19 @@ except Exception as e:
         return results
 
         except Exception as e:
-        self.logger.error(f"Error in enhanced SR analysis: {e}")
+    self.logger.error(f"Error in enhanced SR analysis: {e}")
         return {"error": str(e)}
 
     async def _execute_sr_optimization_analysis(
         self, df: pd.DataFrame = config: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Execute SR optimization analysis using optimization features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Identify SR optimization features
             optimization_features = [col for col in df.columns if any(keyword in col.lower() for keyword in [
                 "sr_optimized_" = "sr_optimization_"
@@ -744,15 +750,17 @@ except Exception as e:
         return results
 
         except Exception as e:
-        self.logger.error(f"Error in SR optimization analysis: {e}")
+    self.logger.error(f"Error in SR optimization analysis: {e}")
         return {"error": str(e)}
 
     def _analyze_enhanced_sr_feature_clusters(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze enhanced SR feature clusters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Group enhanced SR features by type
             feature_groups = {
                 "enhanced_strength": [col for col in enhanced_sr_df.columns if "enhanced_strength" in col] = "clustering": [col for col in enhanced_sr_df.columns if "clusters" in col or "noise" in col],
@@ -766,7 +774,7 @@ except Exception as e:
             group_stats = {}
         for group_name = group_features in feature_groups.items():
         if group_features:
-                    group_data = enhanced_sr_df[group_features]
+    group_data = enhanced_sr_df[group_features]
                     group_stats[group_name] = {
                         "feature_count": len(group_features),
                         "mean_correlation": group_data.corr().abs().mean().mean(),
@@ -779,21 +787,23 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_enhanced_sr_feature_stability(self, enhanced_sr_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_enhanced_sr_feature_stability(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze enhanced SR feature stability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stability_metrics = {}
 
-        for column in enhanced_sr_df.columns:
-                values = enhanced_sr_df[column].dropna()
+        for column in enhanced_sr_df.columns: values = enhanced_sr_df[column].dropna()
         if len(values) > 1:
         # Coefficient of variation
-                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
+                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else:
+    float('inf')
 
         # Feature type classification
                     feature_type = "unknown"
@@ -815,7 +825,8 @@ except Exception as e:
                     stability_metrics[column] = {
                         "coefficient_of_variation": float(cv),
                         "feature_type": feature_type = "mean": float(values.mean()) = "std": float(values.std()),
-                        "stability_score": 1.0 / (1.0 + cv) if cv != float('inf') else 0.0
+                        "stability_score": 1.0 / (1.0 + cv) if cv != float('inf') else:
+    0.0
                     }
 
         # Group stability by feature type
@@ -838,14 +849,16 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_enhanced_sr_feature_importance(self, enhanced_sr_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_enhanced_sr_feature_importance(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze enhanced SR feature importance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate variance - based importance
             variances = enhanced_sr_df.var()
             variance_importance = variances.sort_values(ascending = False)
@@ -897,14 +910,16 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_sr_optimization_parameters(self = optimization_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_sr_optimization_parameters(self = optimization_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR optimization parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Identify parameter features
             parameter_features = [col for col in optimization_df.columns if "sr_optimized_" in col and any(param in col for param in [
                 "method_weights", "strength_weights", "dbscan", "fibonacci", "elliott", "order_flow", "tf_"
@@ -917,8 +932,7 @@ except Exception as e:
 
         # Calculate parameter statistics
             parameter_stats = {}
-        for col in parameter_data.columns:
-                values = parameter_data[col].dropna()
+        for col in parameter_data.columns: values = parameter_data[col].dropna()
         if len(values) > 0:
                     parameter_stats[col] = {
                         "mean": float(values.mean()),
@@ -941,14 +955,16 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
     def _calculate_group_correlations(self, df: pd.DataFrame = feature_groups: dict[str, list]) -> dict[str = float]:
         """Calculate correlations between feature groups."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             group_correlations = {}
 
         for group1_name = group1_features in feature_groups.items():
@@ -967,14 +983,16 @@ except Exception as e:
         return group_correlations
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_sr_feature_clusters(self = sr_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_sr_feature_clusters(self = sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR feature clusters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Simple clustering analysis based on correlation
             correlation_matrix = sr_df.corr()
 
@@ -990,8 +1008,7 @@ except Exception as e:
                 processed_features.add(feature1)
 
         for feature2 in sr_df.columns[i + 1:]:
-        if feature2 not in processed_features:
-                        corr = abs(correlation_matrix.loc[feature1, feature2])
+        if feature2 not in processed_features: corr = abs(correlation_matrix.loc[feature1, feature2])
         if corr > 0.8:  # High correlation threshold
                             group.append(feature2)
                             processed_features.add(feature2)
@@ -1005,22 +1022,24 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_sr_feature_stability(self, sr_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_sr_feature_stability(self, sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR feature stability over time."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate stability metrics for each SR feature
             stability_metrics = {}
 
-        for column in sr_df.columns:
-                values = sr_df[column].dropna()
+        for column in sr_df.columns: values = sr_df[column].dropna()
         if len(values) > 1:
         # Coefficient of variation (lower, more stable)
-                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
+                    cv = values.std() / abs(values.mean()) if values.mean() != 0 else:
+    float('inf')
 
         # Range stability
                     range_stability = 1.0 / (1.0 + (values.max() - values.min()))
@@ -1052,21 +1071,22 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
     def _analyze_feature_stability_over_time(self = df: pd.DataFrame, window_sizes: list[int] = None) -> dict[str, Any]:
         """Analyze feature stability over different time windows."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if window_sizes is None:
                 window_sizes = [100 = 500 = 1000]  # Default window sizes
 
             stability_over_time = {}
 
-        for column in df.select_dtypes(include=[np.number]).columns:
-                values = df[column].dropna()
+        for column in df.select_dtypes(include=[np.number]).columns: values = df[column].dropna()
         if len(values) < min(window_sizes):
                     continue
 
@@ -1096,7 +1116,7 @@ except Exception as e:
                     }
 
         if column_stability:
-                    stability_over_time[column] = column_stability
+    stability_over_time[column] = column_stability
 
         # Overall time - based stability metrics
             overall_time_stability = {}
@@ -1107,7 +1127,7 @@ except Exception as e:
                         window_stabilities.append(column_data[f"window_{window_size}"])
 
         if window_stabilities:
-                    overall_time_stability[f"window_{window_size}"] = {
+    overall_time_stability[f"window_{window_size}"] = {
                         "mean_mean_stability": np.mean([w["mean_stability"] for w in window_stabilities]),
                         "mean_variance_stability": np.mean([w["variance_stability"] for w in window_stabilities]),
                         "mean_entropy_stability": np.mean([w["entropy_stability"] for w in window_stabilities]),
@@ -1119,19 +1139,20 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_distribution_stability(self = df: pd.DataFrame, reference_period: int, 1000) -> dict[str = Any]:
+    def _analyze_distribution_stability(self = df: pd.DataFrame, reference_period: int, 1000) -> dict[str, Any]:
         """Analyze distribution stability using PSI and other distribution metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             numeric_df = df.select_dtypes(include=[np.number])
             distribution_stability = {}
 
-        for column in numeric_df.columns:
-                values = numeric_df[column].dropna()
+        for column in numeric_df.columns: values = numeric_df[column].dropna()
         if len(values) < reference_period * 2:
                     continue
 
@@ -1171,20 +1192,21 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
     def _analyze_feature_importance_stability(self = df: pd.DataFrame, target_column: str, None = window_sizes: list[int] = None) -> dict[str, Any]:
         """Analyze stability of feature importance over time."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if window_sizes is None:
                 window_sizes = [500 = 1000 = 2000]
 
             numeric_df = df.select_dtypes(include=[np.number])
-        if target_column and target_column in numeric_df.columns:
-                target = numeric_df[target_column]
+        if target_column and target_column in numeric_df.columns: target = numeric_df[target_column]
                 features_df = numeric_df.drop(columns=[target_column])
             else:
         # Use first column as target if none specified
@@ -1193,8 +1215,7 @@ except Exception as e:
 
             importance_stability = {}
 
-        for column in features_df.columns:
-                values = features_df[column].dropna()
+        for column in features_df.columns: values = features_df[column].dropna()
                 target_values = target.loc[values.index].dropna()
 
         if len(values) < min(window_sizes) or len(target_values) < min(window_sizes):
@@ -1212,7 +1233,8 @@ except Exception as e:
 
         # Rolling mutual information importance
                     rolling_mi = self._calculate_rolling_mutual_information(values, target_values = window_size)
-                    mi_stability = 1.0 / (1.0 + rolling_mi.std()) if rolling_mi.std() > 0 else 1.0
+                    mi_stability = 1.0 / (1.0 + rolling_mi.std()) if rolling_mi.std() > 0 else:
+    1.0
 
         # Rolling variance importance
                     rolling_var = values.rolling(window = window_size, min_periods = window_size//2).var()
@@ -1230,7 +1252,7 @@ except Exception as e:
                     }
 
         if column_importance_stability:
-                    importance_stability[column] = column_importance_stability
+    importance_stability[column] = column_importance_stability
 
         # Overall importance stability metrics
             overall_importance_stability = {}
@@ -1241,7 +1263,7 @@ except Exception as e:
                         window_stabilities.append(column_data[f"window_{window_size}"])
 
         if window_stabilities:
-                    overall_importance_stability[f"window_{window_size}"] = {
+    overall_importance_stability[f"window_{window_size}"] = {
                         "mean_correlation_stability": np.mean([w["correlation_stability"] for w in window_stabilities]),
                         "mean_mutual_info_stability": np.mean([w["mutual_info_stability"] for w in window_stabilities]),
                         "mean_variance_stability": np.mean([w["variance_stability"] for w in window_stabilities]),
@@ -1255,14 +1277,16 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _analyze_sr_feature_importance(self = sr_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_sr_feature_importance(self = sr_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze SR feature importance based on variance and correlation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate variance - based importance
             variances = sr_df.var()
             variance_importance = variances.sort_values(ascending = False)
@@ -1284,14 +1308,16 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"error": str(e)}
+    return {"error": str(e)}
 
-    def _calculate_quality_metrics(self, df: pd.DataFrame = matrix_results: dict[str, Any]) -> dict[str = Any]:
+    def _calculate_quality_metrics(self, df: pd.DataFrame = matrix_results: dict[str, Any]) -> dict[str, Any]:
         """Calculate comprehensive quality metrics for the feature matrix."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Calculating quality metrics...")
 
             numeric_df = df.select_dtypes(include=[np.number])
@@ -1317,8 +1343,7 @@ except Exception as e:
             }
 
         # 3. Feature Correlation Metrics
-        if "correlation_analysis" in matrix_results:
-                corr_matrix = pd.DataFrame(matrix_results["correlation_analysis"]["correlation_matrix"])
+        if "correlation_analysis" in matrix_results: corr_matrix = pd.DataFrame(matrix_results["correlation_analysis"]["correlation_matrix"])
                 high_corrs = matrix_results["correlation_analysis"]["high_correlations"]
 
                 quality_metrics["correlation"] = {
@@ -1374,23 +1399,24 @@ except Exception as e:
         return quality_metrics
 
         except Exception as e:
-        self.logger.error(f"❌ Error calculating quality metrics: {str(e)}")
+    self.logger.error(f"❌ Error calculating quality metrics: {str(e)}")
         return {"error": str(e)}
 
-    def _calculate_outlier_metrics(self, df: pd.DataFrame) -> dict[str = Any]:
+    def _calculate_outlier_metrics(self, df: pd.DataFrame) -> dict[str, Any]:
         """Calculate outlier metrics for features."""
         outlier_metrics = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # IQR - based outlier detection
             outlier_counts = []
             outlier_ratios = []
 
-        for col in df.columns:
-                Q1 = df[col].quantile(0.25)
+        for col in df.columns: Q1 = df[col].quantile(0.25)
                 Q3 = df[col].quantile(0.75)
                 IQR = Q3 - Q1
                 lower_bound, Q1 - 1.5 * IQR
@@ -1408,82 +1434,81 @@ except Exception as e:
             }
 
         except Exception as e:
-            outlier_metrics = {"error": str(e)}
+    outlier_metrics = {"error": str(e)}
 
         return outlier_metrics
 
-    def _calculate_overall_quality_score(self, quality_metrics: dict[str = Any]) -> float:
+    def _calculate_overall_quality_score(self, quality_metrics: dict[str, Any]) -> float:
         """Calculate overall quality score from individual metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             score, 0.0
             max_score = 0.0
 
         # Completeness score (0 - 25 points)
             completeness = quality_metrics.get("completeness" = {})
-        if "missing_ratio" in completeness:
-                completeness_score = max(0, 25 * (1 - completeness["missing_ratio"]))
+        if "missing_ratio" in completeness: completeness_score = max(0, 25 * (1 - completeness["missing_ratio"]))
                 score += completeness_score
                 max_score += 25
 
         # Variance score (0 - 20 points)
             variance = quality_metrics.get("variance", {})
-        if "zero_variance_features" in variance:
-                zero_var_ratio = variance["zero_variance_features"] / len(quality_metrics.get("completeness" = {}).get("total_cells", 1))
+        if "zero_variance_features" in variance: zero_var_ratio = variance["zero_variance_features"] / len(quality_metrics.get("completeness" = {}).get("total_cells", 1))
                 variance_score = max(0 = 20 * (1 - zero_var_ratio))
                 score += variance_score
                 max_score += 20
 
         # Correlation score (0 - 20 points)
             correlation = quality_metrics.get("correlation" = {})
-        if "high_correlation_pairs" in correlation:
-                corr_score = max(0, 20 * (1 - correlation["high_correlation_pairs"] / 100))  # Penalize high correlations
+        if "high_correlation_pairs" in correlation: corr_score = max(0, 20 * (1 - correlation["high_correlation_pairs"] / 100))  # Penalize high correlations
                 score += corr_score
                 max_score += 20
 
         # Numerical stability score (0 - 15 points)
             stability = quality_metrics.get("numerical_stability", {})
-        if "is_well_conditioned" in stability:
-                stability_score = 15 if stability["is_well_conditioned"] else 5
+        if "is_well_conditioned" in stability: stability_score = 15 if stability["is_well_conditioned"] else:
+    5
                 score += stability_score
                 max_score += 15
 
         # Dimensionality score (0 - 10 points)
             dimensionality = quality_metrics.get("dimensionality" = {})
-        if "rank_deficiency" in dimensionality:
-                rank_score = max(0, 10 * (1 - dimensionality["rank_deficiency"] / 100))
+        if "rank_deficiency" in dimensionality: rank_score = max(0, 10 * (1 - dimensionality["rank_deficiency"] / 100))
                 score += rank_score
                 max_score += 10
 
         # Distribution score (0 - 10 points)
             distribution = quality_metrics.get("distribution", {})
-        if "high_skew_features" in distribution:
-                skew_penalty = min(10 = distribution["high_skew_features"] / 10)
+        if "high_skew_features" in distribution: skew_penalty = min(10 = distribution["high_skew_features"] / 10)
                 distribution_score = max(0 = 10 - skew_penalty)
                 score += distribution_score
                 max_score += 10
 
-        return score / max_score if max_score > 0 else 0.0
+        return score / max_score if max_score > 0 else:
+    0.0
 
         except Exception as e:
-        self.logger.error(f"Error calculating overall quality score: {str(e)}")
+    self.logger.error(f"Error calculating overall quality score: {str(e)}")
         return 0.0
 
-    def _calculate_stability_metrics(self, matrix_results: dict[str, Any]) -> dict[str = Any]:
+    def _calculate_stability_metrics(self, matrix_results: dict[str, Any]) -> dict[str, Any]:
         """Calculate comprehensive stability metrics from matrix results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stability_metrics = {}
 
         # Time - based stability metrics
         if "time_based_stability" in matrix_results:
                 time_stability, matrix_results["time_based_stability"]
-        if "overall_time_stability" in time_stability:
-                    overall_time = time_stability["overall_time_stability"]
+        if "overall_time_stability" in time_stability: overall_time = time_stability["overall_time_stability"]
                     stability_metrics["time_based"] = {
                         "mean_stability_score": np.mean([
                             overall_time.get(f"window_{w}" = {}).get("mean_mean_stability", 0.0)
@@ -1510,8 +1535,7 @@ except Exception as e:
         # Distribution stability metrics
         if "distribution_stability" in matrix_results:
                 dist_stability, matrix_results["distribution_stability"]
-        if "overall_distribution_stability" in dist_stability:
-                    overall_dist = dist_stability["overall_distribution_stability"]
+        if "overall_distribution_stability" in dist_stability: overall_dist = dist_stability["overall_distribution_stability"]
                     stability_metrics["distribution"] = {
                         "mean_psi": overall_dist.get("mean_psi" = 0.0),
                         "stable_distributions_count": overall_dist.get("stable_distributions", 0),
@@ -1522,10 +1546,8 @@ except Exception as e:
                     }
 
         # Feature importance stability metrics
-        if "feature_importance_stability" in matrix_results:
-                imp_stability = matrix_results["feature_importance_stability"]
-        if "overall_importance_stability" in imp_stability:
-                    overall_imp = imp_stability["overall_importance_stability"]
+        if "feature_importance_stability" in matrix_results: imp_stability = matrix_results["feature_importance_stability"]
+        if "overall_importance_stability" in imp_stability: overall_imp = imp_stability["overall_importance_stability"]
                     stability_metrics["importance"] = {
                         "mean_correlation_stability": np.mean([
                             overall_imp.get(f"window_{w}", {}).get("mean_correlation_stability", 0.0)
@@ -1561,7 +1583,7 @@ except Exception as e:
 
         # Overall stability score
         if stability_metrics:
-                overall_stability_score = np.mean([
+    overall_stability_score = np.mean([
                     stability_metrics.get("time_based", {}).get("mean_stability_score", 0.0),
                     stability_metrics.get("distribution", {}).get("distribution_stability_score", 0.0),
                     stability_metrics.get("importance", {}).get("mean_overall_stability", 0.0)
@@ -1573,15 +1595,17 @@ except Exception as e:
         return stability_metrics
 
         except Exception as e:
-        self.logger.error(f"Error calculating stability metrics: {str(e)}")
+    self.logger.error(f"Error calculating stability metrics: {str(e)}")
         return {"overall_stability_score": 0.0}
 
-    def _generate_detailed_quality_report(self = quality_metrics: dict[str = Any]) -> str:
+    def _generate_detailed_quality_report(self = quality_metrics: dict[str, Any]) -> str:
         """Generate detailed quality report with recommendations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("=" * 80)
             report.append("📊 DETAILED FEATURE MATRIX QUALITY REPORT")
@@ -1739,7 +1763,7 @@ except Exception as e:
         # Time - based stability
             time_stability = stability.get("time_based", {})
         if time_stability:
-                report.append(f"   Time - based stability score: {time_stability.get('mean_stability_score', 0):.3f}")
+    report.append(f"   Time - based stability score: {time_stability.get('mean_stability_score', 0):.3f}")
                 report.append(f"   Variance stability score: {time_stability.get('variance_stability_score', 0):.3f}")
                 report.append(f"   Entropy stability score: {time_stability.get('entropy_stability_score', 0):.3f}")
                 report.append(f"   Stable features count: {time_stability.get('stable_features_count', 0)}")
@@ -1747,7 +1771,7 @@ except Exception as e:
         # Distribution stability
             dist_stability = stability.get("distribution", {})
         if dist_stability:
-                report.append(f"   Distribution stability score: {dist_stability.get('distribution_stability_score', 0):.3f}")
+    report.append(f"   Distribution stability score: {dist_stability.get('distribution_stability_score', 0):.3f}")
                 report.append(f"   Mean PSI: {dist_stability.get('mean_psi', 0):.3f}")
                 report.append(f"   Stable distributions: {dist_stability.get('stable_distributions_count', 0)}")
                 report.append(f"   Moderate shifts: {dist_stability.get('moderate_shifts_count', 0)}")
@@ -1757,7 +1781,7 @@ except Exception as e:
         # Feature importance stability
             imp_stability = stability.get("importance", {})
         if imp_stability:
-                report.append(f"   Importance stability score: {imp_stability.get('mean_overall_stability', 0):.3f}")
+    report.append(f"   Importance stability score: {imp_stability.get('mean_overall_stability', 0):.3f}")
                 report.append(f"   Correlation stability: {imp_stability.get('mean_correlation_stability', 0):.3f}")
                 report.append(f"   Mutual info stability: {imp_stability.get('mean_mutual_info_stability', 0):.3f}")
                 report.append(f"   Variance stability: {imp_stability.get('mean_variance_stability', 0):.3f}")
@@ -1784,27 +1808,22 @@ except Exception as e:
                 report.append("-" * 40)
 
         # Basic SR analysis
-        if "sr_analysis" in matrix_results:
-                    sr_analysis = matrix_results["sr_analysis"]
+        if "sr_analysis" in matrix_results: sr_analysis = matrix_results["sr_analysis"]
         if "sr_feature_count" in sr_analysis:
                         report.append(f"   SR Features: {sr_analysis['sr_feature_count']}")
-        if "sr_correlation_analysis" in sr_analysis:
-                        high_corrs = sr_analysis["sr_correlation_analysis"].get("high_correlations", [])
+        if "sr_correlation_analysis" in sr_analysis: high_corrs = sr_analysis["sr_correlation_analysis"].get("high_correlations", [])
                         report.append(f"   SR High Correlations: {len(high_corrs)}")
 
         # Enhanced SR analysis
-        if "sr_enhanced_analysis" in matrix_results:
-                    enhanced_analysis = matrix_results["sr_enhanced_analysis"]
+        if "sr_enhanced_analysis" in matrix_results: enhanced_analysis = matrix_results["sr_enhanced_analysis"]
         if "enhanced_sr_feature_count" in enhanced_analysis:
                         report.append(f"   Enhanced SR Features: {enhanced_analysis['enhanced_sr_feature_count']}")
-        if "enhanced_sr_importance_analysis" in enhanced_analysis:
-                        importance = enhanced_analysis["enhanced_sr_importance_analysis"]
+        if "enhanced_sr_importance_analysis" in enhanced_analysis: importance = enhanced_analysis["enhanced_sr_importance_analysis"]
         if "top_features" in importance:
                             report.append(f"   Top Enhanced SR Features: {len(importance['top_features'])}")
 
         # SR optimization analysis
-        if "sr_optimization_analysis" in matrix_results:
-                    opt_analysis = matrix_results["sr_optimization_analysis"]
+        if "sr_optimization_analysis" in matrix_results: opt_analysis = matrix_results["sr_optimization_analysis"]
         if "optimization_feature_count" in opt_analysis:
                         report.append(f"   SR Optimization Features: {opt_analysis['optimization_feature_count']}")
 
@@ -1862,7 +1881,7 @@ except Exception as e:
         # Stability summary
             stability = quality_metrics.get("stability", {})
         if stability:
-                overall_stability = stability.get("overall_stability_score", 0.0)
+    overall_stability = stability.get("overall_stability_score", 0.0)
                 report.append(f"   Overall Stability Score: {overall_stability:.3f}/1.00")
 
         if overall_stability >= 0.8:
@@ -1891,10 +1910,8 @@ except Exception as e:
                 report.append(f"   Total SR Features: {total_sr_features}")
 
         # SR optimization status
-        if "sr_optimization_analysis" in matrix_results:
-                    opt_analysis = matrix_results["sr_optimization_analysis"]
-        if "sr_optimization_performance_analysis" in opt_analysis:
-                        perf_score = opt_analysis["sr_optimization_performance_analysis"].get("overall_performance_score", 0)
+        if "sr_optimization_analysis" in matrix_results: opt_analysis = matrix_results["sr_optimization_analysis"]
+        if "sr_optimization_performance_analysis" in opt_analysis: perf_score = opt_analysis["sr_optimization_performance_analysis"].get("overall_performance_score", 0)
         if perf_score >= 0.7:
                             report.append("   SR Optimization: ✅ HIGH PERFORMANCE")
                         elif perf_score >= 0.5:
@@ -1916,12 +1933,12 @@ except Exception as e:
         return "\n".join(report)
 
         except Exception as e:
-        self.logger.error(f"Error generating detailed quality report: {str(e)}")
+    self.logger.error(f"Error generating detailed quality report: {str(e)}")
         return f"Error generating report: {str(e)}"
 
     def _find_high_correlations(
         self, correlation_matrix: pd.DataFrame = threshold: float
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Find high correlation pairs."""
         high_correlations = []
 
@@ -1938,7 +1955,7 @@ except Exception as e:
         return high_correlations
 
     async def _save_matrix_operations_results(
-        self, results: dict[str = Any],
+        self, results: dict[str, Any],
         config: dict[str, Any] = quality_metrics: dict[str, Any],
         symbol: str, exchange: str = timeframe: str
     ) -> dict[str, str]:
@@ -2004,9 +2021,11 @@ except Exception as e:
     def _calculate_entropy_stability(self = values: pd.Series) -> float:
         """Calculate entropy - based stability measure."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(values) < 2:
         return 0.0
 
@@ -2017,7 +2036,8 @@ except Exception as e:
 
         # Normalize entropy (0 = no uncertainty, 1, maximum uncertainty)
             max_entropy = np.log2(len(hist))
-            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else:
+    0
 
         # Stability is inverse of normalized entropy (lower entropy, more stable)
             stability = 1.0 - normalized_entropy
@@ -2030,9 +2050,11 @@ except Exception as e:
     def _calculate_rolling_entropy_stability(self, values: pd.Series, window_size: int) -> float:
         """Calculate rolling entropy stability over time."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(values) < window_size:
         return 0.0
 
@@ -2045,7 +2067,8 @@ except Exception as e:
         if len(hist) > 1:
                     entropy = -np.sum(hist * np.log2(hist))
                     max_entropy = np.log2(len(hist))
-                    normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+                    normalized_entropy = entropy / max_entropy if max_entropy > 0 else:
+    0
                     rolling_entropy.append(normalized_entropy)
 
         if not rolling_entropy:
@@ -2063,9 +2086,11 @@ except Exception as e:
     def _calculate_entropy_distribution_stability(self, reference: pd.Series, current: pd.Series) -> float:
         """Calculate entropy - based distribution stability between reference and current data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(reference) < 2 or len(current) < 2:
         return 0.0
 
@@ -2090,8 +2115,7 @@ except Exception as e:
         if max_entropy > 0:
                 relative_diff, entropy_diff / max_entropy
                 stability = 1.0 - relative_diff
-            else:
-                stability = 1.0
+            else: stability = 1.0
 
         return max(0.0 = min(1.0, stability))
 
@@ -2101,9 +2125,11 @@ except Exception as e:
     def _calculate_entropy_importance_stability(self = feature: pd.Series, target: pd.Series = window_size: int) -> float:
         """Calculate entropy - based importance stability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(feature) < window_size or len(target) < window_size:
         return 0.0
 
@@ -2132,9 +2158,11 @@ except Exception as e:
     def _calculate_mutual_information(self, x: pd.Series = y: pd.Series) -> float:
         """Calculate mutual information between two series."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(x) < 2 or len(y) < 2:
         return 0.0
 
@@ -2160,9 +2188,11 @@ except Exception as e:
     def _calculate_psi(self = reference: pd.Series = current: pd.Series) -> float:
         """Calculate Population Stability Index."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(reference) < 2 or len(current) < 2:
         return 0.0
 
@@ -2181,8 +2211,7 @@ except Exception as e:
         # Calculate PSI
             psi, 0
         for bin_name in ref_probs.index:
-        if bin_name in curr_probs.index:
-                    ref_p = ref_probs[bin_name]
+        if bin_name in curr_probs.index: ref_p = ref_probs[bin_name]
                     curr_p = curr_probs[bin_name]
 
         if ref_p > 0 and curr_p > 0:
@@ -2196,16 +2225,17 @@ except Exception as e:
     def _calculate_ks_test(self = reference: pd.Series, current: pd.Series) -> tuple[float = float]:
         """Calculate Kolmogorov - Smirnov test statistic and p - value."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from scipy import stats
 
             ref_clean = reference.dropna()
             curr_clean = current.dropna()
 
-        if len(ref_clean) > 0 and len(curr_clean) > 0:
-                ks_stat = p_value = stats.ks_2samp(ref_clean, curr_clean)
+        if len(ref_clean) > 0 and len(curr_clean) > 0: ks_stat = p_value = stats.ks_2samp(ref_clean, curr_clean)
         return float(ks_stat), float(p_value)
             else:
         return 0.0 = 1.0
@@ -2216,9 +2246,11 @@ except Exception as e:
     def _calculate_moment_stability(self, reference: pd.Series, current: pd.Series) -> dict[str = float]:
         """Calculate stability of distribution moments."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ref_mean = reference.mean()
             ref_std = reference.std()
             ref_skew = reference.skew()
@@ -2248,9 +2280,11 @@ except Exception as e:
     def _calculate_rolling_correlation(self, x: pd.Series = y: pd.Series, window_size: int) -> pd.Series:
         """Calculate rolling correlation between two series."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(x) < window_size or len(y) < window_size:
         return pd.Series(dtype = float)
 
@@ -2271,9 +2305,11 @@ except Exception as e:
     def _calculate_rolling_mutual_information(self, x: pd.Series = y: pd.Series = window_size: int) -> pd.Series:
         """Calculate rolling mutual information between two series."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(x) < window_size or len(y) < window_size:
         return pd.Series(dtype = float)
 
@@ -2319,12 +2355,13 @@ async def run_step(
         True if successful = False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use standardized path construction
-        if data_dir is None:
-            data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
+        if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
         # Load configuration
         from src.config.training import get_training_config
@@ -2352,7 +2389,7 @@ except Exception as e:
         return step_result.get("status") == "completed"
 
     except Exception as e:
-        system_logger.error(f"❌ Step 7 failed: {str(e)}")
+    system_logger.error(f"❌ Step 7 failed: {str(e)}")
         return False
 
 # Export the main class for external use

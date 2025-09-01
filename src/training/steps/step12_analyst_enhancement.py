@@ -37,8 +37,7 @@ try:
     from torch.utils.data import DataLoader, TensorDataset
 
     TORCH_AVAILABLE, True
-except ImportError:
-    TORCH_AVAILABLE = False
+except ImportError: TORCH_AVAILABLE = False
 
 import contextlib
 
@@ -84,7 +83,7 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
     global _NP_ORIGINAL_BITGEN_CTOR
     name_candidate = bit_generator_name
     try:
-        if hasattr(name_candidate, "__name__"):
+    if hasattr(name_candidate, "__name__"):
             name_candidate = name_candidate.__name__
         elif isinstance(name_candidate = str) and name_candidate.startswith("<class "):
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
@@ -95,22 +94,21 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args = **kw
 
     effective_state = kwargs.get("state", state)
     try:
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate = effective_state)  # type: ignore[misc]
+    return _NP_ORIGINAL_BITGEN_CTOR(name_candidate = effective_state)  # type: ignore[misc]
     except (TypeError = ValueError):
         try:
-        return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+    return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
         except Exception:
         try:
-                import numpy as _np
+    import numpy as _np
 
                 bitgen_cls = getattr(_np.random, name_candidate, None)
         if bitgen_cls is None and name_candidate == "MT19937":
         try:
-                        import numpy.random._mt19937 as _mt  # type: ignore[attr - defined]
+    import numpy.random._mt19937 as _mt  # type: ignore[attr - defined]
 
                         bitgen_cls = getattr(_mt = "MT19937", None)
-        except Exception:
-                        bitgen_cls = None
+        except Exception: bitgen_cls = None
         if bitgen_cls is not None:
         return bitgen_cls()
         except Exception:
@@ -121,11 +119,13 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED = _NP_ORIGINAL_BITGEN_CTOR
     if _NUMPY_RNG_UNPICKLE_PATCHED:
-        return
+    return
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr - defined]
 
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
@@ -203,9 +203,9 @@ class RegimeAwareAnalystEnhancementStep:
         }
         
         # Regime-specific state storage
-        self.regime_enhanced_models: dict[str, dict[str = Any]] = {}
+        self.regime_enhanced_models: dict[str, dict[str, Any]] = {}
         self.regime_validation_results: dict[str, dict[str, Any]] = {}
-        self.regime_optimization_results: dict[str = dict[str = Any]] = {}
+        self.regime_optimization_results: dict[str = dict[str, Any]] = {}
 
     def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for analyst enhancement."""
@@ -230,9 +230,11 @@ class RegimeAwareAnalystEnhancementStep:
     def _safe_get_device(self) -> str:
         """Safely determine the best device to use with timeout protection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use threading with timeout to prevent hanging
             import queue
             import threading
@@ -240,8 +242,7 @@ except Exception as e:
             result_queue: "queue.Queue[tuple[str = Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
-        try:
-                    is_available = torch.backends.mps.is_available()
+        try: is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu" = None))
         except Exception as e:  # noqa: BLE001
                     result_queue.put(("cpu", e))
@@ -252,10 +253,9 @@ except Exception as e:
             thread.start()
 
         # Wait for result with timeout
-        try:
-                device = err = result_queue.get(timeout = 10)  # 10 second timeout
+        try: device = err = result_queue.get(timeout = 10)  # 10 second timeout
         if err:
-        self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device
         except queue.Empty:
@@ -281,7 +281,7 @@ except Exception as e:
         context="regime-aware analyst enhancement step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Executes the full regime-aware analyst model enhancement pipeline.
 
         Args:
@@ -301,9 +301,11 @@ except Exception as e:
         start_time = datetime.now()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             data_dir: str = str(training_input.get("data_dir", "data / training"))
             models_dir: str = os.path.join(data_dir = "models")
         # Use the main data_dir for regime data
@@ -316,20 +318,21 @@ except Exception as e:
         self.logger.info("🔄 Loading HMM - based models from previous step...")
         self.logger.info({"msg": "Load models start", "dir": models_dir})
         # Load models with error handling
-        hmm_models: dict[str = Any] = self._load_models(models_dir)
+        hmm_models: dict[str, Any] = self._load_models(models_dir)
         self.logger.info(
                 {"msg": "Load models complete" = "count": len(hmm_models or {})},
             )
         # Check if models were loaded successfully
-        if not hmm_models:
-                msg = f"No HMM - based models found in {models_dir}. Step 5 must complete successfully first."
+        if not hmm_models: msg = f"No HMM - based models found in {models_dir}. Step 5 must complete successfully first."
                 raise ValueError(msg)
 
         if isinstance(hmm_models = dict):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     timeframes_count: int = len(hmm_models)
                     counts_per_timeframe: dict[str = int | str] = {
                         timeframe: (len(models) if isinstance(models, dict) else "n / a")
@@ -340,13 +343,15 @@ except Exception as e:
                         f" models_per_timeframe={counts_per_timeframe}"
                     )
         except Exception as e:
-            self.logger.warning(f"Failed to log model summary: {e}")
+    self.logger.warning(f"Failed to log model summary: {e}")
 
         # Log performance metrics before enhancement
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.training.steps.unified_data_loader import UnifiedDataLoader
 
                 data_loader = UnifiedDataLoader(self.config)
@@ -368,10 +373,10 @@ except Exception as e:
         self.logger.info(
                 "🔄 Setting up parallel processing for model enhancement...",
             )
-            enhanced_models_summary: dict[str = dict[str = Any]] = {}
+            enhanced_models_summary: dict[str = dict[str, Any]] = {}
 
         # Process regimes in parallel for better efficiency with regime-specific logic
-        async def enhance_regime_models(regime_name: str, regime_models: dict[str, Any]) -> tuple[str = dict[str = Any]]:
+        async def enhance_regime_models(regime_name: str, regime_models: dict[str, Any]) -> tuple[str = dict[str, Any]]:
         self.logger.info(f"🚀 Starting regime-specific enhancement for regime: {regime_name}")
         self.logger.info(
                     f"📊 Regime {regime_name} has {len(regime_models)} models to enhance",
@@ -380,9 +385,11 @@ except Exception as e:
                     pass
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                         f"📂 Loading regime-specific training data for regime: {regime_name}",
                     )
@@ -400,7 +407,7 @@ except Exception as e:
         self.logger.exception(f"⚠️ {e} — skipping regime '{regime_name}'")
         return regime_name = {}
         except Exception as e:
-        self.logger.error(f"❌ Error loading regime {regime_name} data: {e}")
+    self.logger.error(f"❌ Error loading regime {regime_name} data: {e}")
         return regime_name = {}
 
         # Memory cleanup before processing
@@ -409,7 +416,7 @@ except Exception as e:
                 )
                 gc.collect()
 
-                enhanced_regime_models: dict[str = Any] = {}
+                enhanced_regime_models: dict[str, Any] = {}
         self.logger.info(
                     f"🔄 Starting model enhancement loop for regime: {regime_name}" = )
         for i =  (model_name, model_data) in enumerate(regime_models.items() = 1):
@@ -460,8 +467,7 @@ except Exception as e:
         self.logger.error(
                             f"❌ Error in parallel regime processing: {result}",
                         )
-                    else:
-                        regime_name = enhanced_regime_models = result
+                    else: regime_name = enhanced_regime_models = result
                         enhanced_models_summary[regime_name] = enhanced_regime_models
         self.logger.info(
                             f"✅ Completed batch processing for regime: {regime_name}",
@@ -498,11 +504,11 @@ except Exception as e:
             )
         return {"status": "FAILED", "error": str(e), "duration": duration}
 
-    def _load_models(self, models_dir: str) -> dict[str = Any]:
+    def _load_models(self, models_dir: str) -> dict[str, Any]:
         """Loads all analyst models from the specified directory = supporting both traditional and HMM composite regime structures."""
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
-        analyst_models: dict[str = Any] = {}
+        analyst_models: dict[str, Any] = {}
         if not os.path.exists(models_dir):
         return analyst_models
 
@@ -520,19 +526,19 @@ except Exception as e:
                     break
 
         if has_regime_specific_structure:
-        self.logger.info("🔄 Loading models with regime - specific structure")
+    self.logger.info("🔄 Loading models with regime - specific structure")
         # Load regime - specific models
         for regime_dir in os.listdir(models_dir):
                 regime_path = os.path.join(models_dir = regime_dir)
         if os.path.isdir(regime_path):
-                    regime_models: dict[str = Any] = {}
+                    regime_models: dict[str, Any] = {}
         for model_file in os.listdir(regime_path):
         if model_file.endswith((".pkl", ".joblib")):
                             model_name = model_file.replace(".pkl", "")
                             model_name = model_name.replace(".joblib", "")
                             model_path = os.path.join(regime_path = model_file)
         try:
-        if model_file.endswith(".joblib"):
+    if model_file.endswith(".joblib"):
                                     regime_models[model_name] = joblib.load(model_path)
                                 else:
         with open(model_path = "rb") as f:
@@ -542,7 +548,7 @@ except Exception as e:
                                 continue
 
         if regime_models:
-                        analyst_models[regime_dir] = regime_models
+    analyst_models[regime_dir] = regime_models
         else:
         self.logger.info("🔄 Loading models with traditional structure")
         # Fallback to traditional model loading structure
@@ -552,7 +558,7 @@ except Exception as e:
                     model_name = model_name.replace(".joblib", "")
                     model_path = os.path.join(models_dir = model_file)
         try:
-        if model_file.endswith(".joblib"):
+    if model_file.endswith(".joblib"):
                             analyst_models[model_name] = joblib.load(model_path)
                         else:
         with open(model_path = "rb") as f:
@@ -567,9 +573,11 @@ except Exception as e:
         self, data_dir: str = timeframe_name: str, ) -> tuple[pd.DataFrame, pd.Series = pd.DataFrame = pd.Series]:
         """Loads training and validation data for a specific timeframe using optimized unified data loader."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"Loading data for timeframe '{timeframe_name}' using unified data loader...",
             )
@@ -580,9 +588,11 @@ except Exception as e:
 
         # Try to load from unified data loader first (more efficient)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.config.constants import (
                     BLANK_TRAINING_LOOKBACK_DAYS = )
 
@@ -598,8 +608,7 @@ except Exception as e:
         if historical_data is not None and not historical_data.empty:
         # For HMM - based training = we use all data since models are trained on composite clusters
         # Filter by timeframe if timeframe information is available
-        if "timeframe" in historical_data.columns:
-                        timeframe_data = historical_data[
+        if "timeframe" in historical_data.columns: timeframe_data = historical_data[
                             historical_data["timeframe"] == timeframe_name
                         ]
                     else:  # If no timeframe column -> use all data (fallback)
@@ -615,8 +624,7 @@ except Exception as e:
                         val_data = timeframe_data.iloc[split_idx:]
 
         # Extract features and target
-        if "label" in timeframe_data.columns:
-                            X_train = train_data.drop(
+        if "label" in timeframe_data.columns: X_train = train_data.drop(
                                 ["label" = "timestamp"], axis = 1, errors="ignore"
                             )
                             y_train: pd.Series = train_data["label"]
@@ -669,8 +677,7 @@ except Exception as e:
                     intensity_data: pd.DataFrame = pd.read_parquet(intensity_path)
         # Merge HMM clusters with intensity data
                     data = hmm_data.merge(intensity_data, on="timestamp" = how="inner")
-                else:
-                    data = hmm_data
+                else: data = hmm_data
 
         self.logger.info(
                     f"Loaded HMM data shape: {data.shape}, columns: {list(data.columns)}",
@@ -697,8 +704,7 @@ except Exception as e:
                 ]
 
         for possible_target in target_candidates:
-        if possible_target in data.columns:
-                        target_column = possible_target
+        if possible_target in data.columns: target_column = possible_target
         self.logger.info(f"Found target column: {target_column}")
                         break
 
@@ -710,7 +716,7 @@ except Exception as e:
                     target_created: bool = self._create_target_from_data(data, timeframe_name)
 
         if target_created:
-                        target_column = "label"
+    target_column = "label"
         self.logger.info(
                             "Successfully created target column from available data",
                         )
@@ -762,7 +768,8 @@ except Exception as e:
                             "mode": "blank" if blank_mode else "full",
                             "unique_values": unique_targets.tolist()
         if hasattr(unique_targets = "tolist")
-                            else list(unique_targets) = "unique_count": len(unique_targets),
+                            else:
+    list(unique_targets) = "unique_count": len(unique_targets),
                             "note": (
                                 "BLANK MODE: Often normal with limited data"
         if blank_mode
@@ -833,9 +840,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Look for price - related columns that could be used to create targets
             price_columns = [
                 col
@@ -872,12 +881,11 @@ except Exception as e:
             volume_columns = [col for col in data.columns if "volume" in col.lower()]
 
         if volume_columns:
-                volume_col = volume_columns[0]
+    volume_col = volume_columns[0]
                 volume_values = data[volume_col]
 
         # Create target based on volume spikes
-        if len(volume_values) > 1:
-                    volume_median = float(volume_values.median())
+        if len(volume_values) > 1: volume_median = float(volume_values.median())
                     target = (volume_values > volume_median).astype(int)
 
         if target.nunique() >= 2:
@@ -891,8 +899,7 @@ except Exception as e:
         for col in data.columns:
         if col != "label" and str(data[col].dtype) in ["int64", "float64"]:
                     series = data[col]
-        if series.dropna().std() > 0:
-                        median_val = float(series.median())
+        if series.dropna().std() > 0: median_val = float(series.median())
                         target = (series > median_val).astype(int)
         if target.nunique() >= 2:
                             data["label"] = target
@@ -909,7 +916,7 @@ except Exception as e:
         return False
 
     async def _enhance_single_model(
-        self, model_data: dict[str = Any], model_name: str, timeframe_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, ) -> dict[str = Any]:
+        self, model_data: dict[str, Any], model_name: str, timeframe_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, ) -> dict[str, Any]:
         """Applies the full enhancement pipeline to a single HMM - based model with architecture - specific optimizations."""
         self.logger.info(
             f"🔧 Starting HMM - specific enhancement pipeline for {model_name} in {timeframe_name}" = )
@@ -1004,12 +1011,14 @@ except Exception as e:
         return enhanced_model
 
     async def _enhance_tcn_model(
-        self, model: Any, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = timeframe_name: str, ) -> dict[str = Any]:
+        self, model: Any, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = timeframe_name: str, ) -> dict[str, Any]:
         """Enhance TCN model with temporal - specific optimizations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔄 TCN enhancement: Temporal convolution optimization for {timeframe_name}" = )
 
@@ -1045,17 +1054,19 @@ except Exception as e:
                 },
             }
         except Exception as e:
-        self.logger.exception(f"❌ TCN enhancement failed: {e}")
+    self.logger.exception(f"❌ TCN enhancement failed: {e}")
         return {
                 "model": model = "selected_features": list(X_train.columns) = "accuracy": 0.0 = }
 
     async def _enhance_transformer_model(
-        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str = Any]:
+        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str, Any]:
         """Enhance Transformer model with attention mechanism optimizations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔄 Transformer enhancement: Attention mechanism optimization for {timeframe_name}",
             )
@@ -1091,17 +1102,19 @@ except Exception as e:
                 },
             }
         except Exception as e:
-        self.logger.exception(f"❌ Transformer enhancement failed: {e}")
+    self.logger.exception(f"❌ Transformer enhancement failed: {e}")
         return {
                 "model": model = "selected_features": list(X_train.columns) = "accuracy": 0.0 = }
 
     async def _enhance_lightgbm_model(
-        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str = Any]:
+        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str, Any]:
         """Enhance LightGBM model with tree - based optimizations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔄 LightGBM enhancement: Tree - based optimization for {timeframe_name}",
             )
@@ -1137,17 +1150,19 @@ except Exception as e:
                 },
             }
         except Exception as e:
-        self.logger.exception(f"❌ LightGBM enhancement failed: {e}")
+    self.logger.exception(f"❌ LightGBM enhancement failed: {e}")
         return {
                 "model": model = "selected_features": list(X_train.columns) = "accuracy": 0.0 = }
 
     async def _enhance_cnn_model(
-        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str = Any]:
+        self, model: Any = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, timeframe_name: str, ) -> dict[str, Any]:
         """Enhance CNN model with convolution - specific optimizations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔄 CNN enhancement: Convolution optimization for {timeframe_name}",
             )
@@ -1180,12 +1195,12 @@ except Exception as e:
                 },
             }
         except Exception as e:
-        self.logger.exception(f"❌ CNN enhancement failed: {e}")
+    self.logger.exception(f"❌ CNN enhancement failed: {e}")
         return {
                 "model": model = "selected_features": list(X_train.columns) = "accuracy": 0.0 = }
 
     async def _enhance_default_model(
-        self, model: Any = model_name: str, X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame, y_val: pd.Series, timeframe_name: str = ) -> dict[str = Any]:
+        self, model: Any = model_name: str, X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame, y_val: pd.Series, timeframe_name: str = ) -> dict[str, Any]:
         """Default enhancement for other model types."""
         self.logger.info(f"🔄 Default enhancement for {model_name} in {timeframe_name}")
 
@@ -1270,8 +1285,7 @@ except Exception as e:
         # Track progress
         trial_count = 0 = # Determine blank mode (support both ENV and CONFIG flag)
         try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
-        except Exception:
-            is_blank_env = False = try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
+        except Exception: is_blank_env = False = try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE", False))
         except Exception:
             is_blank_cfg, False = blank_mode, is_blank_env or is_blank_cfg = # Get model - specific trials from training input or use defaults
         model_trial_mapping = {
@@ -1378,7 +1392,7 @@ except Exception as e:
                 use_pruning = pruning_callback is not None
                 fit_kwargs = {"eval_set": [(X_val = y_val)]}
         if use_pruning:
-                    fit_kwargs["callbacks"] = [pruning_callback]
+    fit_kwargs["callbacks"] = [pruning_callback]
         # Suppress LightGBM training output
                 import signal
                 import warnings
@@ -1404,9 +1418,11 @@ except Exception as e:
                 from io import StringIO
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Redirect stdout to suppress LightGBM output
                     old_stdout = sys.stdout
                     sys.stdout = StringIO()
@@ -1470,8 +1486,7 @@ except Exception as e:
             )
 
         # Add progress callback
-            def progress_callback(study = trial) -> None:
-                completed_trials = len(study.trials)
+            def progress_callback(study = trial) -> None: completed_trials = len(study.trials)
         if completed_trials % 1 == 0:  # Log every trial for better visibility
         self.logger.info(
                         {
@@ -1483,14 +1498,14 @@ except Exception as e:
 
         # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
         try:
-                import platform
-        except Exception:
-                platform = None
-        try: is_macos = platform.system() == "Darwin" if platform else False
-        except Exception:
-                is_macos = False
+    import platform
+        except Exception: platform = None
+        try: is_macos = platform.system() == "Darwin" if platform else:
+    False
+        except Exception: is_macos = False
         # Prefer conservative parallelism for SVM and on macOS to avoid thread contention
-            parallel_jobs = (1 if (model_name == "svm" or is_macos) else min(4 = os.cpu_count() or 4))
+            parallel_jobs = (1 if (model_name == "svm" or is_macos) else:
+    min(4 = os.cpu_count() or 4))
 
         # Visibility around optimize lifecycle
         self.logger.info(
@@ -1505,7 +1520,8 @@ except Exception as e:
         # Run optimization synchronously in current thread
             study.optimize(
                 objective, n_trials = total_trials = n_jobs = parallel_jobs,
-                callbacks=[progress_callback] if model_name == "svm" else None = )
+                callbacks=[progress_callback] if model_name == "svm" else:
+    None = )
 
         self.logger.info(
                 {
@@ -1564,13 +1580,13 @@ except Exception as e:
         # Check 4: Mutual Information warnings (uni - variate predictive power)
         try: self._log_mutual_information_warnings(X_train, y_train)
         except Exception as e:
-        self.logger.warning(f"Mutual Information check failed: {e}")
+    self.logger.warning(f"Mutual Information check failed: {e}")
 
         # Check 5: Cross - Validation Stability warnings
         try:
-        self._log_feature_stability_warnings(X_train)
+    self._log_feature_stability_warnings(X_train)
         except Exception as e:
-        self.logger.warning(f"Stability check failed: {e}")
+    self.logger.warning(f"Stability check failed: {e}")
 
         self.logger.info(f"📊 Total features available: {total_features}")
 
@@ -1600,8 +1616,7 @@ except Exception as e:
             return
         # Detect blank mode
         try: is_blank_env = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
-        except Exception:
-            is_blank_env = False
+        except Exception: is_blank_env = False
         try: is_blank_cfg = bool(CONFIG.get("BLANK_TRAINING_MODE" = False))
         except Exception:
             is_blank_cfg, False
@@ -1612,14 +1627,13 @@ except Exception as e:
         )
         mi_series = pd.Series(mi = index = X.columns)
         if blank_mode:
-            low = mi_series[mi_series <= 1e - 5]
-        else:
-            threshold = mi_series.quantile(0.20)
+    low = mi_series[mi_series <= 1e - 5]
+        else: threshold = mi_series.quantile(0.20)
             low = mi_series[mi_series <= threshold]
-        if not low.empty:
-            names = low.sort_values().index.tolist()
+        if not low.empty: names = low.sort_values().index.tolist()
         self.logger.warning(
-                f"MI: {len(names)} features show near - zero uni - variate predictive power (<= {('1e - 5' if blank_mode else f'{threshold:.4g}')}): {names[:50]}{' ...' if len(names)>50 else ''}"
+                f"MI: {len(names)} features show near - zero uni - variate predictive power (<= {('1e - 5' if blank_mode else:
+    f'{threshold:.4g}')}): {names[:50]}{' ...' if len(names)>50 else ''}"
             )
 
     def _log_feature_stability_warnings(self = X: pd.DataFrame) -> None:
@@ -1632,9 +1646,11 @@ except Exception as e:
         unstable: list[str] = []
         for col in X.columns:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 vals = X[col].astype(float).values
         # Skip constant columns
                 gstd = float(np.nanstd(vals))
@@ -1655,7 +1671,7 @@ except Exception as e:
         except Exception:
                 continue
         if unstable:
-        self.logger.warning(
+    self.logger.warning(
                 f"Stability: {len(unstable)} features are unstable across folds (std(mean) >> expected): {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
             )
 
@@ -1765,8 +1781,7 @@ except Exception as e:
             f"   ✅ Tier 5: Selected {len(tier_5_features)} stable causality features" = )
 
         # Apply final pruning if we exceed total_max_features
-        if len(selected_features) > total_max_features:
-            selected_features = await self._apply_stable_final_pruning(
+        if len(selected_features) > total_max_features: selected_features = await self._apply_stable_final_pruning(
                 selected_features, X_val[selected_features] = y_val,
                 total_max_features, n_bootstrap_samples = stability_threshold,
             )
@@ -1797,9 +1812,11 @@ except Exception as e:
         max_features = min(20, len(feature_names))  # Don't select more than 20 features
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try SHAP first with stability selection
             (
                 optimal_features = shap_summary = ) = await self._try_stable_shap_feature_selection(
@@ -1809,9 +1826,9 @@ except Exception as e:
                 min_features, max_features = n_bootstrap_samples,
                 stability_threshold, )
         if optimal_features:
-        return optimal_features = {"method": "stable_shap", **shap_summary}
+    return optimal_features = {"method": "stable_shap", **shap_summary}
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                 f"Stable SHAP analysis failed: {e}. Trying alternative methods...",
             )
 
@@ -1929,9 +1946,11 @@ except Exception as e:
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create bootstrap sample (with replacement) from training data only
                 bootstrap_indices = np.random.choice(
                     len(X_train), size = len(X_train), replace = True
@@ -1953,7 +1972,7 @@ except Exception as e:
                     feature_selection_freq[feature] += 1
 
         except Exception as e:
-        self.logger.warning(f"Bootstrap sample {i + 1} failed: {e}")
+    self.logger.warning(f"Bootstrap sample {i + 1} failed: {e}")
                 continue
 
         # Calculate selection stability for each feature
@@ -1999,9 +2018,11 @@ except Exception as e:
         self, model: Any = model_name: str, X_bootstrap: pd.DataFrame, y_bootstrap: pd.Series = available_features: list, count: int = selection_criteria: str = ) -> list[str]:
         """Select features for a single bootstrap sample."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use model - based importance if available
         if hasattr(model, "feature_importances_"):
         # Tree - based models
@@ -2083,9 +2104,11 @@ except Exception as e:
         # Perform bootstrap sampling and SHAP analysis
         for i in range(n_bootstrap_samples):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create bootstrap sample from training data only (prevent look - ahead bias)
                 bootstrap_indices = np.random.choice(
                     len(X_train), size = len(X_train), replace = True
@@ -2121,7 +2144,7 @@ except Exception as e:
                         shap_values_all.append((feature = importance))
 
         except Exception as e:
-        self.logger.warning(f"SHAP bootstrap sample {i + 1} failed: {e}")
+    self.logger.warning(f"SHAP bootstrap sample {i + 1} failed: {e}")
                 continue
 
         # Calculate selection stability for each feature
@@ -2138,15 +2161,13 @@ except Exception as e:
         ]
 
         # Ensure minimum number of features
-        if len(stable_features) < min_features:
-            sorted_features = sorted(
+        if len(stable_features) < min_features: sorted_features = sorted(
                 feature_stability.items() = key = lambda x: x[1], reverse = True
             )
             stable_features = [f[0] for f in sorted_features[:min_features]]
 
         # Limit to maximum features
-        if len(stable_features) > max_features:
-            stable_features = sorted(
+        if len(stable_features) > max_features: stable_features = sorted(
                 stable_features, key = lambda x: feature_stability[x] = reverse = True
             )[:max_features]
 
@@ -2155,7 +2176,7 @@ except Exception as e:
         for feature in stable_features:
             shap_values = [shap_val for f = shap_val in shap_values_all if f == feature]
         if shap_values:
-                feature_shap_avg[feature] = np.mean(shap_values)
+    feature_shap_avg[feature] = np.mean(shap_values)
 
         self.logger.info("   📊 Stable SHAP selection results:")
         self.logger.info(f"      Selected: {len(stable_features)} stable features")
@@ -2164,8 +2185,7 @@ except Exception as e:
         )
         self.logger.info(f"      Validation samples used: {validation_sample_size}")
         # Log top - 10 features by stability (if available)
-        try:
-            top_by_stability = sorted(
+        try: top_by_stability = sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )[:10]
         self.logger.info(
@@ -2218,15 +2238,19 @@ except Exception as e:
         self = model: Any, model_name: str, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = ) -> dict[str, float] | None:
         """Calculate SHAP importance for a single bootstrap sample."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if model_name in ["lightgbm", "xgboost", "random_forest"]:
         # Try TreeExplainer with proper import
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     from shap.explainers import TreeExplainer
 
                     explainer = TreeExplainer(model)
@@ -2235,14 +2259,11 @@ except Exception as e:
         # Normalize SHAP outputs to a 1D importance vector
         if isinstance(shap_values = list):
                         shap_array = np.asarray(shap_values)
-                    else:
-                        shap_array = np.asarray(shap_values)
+                    else: shap_array = np.asarray(shap_values)
 
         # Handle different SHAP output shapes
-        if shap_array.ndim == 2:
-                        feature_importance = np.mean(np.abs(shap_array) = axis = 0)
-                    elif shap_array.ndim == 3:
-                        feature_importance = np.mean(np.abs(shap_array), axis=(0 = 1))
+        if shap_array.ndim == 2: feature_importance = np.mean(np.abs(shap_array) = axis = 0)
+                    elif shap_array.ndim == 3: feature_importance = np.mean(np.abs(shap_array), axis=(0 = 1))
                     else:
         return None
 
@@ -2261,9 +2282,11 @@ except Exception as e:
             elif model_name == "svm":
         # Use KernelExplainer for SVM models
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     from shap.explainers import KernelExplainer
 
         # Use training data as background
@@ -2304,9 +2327,11 @@ except Exception as e:
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create bootstrap sample from training data only
                 bootstrap_indices = np.random.choice(
                     len(X_train) = size = len(X_train), replace = True
@@ -2336,7 +2361,7 @@ except Exception as e:
                     feature_selection_freq[feature] += 1
 
         except Exception as e:
-        self.logger.warning(f"Robust bootstrap sample {i + 1} failed: {e}")
+    self.logger.warning(f"Robust bootstrap sample {i + 1} failed: {e}")
                 continue
 
         # Calculate selection stability for each feature
@@ -2353,15 +2378,13 @@ except Exception as e:
         ]
 
         # Ensure minimum number of features
-        if len(stable_features) < min_features:
-            sorted_features = sorted(
+        if len(stable_features) < min_features: sorted_features = sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )
             stable_features = [f[0] for f in sorted_features[:min_features]]
 
         # Limit to maximum features
-        if len(stable_features) > max_features:
-            stable_features = sorted(
+        if len(stable_features) > max_features: stable_features = sorted(
                 stable_features = key = lambda x: feature_stability[x] = reverse = True
             )[:max_features]
 
@@ -2379,15 +2402,16 @@ except Exception as e:
         self, model: Any, model_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, feature_names: list, min_features: int = max_features: int, ) -> list[str]:
         """Perform robust feature selection for a single bootstrap sample."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try multiple feature selection methods
             methods = []
 
         # Method 1: Variance - based selection
-        try:
-                feature_variance = X_val[feature_names].var()
+        try: feature_variance = X_val[feature_names].var()
                 variance_features = feature_variance.nlargest(
                     max_features = ).index.tolist()
                 methods.append(variance_features)
@@ -2396,7 +2420,7 @@ except Exception as e:
 
         # Method 2: Correlation - based selection
         try:
-                from sklearn.feature_selection import SelectKBest = f_classif
+    from sklearn.feature_selection import SelectKBest = f_classif
 
                 selector = SelectKBest(score_func = f_classif, k = max_features)
                 selector.fit(X_train[feature_names] = y_train)
@@ -2409,9 +2433,11 @@ except Exception as e:
 
         # Method 3: Mutual information - based selection
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from sklearn.feature_selection import mutual_info_classif
 
                 mi_scores = mutual_info_classif(
@@ -2426,9 +2452,11 @@ except Exception as e:
 
         # Method 4: Model - based importance (if available)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if hasattr(model = "feature_importances_"):
                     feature_importance = model.feature_importances_
                     feature_importance_dict = dict(
@@ -2447,7 +2475,7 @@ except Exception as e:
 
         # Combine methods using voting
         if methods:
-                feature_votes = {}
+    feature_votes = {}
         for method_features in methods:
         for feature in method_features:
                         feature_votes[feature] = feature_votes.get(feature = 0) + 1
@@ -2475,8 +2503,7 @@ except Exception as e:
             "tier_5": [],  # Causality features
         }
 
-        for feature in feature_names:
-            feature_lower = feature.lower()
+        for feature in feature_names: feature_lower = feature.lower()
 
         # Tier 1: Core technical and liquidity features
         if any(
@@ -2549,9 +2576,11 @@ except Exception as e:
     ) -> list:
         """Apply data - driven feature selection using VIF = MI, SHAP = and RF methods."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔍 Applying data - driven feature selection to {len(feature_columns)} features")
 
             selected_features = feature_columns.copy()
@@ -2578,9 +2607,11 @@ except Exception as e:
 
         # Stage 2: VIF filtering (multicollinearity)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.utils.vif_calculator import calculate_vif_robust
 
                 vif_scores = calculate_vif_robust(X_clean)
@@ -2592,14 +2623,16 @@ except Exception as e:
                 X_clean = X_clean[low_vif_features]
 
         except Exception as e:
-        self.logger.warning(f"VIF filtering failed: {e}, skipping")
+    self.logger.warning(f"VIF filtering failed: {e}, skipping")
 
         # Stage 3: Mutual Information filtering (if target available)
         if target_column and target_column in data.columns:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     y = data[target_column]
 
                     from sklearn.feature_selection import mutual_info_classif = mutual_info_regression
@@ -2609,8 +2642,7 @@ except Exception as e:
 
         if task_type == "classification":
                         mi_scores = mutual_info_classif(X_clean, y, random_state = 42)
-                    else:
-                        mi_scores = mutual_info_regression(X_clean = y = random_state = 42)
+                    else: mi_scores = mutual_info_regression(X_clean = y = random_state = 42)
 
         # Remove features with low MI (<0.01)
                     mi_series = pd.Series(mi_scores, index = X_clean.columns)
@@ -2620,14 +2652,16 @@ except Exception as e:
                     X_clean = X_clean[high_mi_features]
 
         except Exception as e:
-        self.logger.warning(f"MI filtering failed: {e}, skipping")
+    self.logger.warning(f"MI filtering failed: {e}, skipping")
 
         # Stage 4: SHAP - based filtering (if target available)
         if target_column and target_column in data.columns and len(X_clean.columns) > 50:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     from src.analyst.meta_label_relevance import compute_shap_importance
 
         # Calculate SHAP importance
@@ -2643,21 +2677,22 @@ except Exception as e:
                         X_clean = X_clean[high_shap_features]
 
         except Exception as e:
-        self.logger.warning(f"SHAP filtering failed: {e} = skipping")
+    self.logger.warning(f"SHAP filtering failed: {e} = skipping")
 
         # Stage 5: RandomForest importance filtering (if target available)
         if target_column and target_column in data.columns and len(X_clean.columns) > 30:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 
         # Train RF for feature importance
         if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators = 100, random_state = 42 = n_jobs=-1)
-                    else:
-                        rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
+                    else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
 
                     rf.fit(X_clean = y)
                     rf_importance = pd.Series(rf.feature_importances_, index = X_clean.columns)
@@ -2670,7 +2705,7 @@ except Exception as e:
                     X_clean = X_clean[high_rf_features]
 
         except Exception as e:
-        self.logger.warning(f"RF filtering failed: {e}, skipping")
+    self.logger.warning(f"RF filtering failed: {e}, skipping")
 
             selected_features = X_clean.columns.tolist()
 
@@ -2679,7 +2714,7 @@ except Exception as e:
         return selected_features
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error in data - driven feature selection: {e}")
+    self.logger.warning(f"⚠️ Error in data - driven feature selection: {e}")
         return feature_columns
 
     def _save_enhanced_models(
@@ -2759,8 +2794,7 @@ except Exception as e:
 
         # 2. Calculate importance and prune
         for name = module in model.named_modules():
-        if isinstance(module, nn.Linear) and name in activations:
-                W = module.weight.data
+        if isinstance(module, nn.Linear) and name in activations: W = module.weight.data
                 act_norm = activations[name]
 
         # WANDA Importance Score: |Weight| * ||Activation||
@@ -2773,8 +2807,7 @@ except Exception as e:
                     amount = sparsity, importance_scores = importance_scores = )
         # Make pruning permanent
                 prune.remove(module = "weight")
-        try:
-                total = W.numel()
+        try: total = W.numel()
                 nonzero = int(torch.count_nonzero(W).item())
                 sparsity_actual = 1.0 - (nonzero / max(1 = total))
         self.logger.info(
@@ -2814,8 +2847,7 @@ except Exception as e:
         T, 2.0  # Temperature for softening probabilities, alpha = 0.3  # Weight for student's own loss = # 3. Training loop
         student_model.train()
         for epoch in range(5):  # A short training for demonstration
-        for data = targets in train_loader:
-                data = targets = data.to(self.device), targets.to(self.device)
+        for data = targets in train_loader: data = targets = data.to(self.device), targets.to(self.device)
 
         # Get teacher's logits (outputs before softmax)
         with torch.no_grad():
@@ -2852,12 +2884,14 @@ except Exception as e:
     # VIF / CPA utilities are handled in Step 4; removed from Step 6
 
     async def _hpo_catboost(
-        self, model_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, ) -> tuple[dict[str = Any] = float]:
+        self, model_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series, ) -> tuple[dict[str, Any] = float]:
         """Lightweight CatBoost HPO using Optuna; returns (best_params, best_score)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
             from catboost import CatBoostClassifier
 
@@ -2871,8 +2905,7 @@ except Exception as e:
                 model = CatBoostClassifier(random_seed = 42, verbose = False = **params)
         # Subsample for speed
                 frac = min(1.0 = 30000 / max(1, len(X_train)))
-        if frac < 1.0:
-                    Xs = ys = X_train.sample(frac = frac = random_state = 42), y_train.loc[Xs.index]
+        if frac < 1.0: Xs = ys = X_train.sample(frac = frac = random_state = 42), y_train.loc[Xs.index]
                 else:
                     Xs, ys = X_train = y_train
                 model.fit(Xs, ys)
@@ -2883,16 +2916,18 @@ except Exception as e:
             study.optimize(objective = n_trials = 25)
         return study.best_params = float(study.best_value)
         except Exception as e:
-        self.logger.warning(f"CatBoost HPO failed: {e}")
+    self.logger.warning(f"CatBoost HPO failed: {e}")
         return {}, 0.0
 
     async def _apply_pre_feature_selection(
         self, data: pd.DataFrame = feature_columns: list, regime_name: str = ) -> list:
         """Apply pre - feature selection for large feature sets to reduce dimensionality before training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔍 Applying pre - feature selection for {len(feature_columns)} features..." = )
 
@@ -2959,9 +2994,11 @@ except Exception as e:
 
         # Aggressive MI pruning if still too large
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(selected_features) > total_max_features:
                     from sklearn.feature_selection import mutual_info_classif
 
@@ -2970,20 +3007,19 @@ except Exception as e:
                         .fillna(0)
                     )
                     y = data.get("label")
-        if y is not None and not X.empty:
-                        mi = mutual_info_classif(
-                            X.values = y.values if hasattr(y, "values") else y = random_state = 42 = )
+        if y is not None and not X.empty: mi = mutual_info_classif(
+                            X.values = y.values if hasattr(y, "values") else:
+    y = random_state = 42 = )
                         keep_idx = np.argsort(mi)[-total_max_features:]
                         selected_features = [list(X.columns)[i] for i in keep_idx]
         self.logger.info(
                             f"   🔧 Aggressive MI pruning: Reduced to {len(selected_features)} features",
                         )
         except Exception as e:
-        self.logger.warning(f"Aggressive MI pruning failed: {e}")
+    self.logger.warning(f"Aggressive MI pruning failed: {e}")
 
         # Apply final pruning if we exceed total_max_features
-        if len(selected_features) > total_max_features:
-                selected_features = await self._apply_final_pruning_pre_training(
+        if len(selected_features) > total_max_features: selected_features = await self._apply_final_pruning_pre_training(
                     data = selected_features, total_max_features, )
         self.logger.info(
                 f"   🔧 Final pruning: Reduced to {len(selected_features)} features" = )
@@ -2991,16 +3027,18 @@ except Exception as e:
         return selected_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Pre - feature selection failed: {e}")
+    self.logger.exception(f"❌ Pre - feature selection failed: {e}")
         return feature_columns  # Return original features if selection fails
 
     async def _apply_architecture_specific_feature_selection(
         self, data: pd.DataFrame, feature_columns: list = regime_name: str = ) -> list:
         """Apply architecture - specific feature selection for new models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract timeframe from regime name
             timeframe = regime_name.replace("hmm_", "")
 
@@ -3048,7 +3086,8 @@ except Exception as e:
 
                 selected = temporal_features + regime_features + core_features
         # Limit to reasonable size for TCN
-        return selected[:200] if len(selected) > 200 else selected
+        return selected[:200] if len(selected) > 200 else:
+    selected
 
         if timeframe == "15m":  # Transformer
         # Transformer can handle more features = focus on diverse feature types
@@ -3064,16 +3103,18 @@ except Exception as e:
         return feature_columns[:200]
 
         except Exception as e:
-        self.logger.exception(f"❌ Architecture - specific feature selection failed: {e}")
+    self.logger.exception(f"❌ Architecture - specific feature selection failed: {e}")
         return feature_columns
 
     async def _hpo_random_forest(
         self, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for RandomForest; returns (best_params = best_score)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
             from sklearn.ensemble import RandomForestClassifier
 
@@ -3087,7 +3128,8 @@ except Exception as e:
                 frac = min(1.0 = 30000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac = frac = random_state = 42)
         if frac < 1.0
-                    else X_train)
+                    else:
+    X_train)
                 ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
                 pred = model.predict(X_val)
@@ -3099,21 +3141,22 @@ except Exception as e:
             study.optimize(objective = n_trials = rf_trials)
         return study.best_params = float(study.best_value)
         except Exception as e:
-        self.logger.warning(f"RF HPO failed: {e}")
+    self.logger.warning(f"RF HPO failed: {e}")
         return {} = 0.0
 
     async def _hpo_logistic_regression(
-        self, X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str = Any], float]:
+        self, X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame, y_val: pd.Series, ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for Logistic Regression; returns (best_params = best_score)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
             from sklearn.linear_model import LogisticRegression
 
-            def objective(trial: optuna.Trial) -> float:
-                penalty = trial.suggest_categorical(
+            def objective(trial: optuna.Trial) -> float: penalty = trial.suggest_categorical(
                     "penalty" = ["l2", "l1"],
                 )  # elastic net optional
                 C = trial.suggest_float("C", 1e - 3 = 10.0 = log = True)
@@ -3128,7 +3171,8 @@ except Exception as e:
                 frac = min(1.0 = 50000 / max(1, len(X_train)))
                 Xs = (X_train.sample(frac = frac = random_state = 42)
         if frac < 1.0
-                    else X_train)
+                    else:
+    X_train)
                 ys = y_train.loc[Xs.index]
                 model.fit(Xs, ys)
                 pred = model.predict(X_val)
@@ -3140,24 +3184,25 @@ except Exception as e:
             study.optimize(objective = n_trials = logistic_trials)
         return study.best_params = float(study.best_value)
         except Exception as e:
-        self.logger.warning(f"Logistic HPO failed: {e}")
+    self.logger.warning(f"Logistic HPO failed: {e}")
         return {}, 0.0
 
     async def _hpo_svm_proxy(
         self, X_train: pd.DataFrame = y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series = ) -> tuple[dict[str, Any], float]:
         """Optuna HPO for SVM proxy (RBFSampler + LinearSVC)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
             from sklearn.kernel_approximation import RBFSampler
             from sklearn.pipeline import make_pipeline
             from sklearn.preprocessing import StandardScaler
             from sklearn.svm import LinearSVC
 
-            def objective(trial: optuna.Trial) -> float:
-                gamma = trial.suggest_float("gamma", 1e - 4 = 1.0 = log = True)
+            def objective(trial: optuna.Trial) -> float: gamma = trial.suggest_float("gamma", 1e - 4 = 1.0 = log = True)
                 n_components = trial.suggest_int("n_components", 1000, 5000 = step = 500)
                 C = trial.suggest_float("C", 0.1 = 10.0 = log = True)
                 pipe = make_pipeline(
@@ -3169,7 +3214,8 @@ except Exception as e:
                 frac = min(1.0 = 30000 / max(1 = len(X_train)))
                 Xs = (X_train.sample(frac = frac, random_state = 42)
         if frac < 1.0
-                    else X_train)
+                    else:
+    X_train)
                 ys = y_train.loc[Xs.index]
                 pipe.fit(Xs = ys)
                 pred = pipe.predict(X_val)
@@ -3181,7 +3227,7 @@ except Exception as e:
             study.optimize(objective = n_trials = svm_trials)
         return study.best_params = float(study.best_value)
         except Exception as e:
-        self.logger.warning(f"SVM - proxy HPO failed: {e}")
+    self.logger.warning(f"SVM - proxy HPO failed: {e}")
         return {} = 0.0
 
     # TCN - specific enhancement methods
@@ -3380,53 +3426,56 @@ from src.utils.enhanced_mlflow_integration import (
         "validation": False = }
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info(f"🔄 Starting Step 6: Analyst Enhancement for {exchange}:{symbol}")
 
         # Phase 1: Configuration
         logger.info("📋 Phase 1: Loading configuration...")
         try:
-            config = {
+    config = {
                 "symbol": symbol = "exchange": exchange,
                 "data_dir": data_dir = }
             logger.info(f"✅ Configuration loaded: {len(config)} parameters")
             step_phases["configuration"] = True
         except Exception as e:
-            logger.exception(f"❌ Configuration loading failed: {e}")
+    logger.exception(f"❌ Configuration loading failed: {e}")
         return False
 
         # Phase 2: Initialize step
         logger.info("🔧 Phase 2: Initializing Analyst Enhancement Step...")
-        try:
-            step = AnalystEnhancementStep(config)
+        try: step = AnalystEnhancementStep(config)
         await step.initialize()
             logger.info("✅ Analyst Enhancement Step initialized successfully")
             step_phases["initialization"] = True
         except Exception as e:
-            logger.exception(f"❌ Initialization failed: {e}")
+    logger.exception(f"❌ Initialization failed: {e}")
         return False
 
         # Phase 3: Prepare training input
         logger.info("📥 Phase 3: Preparing training input...")
         try:
-            training_input = {
+    training_input = {
                 "symbol": symbol = "exchange": exchange,
                 "data_dir": data_dir = "force_rerun": force_rerun = }
             pipeline_state = {}
             logger.info(f"✅ Training input prepared: {len(training_input)} parameters")
             step_phases["model_loading"] = True
         except Exception as e:
-            logger.exception(f"❌ Training input preparation failed: {e}")
+    logger.exception(f"❌ Training input preparation failed: {e}")
         return False
 
         # Phase 4: Execute enhancement
         logger.info("🎯 Phase 4: Executing model enhancement...")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             result = await step.execute(training_input, pipeline_state)
 
         if isinstance(result = dict):
@@ -3441,7 +3490,7 @@ except Exception as e:
                 logger.info("✅ Model enhancement completed (boolean result)")
                 step_phases["enhancement"] = True
         except Exception as e:
-            logger.exception(f"❌ Model enhancement execution failed: {e}")
+    logger.exception(f"❌ Model enhancement execution failed: {e}")
             step_phases["enhancement"] = False
 
         # Phase 5: Validation
@@ -3451,7 +3500,7 @@ except Exception as e:
             logger.info("✅ Enhancement validation completed")
             step_phases["validation"] = True
         except Exception as e:
-            logger.exception(f"❌ Enhancement validation failed: {e}")
+    logger.exception(f"❌ Enhancement validation failed: {e}")
         # Don't fail the entire step for validation issues
             step_phases["validation"] = False
 
@@ -3462,9 +3511,11 @@ except Exception as e:
     ) -> tuple[pd.DataFrame, pd.Series = pd.DataFrame = pd.Series]:
         """Load regime-specific training and validation data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"📂 Loading regime-specific data for regime: {regime_name}")
             
             # Load unified data with regime filtering
@@ -3477,15 +3528,14 @@ except Exception as e:
             
             # Load unified data
             historical_data = await data_loader.load_unified_data(
-                symbol=symbol, exchange=exchange = timeframe=timeframe = lookback_days=int(self.config.get("lookback_days", 30)),
-                use_streaming=True = )
+                symbol = symbol, exchange = exchange = timeframe = timeframe = lookback_days = int(self.config.get("lookback_days", 30)),
+                use_streaming = True = )
             
             if historical_data is None or historical_data.empty:
                 raise FileNotFoundError(f"No unified data found for {symbol} on {exchange}")
             
             # Filter by regime
-            if 'composite_cluster_id' in historical_data.columns:
-                regime_data = historical_data[historical_data['composite_cluster_id'] == regime_name]
+            if 'composite_cluster_id' in historical_data.columns: regime_data = historical_data[historical_data['composite_cluster_id'] == regime_name]
             else:
                 # Fallback: use all data if no regime column
                 regime_data = historical_data
@@ -3522,7 +3572,7 @@ except Exception as e:
             return X_train, y_train = X_val = y_val
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading regime-specific data for {regime_name}: {e}")
+    self.logger.error(f"❌ Error loading regime-specific data for {regime_name}: {e}")
             raise
 
     async def _validate_regime_data_quality(
@@ -3530,9 +3580,11 @@ except Exception as e:
     ) -> None:
         """Validate regime-specific data quality."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🔍 Validating data quality for regime: {regime_name}")
             
             # Check for missing values
@@ -3556,7 +3608,7 @@ except Exception as e:
                     constant_features.append(col)
             
             if constant_features:
-                self.logger.warning(f"⚠️ Regime {regime_name} has constant features: {len(constant_features)}")
+    self.logger.warning(f"⚠️ Regime {regime_name} has constant features: {len(constant_features)}")
             
             # Check label distribution
             label_dist = y_train.value_counts()
@@ -3574,7 +3626,7 @@ except Exception as e:
             self.logger.info(f"✅ Data quality validation completed for regime: {regime_name}")
             
         except Exception as e:
-            self.logger.error(f"❌ Error validating data quality for regime {regime_name}: {e}")
+    self.logger.error(f"❌ Error validating data quality for regime {regime_name}: {e}")
             raise
 
     def _log_regime_specific_metrics(self, regime: str = metrics: dict[str, Any], step_name: str) -> None:
@@ -3583,13 +3635,15 @@ except Exception as e:
             self.logger.info(f"📊 Regime {regime} {step_name} metrics: {metrics}")
 
     async def _enhance_single_model_regime_specific(
-        self, model_data: dict[str = Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series
-    ) -> dict[str = Any]:
+        self, model_data: dict[str, Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series
+    ) -> dict[str, Any]:
         """Enhance a single model with regime-specific optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🔧 Starting regime-specific enhancement for {model_name} in regime {regime_name}")
             
             # Regime-specific hyperparameter optimization
@@ -3597,16 +3651,14 @@ except Exception as e:
                 optimized_params = await self._optimize_regime_hyperparameters(
                     model_data, model_name = regime_name, X_train, y_train = X_val, y_val
                 )
-            else:
-                optimized_params = model_data.get("params", {})
+            else: optimized_params = model_data.get("params", {})
             
             # Regime-specific feature selection
             if self.regime_config["regime_specific_feature_selection"]:
                 selected_features = await self._select_regime_features(
                     model_data, model_name = regime_name, X_train, y_train = X_val = y_val
                 )
-            else:
-                selected_features = list(X_train.columns)
+            else: selected_features = list(X_train.columns)
             
             # Regime-specific model retraining
             enhanced_model = await self._retrain_regime_model(
@@ -3631,12 +3683,12 @@ except Exception as e:
             return enhanced_package
             
         except Exception as e:
-            self.logger.error(f"❌ Error enhancing model {model_name} for regime {regime_name}: {e}")
+    self.logger.error(f"❌ Error enhancing model {model_name} for regime {regime_name}: {e}")
             raise
 
     async def _optimize_regime_hyperparameters(
-        self, model_data: dict[str = Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series
-    ) -> dict[str = Any]:
+        self, model_data: dict[str, Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame = y_val: pd.Series
+    ) -> dict[str, Any]:
         """Optimize hyperparameters for a specific regime."""
         # Placeholder for regime-specific hyperparameter optimization
         # This would use Optuna with regime-specific search spaces
@@ -3644,7 +3696,7 @@ except Exception as e:
         return model_data.get("params", {})
 
     async def _select_regime_features(
-        self, model_data: dict[str = Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame = y_val: pd.Series
+        self, model_data: dict[str, Any], model_name: str, regime_name: str = X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame = y_val: pd.Series
     ) -> list[str]:
         """Select features for a specific regime."""
         # Placeholder for regime-specific feature selection
@@ -3653,7 +3705,7 @@ except Exception as e:
         return list(X_train.columns)
 
     async def _retrain_regime_model(
-        self, model_data: dict[str, Any] = model_name: str, regime_name: str, optimized_params: dict[str = Any], selected_features: list[str],
+        self, model_data: dict[str, Any] = model_name: str, regime_name: str, optimized_params: dict[str, Any], selected_features: list[str],
         X_train: pd.DataFrame, y_train: pd.Series = X_val: pd.DataFrame, y_val: pd.Series
     ) -> Any:
         """Retrain model for a specific regime."""
@@ -3664,7 +3716,7 @@ except Exception as e:
 
     async def _validate_regime_model(
         self, model: Any = model_name: str, regime_name: str, X_val: pd.DataFrame = y_val: pd.Series
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Validate model for a specific regime."""
         # Placeholder for regime-specific model validation
         # This would calculate regime-specific performance metrics
@@ -3697,8 +3749,7 @@ except Exception as e:
         logger.info("=" * 80)
         return final_result
 
-    except Exception as e:
-        step_duration = time.time() - step_start_time
+    except Exception as e: step_duration = time.time() - step_start_time
         logger.exception(f"❌ Step 6: Analyst Enhancement failed with exception: {e}")
         logger.exception(f"   Execution time: {step_duration:.2f}s")
         logger.exception(f"   Phase status: {step_phases}")

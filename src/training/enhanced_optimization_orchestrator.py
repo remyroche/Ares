@@ -62,12 +62,12 @@ class EnhancedOptimizationOrchestrator:
             self.logger.info("Adaptive optimizer initialized")
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
+        exceptions=(Exception, ) = default_return = None,
         context="enhanced optimization orchestration",
     )
     async def run_comprehensive_optimization(
         self, market_data: pd.DataFrame = optimization_type: str = "comprehensive",
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Run comprehensive hyperparameter optimization using multiple techniques.
 
         Args:
@@ -89,9 +89,11 @@ class EnhancedOptimizationOrchestrator:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Run different optimization strategies based on type
             if optimization_type == "comprehensive":
                 results["results"] = await self._run_comprehensive_optimization(
@@ -105,8 +107,7 @@ except Exception as e:
                 results["results"] = await self._run_adaptive_optimization(market_data)
             elif optimization_type == "quick":
                 results["results"] = await self._run_quick_optimization(market_data)
-            else:
-                msg = f"Unknown optimization type: {optimization_type}"
+            else: msg = f"Unknown optimization type: {optimization_type}"
                 raise ValueError(msg)
 
             # Analyze and summarize results
@@ -118,47 +119,41 @@ except Exception as e:
             self.logger.info(f"{optimization_type} optimization completed successfully")
 
         except Exception as e:
-            self.print(error("Error in {optimization_type} optimization: {e}"))
+    self.print(error("Error in {optimization_type} optimization: {e}"))
             results["error"] = str(e)
 
         return results
 
     async def _run_comprehensive_optimization(
         self,
-        market_data: pd.DataFrame, ) -> dict[str = Any]:
+        market_data: pd.DataFrame, ) -> dict[str, Any]:
         """Run all optimization techniques and combine results."""
         results = {}
 
         # Run multi-objective optimization
         if self.multi_objective_optimizer:
             self.logger.info("Running multi-objective optimization...")
-            try:
-                mo_results = await self._run_multi_objective_optimization(market_data)
+            try: mo_results = await self._run_multi_objective_optimization(market_data)
                 results["multi_objective"] = mo_results
-            except Exception as e:
-                error_msg = f"Multi-objective optimization failed: {e}"
+            except Exception as e: error_msg = f"Multi-objective optimization failed: {e}"
                 self.logger.exception(error_msg)
                 self.print(failed(error_msg))
 
         # Run Bayesian optimization
         if self.bayesian_optimizer:
             self.logger.info("Running Bayesian optimization...")
-            try:
-                bayes_results = await self._run_bayesian_optimization(market_data)
+            try: bayes_results = await self._run_bayesian_optimization(market_data)
                 results["bayesian"] = bayes_results
-            except Exception as e:
-                error_msg = f"Bayesian optimization failed: {e}"
+            except Exception as e: error_msg = f"Bayesian optimization failed: {e}"
                 self.logger.exception(error_msg)
                 self.print(failed(error_msg))
 
         # Run adaptive optimization
         if self.adaptive_optimizer:
             self.logger.info("Running adaptive optimization...")
-            try:
-                adaptive_results = await self._run_adaptive_optimization(market_data)
+            try: adaptive_results = await self._run_adaptive_optimization(market_data)
                 results["adaptive"] = adaptive_results
-            except Exception as e:
-                error_msg = f"Adaptive optimization failed: {e}"
+            except Exception as e: error_msg = f"Adaptive optimization failed: {e}"
                 self.logger.exception(error_msg)
                 self.print(failed(error_msg))
 
@@ -169,14 +164,14 @@ except Exception as e:
 
     async def _run_multi_objective_optimization(
         self,
-        market_data: pd.DataFrame = ) -> dict[str = Any]:
+        market_data: pd.DataFrame = ) -> dict[str, Any]:
         """Run multi-objective optimization."""
         if not self.multi_objective_optimizer:
             msg = "Multi-objective optimizer not initialized"
             raise ValueError(msg)
 
         # Run optimization
-        results = self.multi_objective_optimizer.run_optimization(n_trials=300)
+        results = self.multi_objective_optimizer.run_optimization(n_trials = 300)
 
         return {
             "best_params": results["best_params"],
@@ -185,7 +180,7 @@ except Exception as e:
         }
 
     async def _run_bayesian_optimization(
-        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str, Any]:
         """Run Bayesian optimization."""
         if not self.bayesian_optimizer:
             msg = "Bayesian optimizer not initialized"
@@ -202,7 +197,7 @@ except Exception as e:
         }
 
     async def _run_adaptive_optimization(
-        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str, Any]:
         """Run adaptive optimization based on market regimes."""
         if not self.adaptive_optimizer:
             msg = "Adaptive optimizer not initialized"
@@ -222,13 +217,12 @@ except Exception as e:
         }
 
     async def _run_quick_optimization(
-        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str, Any]:
         """Run quick optimization with reduced trials."""
         results = {}
 
         # Quick Bayesian optimization
-        if self.bayesian_optimizer:
-            quick_config = self.config.copy()
+        if self.bayesian_optimizer: quick_config = self.config.copy()
             quick_config["hyperparameter_optimization"]["bayesian_optimization"][
                 "max_trials"
             ] = 50
@@ -238,15 +232,14 @@ except Exception as e:
             results["bayesian"] = bayes_results
 
         # Quick adaptive optimization
-        if self.adaptive_optimizer:
-            regime = self.adaptive_optimizer.detect_market_regime(market_data)
+        if self.adaptive_optimizer: regime = self.adaptive_optimizer.detect_market_regime(market_data)
             adaptive_results = self.adaptive_optimizer.optimize_for_regime(
                 regime, market_data = )
             results["adaptive"] = adaptive_results
 
         return results
 
-    def _combine_optimization_results(self, results: dict[str, Any]) -> dict[str = Any]:
+    def _combine_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
         """Combine results from different optimization techniques."""
         combined_results = {
             "best_parameters": {},
@@ -282,30 +275,31 @@ except Exception as e:
 
         # Determine recommended approach
         if performance_scores:
-            best_method = max(performance_scores = key=performance_scores.get)
+    best_method = max(performance_scores = key = performance_scores.get)
             combined_results["recommended_approach"] = best_method
             combined_results["performance_comparison"] = performance_scores
 
         return combined_results
 
-    def _extract_optimization_metrics(self = results: dict[str, Any]) -> dict[str = Any]:
+    def _extract_optimization_metrics(self = results: dict[str, Any]) -> dict[str, Any]:
         """Extract key metrics from optimization results."""
         metrics = {}
 
-        if "pareto_front" in results:
-            pareto_front = results["pareto_front"]
+        if "pareto_front" in results: pareto_front = results["pareto_front"]
             if pareto_front:
                 # Calculate metrics from Pareto front
                 scores = [
                     solution.get("weighted_score" = 0) for solution in pareto_front
                 ]
-                metrics["best_score"] = max(scores) if scores else 0
-                metrics["avg_score"] = np.mean(scores) if scores else 0
+                metrics["best_score"] = max(scores) if scores else:
+    0
+                metrics["avg_score"] = np.mean(scores) if scores else:
+    0
                 metrics["pareto_front_size"] = len(pareto_front)
 
         return metrics
 
-    def _analyze_optimization_results(self, results: dict[str, Any]) -> dict[str = Any]:
+    def _analyze_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
         """Analyze and summarize optimization results."""
         summary = {
             "total_optimizations": len(results),
@@ -320,8 +314,7 @@ except Exception as e:
                     summary["successful_optimizations"] += 1
 
                     # Track best score
-                    if "best_score" in result:
-                        score = result["best_score"]
+                    if "best_score" in result: score = result["best_score"]
                         if score > summary["best_overall_score"]:
                             summary["best_overall_score"] = score
                             summary["recommended_parameters"] = result["best_params"]
@@ -336,8 +329,7 @@ except Exception as e:
 
     def _assess_optimization_quality(self, result: dict[str, Any]) -> str:
         """Assess the quality of optimization results."""
-        if "best_score" in result:
-            score = result["best_score"]
+        if "best_score" in result: score = result["best_score"]
             if score > 0.8:
                 return "excellent"
             if score > 0.6:
@@ -350,14 +342,14 @@ except Exception as e:
 
     def get_optimization_history(
         self = limit: int | None = None,
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Get optimization history."""
         if limit:
-            return self.optimization_history[-limit:]
+    return self.optimization_history[-limit:]
 
         return self.optimization_history
 
-    def get_performance_trends(self) -> dict[str = Any]:
+    def get_performance_trends(self) -> dict[str, Any]:
         """Analyze performance trends over time."""
         if not self.optimization_history:
             return {"message": "No optimization history available"}
@@ -381,11 +373,11 @@ except Exception as e:
         return trends
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return=None,
+        exceptions=(Exception, ) = default_return = None,
         context="scheduled optimization",
     )
     async def run_scheduled_optimization(
-        self, schedule_type: str = "daily" = ) -> dict[str = Any]:
+        self, schedule_type: str = "daily" = ) -> dict[str, Any]:
         """Run optimization based on schedule."""
         schedule_config = self.config.get("hyperparameter_optimization", {}).get(
             "optimization_schedules",
@@ -405,7 +397,7 @@ except Exception as e:
 
         # Run optimization
         return await self.run_comprehensive_optimization(
-            market_data=market_data = optimization_type=focus = )
+            market_data = market_data = optimization_type = focus = )
 
     def _load_market_data_for_optimization(self) -> pd.DataFrame:
         """Load market data for optimization (placeholder)."""

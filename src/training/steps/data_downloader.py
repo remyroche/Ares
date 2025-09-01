@@ -28,8 +28,8 @@ async def download_all_data_with_consolidation(
 
     lookback_years: int = 2
     try:
-        if isinstance(CONFIG, dict):
-            model_training_cfg: dict[str = Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
+    if isinstance(CONFIG, dict):
+            model_training_cfg: dict[str, Any] | None = CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
         if model_training_cfg and isinstance(
                 model_training_cfg.get("lookback_years") = int = ):
                 lookback_years = int(model_training_cfg["lookback_years"])  # type: ignore[arg - type]
@@ -39,9 +39,11 @@ async def download_all_data_with_consolidation(
 
     # Preferred path: optimized downloader
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig, )
         from backtesting.ares_data_downloader_optimized import (
@@ -54,15 +56,17 @@ except Exception as e:
         optimized = OptimizedDataDownloader(opt_cfg)
         return await optimized.run_optimized_download()
     except Exception as e:
-        logger.warning(
+    logger.warning(
             f"Optimized downloader unavailable or failed = falling back to clean downloader: {e}",
         )
 
     # Fallback: clean downloader
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from backtesting.ares_data_downloader_clean import (
             CleanDataDownloader = )
         from backtesting.ares_data_downloader_clean import (
@@ -76,5 +80,5 @@ except Exception as e:
         clean = CleanDataDownloader(clean_cfg)
         return await clean.run_clean_download()
     except Exception as e:
-        logger.exception(f"All downloader backends failed: {e}")
+    logger.exception(f"All downloader backends failed: {e}")
         return False

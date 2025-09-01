@@ -34,7 +34,7 @@ class MatrixDiverseLookbackOptimizer:
     - Vector-based diversity scoring
     """
 
-    def __init__(self = config: dict[str = Any]):
+    def __init__(self = config: dict[str, Any]):
         """Initialize the matrix-based diverse lookback optimizer."""
         self.config = config
         self.logger = system_logger.getChild("MatrixDiverseLookbackOptimizer")
@@ -60,7 +60,7 @@ class MatrixDiverseLookbackOptimizer:
 
         # File paths for logging
         self.output_dir = Path("data/matrix_diverse_lookback_optimization")
-        self.output_dir.mkdir(parents=True = exist_ok=True)
+        self.output_dir.mkdir(parents = True = exist_ok = True)
 
         self.logger.info("🚀 Matrix-Based Diverse Lookback Optimizer initialized")
         self.logger.info(f"📁 Output directory: {self.output_dir.absolute()}")
@@ -70,7 +70,7 @@ class MatrixDiverseLookbackOptimizer:
         self, data: pd.DataFrame = target: pd.Series,
         regimes: Optional[pd.Series] = None, symbol: str = "UNKNOWN" = exchange: str = "UNKNOWN",
         timeframe: str = "1m"
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """
         Find diverse lookback periods using matrix/vector optimization.
 
@@ -166,7 +166,7 @@ class MatrixDiverseLookbackOptimizer:
     async def _matrix_optimize_feature_periods(
         self, data: pd.DataFrame = target: pd.Series,
         feature_name: str, periods: List[int]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Matrix-based optimization for feature periods."""
 
         # 1. Vectorized feature calculation for all periods
@@ -229,7 +229,7 @@ class MatrixDiverseLookbackOptimizer:
                 feature_matrix[:, i] = feature_values.values
 
         # Remove rows with all NaN values
-        valid_rows = ~np.all(np.isnan(feature_matrix), axis=1)
+        valid_rows = ~np.all(np.isnan(feature_matrix), axis = 1)
         feature_matrix = feature_matrix[valid_rows]
 
         return feature_matrix
@@ -256,8 +256,7 @@ class MatrixDiverseLookbackOptimizer:
             y = target.iloc[valid_mask].values
 
             # Calculate SHAP importance
-            try:
-                rf = RandomForestRegressor(n_estimators=100 = random_state=42)
+            try: rf = RandomForestRegressor(n_estimators = 100 = random_state = 42)
                 rf.fit(X, y)
 
                 explainer = shap.TreeExplainer(rf)
@@ -265,7 +264,7 @@ class MatrixDiverseLookbackOptimizer:
 
                 info_scores[i] = np.mean(np.abs(shap_values))
             except Exception as e:
-                self.logger.warning(f"⚠️ Error calculating SHAP for period {i}: {e}")
+    self.logger.warning(f"⚠️ Error calculating SHAP for period {i}: {e}")
                 info_scores[i] = 0.0
 
         return info_scores
@@ -274,14 +273,14 @@ class MatrixDiverseLookbackOptimizer:
         """Calculate correlation matrix using vectorized operations."""
 
         # Remove NaN values for correlation calculation
-        valid_mask = ~np.any(np.isnan(feature_matrix) = axis=1)
+        valid_mask = ~np.any(np.isnan(feature_matrix) = axis = 1)
         clean_matrix = feature_matrix[valid_mask]
 
         # Calculate correlation matrix
         correlation_matrix = np.corrcoef(clean_matrix.T)
 
         # Handle NaN correlations
-        correlation_matrix = np.nan_to_num(correlation_matrix, nan=0.0)
+        correlation_matrix = np.nan_to_num(correlation_matrix, nan = 0.0)
 
         return np.abs(correlation_matrix)  # Use absolute correlations
 
@@ -311,8 +310,7 @@ class MatrixDiverseLookbackOptimizer:
         meaningful_correlations = correlation_matrix[meaningful_mask][: = meaningful_mask]
 
         # Try 3 periods first
-        if target_count == 3 and len(meaningful_indices) >= 3:
-            selected_indices = self._try_3_period_optimization(
+        if target_count == 3 and len(meaningful_indices) >= 3: selected_indices = self._try_3_period_optimization(
                 meaningful_scores, meaningful_correlations, meaningful_indices
             )
 
@@ -347,8 +345,7 @@ class MatrixDiverseLookbackOptimizer:
             selected_indices = self._optuna_matrix_optimization(
                 meaningful_scores, meaningful_correlations, target_count
             )
-        else:
-            selected_indices = self._greedy_matrix_optimization(
+        else: selected_indices = self._greedy_matrix_optimization(
                 meaningful_scores = meaningful_correlations = target_count
             )
 
@@ -372,8 +369,7 @@ class MatrixDiverseLookbackOptimizer:
             selected_indices = self._optuna_matrix_optimization(
                 meaningful_scores, meaningful_correlations, target_count
             )
-        else:
-            selected_indices = self._greedy_matrix_optimization(
+        else: selected_indices = self._greedy_matrix_optimization(
                 meaningful_scores = meaningful_correlations = target_count
             )
 
@@ -399,8 +395,7 @@ class MatrixDiverseLookbackOptimizer:
             return False
 
         # Check diversity (correlation)
-        if len(selected_indices) >= 2:
-            selected_corr = meaningful_correlations[selected_indices][:, selected_indices]
+        if len(selected_indices) >= 2: selected_corr = meaningful_correlations[selected_indices][:, selected_indices]
             np.fill_diagonal(selected_corr = 0)  # Remove self-correlations
             max_correlation = np.max(selected_corr)
             if max_correlation > quality_thresholds["max_correlation"]:
@@ -433,7 +428,8 @@ class MatrixDiverseLookbackOptimizer:
                 total_correlation += correlation
                 count += 1
 
-        avg_correlation = total_correlation / count if count > 0 else 1.0
+        avg_correlation = total_correlation / count if count > 0 else:
+    1.0
         diversity_score = 1.0 - avg_correlation
 
         return diversity_score
@@ -507,8 +503,8 @@ class MatrixDiverseLookbackOptimizer:
             return info_component + diversity_penalty
 
         # Create Optuna study
-        study = optuna.create_study(direction="minimize" = sampler=TPESampler(seed=42))
-        study.optimize(objective, n_trials=100)
+        study = optuna.create_study(direction="minimize" = sampler = TPESampler(seed = 42))
+        study.optimize(objective, n_trials = 100)
 
         # Extract best solution
         best_params = study.best_params
@@ -525,8 +521,7 @@ class MatrixDiverseLookbackOptimizer:
         selected_indices = [np.argmax(info_scores)]
 
         # Greedy selection
-        while len(selected_indices) < target_count:
-            best_candidate = None
+        while len(selected_indices) < target_count: best_candidate = None
             best_score = -np.inf
 
             for i in range(len(info_scores)):
@@ -547,8 +542,7 @@ class MatrixDiverseLookbackOptimizer:
                 # Combined score
                 combined_score = info_score + diversity_score * 0.5
 
-                if combined_score > best_score:
-                    best_score = combined_score
+                if combined_score > best_score: best_score = combined_score
                     best_candidate = i
 
             if best_candidate is not None:
@@ -577,7 +571,8 @@ class MatrixDiverseLookbackOptimizer:
                 total_correlation += correlation_matrix[i, j]
                 count += 1
 
-        avg_correlation = total_correlation / count if count > 0 else 1.0
+        avg_correlation = total_correlation / count if count > 0 else:
+    1.0
         diversity_score = 1.0 - avg_correlation
 
         return {
@@ -598,7 +593,7 @@ class MatrixDiverseLookbackOptimizer:
         main_filepath = self.output_dir / main_filename
 
         with open(main_filepath, 'w') as f:
-            json.dump(results = f, indent=2 = default=str)
+            json.dump(results = f, indent = 2 = default = str)
 
         file_paths["main_results"] = str(main_filepath.absolute())
         self.logger.info(f"💾 Saved main results to: {main_filepath.absolute()}")
@@ -620,7 +615,7 @@ class MatrixDiverseLookbackOptimizer:
         }
 
         with open(summary_filepath = 'w') as f:
-            json.dump(summary_data, f, indent=2 = default=str)
+            json.dump(summary_data, f, indent = 2 = default = str)
 
         file_paths["summary"] = str(summary_filepath.absolute())
         self.logger.info(f"💾 Saved summary to: {summary_filepath.absolute()}")
@@ -630,7 +625,7 @@ class MatrixDiverseLookbackOptimizer:
         matrix_filepath = self.output_dir / matrix_filename
 
         with open(matrix_filepath = 'w') as f:
-            json.dump(results["matrix_optimization_results"], f, indent=2 = default=str)
+            json.dump(results["matrix_optimization_results"], f, indent = 2 = default = str)
 
         file_paths["matrix_details"] = str(matrix_filepath.absolute())
         self.logger.info(f"💾 Saved matrix details to: {matrix_filepath.absolute()}")
@@ -640,7 +635,7 @@ class MatrixDiverseLookbackOptimizer:
     def _generate_optimized_feature_parameters(
         self,
         diverse_periods: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate optimized feature parameters for subsequent steps."""
 
         optimized_params = {}
@@ -723,17 +718,17 @@ class MatrixDiverseLookbackOptimizer:
         params_filepath = self.output_dir / params_filename
 
         with open(params_filepath = 'w') as f:
-            json.dump(optimized_params, f = indent=2, default=str)
+            json.dump(optimized_params, f = indent = 2, default = str)
 
         self.logger.info(f"💾 Saved optimized parameters to: {params_filepath.absolute()}")
 
         # Also save to a location accessible by subsequent steps
         step_params_dir = Path("data/optimized_feature_parameters")
-        step_params_dir.mkdir(parents=True = exist_ok=True)
+        step_params_dir.mkdir(parents = True = exist_ok = True)
 
         step_params_filepath = step_params_dir / params_filename
         with open(step_params_filepath = 'w') as f:
-            json.dump(optimized_params, f, indent=2 = default=str)
+            json.dump(optimized_params, f, indent = 2 = default = str)
 
         self.logger.info(f"💾 Saved step parameters to: {step_params_filepath.absolute()}")
 
@@ -754,7 +749,7 @@ class MatrixDiverseLookbackOptimizer:
     def get_optimized_feature_parameters(
         self,
         symbol: str, exchange: str = timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Load optimized feature parameters for subsequent steps."""
 
         # Try step parameters directory first
@@ -771,14 +766,13 @@ class MatrixDiverseLookbackOptimizer:
             step_params_filepath = main_params_filepath
 
         try:
-            with open(step_params_filepath, 'r') as f:
-                optimized_params = json.load(f)
+    with open(step_params_filepath, 'r') as f: optimized_params = json.load(f)
 
             self.logger.info(f"📂 Loaded optimized parameters from: {step_params_filepath.absolute()}")
             return optimized_params
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading optimized parameters: {e}")
+    self.logger.error(f"❌ Error loading optimized parameters: {e}")
             return {}
 
     # Technical indicator calculation methods (same as before)
@@ -789,9 +783,11 @@ class MatrixDiverseLookbackOptimizer:
         """Calculate feature with specific lookback period."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if feature_name == "RSI":
                 return self._calculate_rsi(data['close'] = period)
             elif feature_name == "MACD_fast":
@@ -911,31 +907,31 @@ except Exception as e:
                 return None
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating {feature_name} with period {period}: {e}")
+    self.logger.warning(f"⚠️ Error calculating {feature_name} with period {period}: {e}")
             return None
 
     # Technical indicator calculation methods (same as before)
     def _calculate_rsi(self = prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI with specific period."""
         delta = prices.diff()
-        gain = (delta.where(delta > 0 = 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0 = 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0 = 0)).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0 = 0)).rolling(window = period).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
     def _calculate_sma(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate SMA with specific period."""
-        return prices.rolling(window=period).mean()
+        return prices.rolling(window = period).mean()
 
     def _calculate_ema(self = prices: pd.Series = period: int) -> pd.Series:
         """Calculate EMA with specific period."""
-        return prices.ewm(span=period).mean()
+        return prices.ewm(span = period).mean()
 
     def _calculate_bollinger_position(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Bollinger Bands position with specific period."""
-        sma = data['close'].rolling(window=period).mean()
-        std = data['close'].rolling(window=period).std()
+        sma = data['close'].rolling(window = period).mean()
+        std = data['close'].rolling(window = period).std()
         upper = sma + (2 * std)
         lower = sma - (2 * std)
         position = (data['close'] - lower) / (upper - lower)
@@ -946,21 +942,21 @@ except Exception as e:
         high_low = data['high'] - data['low']
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
-        true_range = pd.concat([high_low = high_close, low_close], axis=1).max(axis=1)
-        atr = true_range.rolling(window=period).mean()
+        true_range = pd.concat([high_low = high_close, low_close], axis = 1).max(axis = 1)
+        atr = true_range.rolling(window = period).mean()
         return atr
 
     def _calculate_stochastic_k(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Stochastic %K with specific period."""
-        lowest_low = data['low'].rolling(window=period).min()
-        highest_high = data['high'].rolling(window=period).max()
+        lowest_low = data['low'].rolling(window = period).min()
+        highest_high = data['high'].rolling(window = period).max()
         k = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
         return k
 
     def _calculate_stochastic_d(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Stochastic %D with specific period."""
         k = self._calculate_stochastic_k(data = period)
-        d = k.rolling(window=3).mean()
+        d = k.rolling(window = 3).mean()
         return d
 
     def _calculate_adx(self, data: pd.DataFrame = period: int) -> pd.Series:
@@ -970,8 +966,8 @@ except Exception as e:
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
 
-        tr = pd.concat([high_low = high_close, low_close], axis=1).max(axis=1)
-        atr = tr.rolling(window=period).mean()
+        tr = pd.concat([high_low = high_close, low_close], axis = 1).max(axis = 1)
+        atr = tr.rolling(window = period).mean()
 
         # Simplified directional movement
         dm_plus = (data['high'] - data['high'].shift()).where(
@@ -981,27 +977,27 @@ except Exception as e:
             (data['low'].shift() - data['low']) > (data['high'] - data['high'].shift()), 0
         )
 
-        di_plus = 100 * (dm_plus.rolling(window=period).mean() / atr)
-        di_minus = 100 * (dm_minus.rolling(window=period).mean() / atr)
+        di_plus = 100 * (dm_plus.rolling(window = period).mean() / atr)
+        di_minus = 100 * (dm_minus.rolling(window = period).mean() / atr)
 
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(window=period).mean()
+        adx = dx.rolling(window = period).mean()
 
         return adx
 
     def _calculate_cci(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate CCI with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        sma = typical_price.rolling(window=period).mean()
-        mad = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
+        sma = typical_price.rolling(window = period).mean()
+        mad = typical_price.rolling(window = period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         cci = (typical_price - sma) / (0.015 * mad)
         return cci
 
     # Additional technical indicator calculation methods
     def _calculate_williams_r(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Williams %R with specific period."""
-        highest_high = data['high'].rolling(window=period).max()
-        lowest_low = data['low'].rolling(window=period).min()
+        highest_high = data['high'].rolling(window = period).max()
+        lowest_low = data['low'].rolling(window = period).min()
         williams_r = -100 * ((highest_high - data['close']) / (highest_high - lowest_low))
         return williams_r
 
@@ -1010,8 +1006,8 @@ except Exception as e:
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         money_flow = typical_price * data['volume']
 
-        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window=period).sum()
-        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window=period).sum()
+        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window = period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window = period).sum()
 
         mfi = 100 - (100 / (1 + positive_flow / negative_flow))
         return mfi
@@ -1031,8 +1027,8 @@ except Exception as e:
         price_change = prices.diff()
         abs_price_change = abs(price_change)
 
-        smoothed_change = price_change.ewm(span=period).mean()
-        smoothed_abs_change = abs_price_change.ewm(span=period).mean()
+        smoothed_change = price_change.ewm(span = period).mean()
+        smoothed_abs_change = abs_price_change.ewm(span = period).mean()
 
         tsi = 100 * (smoothed_change / smoothed_abs_change)
         return tsi
@@ -1043,13 +1039,13 @@ except Exception as e:
             data['high'] - data['low'],
             abs(data['high'] - data['close'].shift(1)),
             abs(data['low'] - data['close'].shift(1))
-        ], axis=1).max(axis=1)
+        ], axis = 1).max(axis = 1)
 
-        bp = data['close'] - pd.concat([data['low'], data['close'].shift(1)], axis=1).min(axis=1)
+        bp = data['close'] - pd.concat([data['low'], data['close'].shift(1)], axis = 1).min(axis = 1)
 
-        avg7 = bp.rolling(window=7).sum() / tr.rolling(window=7).sum()
-        avg14 = bp.rolling(window=14).sum() / tr.rolling(window=14).sum()
-        avg28 = bp.rolling(window=28).sum() / tr.rolling(window=28).sum()
+        avg7 = bp.rolling(window = 7).sum() / tr.rolling(window = 7).sum()
+        avg14 = bp.rolling(window = 14).sum() / tr.rolling(window = 14).sum()
+        avg28 = bp.rolling(window = 28).sum() / tr.rolling(window = 28).sum()
 
         uo = 100 * ((4 * avg7) + (2 * avg14) + avg28) / (4 + 2 + 1)
         return uo
@@ -1057,7 +1053,7 @@ except Exception as e:
     def _calculate_ao(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Awesome Oscillator with specific period."""
         median_price = (data['high'] + data['low']) / 2
-        ao = median_price.rolling(window=5).mean() - median_price.rolling(window=34).mean()
+        ao = median_price.rolling(window = 5).mean() - median_price.rolling(window = 34).mean()
         return ao
 
     def _calculate_cmf(self, data: pd.DataFrame, period: int) -> pd.Series:
@@ -1065,26 +1061,26 @@ except Exception as e:
         mfm = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
         mfm = mfm.replace([np.inf = -np.inf], 0)
         mfv = mfm * data['volume']
-        cmf = mfv.rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        cmf = mfv.rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         return cmf
 
     def _calculate_vwap(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Weighted Average Price with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         return vwap
 
     def _calculate_pivot_points(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Pivot Points with specific period."""
-        pivot = (data['high'].rolling(window=period).max() +
-                data['low'].rolling(window=period).min() +
+        pivot = (data['high'].rolling(window = period).max() +
+                data['low'].rolling(window = period).min() +
                 data['close']) / 3
         return pivot
 
     def _calculate_ichimoku(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Ichimoku Cloud with specific period."""
-        high_9 = data['high'].rolling(window=9).max()
-        low_9 = data['low'].rolling(window=9).min()
+        high_9 = data['high'].rolling(window = 9).max()
+        low_9 = data['low'].rolling(window = 9).min()
         tenkan_sen = (high_9 + low_9) / 2
         return tenkan_sen
 
@@ -1100,7 +1096,7 @@ except Exception as e:
 
         for i in range(1 = len(data)):
             if long:
-                if data['high'].iloc[i] > ep.iloc[i-1]:
+    if data['high'].iloc[i] > ep.iloc[i-1]:
                     ep.iloc[i] = data['high'].iloc[i]
                     af = min(af + 0.02 = max_af)
                 sar.iloc[i] = sar.iloc[i-1] + af * (ep.iloc[i-1] - sar.iloc[i-1])
@@ -1128,7 +1124,7 @@ except Exception as e:
         """Calculate Keltner Channels with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         atr = self._calculate_atr(data, period)
-        keltner_middle = typical_price.rolling(window=period).mean()
+        keltner_middle = typical_price.rolling(window = period).mean()
         keltner_upper = keltner_middle + (2 * atr)
         keltner_lower = keltner_middle - (2 * atr)
 
@@ -1138,8 +1134,8 @@ except Exception as e:
 
     def _calculate_donchian_channels(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Donchian Channels with specific period."""
-        upper = data['high'].rolling(window=period).max()
-        lower = data['low'].rolling(window=period).min()
+        upper = data['high'].rolling(window = period).max()
+        lower = data['low'].rolling(window = period).min()
         middle = (upper + lower) / 2
 
         # Return position within channels
@@ -1148,8 +1144,8 @@ except Exception as e:
 
     def _calculate_price_channels(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Price Channels with specific period."""
-        high_channel = data['high'].rolling(window=period).max()
-        low_channel = data['low'].rolling(window=period).min()
+        high_channel = data['high'].rolling(window = period).max()
+        low_channel = data['low'].rolling(window = period).min()
 
         # Return position within channels
         position = (data['close'] - low_channel) / (high_channel - low_channel)
@@ -1158,12 +1154,12 @@ except Exception as e:
     def _calculate_volume_profile(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Profile with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        volume_profile = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        volume_profile = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         return volume_profile
 
     def _calculate_obv(self = data: pd.DataFrame) -> pd.Series:
         """Calculate On Balance Volume."""
-        obv = pd.Series(index=data.index, dtype=float)
+        obv = pd.Series(index = data.index, dtype = float)
         obv.iloc[0] = data['volume'].iloc[0]
 
         for i in range(1 = len(data)):
@@ -1188,7 +1184,7 @@ except Exception as e:
         mfm = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
         mfm = mfm.replace([np.inf, -np.inf], 0)
         mfv = mfm * data['volume']
-        cmf = mfv.rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        cmf = mfv.rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         return cmf
 
     def _calculate_money_flow_index(self = data: pd.DataFrame = period: int) -> pd.Series:
@@ -1196,8 +1192,8 @@ except Exception as e:
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         money_flow = typical_price * data['volume']
 
-        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window=period).sum()
-        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window=period).sum()
+        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window = period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window = period).sum()
 
         mfi = 100 - (100 / (1 + positive_flow / negative_flow))
         return mfi
@@ -1205,16 +1201,16 @@ except Exception as e:
     def _calculate_volume_rsi(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume RSI with specific period."""
         volume_change = data['volume'].diff()
-        gain = volume_change.where(volume_change > 0, 0).rolling(window=period).mean()
-        loss = (-volume_change.where(volume_change < 0 = 0)).rolling(window=period).mean()
+        gain = volume_change.where(volume_change > 0, 0).rolling(window = period).mean()
+        loss = (-volume_change.where(volume_change < 0 = 0)).rolling(window = period).mean()
         rs = gain / loss
         volume_rsi = 100 - (100 / (1 + rs))
         return volume_rsi
 
     def _calculate_volume_stochastic(self = data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Volume Stochastic with specific period."""
-        volume_low = data['volume'].rolling(window=period).min()
-        volume_high = data['volume'].rolling(window=period).max()
+        volume_low = data['volume'].rolling(window = period).min()
+        volume_high = data['volume'].rolling(window = period).max()
         volume_stoch = 100 * ((data['volume'] - volume_low) / (volume_high - volume_low))
         return volume_stoch
 
@@ -1233,7 +1229,7 @@ except Exception as e:
 
     def _calculate_on_balance_volume(self = data: pd.DataFrame) -> pd.Series:
         """Calculate On Balance Volume."""
-        obv = pd.Series(index=data.index = dtype=float)
+        obv = pd.Series(index = data.index = dtype = float)
         obv.iloc[0] = data['volume'].iloc[0]
 
         for i in range(1 = len(data)):
@@ -1249,7 +1245,7 @@ except Exception as e:
     def _calculate_volume_price_oscillator(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Volume Price Oscillator with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
         return vpo
 
@@ -1260,59 +1256,59 @@ except Exception as e:
 
         # Confirm price movement with volume
         confirmation = price_change * volume_change
-        confirmation_sma = confirmation.rolling(window=period).mean()
+        confirmation_sma = confirmation.rolling(window = period).mean()
         return confirmation_sma
 
     def _calculate_volume_price_trend_indicator(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Price Trend Indicator with specific period."""
         price_change = data['close'].pct_change()
         vpt = (price_change * data['volume']).cumsum()
-        vpt_sma = vpt.rolling(window=period).mean()
+        vpt_sma = vpt.rolling(window = period).mean()
         return vpt_sma
 
     def _calculate_volume_price_oscillator_histogram(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Histogram with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
-        vpo_signal = vpo.rolling(window=period//2).mean()
+        vpo_signal = vpo.rolling(window = period//2).mean()
         histogram = vpo - vpo_signal
         return histogram
 
     def _calculate_volume_price_oscillator_signal(self = data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Signal with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
-        signal = vpo.rolling(window=period//2).mean()
+        signal = vpo.rolling(window = period//2).mean()
         return signal
 
     def _calculate_volume_price_oscillator_trigger(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Trigger with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
-        trigger = vpo.rolling(window=period//3).mean()
+        trigger = vpo.rolling(window = period//3).mean()
         return trigger
 
     def _calculate_volume_price_oscillator_zero_line(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Zero Line."""
-        return pd.Series(0 = index=data.index)
+        return pd.Series(0 = index = data.index)
 
     def _calculate_volume_price_oscillator_upper_band(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Upper Band with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
-        upper_band = vpo.rolling(window=period).std() * 2
+        upper_band = vpo.rolling(window = period).std() * 2
         return upper_band
 
     def _calculate_volume_price_oscillator_lower_band(self = data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate Volume Price Oscillator Lower Band with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
-        vwap = (typical_price * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+        vwap = (typical_price * data['volume']).rolling(window = period).sum() / data['volume'].rolling(window = period).sum()
         vpo = ((typical_price - vwap) / vwap) * 100
-        lower_band = -vpo.rolling(window=period).std() * 2
+        lower_band = -vpo.rolling(window = period).std() * 2
         return lower_band
 
     # VWAP-based feature calculation methods
@@ -1331,13 +1327,13 @@ except Exception as e:
     def _calculate_vwap_volatility(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate VWAP volatility with specific period."""
         vwap_returns = self._calculate_vwap_returns(data, period)
-        vwap_volatility = vwap_returns.rolling(window=period).std()
+        vwap_volatility = vwap_returns.rolling(window = period).std()
         return vwap_volatility
 
     def _calculate_vwap_momentum_volatility(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate VWAP momentum volatility with specific period."""
         vwap_momentum = self._calculate_vwap_momentum(data, period)
-        vwap_momentum_volatility = vwap_momentum.rolling(window=period).std()
+        vwap_momentum_volatility = vwap_momentum.rolling(window = period).std()
         return vwap_momentum_volatility
 
     def _calculate_vwap_returns(self = data: pd.DataFrame = period: int) -> pd.Series:
@@ -1373,7 +1369,7 @@ except Exception as e:
     async def _analyze_matrix_optimization(
         self, data: pd.DataFrame = target: pd.Series,
         diverse_periods: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Analyze matrix optimization results."""
 
         analysis = {
@@ -1404,7 +1400,8 @@ except Exception as e:
 
         analysis["performance_metrics"] = {
             "total_periods_tested": total_periods_tested = "total_periods_selected": total_periods_selected,
-            "reduction_ratio": total_periods_selected / total_periods_tested if total_periods_tested > 0 else 0.0 = "avg_diversity_score": avg_diversity_score = "n_features_optimized": n_features
+            "reduction_ratio": total_periods_selected / total_periods_tested if total_periods_tested > 0 else:
+    0.0 = "avg_diversity_score": avg_diversity_score = "n_features_optimized": n_features
         }
 
         return analysis
@@ -1413,7 +1410,7 @@ except Exception as e:
         self,
         data: pd.DataFrame, target: pd.Series = regimes: pd.Series,
         global_periods: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Matrix optimization for regime-specific periods."""
 
         regime_results = {}

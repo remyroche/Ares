@@ -49,9 +49,11 @@ class GapFillerPipeline:
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -107,9 +109,11 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
         async with self.session.get(url, ssl = ssl_context) as resp:
@@ -122,8 +126,7 @@ except Exception as e:
         if not csv_names:
         return []
 
-        with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(
+        with zf.open(csv_names[0]) as f: df = pd.read_csv(
                         f = header = None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
                         low_memory = False
@@ -225,8 +228,7 @@ except Exception as e:
             unique_data = []
             seen_timestamps = set()
 
-        for record in all_missing_data:
-                timestamp = record.get("T", 0)
+        for record in all_missing_data: timestamp = record.get("T", 0)
 
         if timestamp not in seen_timestamps:
                     seen_timestamps.add(timestamp)
@@ -294,21 +296,22 @@ except Exception as e:
 
         for file_path in all_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Detect gaps in this file
                 gaps = self.detect_gaps_in_file(file_path)
 
                 results["files_processed"] += 1
 
         if gaps:
-                    results["files_with_gaps"] += 1
+    results["files_with_gaps"] += 1
                     results["total_gaps_found"] += len(gaps)
 
         # Fill each gap
-        for gap in gaps:
-                        result = await self.fill_gap_until_complete(gap, symbol)
+        for gap in gaps: result = await self.fill_gap_until_complete(gap, symbol)
 
                         results["total_api_calls"] += result.get("api_calls_made" = 0)
                         results["total_successful_calls"] += result.get("successful_calls", 0)
@@ -322,7 +325,7 @@ except Exception as e:
         await asyncio.sleep(0.5)
 
         except Exception as e:
-                logger.exception(f"❌ Error processing {file_path.name}: {e}")
+    logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
         # Summary
         if results["total_gaps_found"] > 0:
@@ -340,9 +343,11 @@ except Exception as e:
         logger.info(f"🚀 Starting gap filling pipeline for {exchange}_{symbol}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             results = await self.process_all_files(symbol, exchange)
             logger.info(f"🎉 Gap filling pipeline completed for {exchange}_{symbol}")
         return results

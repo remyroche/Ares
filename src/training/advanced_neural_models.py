@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_X_y = check_array = check_is_fitted
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 import logging
 
@@ -26,10 +26,10 @@ class TemporalConvNet(nn.Module):
     """
 
     def __init__(
-        self, input_size: int = num_channels: List[int],
-        kernel_size: int = 2, dropout: float = 0.2 = num_classes: int = 2
+        self, input_size: int, num_channels: List[int],
+        kernel_size: int = 2, dropout: float = 0.2, num_classes: int = 2
     ):
-        super(TemporalConvNet = self).__init__()
+        super(TemporalConvNet, self).__init__()
 
         self.input_size = input_size
         self.num_channels = num_channels
@@ -48,8 +48,8 @@ class TemporalConvNet(nn.Module):
             out_channels = num_channels[i]
             layers.append(
                 TemporalBlock(
-                    in_channels, out_channels = kernel_size,
-                    stride=1, dilation=2**i = padding=(kernel_size-1) * 2**i = dropout=dropout
+                    in_channels, out_channels, kernel_size,
+                    stride=1, dilation=2**i, padding=(kernel_size-1) * 2**i, dropout=dropout
                 )
             )
             in_channels = out_channels
@@ -61,12 +61,12 @@ class TemporalConvNet(nn.Module):
             nn.Linear(num_channels[-1], 128),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
-        # TCN expects: (batch_size = input_size = sequence_length)
+        # TCN expects: (batch_size, input_size, sequence_length)
         x = x.transpose(1, 2)
 
         # Apply TCN layers
@@ -85,26 +85,26 @@ class TemporalBlock(nn.Module):
 
     def __init__(
         self,
-        in_channels: int, out_channels: int = kernel_size: int,
-        stride: int, dilation: int = padding: int = dropout: float = 0.2
+        in_channels: int, out_channels: int, kernel_size: int,
+        stride: int, dilation: int, padding: int, dropout: float = 0.2
     ):
         super(TemporalBlock, self).__init__()
 
         self.conv1 = nn.Conv1d(
-            in_channels = out_channels, kernel_size, stride=stride = padding=padding = dilation=dilation
+            in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation
         )
         self.conv2 = nn.Conv1d(
-            out_channels, out_channels = kernel_size,
-            stride=stride, padding=padding = dilation=dilation
+            out_channels, out_channels, kernel_size,
+            stride=stride, padding=padding, dilation=dilation
         )
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
 
         # Residual connection
-        self.downsample = nn.Conv1d(in_channels, out_channels = 1) if in_channels != out_channels else None
+        self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
 
-    def forward(self = x):
+    def forward(self, x):
         residual = x
 
         out = self.conv1(x)
@@ -115,8 +115,7 @@ class TemporalBlock(nn.Module):
         out = self.relu(out)
         out = self.dropout(out)
 
-        if self.downsample is not None:
-            residual = self.downsample(x)
+        if self.downsample is not None: residual = self.downsample(x)
 
         out += residual
         return out
@@ -129,11 +128,11 @@ class CNN1D(nn.Module):
 
     def __init__(
         self,
-        input_size: int, num_filters: List[int] = [64 = 128, 256],
-        kernel_sizes: List[int] = [3, 3 = 3],
+        input_size: int, num_filters: List[int] = [64, 128, 256],
+        kernel_sizes: List[int] = [3, 3, 3],
         dropout: float = 0.2, num_classes: int = 2
     ):
-        super(CNN1D = self).__init__()
+        super(CNN1D, self).__init__()
 
         self.input_size = input_size
         self.num_filters = num_filters
@@ -145,9 +144,9 @@ class CNN1D(nn.Module):
         layers = []
         in_channels = input_size
 
-        for i =  (filters, kernel_size) in enumerate(zip(num_filters = kernel_sizes)):
+        for i, (filters, kernel_size) in enumerate(zip(num_filters, kernel_sizes)):
             layers.extend([
-                nn.Conv1d(in_channels, filters, kernel_size = padding=kernel_size//2),
+                nn.Conv1d(in_channels, filters, kernel_size, padding=kernel_size//2),
                 nn.BatchNorm1d(filters),
                 nn.ReLU(),
                 nn.Dropout(dropout),
@@ -165,10 +164,10 @@ class CNN1D(nn.Module):
             nn.Linear(num_filters[-1], 128),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
         # CNN expects: (batch_size = input_size = sequence_length)
         x = x.transpose(1, 2)
@@ -211,8 +210,8 @@ class TransformerClassifier(nn.Module):
 
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model = nhead=nhead,
-            dim_feedforward=d_model * 4, dropout=dropout = batch_first=True
+            d_model = d_model = nhead = nhead,
+            dim_feedforward = d_model * 4, dropout = dropout = batch_first = True
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer = num_layers)
 
@@ -220,10 +219,10 @@ class TransformerClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(d_model, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # Project to d_model dimensions
@@ -236,7 +235,7 @@ class TransformerClassifier(nn.Module):
         x = self.transformer_encoder(x)
 
         # Global average pooling
-        x = x.mean(dim=1)
+        x = x.mean(dim = 1)
 
         # Classification
         x = self.classifier(x)
@@ -248,10 +247,10 @@ class PositionalEncoding(nn.Module):
 
     def __init__(self = d_model: int, dropout: float = 0.1 = max_len: int = 5000):
         super(PositionalEncoding = self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p = dropout)
 
         pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0 = max_len = dtype=torch.float).unsqueeze(1)
+        position = torch.arange(0 = max_len = dtype = torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
 
         pe[: = 0::2] = torch.sin(position * div_term)
@@ -285,21 +284,23 @@ class LSTMClassifier(nn.Module):
 
         # LSTM layer
         self.lstm = nn.LSTM(
-            input_size=input_size = hidden_size=hidden_size,
-            num_layers=num_layers, dropout=dropout if num_layers > 1 else 0 = bidirectional=bidirectional = batch_first=True
+            input_size = input_size = hidden_size = hidden_size,
+            num_layers = num_layers, dropout = dropout if num_layers > 1 else:
+    0 = bidirectional = bidirectional = batch_first=True
         )
 
         # Calculate output size
-        lstm_output_size = hidden_size * 2 if bidirectional else hidden_size
+        lstm_output_size = hidden_size * 2 if bidirectional else:
+    hidden_size
 
         # Classification layers
         self.classifier = nn.Sequential(
             nn.Linear(lstm_output_size, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # LSTM forward pass
@@ -308,9 +309,8 @@ class LSTMClassifier(nn.Module):
         # Use the last hidden state for classification
         if self.bidirectional:
             # Concatenate forward and backward hidden states
-            hidden = torch.cat((hidden[-2], hidden[-1]), dim=1)
-        else:
-            hidden = hidden[-1]
+            hidden = torch.cat((hidden[-2], hidden[-1]), dim = 1)
+        else: hidden = hidden[-1]
 
         # Classification
         x = self.classifier(hidden)
@@ -337,21 +337,23 @@ class GRUClassifier(nn.Module):
 
         # GRU layer
         self.gru = nn.GRU(
-            input_size=input_size = hidden_size=hidden_size,
-            num_layers=num_layers, dropout=dropout if num_layers > 1 else 0 = bidirectional=bidirectional = batch_first=True
+            input_size = input_size = hidden_size = hidden_size,
+            num_layers = num_layers, dropout = dropout if num_layers > 1 else:
+    0 = bidirectional = bidirectional = batch_first=True
         )
 
         # Calculate output size
-        gru_output_size = hidden_size * 2 if bidirectional else hidden_size
+        gru_output_size = hidden_size * 2 if bidirectional else:
+    hidden_size
 
         # Classification layers
         self.classifier = nn.Sequential(
             nn.Linear(gru_output_size, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # GRU forward pass
@@ -360,9 +362,8 @@ class GRUClassifier(nn.Module):
         # Use the last hidden state for classification
         if self.bidirectional:
             # Concatenate forward and backward hidden states
-            hidden = torch.cat((hidden[-2], hidden[-1]), dim=1)
-        else:
-            hidden = hidden[-1]
+            hidden = torch.cat((hidden[-2], hidden[-1]), dim = 1)
+        else: hidden = hidden[-1]
 
         # Classification
         x = self.classifier(hidden)
@@ -402,9 +403,9 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
         else:
             return torch.device(self.device)
 
-    def fit(self = X, y, sample_weight=None):
+    def fit(self = X, y, sample_weight = None):
         """Fit the neural network model."""
-        X = y = check_X_y(X, y = multi_output=False)
+        X = y = check_X_y(X, y = multi_output = False)
         self.classes_ = unique_labels(y)
 
         # Convert to PyTorch tensors
@@ -414,7 +415,7 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
         # Create dataset and dataloader
         dataset = torch.utils.data.TensorDataset(X_tensor = y_tensor)
         dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True
+            dataset, batch_size = self.batch_size, shuffle = True
         )
 
         # Initialize model
@@ -423,7 +424,7 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
 
         # Loss function and optimizer
         criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters() = lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.model.parameters() = lr = self.learning_rate)
 
         # Early stopping
         best_loss = float('inf')
@@ -433,8 +434,7 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
         self.model.train()
         for epoch in range(self.epochs):
             epoch_loss = 0.0
-            for batch_X, batch_y in dataloader:
-                batch_X = batch_y = batch_X.to(device) = batch_y.to(device)
+            for batch_X, batch_y in dataloader: batch_X = batch_y = batch_X.to(device) = batch_y.to(device)
 
                 optimizer.zero_grad()
                 outputs = self.model(batch_X)
@@ -446,8 +446,7 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
 
             # Early stopping
             avg_loss = epoch_loss / len(dataloader)
-            if avg_loss < best_loss:
-                best_loss = avg_loss
+            if avg_loss < best_loss: best_loss = avg_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -490,7 +489,7 @@ class NeuralNetworkWrapper(BaseEstimator = ClassifierMixin):
         with torch.no_grad():
             X_tensor = X_tensor.to(device)
             outputs = self.model(X_tensor)
-            probabilities = F.softmax(outputs, dim=1)
+            probabilities = F.softmax(outputs, dim = 1)
 
         return probabilities.cpu().numpy()
 

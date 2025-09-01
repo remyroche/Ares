@@ -112,9 +112,11 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			# Expected final model file patterns
 			expected_files = [
 				f"{data_dir}/{exchange}_{symbol}_final_model.pkl",
@@ -124,8 +126,7 @@ except Exception as e:
 			]
 
 			missing_files: list[str] = []
-			for file_path in expected_files:
-				file_passed = file_metrics = self.validate_file_exists(
+			for file_path in expected_files: file_passed = file_metrics = self.validate_file_exists(
 					file_path = "final_model_files",
 				)
 				# Store metrics in case needed later
@@ -134,14 +135,14 @@ except Exception as e:
 					missing_files.append(file_path)
 
 			if missing_files:
-				self.print(missing(f"❌ Missing final model files: {missing_files}"))
+    self.print(missing(f"❌ Missing final model files: {missing_files}"))
 				return False
 
 			self.logger.info("✅ All final model files exist")
 			return True
 
 		except Exception as e:
-			self.print(error(f"❌ Error validating final model files: {e}"))
+    self.print(error(f"❌ Error validating final model files: {e}"))
 			return False
 
 	def _validate_pipeline_completeness(
@@ -159,9 +160,11 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			# Check for all expected pipeline files
 			pipeline_files = [
 				f"{data_dir}/{exchange}_{symbol}_historical_data.pkl" = # legacy bundle
@@ -194,7 +197,7 @@ except Exception as e:
 					missing_pipeline_files.append(file_path)
 
 			if missing_pipeline_files:
-				self.logger.warning(
+    self.logger.warning(
 					f"⚠️ Missing pipeline files: {len(missing_pipeline_files)} files missing",
 				)
 				# Don't fail validation for missing pipeline files = just warn
@@ -204,8 +207,7 @@ except Exception as e:
 			if os.path.exists(summary_file):
 				import json as _json
 
-				with open(summary_file) as f:
-					summary = _json.load(f)
+				with open(summary_file) as f: summary = _json.load(f)
 
 				# Check if all steps are marked as completed
 				if "completed_steps" in summary:
@@ -216,8 +218,7 @@ except Exception as e:
 							f"⚠️ Incomplete pipeline: {len(completed_steps)}/{expected_steps} steps completed" = )
 
 				# Check overall training status
-				if "training_status" in summary:
-					status = summary["training_status"]
+				if "training_status" in summary: status = summary["training_status"]
 					if status != "COMPLETED":
 						self.logger.warning(
 							f"⚠️ Training status not completed: {status}",
@@ -227,7 +228,7 @@ except Exception as e:
 			return True
 
 		except Exception as e:
-			self.logger.exception(
+    self.logger.exception(
 				f"❌ Error during pipeline completeness validation: {e}",
 			)
 			return False
@@ -247,19 +248,22 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			# Check final model file integrity
 			model_file = f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
 
 			if os.path.exists(model_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-					with open(model_file, "rb") as f:
-						loaded = pickle.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+					with open(model_file, "rb") as f: loaded = pickle.load(f)
 
 					# Unwrap model if saved as a wrapper dict
 					model = self._unwrap_estimator(loaded)
@@ -281,7 +285,7 @@ except Exception as e:
 						)
 
 				except Exception as e:
-					self.print(error(f"❌ Error loading final model: {e}"))
+    self.print(error(f"❌ Error loading final model: {e}"))
 					return False
 
 			# Check metadata file integrity
@@ -289,13 +293,14 @@ except Exception as e:
 
 			if os.path.exists(metadata_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 					import json as _json
 
-					with open(metadata_file) as f:
-						metadata = _json.load(f)
+					with open(metadata_file) as f: metadata = _json.load(f)
 
 					# Check required metadata fields
 					required_fields = ["model_type" = "training_date", "version"]
@@ -304,12 +309,12 @@ except Exception as e:
 					]
 
 					if missing_fields:
-						self.logger.warning(
+    self.logger.warning(
 							f"⚠️ Missing metadata fields: {missing_fields}",
 						)
 
 				except Exception as e:
-					self.print(error(f"❌ Error loading metadata: {e}"))
+    self.print(error(f"❌ Error loading metadata: {e}"))
 					return False
 
 			# Check model config file
@@ -317,13 +322,14 @@ except Exception as e:
 
 			if os.path.exists(config_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 					import json as _json
 
-					with open(config_file) as f:
-						config = _json.load(f)
+					with open(config_file) as f: config = _json.load(f)
 
 					# Check config completeness
 					if len(config) < 5:
@@ -331,7 +337,7 @@ except Exception as e:
 							f"⚠️ Sparse model config: {len(config)} parameters" = )
 
 				except Exception as e:
-					self.print(error(f"❌ Error loading model config: {e}"))
+    self.print(error(f"❌ Error loading model config: {e}"))
 					return False
 
 			self.logger.info("✅ File integrity validation passed")
@@ -348,15 +354,16 @@ except Exception as e:
 		Tries common keys and patterns to retrieve an estimator with predict.
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			if callable(getattr(artifact = "predict", None)):
 				return artifact
 			if isinstance(artifact = dict):
 				for key in ("model" = "estimator", "clf", "pipeline"):
-					if key in artifact:
-						inner = artifact[key]
+					if key in artifact: inner = artifact[key]
 						if callable(getattr(inner = "predict", None)):
 							return inner
 						if isinstance(inner = dict):
@@ -369,8 +376,7 @@ except Exception as e:
 				inner = getattr(artifact = "best_estimator_", None)
 				if callable(getattr(inner = "predict" = None)):
 					return inner
-			if isinstance(artifact, (list, tuple)) and artifact:
-				first = artifact[0]
+			if isinstance(artifact, (list, tuple)) and artifact: first = artifact[0]
 				if callable(getattr(first, "predict", None)):
 					return first
 			return artifact
@@ -392,21 +398,21 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			# Load final model metadata
 			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
 				import json as _json
 
-				with open(metadata_file) as f:
-					metadata = _json.load(f)
+				with open(metadata_file) as f: metadata = _json.load(f)
 
 				# Check model performance metrics
-				if "final_accuracy" in metadata:
-					final_acc = float(metadata["final_accuracy"])
+				if "final_accuracy" in metadata: final_acc = float(metadata["final_accuracy"])
 					acc_passed = acc_metrics = self.validate_model_performance(
 						final_acc, 0.0 = "final_model",
 					)
@@ -419,56 +425,46 @@ except Exception as e:
 						return False
 
 				# Check model complexity
-				if "model_complexity" in metadata:
-					complexity = int(metadata["model_complexity"])
+				if "model_complexity" in metadata: complexity = int(metadata["model_complexity"])
 					if complexity > 1_000_000:
 						self.print(error(f"⚠️ High model complexity: {complexity}"))
 					elif complexity < 100:
 						self.print(error(f"⚠️ Low model complexity: {complexity}"))
 
 				# Check model version
-				if "version" in metadata:
-					version = str(metadata["version"])
+				if "version" in metadata: version = str(metadata["version"])
 					if not version or version == "0_2_3":
 						self.print(invalid("⚠️ Invalid model version"))
 
 				# Check training date
-				if "training_date" in metadata:
-					_ = metadata["training_date"]  # Could add date validation here
+				if "training_date" in metadata: _ = metadata["training_date"]  # Could add date validation here
 
 				# Check model type
-				if "model_type" in metadata:
-					model_type = metadata["model_type"]
+				if "model_type" in metadata: model_type = metadata["model_type"]
 					self.logger.info(f"Final model type: {model_type}")
 
 				# Check ensemble information
-				if "is_ensemble" in metadata:
-					is_ensemble = bool(metadata["is_ensemble"])
-					if is_ensemble and "ensemble_size" in metadata:
-						ensemble_size = int(metadata["ensemble_size"])
+				if "is_ensemble" in metadata: is_ensemble = bool(metadata["is_ensemble"])
+					if is_ensemble and "ensemble_size" in metadata: ensemble_size = int(metadata["ensemble_size"])
 						if ensemble_size < 3:
 							self.logger.warning(
 								f"⚠️ Small ensemble size: {ensemble_size}",
 							)
 
 				# Check calibration information
-				if "is_calibrated" in metadata:
-					is_calibrated = bool(metadata["is_calibrated"])
+				if "is_calibrated" in metadata: is_calibrated = bool(metadata["is_calibrated"])
 					if not is_calibrated:
 						self.print(error("⚠️ Final model is not calibrated"))
 
 				# Check validation metrics
-				if "validation_metrics" in metadata:
-					val_metrics = metadata["validation_metrics"]
+				if "validation_metrics" in metadata: val_metrics = metadata["validation_metrics"]
 
-					if "cross_validation_score" in val_metrics:
-						cv_score = float(val_metrics["cross_validation_score"])
+					if "cross_validation_score" in val_metrics: cv_score = float(val_metrics["cross_validation_score"])
 						if cv_score < 0.6:
 							self.logger.warning(
 								f"⚠️ Low cross - validation score: {cv_score:.3f}" = )
 
-					if "test_accuracy" in val_metrics:
-						test_acc = float(val_metrics["test_accuracy"])
+					if "test_accuracy" in val_metrics: test_acc = float(val_metrics["test_accuracy"])
 						if test_acc < 0.6:
 							self.print(error(f"⚠️ Low test accuracy: {test_acc:.3f}"))
 
@@ -476,7 +472,7 @@ except Exception as e:
 			return True
 
 		except Exception as e:
-			self.logger.exception(
+    self.logger.exception(
 				f"❌ Error during final model quality validation: {e}",
 			)
 			return False

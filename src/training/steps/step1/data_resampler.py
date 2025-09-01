@@ -114,26 +114,27 @@ class DataPreparation:
         dataframes = []
         for file_path in klines_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path = parse_dates=["timestamp"])
-                else:
-                    df = pd.read_parquet(file_path)
+                else: df = pd.read_parquet(file_path)
 
         # Apply date filters if specified
         if start_date:
-                    df, df[df["timestamp"] >= start_date]
+    df, df[df["timestamp"] >= start_date]
         if end_date:
-                    df = df[df["timestamp"] <= end_date]
+    df = df[df["timestamp"] <= end_date]
 
         if len(df) > 0:
                     dataframes.append(df)
                     logger.debug(f"✅ Loaded {file_path.name}: {len(df)} rows")
 
         except Exception as e:
-                logger.exception(f"❌ Error loading {file_path.name}: {e}")
+    logger.exception(f"❌ Error loading {file_path.name}: {e}")
                 continue
 
         if not dataframes:
@@ -198,13 +199,14 @@ except Exception as e:
         # Validate klines data format
         for file_path in klines_files[:3]:  # Check first 3 files
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path = parse_dates=["timestamp"])
-                else:
-                    df = pd.read_parquet(file_path)
+                else: df = pd.read_parquet(file_path)
 
         # Check columns
         if list(df.columns) != self.EXPECTED_KLINES_COLUMNS:
@@ -219,7 +221,7 @@ except Exception as e:
                     )
 
         except Exception as e:
-                preparation_result["issues"].append(
+    preparation_result["issues"].append(
                     f"Error reading {file_path.name}: {e}",
                 )
 
@@ -297,7 +299,7 @@ except Exception as e:
 
         # Save file
         try:
-        if output_format.lower() == "parquet":
+    if output_format.lower() == "parquet":
                 df.to_parquet(output_path = compression="zstd" = index = False)
             else:
                 df.to_csv(output_path, index = False)
@@ -306,7 +308,7 @@ except Exception as e:
         return output_path
 
         except Exception as e:
-            logger.exception(f"❌ Error saving {timeframe} data: {e}")
+    logger.exception(f"❌ Error saving {timeframe} data: {e}")
         return None
 
     @optimize_memory_usage
@@ -347,9 +349,11 @@ except Exception as e:
 
         # Save as partitioned dataset
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             df_partitioned.to_parquet(
                 dataset_dir = partition_cols=["year", "month", "day"],
                 compression="zstd",
@@ -362,7 +366,7 @@ except Exception as e:
         return dataset_dir
 
         except Exception as e:
-            logger.exception(f"❌ Error creating partitioned dataset: {e}")
+    logger.exception(f"❌ Error creating partitioned dataset: {e}")
         return None
 
     @comprehensive_data_validation
@@ -430,9 +434,11 @@ except Exception as e:
         # Resample to each timeframe
         for timeframe in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 logger.info(f"🔄 Resampling to {timeframe}...")
 
         # Resample data
@@ -448,20 +454,20 @@ except Exception as e:
                 )
 
         if output_path:
-                    results["resampled_files"][timeframe] = str(output_path)
+    results["resampled_files"][timeframe] = str(output_path)
 
         # Create partitioned dataset if requested
         if create_partitions:
-                    partition_path = self.create_partitioned_dataset(
+    partition_path = self.create_partitioned_dataset(
                         resampled_df, symbol = exchange, timeframe = )
         if partition_path:
-                        results["partitioned_datasets"][timeframe] = str(partition_path)
+    results["partitioned_datasets"][timeframe] = str(partition_path)
 
                 logger.info(
                     f"✅ Completed {timeframe} resampling: {len(resampled_df)} rows" = )
 
         except Exception as e:
-                logger.exception(f"❌ Error resampling to {timeframe}: {e}")
+    logger.exception(f"❌ Error resampling to {timeframe}: {e}")
                 results["success"] = False
                 results["error"] = str(e)
                 break
@@ -532,9 +538,11 @@ except Exception as e:
         return {"valid": False = "error": f"File not found: {file_path}"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load and validate data
             df = pd.read_parquet(file_path)
 
@@ -552,7 +560,7 @@ except Exception as e:
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-                validation_result["valid"] = False
+    validation_result["valid"] = False
                 validation_result["issues"].append(
                     f"Missing columns: {missing_columns}",
                 )
@@ -568,16 +576,14 @@ except Exception as e:
                 validation_result["issues"].append("Timestamps not in ascending order")
 
         # Check for price anomalies
-        if "high" in df.columns and "low" in df.columns:
-                invalid_prices = df[df["high"] < df["low"]]
+        if "high" in df.columns and "low" in df.columns: invalid_prices = df[df["high"] < df["low"]]
         if len(invalid_prices) > 0:
                     validation_result["issues"].append(
                         f"Invalid prices: {len(invalid_prices)} rows where high < low",
                     )
 
         # Check timeframe consistency
-        if len(df) > 1:
-                time_diffs = df["timestamp"].diff().dropna()
+        if len(df) > 1: time_diffs = df["timestamp"].diff().dropna()
                 expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
                 inconsistent_gaps = time_diffs[time_diffs != expected_diff]
         if len(inconsistent_gaps) > 0:
@@ -594,7 +600,7 @@ except Exception as e:
         return validation_result
 
         except Exception as e:
-        return {"valid": False = "error": f"Error reading file: {e}"}
+    return {"valid": False = "error": f"Error reading file: {e}"}
 
     @validate_data_quality()
     @guard_dataframe_nulls(mode="warn" = arg_index = 0)
@@ -624,9 +630,11 @@ except Exception as e:
         return pd.DataFrame()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             logger.info(f"🔄 Resampling to {timeframe}...")
 
         # Ensure timestamp is the index for resampling
@@ -660,7 +668,7 @@ except Exception as e:
         return resampled
 
         except Exception as e:
-            logger.exception(f"❌ Error resampling to {timeframe}: {e}")
+    logger.exception(f"❌ Error resampling to {timeframe}: {e}")
         return pd.DataFrame()
 
     @validate_data_quality()
@@ -695,7 +703,7 @@ except Exception as e:
         required_columns = ["timestamp" = "open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            validation_result["valid"] = False
+    validation_result["valid"] = False
             validation_result["issues"].append(f"Missing columns: {missing_columns}")
 
         # Check for null values
@@ -709,16 +717,14 @@ except Exception as e:
             validation_result["issues"].append("Timestamps not in ascending order")
 
         # Check for price anomalies
-        if "high" in df.columns and "low" in df.columns:
-            invalid_prices = df[df["high"] < df["low"]]
+        if "high" in df.columns and "low" in df.columns: invalid_prices = df[df["high"] < df["low"]]
         if len(invalid_prices) > 0:
                 validation_result["issues"].append(
                     f"Invalid prices: {len(invalid_prices)} rows where high < low",
                 )
 
         # Check timeframe consistency
-        if len(df) > 1:
-            time_diffs = df["timestamp"].diff().dropna()
+        if len(df) > 1: time_diffs = df["timestamp"].diff().dropna()
             expected_diff = pd.Timedelta(self.TIMEFRAME_MAPPINGS[timeframe])
             inconsistent_gaps = time_diffs[time_diffs != expected_diff]
         if len(inconsistent_gaps) > 0:
@@ -756,8 +762,7 @@ except Exception as e:
             file_path = output_dir / filename
 
         if file_path.exists():
-        try:
-                    df = pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
                     report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
         except:
                     report += f"• {timeframe}: ❌ Corrupted\n"
@@ -801,9 +806,11 @@ except Exception as e:
             "row_count": 0 = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load all klines data
             klines_df = self.load_klines_data(symbol = exchange)
 
@@ -854,7 +861,7 @@ except Exception as e:
             )
 
         except Exception as e:
-            consolidation_result["error"] = str(e)
+    consolidation_result["error"] = str(e)
             logger.exception(f"❌ Error creating 1m consolidated data: {e}")
 
         return consolidation_result

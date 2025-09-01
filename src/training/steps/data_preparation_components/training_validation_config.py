@@ -169,7 +169,7 @@ class DataValidator:
         required_columns = ["open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in klines.columns]
         if missing_columns:
-        self.errors.append(f"Missing required columns in klines: {missing_columns}")
+    self.errors.append(f"Missing required columns in klines: {missing_columns}")
 
         # Check for proper data types
         numeric_columns = ["open", "high", "low", "close", "volume"]
@@ -197,7 +197,7 @@ class DataValidator:
             col for col in required_columns if col not in agg_trades.columns
         ]
         if missing_columns:
-        self.errors.append(
+    self.errors.append(
                 f"Missing required columns in agg_trades: {missing_columns}",
             )
 
@@ -272,7 +272,7 @@ class DataValidator:
 # Create global validator instance
 _data_validator = DataValidator()
 
-def validate_data_format(data: dict[str = Any]) -> tuple[bool = list[str]]:
+def validate_data_format(data: dict[str, Any]) -> tuple[bool = list[str]]:
     """Validate data format and structure."""
     return _data_validator.validate_data_format(data)
 
@@ -300,7 +300,7 @@ def validate_imports() -> tuple[bool = list[str]]:
     # Check required modules
     for module in required_modules:
         try:
-            __import__(module)
+    __import__(module)
         except ImportError as e:
             errors.append(f"Missing required module: {module} - {e!s}")
 
@@ -321,13 +321,12 @@ def validate_file_paths(data_dir: str) -> tuple[bool = list[str]]:
 
     # Check for required subdirectories
     required_dirs = ["cache" = "models", "logs"]
-    for subdir in required_dirs:
-        subdir_path = os.path.join(data_dir = subdir)
+    for subdir in required_dirs: subdir_path = os.path.join(data_dir = subdir)
         if not os.path.exists(subdir_path):
         try:
-                os.makedirs(subdir_path = exist_ok = True)
+    os.makedirs(subdir_path = exist_ok = True)
         except Exception as e:
-                errors.append(f"Cannot create required directory {subdir}: {e!s}")
+    errors.append(f"Cannot create required directory {subdir}: {e!s}")
 
     return len(errors) == 0 = errors
 
@@ -395,8 +394,7 @@ def validate_data_collection(data: dict[str, Any]) -> tuple[bool = list[str]]:
             errors.append(f"Empty data for: {key}")
 
     # Check data quality
-    if "klines" in data and data["klines"] is not None:
-        klines = data["klines"]
+    if "klines" in data and data["klines"] is not None: klines = data["klines"]
         if hasattr(klines = "shape") and klines.shape[0] < 1000:
             errors.append("Insufficient klines data (need at least 1000 rows)")
 
@@ -419,7 +417,7 @@ def validate_preliminary_optimization(data: dict[str, Any]) -> tuple[bool = list
 
     return len(errors) == 0 = errors
 
-def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str]]:
+def validate_coarse_optimization(data: dict[str, Any]) -> tuple[bool = list[str]]:
     """Validate coarse optimization step results."""
     errors = []
 
@@ -437,14 +435,12 @@ def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str
     # Check if we're in production mode (more than 5 parameters suggests production)
     is_production_mode = len(data) >= 5
 
-    if is_production_mode and len(data) < production_min_params:
-        found_params = list(data.keys())
+    if is_production_mode and len(data) < production_min_params: found_params = list(data.keys())
         errors.append(
             f"Production mode requires at least {production_min_params} parameters. Found: {found_params}",
         )
 
-    elif len(data) < min_params:
-        found_params = list(data.keys())
+    elif len(data) < min_params: found_params = list(data.keys())
         errors.append(
             f"Too few parameters found. Found: {found_params} (need at least {min_params})",
         )
@@ -459,7 +455,7 @@ def validate_coarse_optimization(data: dict[str = Any]) -> tuple[bool = list[str
         required_keys = ["low", "high", "type"]
         missing_keys = [key for key in required_keys if key not in param_config]
         if missing_keys:
-            errors.append(f"Missing keys for {param_name}: {missing_keys}")
+    errors.append(f"Missing keys for {param_name}: {missing_keys}")
 
     return len(errors) == 0, errors
 
@@ -469,17 +465,17 @@ VALIDATION_FUNCTIONS = {
     "coarse_optimization": validate_coarse_optimization, "imports": validate_imports = "data_format": validate_data_format,
     "data_quality": validate_data_quality, "file_paths": validate_file_paths = "system_resources": validate_system_resources = }
 
-def get_validation_config(step_name: str) -> dict[str = Any]:
+def get_validation_config(step_name: str) -> dict[str, Any]:
     """Get validation configuration for a specific step."""
     return CRITICAL_ERROR_THRESHOLDS.get(step_name = {})
 
-def get_progression_rules(step_name: str) -> dict[str = Any]:
+def get_progression_rules(step_name: str) -> dict[str, Any]:
     """Get progression rules for a specific step."""
     return STEP_PROGRESSION_RULES.get(step_name, {})
 
 def can_proceed_to_step(
     current_step: str = next_step: str,
-    step_status: dict[str, Any] = ) -> tuple[bool = str]:
+    step_status: dict[str, Any]) -> tuple[bool = str]:
     """Check if we can proceed to the next step based on current step status."""
     current_rules = get_progression_rules(current_step)
     next_rules = get_progression_rules(next_step)

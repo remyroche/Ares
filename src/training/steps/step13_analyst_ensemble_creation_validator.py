@@ -20,7 +20,7 @@ class Step7AnalystEnsembleCreationValidator:
 
     @handle_errors
     def validate(
-        self, symbol: str = exchange: str, data_dir: str, training_input: dict[str = Any], ) -> bool:
+        self, symbol: str = exchange: str, data_dir: str, training_input: dict[str, Any], ) -> bool:
         """Validate Step 7: Analyst Ensemble Creation.
 
         Args:
@@ -36,9 +36,11 @@ class Step7AnalystEnsembleCreationValidator:
         logger.info("🔍 Starting Step 7: Analyst Ensemble Creation validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate ensemble files exist
             ensemble_files_passed = self._validate_ensemble_files(
                 symbol = exchange = data_dir = data_dir = )
@@ -53,7 +55,7 @@ except Exception as e:
             overall_passed = ensemble_files_passed and ensemble_structure_passed
 
         if overall_passed:
-                logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
+    logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
         self.print(
                     success("✅ Step 7: Analyst Ensemble Creation validation passed"),
                 )
@@ -66,7 +68,7 @@ except Exception as e:
         return overall_passed
 
         except Exception as e:
-            logger.exception(f"❌ Error in Step 7 validation: {e}")
+    logger.exception(f"❌ Error in Step 7 validation: {e}")
         self.print(error(f"❌ Error in Step 7 validation: {e}"))
         return False
 
@@ -74,9 +76,11 @@ except Exception as e:
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate that ensemble files exist."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected ensemble files
             ensemble_dir = os.path.join(data_dir = "analyst_ensemble")
             summary_file = os.path.join(
@@ -94,7 +98,7 @@ except Exception as e:
                 missing_files.append(summary_file)
 
         if missing_files:
-        self.logger.error(
+    self.logger.error(
                     missing(f"❌ Missing ensemble files: {missing_files}"),
                 )
         self.print(missing(f"❌ Missing ensemble files: {missing_files}"))
@@ -104,16 +108,18 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(error(f"❌ Error validating ensemble files: {e}"))
+    self.logger.exception(error(f"❌ Error validating ensemble files: {e}"))
         return False
 
     def _validate_ensemble_structure(
         self, symbol: str = exchange: str, data_dir: str = ) -> bool:
         """Validate ensemble structure and metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             summary_file = os.path.join(
                 data_dir = "analyst_ensemble",
                 f"{exchange}_{symbol}_analyst_ensemble_summary.json",
@@ -126,8 +132,7 @@ except Exception as e:
         return False
 
         # Load and validate summary
-        with open(summary_file) as f:
-                summary = json.load(f)
+        with open(summary_file) as f: summary = json.load(f)
 
         # Check required fields
             required_fields = [
@@ -140,7 +145,7 @@ except Exception as e:
             ]
 
         if missing_fields:
-        self.logger.error(
+    self.logger.error(
                     failed(
                         f"❌ Missing required fields in ensemble summary: {missing_fields}",
                     ),
@@ -184,14 +189,14 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(error(f"❌ Error validating ensemble structure: {e}"))
+    self.logger.exception(error(f"❌ Error validating ensemble structure: {e}"))
         return False
 
     def print(self = message: str) -> None:
         """Print validation message."""
         self.logger.info(message)
 
-def step07_analyst_ensemble_creation_validator(symbol: str = exchange: str, data_dir: str, training_input: dict[str = Any], config: dict[str, Any] = ) -> bool:
+def step07_analyst_ensemble_creation_validator(symbol: str = exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any]) -> bool:
     """Step 7: Analyst Ensemble Creation Validator.
 
     Args:

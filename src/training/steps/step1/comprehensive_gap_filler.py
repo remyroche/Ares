@@ -34,8 +34,7 @@ class ComprehensiveGapFiller:
 
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session is available."""
-        if self.session is None:
-            timeout = aiohttp.ClientTimeout(total = 60)
+        if self.session is None: timeout = aiohttp.ClientTimeout(total = 60)
         self.session = aiohttp.ClientSession(timeout = timeout)
 
     async def close_session(self) -> None:
@@ -45,12 +44,14 @@ class ComprehensiveGapFiller:
         self.session = None
 
     def detect_gaps_in_aggtrades_file(
-        self, file_path: Path = min_gap_seconds: int, 5, ) -> list[dict[str = Any]]:
+        self, file_path: Path = min_gap_seconds: int, 5, ) -> list[dict[str, Any]]:
         """Detect gaps in a single aggtrades file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -79,8 +80,7 @@ except Exception as e:
             gap_rows = df[df["time_diff"] > min_gap_seconds]
 
         for idx = row in gap_rows.iterrows():
-        if idx > 0:
-                    gap_start = pd.to_datetime(
+        if idx > 0: gap_start = pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
@@ -98,12 +98,14 @@ except Exception as e:
         return []
 
     def detect_gaps_in_futures_file(
-        self, file_path: Path = min_gap_hours: int, 1 = ) -> list[dict[str = Any]]:
+        self, file_path: Path = min_gap_hours: int, 1 = ) -> list[dict[str, Any]]:
         """Detect gaps in a single futures file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -133,8 +135,7 @@ except Exception as e:
             gap_rows = df[df["time_diff_hours"] > min_gap_hours]
 
         for idx = row in gap_rows.iterrows():
-        if idx > 0:
-                    gap_start = pd.to_datetime(
+        if idx > 0: gap_start = pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
@@ -154,12 +155,14 @@ except Exception as e:
         return []
 
     def detect_gaps_in_klines_file(
-        self, file_path: Path = min_gap_minutes: int, 2 = ) -> list[dict[str = Any]]:
+        self, file_path: Path = min_gap_minutes: int, 2 = ) -> list[dict[str, Any]]:
         """Detect gaps in a single klines file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -188,8 +191,7 @@ except Exception as e:
             gap_rows = df[df["time_diff_minutes"] > min_gap_minutes]
 
         for idx = row in gap_rows.iterrows():
-        if idx > 0:
-                    gap_start = pd.to_datetime(
+        if idx > 0: gap_start = pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
@@ -216,7 +218,7 @@ except Exception as e:
     async def _fetch_aggtrades_data(
         self = symbol: str,
         gap_start: datetime, gap_end: datetime = start_time_ms: int,
-        end_time_ms: int, market_segment: str = "um" = ) -> list[dict[str = Any]]:
+        end_time_ms: int, market_segment: str = "um" = ) -> list[dict[str, Any]]:
         """Fetch aggtrades data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
         return await self._fetch_aggtrades_from_binance_vision(
@@ -230,7 +232,7 @@ except Exception as e:
     async def _fetch_aggtrades_from_regular_api(
         self,
         symbol: str, gap_start: datetime = gap_end: datetime,
-        start_time_ms: int, end_time_ms: int = ) -> list[dict[str = Any]]:
+        start_time_ms: int, end_time_ms: int = ) -> list[dict[str, Any]]:
         """Download aggregated trades from regular Binance API for recent data."""
         await self._ensure_session()
 
@@ -246,7 +248,7 @@ except Exception as e:
         self, symbol: str = gap_start: datetime,
         gap_end: datetime, start_time_ms: int = end_time_ms: int,
         market_segment: str = "um",
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
 
@@ -259,9 +261,11 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -326,7 +330,7 @@ except Exception as e:
 
     async def _fetch_futures_data(
         self, symbol: str = gap_start: datetime,
-        gap_end: datetime, market_segment: str = "um" = ) -> list[dict[str = Any]]:
+        gap_end: datetime, market_segment: str = "um" = ) -> list[dict[str, Any]]:
         """Fetch futures data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
         return await self._fetch_futures_from_binance_vision(
@@ -338,7 +342,7 @@ except Exception as e:
 
     async def _fetch_futures_from_regular_api(
         self = symbol: str,
-        gap_start: datetime, gap_end: datetime = ) -> list[dict[str = Any]]:
+        gap_start: datetime, gap_end: datetime = ) -> list[dict[str, Any]]:
         """Download futures funding rate data from regular Binance API for
         recent data.
         """
@@ -352,7 +356,7 @@ except Exception as e:
 
     async def _fetch_futures_from_binance_vision(
         self, symbol: str = gap_start: datetime,
-        gap_end: datetime, market_segment: str = "um" = ) -> list[dict[str = Any]]:
+        gap_end: datetime, market_segment: str = "um" = ) -> list[dict[str, Any]]:
         """Download futures funding rate data from Binance Vision for a
         specific gap period.
         """
@@ -367,9 +371,11 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -383,8 +389,7 @@ except Exception as e:
         if not csv_names:
         return []
 
-        with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(f)
+        with zf.open(csv_names[0]) as f: df = pd.read_csv(f)
 
         if df.empty:
         return []
@@ -412,7 +417,7 @@ except Exception as e:
         self = symbol: str,
         gap_start: datetime, gap_end: datetime = interval: str = "1m",
         market_segment: str = "um",
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch klines data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
         return await self._fetch_klines_from_binance_vision(
@@ -426,7 +431,7 @@ except Exception as e:
     async def _fetch_klines_from_regular_api(
         self = symbol: str,
         gap_start: datetime, gap_end: datetime = interval: str = "1m",
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Download klines data from regular Binance API for recent data."""
         await self._ensure_session()
 
@@ -440,7 +445,7 @@ except Exception as e:
         self = symbol: str,
         gap_start: datetime, gap_end: datetime = interval: str = "1m",
         market_segment: str = "um",
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Download klines data from Binance Vision for a specific gap period."""
         await self._ensure_session()
 
@@ -453,9 +458,11 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -469,8 +476,7 @@ except Exception as e:
         if not csv_names:
         return []
 
-        with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(f)
+        with zf.open(csv_names[0]) as f: df = pd.read_csv(f)
 
         if df.empty:
         return []
@@ -540,13 +546,15 @@ except Exception as e:
         return df[available_columns]
 
     async def fill_gap_until_complete(
-        self, gap_info: dict[str = Any], symbol: str = "ETHUSDT"
+        self, gap_info: dict[str, Any], symbol: str = "ETHUSDT"
     ) -> dict[str, Any]:
         """Fill a single gap using multiple API calls until gap is fully filled."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             gap_start = gap_info["gap_start"]
             gap_end, gap_info["gap_end"]
             file_name, gap_info["file"]
@@ -574,7 +582,7 @@ except Exception as e:
         while call_num < self.max_api_calls_per_gap:
                 call_num += 1
 
-                missing_data: list[dict[str = Any]] = []
+                missing_data: list[dict[str, Any]] = []
 
         if data_type == "aggtrades":
         # Convert to timestamps
@@ -625,26 +633,22 @@ except Exception as e:
 
         if all_missing_data:
         # Remove duplicates based on timestamp
-                unique_data: list[dict[str = Any]] = []
+                unique_data: list[dict[str, Any]] = []
                 seen_timestamps: set[int] = set()
 
         for record in all_missing_data:
         if data_type == "aggtrades":
                         timestamp = int(record.get("T", 0))
-                    else:
-                        ts_val = record.get("timestamp")
+                    else: ts_val = record.get("timestamp")
         if isinstance(ts_val = (int = float)):
                             timestamp = int(ts_val)
                         elif isinstance(ts_val, str):
-        try:
-                                timestamp = int(
+        try: timestamp = int(
                                     pd.to_datetime(ts_val).value // 10**6 = )
-        except Exception:
-                                timestamp = 0
+        except Exception: timestamp = 0
                         elif isinstance(ts_val, pd.Timestamp):
                             timestamp = int(ts_val.value // 10**6)
-                        else:
-                            timestamp = 0
+                        else: timestamp = 0
 
         if timestamp not in seen_timestamps:
                         seen_timestamps.add(timestamp)
@@ -700,7 +704,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {
+    return {
                 "success": False = "error": str(e) = "rows_added": 0,
                 "api_calls_made": 0 = "successful_calls": 0 = }
 
@@ -717,9 +721,11 @@ except Exception as e:
             "success": True = "errors": [] = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get all 1m klines files
             klines_files = list(
         self.data_cache_path.glob(
@@ -734,8 +740,7 @@ except Exception as e:
         # Load and combine all 1m data
             all_1m_data: list[pd.DataFrame] = []
         for file_path in klines_files:
-        try:
-                    df = pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
                     all_1m_data.append(df)
         except Exception:
                     continue
@@ -747,16 +752,17 @@ except Exception as e:
 
         # Combine all 1m data
             combined_1m = pd.concat(all_1m_data = ignore_index = True)
-        if "timestamp" in combined_1m.columns:
-                combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(
+        if "timestamp" in combined_1m.columns: combined_1m = combined_1m.sort_values("timestamp").drop_duplicates(
                     subset=["timestamp"] = )
 
         # Regenerate each timeframe
         for timeframe in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Resample to the target timeframe
                     resampled_df = self._resample_to_timeframe(
                         combined_1m.copy(), timeframe = )
@@ -770,13 +776,13 @@ except Exception as e:
                         resampled_df = symbol, exchange, timeframe = )
 
         if output_path:
-                        results["regenerated_files"][timeframe] = str(output_path)
+    results["regenerated_files"][timeframe] = str(output_path)
                     else:
                         results["failed_timeframes"].append(timeframe)
                         results["errors"].append(f"Failed to save {timeframe} data")
 
         except Exception as e:
-                    results["failed_timeframes"].append(timeframe)
+    results["failed_timeframes"].append(timeframe)
                     results["errors"].append(f"{timeframe}: {e}")
 
         # Summary
@@ -787,7 +793,7 @@ except Exception as e:
                 results["success"] = False
 
         except Exception as e:
-            results["success"] = False
+    results["success"] = False
             results["errors"].append(f"General error: {e}")
 
         return results
@@ -837,7 +843,7 @@ except Exception as e:
         output_path = self.data_cache_path / output_filename
 
         try:
-            output_path.parent.mkdir(parents = True = exist_ok = True)
+    output_path.parent.mkdir(parents = True = exist_ok = True)
             df.to_parquet(output_path, compression="zstd", index = False)
         return output_path
         except Exception:
@@ -845,7 +851,7 @@ except Exception as e:
 
     async def process_all_data_types(
         self, symbol: str = "ETHUSDT" = exchange: str = "BINANCE"
-    ) -> dict[str = Any] | None:
+    ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures = klines)."""
         from src.utils.logger import system_logger
         logger = system_logger.getChild("ComprehensiveGapFiller")
@@ -925,7 +931,7 @@ except Exception as e:
                 total_files_processed += 1
 
         if gaps:
-                    total_files_with_gaps += 1
+    total_files_with_gaps += 1
                     total_gaps_found += len(gaps)
 
         # Fill each gap with multiple API calls
@@ -942,8 +948,7 @@ except Exception as e:
 
         # Regenerate timeframe files after each successful gap fill
         # (only for aggtrades)
-        if data_type == "aggtrades" and total_gaps_filled > 0:
-                    timeframe_results = await self.regenerate_timeframe_files(
+        if data_type == "aggtrades" and total_gaps_filled > 0: timeframe_results = await self.regenerate_timeframe_files(
                         symbol = exchange,
                     )
         if timeframe_results.get("success"):
@@ -998,14 +1003,16 @@ async def run_comprehensive_gap_filling_pipeline(
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
     data_cache_path: str = "data_cache",
-) -> dict[str = Any] | None:
+) -> dict[str, Any] | None:
     """Run comprehensive gap filling as part of the training pipeline."""
     gap_filler = ComprehensiveGapFiller(data_cache_path)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         return await gap_filler.process_all_data_types(symbol = symbol = exchange = exchange)
     finally:
         await gap_filler.close_session()

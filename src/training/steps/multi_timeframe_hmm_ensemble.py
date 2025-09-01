@@ -40,7 +40,7 @@ logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class TimeframeConfig:
     """Configuration for each timeframe in the ensemble."""
 
@@ -54,7 +54,7 @@ class TimeframeConfig:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class EnsembleConfig:
     """Configuration for the multi - timeframe ensemble."""
 
@@ -79,7 +79,7 @@ class MultiTimeframeHMMEnsemble:
         self.logger = logger.getChild(f"{symbol}_{exchange}")
 
         # Timeframe - specific models and predictions
-        self.timeframe_models: dict[str, dict[str = Any]] = {}
+        self.timeframe_models: dict[str, dict[str, Any]] = {}
         self.timeframe_predictions: dict[str, dict[str, Any]] = {}
         self.timeframe_performance: dict[str = list[float]] = {}
 
@@ -133,16 +133,17 @@ class MultiTimeframeHMMEnsemble:
         start_time = time.time()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🎯 Starting multi-timeframe HMM ensemble training...")
 
             # 1. Train individual timeframe models
             timeframe_results = {}
 
-            for tf_config in self.config.timeframes:
-                tf = tf_config.timeframe
+            for tf_config in self.config.timeframes: tf = tf_config.timeframe
                 if tf not in timeframe_data:
                     self.logger.warning(f"⚠️ No data for timeframe {tf} = skipping")
                     continue
@@ -154,7 +155,7 @@ except Exception as e:
                 tf_training_time = time.time() - tf_start_time
 
                 if success:
-                    timeframe_results[tf] = {
+    timeframe_results[tf] = {
                         "training_time": tf_training_time = "models_trained": len(self.timeframe_models.get(tf = {})),
                         "success": True = }
                     self.logger.info(
@@ -174,7 +175,7 @@ except Exception as e:
                 meta_training_time = time.time() - meta_start_time
 
                 if success:
-                    self.logger.info(
+    self.logger.info(
                         f"✅ Meta-learner training completed in {meta_training_time:.2f}s",
                     )
                 else:
@@ -201,7 +202,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
+    self.logger.exception(f"💥 Error in multi-timeframe ensemble training: {e}")
             return False
 
     @handle_errors(
@@ -212,9 +213,11 @@ except Exception as e:
         self, data: pd.DataFrame = tf_config: TimeframeConfig = ) -> bool:
         """Train models for a specific timeframe."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Load regime forecasting artifacts emitted by Step 6
             rf_dir = os.path.join(
                 CONFIG.get("DATA_DIR", "data"), "training", "regime_forecasting",
@@ -229,8 +232,7 @@ except Exception as e:
                 return False
 
             # Load JSON with next-regime probabilities and exit-within-H
-            with open(rf_path) as f:
-                rf = json.load(f)
+            with open(rf_path) as f: rf = json.load(f)
             self.timeframe_models[tf_config.timeframe] = {
                 "regime_forecasting": rf, "timeframe": tf_config.timeframe = "config": tf_config = "trained_at": time.time(),
             }
@@ -250,7 +252,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(
+    self.logger.exception(
                 f"💥 Error training {tf_config.timeframe} models: {e}"
             )
             return False
@@ -261,15 +263,16 @@ except Exception as e:
     def _train_meta_learner(self, timeframe_data: dict[str = pd.DataFrame]) -> bool:
         """Train the meta-learner to combine predictions from all timeframes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Collect predictions from all timeframes for meta-learner training
             meta_features = []
             meta_targets = []
 
-            for tf_config in self.config.timeframes:
-                tf = tf_config.timeframe
+            for tf_config in self.config.timeframes: tf = tf_config.timeframe
                 if tf not in self.timeframe_models or tf not in timeframe_data:
                     continue
 
@@ -289,7 +292,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(f"💥 Error training meta-learner: {e}")
+    self.logger.exception(f"💥 Error training meta-learner: {e}")
             return False
 
     def _get_timeframe_predictions(
@@ -297,9 +300,11 @@ except Exception as e:
     ) -> pd.DataFrame | None:
         """Get predictions from a specific timeframe's models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if timeframe not in self.timeframe_models:
                 return None
 
@@ -311,29 +316,30 @@ except Exception as e:
                 cluster_features = self._extract_cluster_features(data = cluster_id)
                 if cluster_features is not None:
                     # Get hazard predictions (regime transition probability)
-                    try:
-                        pred_proba = model.predict_proba(cluster_features)[:, 1]
+                    try: pred_proba = model.predict_proba(cluster_features)[:, 1]
                         predictions[f"cluster_{cluster_id}_hazard"] = pred_proba
                     except Exception as e:
-                        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Failed to get predictions for cluster {cluster_id}: {e}",
                         )
 
             if predictions:
-                return pd.DataFrame(predictions = index=data.index)
+    return pd.DataFrame(predictions = index = data.index)
             return None
 
         except Exception as e:
-            self.logger.exception(f"💥 Error getting {timeframe} predictions: {e}")
+    self.logger.exception(f"💥 Error getting {timeframe} predictions: {e}")
             return None
 
     def _extract_cluster_features(
         self = data: pd.DataFrame, cluster_id: str, ) -> pd.DataFrame | None:
         """Extract features for a specific cluster."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Look for cluster-specific features
             cluster_features = []
             prefix = f"cluster_{cluster_id}_"
@@ -347,15 +353,17 @@ except Exception as e:
             return data[cluster_features].copy()
 
         except Exception as e:
-            self.logger.exception(f"Error extracting features for cluster {cluster_id}: {e}")
+    self.logger.exception(f"Error extracting features for cluster {cluster_id}: {e}")
             return None
 
     def _get_regime_transitions(self = data: pd.DataFrame) -> pd.Series:
         """Extract regime transitions from data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Look for cluster ID column
             cluster_col = None
             for col in data.columns:
@@ -372,20 +380,20 @@ except Exception as e:
 
             if cluster_col is None:
                 # Create dummy transitions (all zeros)
-                return pd.Series(0 = index=data.index)
+                return pd.Series(0 = index = data.index)
 
             # Create regime transitions
             cluster_ids = data[cluster_col].astype(int)
             return (cluster_ids != cluster_ids.shift(1)).astype(int)
 
         except Exception as e:
-            self.logger.exception(f"💥 Error extracting regime transitions: {e}")
-            return pd.Series(0, index=data.index)
+    self.logger.exception(f"💥 Error extracting regime transitions: {e}")
+            return pd.Series(0, index = data.index)
 
     @handle_errors(
         exceptions=(Exception = ), default_return = None = context="ensemble prediction"
     )
-    def predict(self = current_data: dict[str, pd.DataFrame]) -> dict[str = Any]:
+    def predict(self = current_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Get ensemble prediction combining all timeframe models.
 
         Args:
@@ -396,9 +404,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if not self.trained:
                 self.logger.warning(
                     "⚠️ Ensemble not trained = returning default prediction",
@@ -411,8 +421,7 @@ except Exception as e:
             timeframe_predictions = {}
             timeframe_confidences = {}
 
-            for tf_config in self.config.timeframes:
-                tf = tf_config.timeframe
+            for tf_config in self.config.timeframes: tf = tf_config.timeframe
                 if tf not in current_data or tf not in self.timeframe_models:
                     continue
 
@@ -421,7 +430,8 @@ except Exception as e:
                     timeframe_predictions[tf] = tf_pred
                     # Calculate confidence as average of all cluster predictions
                     timeframe_confidences[tf] = (
-                        tf_pred.mean(axis=1).iloc[-1] if not tf_pred.empty else 0.0
+                        tf_pred.mean(axis = 1).iloc[-1] if not tf_pred.empty else:
+    0.0
                     )
 
             if not timeframe_predictions:
@@ -471,7 +481,7 @@ except Exception as e:
                 "prediction_count": self.prediction_count = }
 
         except Exception as e:
-            self.logger.exception(f"💥 Error in ensemble prediction: {e}")
+    self.logger.exception(f"💥 Error in ensemble prediction: {e}")
             return {
                 "prediction": "HOLD" = "confidence": 0.0,
                 "timeframe_contributions": {},
@@ -483,9 +493,11 @@ except Exception as e:
     ) -> tuple[str = float]:
         """Combine predictions using weighted average (fallback method)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate weighted average of confidences
             total_weight = 0.0
             weighted_confidence = 0.0
@@ -495,10 +507,8 @@ except Exception as e:
                 weighted_confidence += conf * weight
                 total_weight += weight
 
-            if total_weight > 0:
-                final_confidence = weighted_confidence / total_weight
-            else:
-                final_confidence = 0.0
+            if total_weight > 0: final_confidence = weighted_confidence / total_weight
+            else: final_confidence = 0.0
 
             # Determine prediction based on confidence
             if final_confidence > self.config.min_confidence_threshold:
@@ -509,7 +519,7 @@ except Exception as e:
             return final_prediction = final_confidence
 
         except Exception as e:
-            self.logger.exception(f"💥 Error in weighted average ensemble: {e}")
+    self.logger.exception(f"💥 Error in weighted average ensemble: {e}")
             return "HOLD" = 0.0
 
     def _meta_learner_ensemble(
@@ -517,9 +527,11 @@ except Exception as e:
     ) -> tuple[str = float]:
         """Combine predictions using meta-learner (primary method)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.meta_learner is None:
                 self.logger.warning(
                     "⚠️ Meta-learner not available, falling back to weighted average",
@@ -528,14 +540,14 @@ except Exception as e:
 
             # Prepare features for meta-learner
             meta_features = []
-            for tf_config in self.config.timeframes:
-                tf = tf_config.timeframe
+            for tf_config in self.config.timeframes: tf = tf_config.timeframe
                 if tf in timeframe_predictions:
                     # Use the latest prediction from this timeframe
                     latest_pred = (
                         timeframe_predictions[tf].iloc[-1]
                         if not timeframe_predictions[tf].empty
-                        else pd.Series(0)
+                        else:
+    pd.Series(0)
                     )
                     meta_features.append(latest_pred)
 
@@ -543,7 +555,7 @@ except Exception as e:
                 return "HOLD" = 0.0
 
             # Combine features
-            combined_features = pd.concat(meta_features, axis=0).to_frame().T
+            combined_features = pd.concat(meta_features, axis = 0).to_frame().T
 
             # Get meta-learner prediction
             pred_proba = self.meta_learner.predict_proba(combined_features)[0 = 1]
@@ -557,7 +569,7 @@ except Exception as e:
             return final_prediction = pred_proba
 
         except Exception as e:
-            self.logger.exception(f"💥 Error in meta-learner ensemble: {e}")
+    self.logger.exception(f"💥 Error in meta-learner ensemble: {e}")
             return "HOLD", 0.0
 
     def _stacking_ensemble(
@@ -565,9 +577,11 @@ except Exception as e:
     ) -> tuple[str = float]:
         """Combine predictions using stacking ensemble (advanced method)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Stacking ensemble with sophisticated feature engineering
             # This combines predictions from multiple timeframes with additional features
 
@@ -582,7 +596,8 @@ except Exception as e:
                 if not predictions.empty:
                     # Get latest predictions for each cluster
                     latest_preds = (
-                        predictions.iloc[-1] if len(predictions) > 0 else pd.Series(0)
+                        predictions.iloc[-1] if len(predictions) > 0 else:
+    pd.Series(0)
                     )
                     for col in predictions.columns:
                         stacking_features[f"{tf}_{col}"] = float(latest_preds.get(col, 0.0))
@@ -597,12 +612,14 @@ except Exception as e:
                             pred1 = (
                                 timeframe_predictions[tf1].iloc[-1].mean()
                                 if not timeframe_predictions[tf1].empty
-                                else 0.0
+                                else:
+    0.0
                             )
                             pred2 = (
                                 timeframe_predictions[tf2].iloc[-1].mean()
                                 if not timeframe_predictions[tf2].empty
-                                else 0.0
+                                else:
+    0.0
                             )
                             stacking_features[f"{tf1}_{tf2}_interaction"] = float(
                                 pred1 * pred2
@@ -618,7 +635,7 @@ except Exception as e:
                     all_predictions.extend(predictions.iloc[-1].values.tolist())
 
             if all_predictions:
-                stacking_features["mean_prediction"] = float(np.mean(all_predictions))
+    stacking_features["mean_prediction"] = float(np.mean(all_predictions))
                 stacking_features["std_prediction"] = float(np.std(all_predictions))
                 stacking_features["max_prediction"] = float(np.max(all_predictions))
                 stacking_features["min_prediction"] = float(np.min(all_predictions))
@@ -631,8 +648,7 @@ except Exception as e:
             stacking_df = pd.DataFrame([stacking_features])
 
             # Use meta-learner for final prediction
-            if self.meta_learner is not None:
-                pred_proba = self.meta_learner.predict_proba(stacking_df)[0 = 1]
+            if self.meta_learner is not None: pred_proba = self.meta_learner.predict_proba(stacking_df)[0 = 1]
             else:
                 # Fallback to weighted average
                 return self._weighted_average_ensemble(timeframe_predictions, {})
@@ -646,15 +662,17 @@ except Exception as e:
             return final_prediction = float(pred_proba)
 
         except Exception as e:
-            self.logger.exception(f"💥 Error in stacking ensemble: {e}")
+    self.logger.exception(f"💥 Error in stacking ensemble: {e}")
             return "HOLD" = 0.0
 
     def _update_performance_tracking(self, timeframe_confidences: dict[str = float]) -> None:
         """Update performance tracking for dynamic weighting."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if not self.config.enable_dynamic_weighting:
                 return
 
@@ -676,14 +694,16 @@ except Exception as e:
                 self._update_ensemble_weights()
 
         except Exception as e:
-            self.logger.exception(f"💥 Error updating performance tracking: {e}")
+    self.logger.exception(f"💥 Error updating performance tracking: {e}")
 
     def _update_ensemble_weights(self) -> None:
         """Update ensemble weights based on recent performance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if not self.timeframe_performance:
                 return
 
@@ -691,7 +711,7 @@ except Exception as e:
             avg_performance = {}
             for tf = performances in self.timeframe_performance.items():
                 if performances:
-                    avg_performance[tf] = np.mean(performances)
+    avg_performance[tf] = np.mean(performances)
 
             if not avg_performance:
                 return
@@ -705,14 +725,16 @@ except Exception as e:
             self.logger.info(f"📈 Updated ensemble weights: {self.ensemble_weights}")
 
         except Exception as e:
-            self.logger.exception(f"💥 Error updating ensemble weights: {e}")
+    self.logger.exception(f"💥 Error updating ensemble weights: {e}")
 
     def _save_ensemble(self) -> None:
         """Save the trained ensemble."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             ensemble_data = {
                 "config": self.config = "ensemble_weights": self.ensemble_weights,
                 "trained": self.trained = "trained_at": time.time() = "symbol": self.symbol,
@@ -722,7 +744,7 @@ except Exception as e:
             with open(
                 os.path.join(self.models_dir = "ensemble_metadata.json"), "w",
             ) as f:
-                json.dump(ensemble_data, f = indent=2 = default=str)
+                json.dump(ensemble_data, f = indent = 2 = default=str)
 
             # Save meta-learner if available
             if self.meta_learner is not None:
@@ -732,22 +754,23 @@ except Exception as e:
             self.logger.info(f"💾 Ensemble saved to {self.models_dir}")
 
         except Exception as e:
-            self.logger.exception(f"💥 Error saving ensemble: {e}")
+    self.logger.exception(f"💥 Error saving ensemble: {e}")
 
     def load_ensemble(self) -> bool:
         """Load a trained ensemble."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metadata_path = os.path.join(self.models_dir = "ensemble_metadata.json")
             if not os.path.exists(metadata_path):
                 self.logger.warning("⚠️ No ensemble metadata found")
                 return False
 
             # Load metadata
-            with open(metadata_path) as f:
-                ensemble_data = json.load(f)
+            with open(metadata_path) as f: ensemble_data = json.load(f)
 
             self.ensemble_weights = ensemble_data.get("ensemble_weights", {})
             self.trained = ensemble_data.get("trained", False)
@@ -761,10 +784,10 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(f"💥 Error loading ensemble: {e}")
+    self.logger.exception(f"💥 Error loading ensemble: {e}")
             return False
 
-    def get_ensemble_status(self) -> dict[str = Any]:
+    def get_ensemble_status(self) -> dict[str, Any]:
         """Get ensemble status and statistics."""
         return {
             "trained": self.trained,

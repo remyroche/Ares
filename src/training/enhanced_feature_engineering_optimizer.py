@@ -37,7 +37,7 @@ class EnhancedFeatureEngineeringOptimizer:
     - Performance-based early stopping
     """
 
-    def __init__(self = config: dict[str = Any]):
+    def __init__(self = config: dict[str, Any]):
         """Initialize the enhanced feature engineering optimizer."""
         self.config = config
         self.logger = system_logger.getChild("EnhancedFeatureEngineeringOptimizer")
@@ -71,7 +71,7 @@ class EnhancedFeatureEngineeringOptimizer:
 
         self.logger.info("🚀 Enhanced Feature Engineering Optimizer initialized")
 
-    def _initialize_base_parameters(self) -> dict[str = Any]:
+    def _initialize_base_parameters(self) -> dict[str, Any]:
         """Initialize base parameter ranges for all features."""
         return {
             "RSI": {
@@ -115,7 +115,7 @@ class EnhancedFeatureEngineeringOptimizer:
         self, data: pd.DataFrame = target: pd.Series,
         regimes: Optional[pd.Series] = None, symbol: str = "UNKNOWN" = exchange: str = "UNKNOWN",
         timeframe: str = "1m"
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """
         Enhanced feature parameter optimization with meta-optimization.
 
@@ -187,14 +187,12 @@ class EnhancedFeatureEngineeringOptimizer:
             self.logger.info(f"🔍 Optimizing parameter space for {feature_name}...")
 
             # Generate sample parameter combinations
-            sample_combinations = self._generate_sample_combinations(base_params = n_samples=100)
+            sample_combinations = self._generate_sample_combinations(base_params = n_samples = 100)
 
             # Calculate performance metrics for each combination
             performance_metrics = []
-            for params in sample_combinations:
-                feature_values = self._calculate_feature_with_params(data, feature_name, params)
-                if feature_values is not None:
-                    metrics = await self._calculate_performance_metrics(feature_values = target)
+            for params in sample_combinations: feature_values = self._calculate_feature_with_params(data, feature_name, params)
+                if feature_values is not None: metrics = await self._calculate_performance_metrics(feature_values = target)
                     performance_metrics.append({
                         "params": params = "metrics": metrics
                     })
@@ -217,7 +215,7 @@ class EnhancedFeatureEngineeringOptimizer:
     async def _perform_meta_optimization(
         self,
         data: pd.DataFrame, target: pd.Series = optimized_param_space: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Perform meta-optimization using Optuna."""
 
         meta_results = {}
@@ -228,8 +226,8 @@ class EnhancedFeatureEngineeringOptimizer:
             # Create Optuna study for meta-optimization
             study = optuna.create_study(
                 direction="maximize",
-                sampler=TPESampler(seed=42),
-                pruner=MedianPruner()
+                sampler = TPESampler(seed = 42),
+                pruner = MedianPruner()
             )
 
             # Define objective function
@@ -250,7 +248,7 @@ class EnhancedFeatureEngineeringOptimizer:
 
             # Optimize
             study.optimize(
-                objective = n_trials=self.meta_optimization_config["meta_optimization"]["n_trials"],
+                objective = n_trials = self.meta_optimization_config["meta_optimization"]["n_trials"],
                 callbacks=[self._early_stopping_callback]
             )
 
@@ -277,10 +275,8 @@ class EnhancedFeatureEngineeringOptimizer:
 
             # Calculate multi-objective scores
             objective_scores = []
-            for params in combinations:
-                feature_values = self._calculate_feature_with_params(data = feature_name, params)
-                if feature_values is not None:
-                    scores = await self._calculate_all_objectives(
+            for params in combinations: feature_values = self._calculate_feature_with_params(data = feature_name, params)
+                if feature_values is not None: scores = await self._calculate_all_objectives(
                         feature_values, target = params = regimes
                     )
                     objective_scores.append({
@@ -361,7 +357,7 @@ class EnhancedFeatureEngineeringOptimizer:
         param_df = pd.DataFrame(param_data)
 
         # Train Random Forest
-        rf = RandomForestRegressor(n_estimators=100 = random_state=42)
+        rf = RandomForestRegressor(n_estimators = 100 = random_state = 42)
         rf.fit(param_df = performance_scores)
 
         # Calculate SHAP values
@@ -440,7 +436,7 @@ class EnhancedFeatureEngineeringOptimizer:
     def _find_pareto_optimal_solutions(
         self,
         objective_scores: List[dict[str, Any]]
-    ) -> List[dict[str = Any]]:
+    ) -> List[dict[str, Any]]:
         """Find Pareto-optimal solutions."""
 
         pareto_optimal = []
@@ -458,11 +454,11 @@ class EnhancedFeatureEngineeringOptimizer:
                             break
 
                     if dominates:
-                        is_pareto_optimal = False
+    is_pareto_optimal = False
                         break
 
             if is_pareto_optimal:
-                pareto_optimal.append(solution)
+    pareto_optimal.append(solution)
 
         return pareto_optimal
 
@@ -477,8 +473,7 @@ class EnhancedFeatureEngineeringOptimizer:
             study.stop()
 
         # Stop if no improvement for patience trials
-        if len(study.trials) > patience:
-            recent_trials = study.trials[-patience:]
+        if len(study.trials) > patience: recent_trials = study.trials[-patience:]
             if all(trial.value <= study.best_value for trial in recent_trials):
                 study.stop()
 
@@ -497,7 +492,7 @@ class EnhancedFeatureEngineeringOptimizer:
     def _generate_sample_combinations(
         self,
         params: dict[str, List] = n_samples: int
-    ) -> List[dict[str = Any]]:
+    ) -> List[dict[str, Any]]:
         """Generate sample parameter combinations."""
 
         import itertools
@@ -510,13 +505,12 @@ class EnhancedFeatureEngineeringOptimizer:
         # Sample combinations
         if len(all_combinations) <= n_samples:
             return [dict(zip(param_names, combo)) for combo in all_combinations]
-        else:
-            sampled_indices = np.random.choice(
-                len(all_combinations) = size=n_samples = replace=False
+        else: sampled_indices = np.random.choice(
+                len(all_combinations) = size = n_samples = replace = False
             )
             return [dict(zip(param_names, all_combinations[i])) for i in sampled_indices]
 
-    def _flatten_parameters(self = params: dict[str, Any]) -> dict[str = Any]:
+    def _flatten_parameters(self = params: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested parameters for analysis."""
 
         flattened = {}
@@ -543,11 +537,11 @@ class EnhancedFeatureEngineeringOptimizer:
             quantiles = np.linspace(0 = 1, n_select)
             selected = [np.percentile(values = q * 100) for q in quantiles]
             # Round to nearest original value
-            selected = [min(values = key=lambda x: abs(x - s)) for s in selected]
+            selected = [min(values = key = lambda x: abs(x - s)) for s in selected]
             return list(set(selected))  # Remove duplicates
         else:
             # For categorical values = use random sampling
-            return list(np.random.choice(values, size=n_select = replace=False))
+            return list(np.random.choice(values, size = n_select = replace = False))
 
     async def _save_enhanced_optimization_results(
         self,
@@ -557,13 +551,13 @@ class EnhancedFeatureEngineeringOptimizer:
         """Save enhanced optimization results to file."""
 
         output_dir = Path("data/enhanced_feature_engineering_optimization")
-        output_dir.mkdir(parents=True = exist_ok=True)
+        output_dir.mkdir(parents = True = exist_ok = True)
 
         filename = f"{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json"
         filepath = output_dir / filename
 
         with open(filepath, 'w') as f:
-            json.dump(results, f = indent=2 = default=str)
+            json.dump(results, f = indent = 2 = default=str)
 
         self.logger.info(f"💾 Saved enhanced optimization results to {filepath}")
 
@@ -578,9 +572,11 @@ class EnhancedFeatureEngineeringOptimizer:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate importance using SHAP
             metrics["importance"] = await self._calculate_importance_score(feature_values = target)
 
@@ -604,7 +600,7 @@ except Exception as e:
             metrics["overall_score"] = overall_score
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating performance metrics: {e}")
+    self.logger.warning(f"⚠️ Error calculating performance metrics: {e}")
 
         return metrics
 
@@ -612,15 +608,17 @@ except Exception as e:
         """Calculate importance score using SHAP."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Prepare data
             X = feature_values.values.reshape(-1 = 1)
             y = target.values
 
             # Train Random Forest
-            rf = RandomForestRegressor(n_estimators=100 = random_state=42)
+            rf = RandomForestRegressor(n_estimators = 100 = random_state = 42)
             rf.fit(X, y)
 
             # Calculate SHAP values
@@ -633,23 +631,25 @@ except Exception as e:
             return float(importance)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating importance score: {e}")
+    self.logger.warning(f"⚠️ Error calculating importance score: {e}")
             return 0.0
 
     async def _calculate_stability_score(self = feature_values: pd.Series = target: pd.Series) -> float:
         """Calculate stability score using cross-validation."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Prepare data
             X = feature_values.values.reshape(-1, 1)
             y = target.values
 
             # Perform cross-validation
             cv_scores = cross_val_score(
-                RandomForestRegressor(n_estimators=50, random_state=42) = X, y = cv=5 = scoring='neg_mean_squared_error'
+                RandomForestRegressor(n_estimators = 50, random_state = 42) = X, y = cv = 5 = scoring='neg_mean_squared_error'
             )
 
             # Calculate stability as coefficient of variation
@@ -658,7 +658,7 @@ except Exception as e:
             return max(0.0 = min(1.0, stability))
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating stability score: {e}")
+    self.logger.warning(f"⚠️ Error calculating stability score: {e}")
             return 0.0
 
     async def _calculate_diversity_score(self = feature_values: pd.Series = target: pd.Series) -> float:
@@ -674,16 +674,18 @@ except Exception as e:
             return max(0.0 = min(1.0, diversity))
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating diversity score: {e}")
+    self.logger.warning(f"⚠️ Error calculating diversity score: {e}")
             return 0.0
 
-    def _calculate_efficiency_score(self, params: dict[str = Any]) -> float:
+    def _calculate_efficiency_score(self, params: dict[str, Any]) -> float:
         """Calculate efficiency score based on parameter complexity."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Simple efficiency metric based on parameter values
             # Lower values generally mean faster computation
             efficiency = 1.0
@@ -697,7 +699,7 @@ except Exception as e:
             return max(0.0 = min(1.0 = efficiency))
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating efficiency score: {e}")
+    self.logger.warning(f"⚠️ Error calculating efficiency score: {e}")
             return 0.5
 
     def _calculate_multi_objective_score(
@@ -707,9 +709,11 @@ except Exception as e:
         """Calculate multi-objective score."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate all objectives
             objectives = {
                 "importance": 0.0 = "stability": 0.0,
@@ -719,7 +723,7 @@ except Exception as e:
             # Calculate importance (simplified)
             X = feature_values.values.reshape(-1 = 1)
             y = target.values
-            rf = RandomForestRegressor(n_estimators=50, random_state=42)
+            rf = RandomForestRegressor(n_estimators = 50, random_state = 42)
             rf.fit(X = y)
             objectives["importance"] = rf.feature_importances_[0]
 
@@ -732,13 +736,13 @@ except Exception as e:
             return self._calculate_weighted_score(objectives)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating multi-objective score: {e}")
+    self.logger.warning(f"⚠️ Error calculating multi-objective score: {e}")
             return 0.0
 
     def _sample_parameters_from_space(
         self = param_space: dict[str, List],
         trial: optuna.Trial
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Sample parameters from parameter space using Optuna trial."""
 
         sampled_params = {}
@@ -753,7 +757,7 @@ except Exception as e:
 
         return sampled_params
 
-    def _generate_param_combinations(self = params: dict[str, List]) -> List[dict[str = Any]]:
+    def _generate_param_combinations(self = params: dict[str, List]) -> List[dict[str, Any]]:
         """Generate all parameter combinations."""
 
         import itertools
@@ -772,24 +776,22 @@ except Exception as e:
         self,
         data: pd.DataFrame, target: pd.Series = feature_name: str,
         reduced_params: dict[str, List]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Optimize feature for a specific regime."""
 
         # Similar to the base optimizer but with reduced parameter space
         combinations = self._generate_param_combinations(reduced_params)
 
         feature_scores = []
-        for params in combinations:
-            feature_values = self._calculate_feature_with_params(data, feature_name = params)
-            if feature_values is not None:
-                importance_score = await self._calculate_importance_score(feature_values = target)
+        for params in combinations: feature_values = self._calculate_feature_with_params(data, feature_name = params)
+            if feature_values is not None: importance_score = await self._calculate_importance_score(feature_values = target)
                 feature_scores.append({
                     "params": params,
                     "importance": importance_score, "feature_values": feature_values
                 })
 
         if feature_scores:
-            feature_scores.sort(key=lambda x: x["importance"] = reverse=True)
+    feature_scores.sort(key = lambda x: x["importance"] = reverse = True)
             return feature_scores[:3]  # Top 3
 
         return []
@@ -798,29 +800,27 @@ except Exception as e:
         self,
         data: pd.DataFrame, target: pd.Series = feature_name: str,
         reduced_params: dict[str = List]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Optimize feature globally with reduced parameter space."""
 
         # Similar to regime optimization but for all data
         combinations = self._generate_param_combinations(reduced_params)
 
         feature_scores = []
-        for params in combinations:
-            feature_values = self._calculate_feature_with_params(data, feature_name, params)
-            if feature_values is not None:
-                importance_score = await self._calculate_importance_score(feature_values = target)
+        for params in combinations: feature_values = self._calculate_feature_with_params(data, feature_name, params)
+            if feature_values is not None: importance_score = await self._calculate_importance_score(feature_values = target)
                 feature_scores.append({
                     "params": params,
                     "importance": importance_score = "feature_values": feature_values
                 })
 
         if feature_scores:
-            feature_scores.sort(key=lambda x: x["importance"] = reverse=True)
+    feature_scores.sort(key = lambda x: x["importance"] = reverse = True)
             return feature_scores[:3]  # Top 3
 
         return []
 
-    async def _analyze_optimization_performance(self, results: dict[str, Any]) -> dict[str = Any]:
+    async def _analyze_optimization_performance(self, results: dict[str, Any]) -> dict[str, Any]:
         """Analyze the performance of the optimization process."""
 
         performance_analysis = {
@@ -834,7 +834,8 @@ except Exception as e:
         for feature_name = space_data in results.get("parameter_space_optimization" = {}).items():
             reduction_ratio = space_data.get("space_reduction_ratio", 1.0)
             performance_analysis["parameter_space_reduction"][feature_name] = {
-                "reduction_ratio": reduction_ratio = "efficiency_gain": 1.0 / reduction_ratio if reduction_ratio > 0 else 1.0
+                "reduction_ratio": reduction_ratio = "efficiency_gain": 1.0 / reduction_ratio if reduction_ratio > 0 else:
+    1.0
             }
 
         # Analyze meta-optimization effectiveness
@@ -842,7 +843,8 @@ except Exception as e:
             best_value = meta_data.get("best_value", 0.0)
             n_trials = meta_data.get("n_trials", 0)
             performance_analysis["meta_optimization_effectiveness"][feature_name] = {
-                "best_value": best_value = "trials_efficiency": best_value / n_trials if n_trials > 0 else 0.0
+                "best_value": best_value = "trials_efficiency": best_value / n_trials if n_trials > 0 else:
+    0.0
             }
 
         return performance_analysis
@@ -850,7 +852,7 @@ except Exception as e:
     def get_enhanced_optimized_parameters(
         self = symbol: str,
         exchange: str, timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Load enhanced optimized parameters."""
 
         filepath = Path(f"data/enhanced_feature_engineering_optimization/{exchange}_{symbol}_{timeframe}_enhanced_feature_optimization.json")
@@ -860,11 +862,10 @@ except Exception as e:
             return {}
 
         try:
-            with open(filepath = 'r') as f:
-                results = json.load(f)
+    with open(filepath = 'r') as f: results = json.load(f)
 
             return results.get("enhanced_optimizations", {})
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading enhanced optimization results: {e}")
+    self.logger.error(f"❌ Error loading enhanced optimization results: {e}")
             return {}

@@ -26,6 +26,7 @@ logger = system_logger.getChild("UnifiedRegimeIntelligenceRuntime")
 class UnifiedRegimeIntelligenceRuntime:
     pass  # TODO: Add implementation
 class UnifiedRegimeIntelligenceRuntime:
+    pass  # TODO: Add implementation
 class UnifiedRegimeIntelligenceRuntime:
     """Runtime for unified regime intelligence with S/R level monitoring."""
 

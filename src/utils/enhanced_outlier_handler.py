@@ -17,9 +17,6 @@ from .logger import system_logger
 from .error_handler import handle_errors
 
 class OutlierSeverity(Enum):
-    pass  # TODO: Add implementation
-class OutlierSeverity(Enum):
-class OutlierSeverity(Enum):
     """Outlier severity levels."""
 LOW = "low"           # Minor outliers, log warning
 MEDIUM = "medium"     # Moderate outliers, log error
@@ -29,6 +26,7 @@ CRITICAL = "critical" # Critical outliers, raise exception and stop processing
 class DataSchema:
     pass  # TODO: Add implementation
 class DataSchema:
+    pass  # TODO: Add implementation
 class DataSchema:
     """Defines expected data schema for file operations."""
 
@@ -147,6 +145,7 @@ return result
 class OutlierInfo:
     pass  # TODO: Add implementation
 class OutlierInfo:
+    pass  # TODO: Add implementation
 class OutlierInfo:
     """Information about detected outliers."""
 
@@ -170,6 +169,7 @@ def __str__(self):
 class EnhancedOutlierHandler:
     pass  # TODO: Add implementation
 class EnhancedOutlierHandler:
+    pass  # TODO: Add implementation
 class EnhancedOutlierHandler:
     """Enhanced outlier handler with error raising and schema validation."""
 

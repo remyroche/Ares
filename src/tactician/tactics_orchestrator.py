@@ -19,9 +19,12 @@ import pandas as pd
 from dataclasses import dataclass
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class TradeDecision:
     pass  # TODO: Add implementation
 class TradeDecision:
+    pass  # TODO: Add implementation
 class TradeDecision:
     action: str
 confidence: float
@@ -47,6 +50,7 @@ invalid,
 class DecisionPolicy:
     pass  # TODO: Add implementation
 class DecisionPolicy:
+    pass  # TODO: Add implementation
 class DecisionPolicy:
     """
 Aggregates sizing, leverage, SR breakout, and ML signals into a unified TradeDecision.
@@ -556,6 +560,7 @@ except Exception as e:
 class TacticsOrchestrator:
     pass  # TODO: Add implementation
 class TacticsOrchestrator:
+    pass  # TODO: Add implementation
 class TacticsOrchestrator:
     """
 Main tactics orchestrator that coordinates all tactical components.

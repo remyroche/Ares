@@ -12,6 +12,7 @@ import pandas as pd
 class DynamicRegimeMapper:
     pass  # TODO: Add implementation
 class DynamicRegimeMapper:
+    pass  # TODO: Add implementation
 class DynamicRegimeMapper:
     """
 Dynamically maps HMM composite cluster IDs to regime names based on Step 1.7 results.

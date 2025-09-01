@@ -23,9 +23,6 @@ T, TypeVar("T")
 F, TypeVar("F", bound = TypingCallable[..., Any])
 
 class StepStatus(Enum):
-    pass  # TODO: Add implementation
-class StepStatus(Enum):
-class StepStatus(Enum):
     """Status of training step execution."""
 
 NOT_STARTED = "not_started"
@@ -36,9 +33,12 @@ RECOVERED = "recovered"
 SKIPPED = "skipped"
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class StepExecutionContext:
     pass  # TODO: Add implementation
 class StepExecutionContext:
+    pass  # TODO: Add implementation
 class StepExecutionContext:
     """Context for step execution with detailed tracking."""
 
@@ -84,6 +84,7 @@ return end_time - self.start_time
 class TrainingStepErrorHandler:
     pass  # TODO: Add implementation
 class TrainingStepErrorHandler:
+    pass  # TODO: Add implementation
 class TrainingStepErrorHandler:
     """Enhanced error handler specifically for training steps."""
 

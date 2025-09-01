@@ -312,6 +312,7 @@ except Exception as e:
 class HMMWrapper:
     pass  # TODO: Add implementation
 class HMMWrapper:
+    pass  # TODO: Add implementation
 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
                     def __init__(self, n_states: int = 4):

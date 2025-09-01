@@ -108,6 +108,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🚀 Starting regime-specific tactician labeling")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check for regime column
             if regime_column not in data.columns:
                 self.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
@@ -179,6 +182,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.regime_config["regime_specific_barriers"]:
                 # Use existing HMM regime information instead of recalculating metrics
                 # The HMM clusters already capture volatility = volume = and market characteristics
@@ -248,6 +254,9 @@ class RegimeAwareTacticianLabeler:
         """Get regime information from existing HMM cluster data."""
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Extract regime information from HMM cluster columns
             regime_info = {
                 "regime_type": "unknown",
@@ -315,6 +324,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             labeled_data = regime_data.copy()
             
             # Get regime-specific precision thresholds
@@ -354,6 +366,9 @@ class RegimeAwareTacticianLabeler:
         """Get regime-specific precision thresholds."""
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.regime_config["regime_specific_precision"]:
                 # Calculate regime-specific precision thresholds
                 regime_volatility = regime_data['close'].pct_change().std()
@@ -406,6 +421,9 @@ class RegimeAwareTacticianLabeler:
         """Get regime-specific quality filters."""
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if self.regime_config["regime_specific_quality_filters"]:
                 # Calculate regime-specific quality filter thresholds
                 regime_volume_mean = regime_data['volume'].mean()
@@ -454,6 +472,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             labeled_data = regime_data.copy()
             
             # Apply regime-specific quality filters
@@ -524,6 +545,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             filtered_data = regime_data.copy()
             
             # Volume filter
@@ -560,6 +584,9 @@ class RegimeAwareTacticianLabeler:
         self.logger.info("🔄 Applying default tactician labeling")
         
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             labeled_data = data.copy()
             
             # Apply default barriers
@@ -644,6 +671,9 @@ def __init__(self, config: dict[str, Any]) -> None:
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute tactician model labeling."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Executing Tactician Labeling...")
 
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -860,6 +890,9 @@ def __init__(self, config: dict[str, Any]) -> None:
             f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         )
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         try:
                 from src.training.enhanced_training_manager_optimized import (
                     ParquetDatasetManager,
@@ -895,6 +928,9 @@ def __init__(self, config: dict[str, Any]) -> None:
             f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
         )
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
         try:
@@ -999,6 +1035,9 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create step instance
         config: dict[str = Any] = {"symbol": symbol, "exchange": exchange = "data_dir": data_dir}
         step = TacticianLabelingStep(config)

@@ -17,9 +17,6 @@ PerformanceLevel,
 
 
 class DriftType(Enum):
-    pass  # TODO: Add implementation
-class DriftType(Enum):
-class DriftType(Enum):
     """Drift types for model monitoring."""
 
 CONCEPT_DRIFT = "concept_drift"
@@ -28,9 +25,6 @@ LABEL_DRIFT = "label_drift"
 FEATURE_DRIFT = "feature_drift"
 
 
-class ModelStatus(Enum):
-    pass  # TODO: Add implementation
-class ModelStatus(Enum):
 class ModelStatus(Enum):
     """Model status enumeration."""
 
@@ -41,9 +35,12 @@ RETRAINING = "retraining"
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class ModelDriftAlert:
     pass  # TODO: Add implementation
 class ModelDriftAlert:
+    pass  # TODO: Add implementation
 class ModelDriftAlert:
     """Model drift alert."""
 
@@ -59,9 +56,12 @@ description: str
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class ModelPerformance:
     pass  # TODO: Add implementation
 class ModelPerformance:
+    pass  # TODO: Add implementation
 class ModelPerformance:
     """Model performance metrics."""
 

@@ -29,6 +29,7 @@ with_tracing_span,
 class UnifiedRegimeClassifier:
     pass  # TODO: Add implementation
 class UnifiedRegimeClassifier:
+    pass  # TODO: Add implementation
 class UnifiedRegimeClassifier:
     """
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.

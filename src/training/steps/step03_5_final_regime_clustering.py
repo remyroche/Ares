@@ -57,6 +57,9 @@ class FinalRegimeClusteringStep:
     def _load_optimized_parameters(self) -> None:
         """Load optimized parameters from step3."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load parameter optimization results
             param_file = Path("data / optimization / parameter_optimization_results.json")
         if param_file.exists():
@@ -100,6 +103,9 @@ class FinalRegimeClusteringStep:
     async def execute(self) -> bool:
         """Execute the final regime clustering step."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🎯 Starting final regime clustering with advanced reporting...")
         self.start_time = time.time()
 
@@ -142,6 +148,9 @@ class FinalRegimeClusteringStep:
     async def _load_and_prepare_data(self) -> dict[str = Any]:
         """Load and prepare data for regime clustering."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("📊 Loading and preparing data for regime clustering...")
 
         # Get data parameters from config
@@ -198,6 +207,9 @@ class FinalRegimeClusteringStep:
     async def _prepare_features_with_optimized_params(self = df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features using optimized parameters from step3."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Preparing features with optimized parameters...")
 
         # Ensure timestamp is datetime
@@ -263,6 +275,9 @@ class FinalRegimeClusteringStep:
     async def _perform_hmm_regime_discovery(self = data: pd.DataFrame) -> dict[str = Any]:
         """Perform HMM regime discovery using optimized parameters."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🧠 Performing HMM regime discovery...")
 
         # Get optimized HMM parameters
@@ -280,6 +295,9 @@ class FinalRegimeClusteringStep:
 
         # Try to import hmmlearn
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 from hmmlearn import hmm
                 from sklearn.preprocessing import StandardScaler
 
@@ -324,6 +342,9 @@ class FinalRegimeClusteringStep:
     async def _perform_simple_regime_detection(self = features: pd.DataFrame) -> dict[str = Any]:
         """Perform simple regime detection as fallback."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("📊 Performing simple regime detection...")
 
         # Use volatility and momentum for regime classification
@@ -379,6 +400,9 @@ class FinalRegimeClusteringStep:
     async def _perform_final_clustering(self, data: pd.DataFrame = hmm_results: dict[str, Any]) -> dict[str = Any]:
         """Perform final clustering using HMM results and optimized parameters."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🎯 Performing final clustering...")
 
         # Get optimized clustering parameters
@@ -447,6 +471,9 @@ class FinalRegimeClusteringStep:
     async def _analyze_regime_characteristics(self, clustering_results: dict[str = Any], data: pd.DataFrame) -> dict[str = Any]:
         """Analyze regime characteristics and patterns."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Analyzing regime characteristics...")
 
         if not clustering_results or "cluster_labels" not in clustering_results:
@@ -517,6 +544,9 @@ class FinalRegimeClusteringStep:
     def _analyze_regime_transitions(self = cluster_labels: np.ndarray) -> dict[str = Any]:
         """Analyze regime transition patterns."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             transitions = {}
 
         for i in range(len(cluster_labels) - 1):
@@ -551,6 +581,9 @@ class FinalRegimeClusteringStep:
     def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str = Any]:
         """Analyze how long regimes persist."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             persistence = {}
             current_regime, cluster_labels[0]
             current_duration = 1
@@ -594,6 +627,9 @@ class FinalRegimeClusteringStep:
     async def _generate_comprehensive_reports(self, clustering_results: dict[str = Any], regime_analysis: dict[str = Any]) -> dict[str = Any]:
         """Generate comprehensive reports for regime clustering."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("📋 Generating comprehensive reports...")
 
             reports = {
@@ -649,6 +685,9 @@ class FinalRegimeClusteringStep:
     async def _save_final_results(self, clustering_results: dict[str = Any], regime_analysis: dict[str, Any] = reports: dict[str, Any]) -> bool:
         """Save final regime clustering results."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("💾 Saving final regime clustering results...")
 
         # Create results directory
@@ -787,6 +826,9 @@ class FinalRegimeClusteringStep:
 async def run_step(config: dict[str, Any]) -> bool:
     """Run the final regime clustering step."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
 
         # Create and initialize the step

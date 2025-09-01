@@ -14,6 +14,7 @@ from src.utils.warning_symbols import failed, missing, validation_error
 class BaseValidator(ABC):
     pass  # TODO: Add implementation
 class BaseValidator(ABC):
+    pass  # TODO: Add implementation
 class BaseValidator(ABC):
     """Base class for all step validators."""
 

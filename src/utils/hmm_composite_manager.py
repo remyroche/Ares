@@ -29,6 +29,7 @@ _GLOBAL_LOGGED_EVENTS: set[str] = set()
 class HMMCompositeManager:
     pass  # TODO: Add implementation
 class HMMCompositeManager:
+    pass  # TODO: Add implementation
 class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
 

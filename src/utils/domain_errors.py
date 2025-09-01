@@ -5,6 +5,7 @@ from typing import Any
 class DomainError(Exception):
     pass  # TODO: Add implementation
 class DomainError(Exception):
+    pass  # TODO: Add implementation
 class DomainError(Exception):
     """Base class for domain - specific errors raised by decorators.
 
@@ -26,6 +27,7 @@ self.context, context or {}
 class DataValidationError(DomainError):
     pass  # TODO: Add implementation
 class DataValidationError(DomainError):
+    pass  # TODO: Add implementation
 class DataValidationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="data_validation_error", context = context)
@@ -33,6 +35,7 @@ class DataValidationError(DomainError):
 class SchemaValidationError(DomainError):
     pass  # TODO: Add implementation
 class SchemaValidationError(DomainError):
+    pass  # TODO: Add implementation
 class SchemaValidationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="schema_validation_error", context = context)
@@ -40,6 +43,7 @@ class SchemaValidationError(DomainError):
 class VectorizationError(DomainError):
     pass  # TODO: Add implementation
 class VectorizationError(DomainError):
+    pass  # TODO: Add implementation
 class VectorizationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="vectorization_error", context = context)
@@ -47,6 +51,7 @@ class VectorizationError(DomainError):
 class ExternalServiceError(DomainError):
     pass  # TODO: Add implementation
 class ExternalServiceError(DomainError):
+    pass  # TODO: Add implementation
 class ExternalServiceError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="external_service_error", context = context)
@@ -54,6 +59,7 @@ class ExternalServiceError(DomainError):
 class OperationTimeoutError(DomainError):
     pass  # TODO: Add implementation
 class OperationTimeoutError(DomainError):
+    pass  # TODO: Add implementation
 class OperationTimeoutError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="operation_timeout", context = context)
@@ -61,6 +67,7 @@ class OperationTimeoutError(DomainError):
 class AuthenticationError(DomainError):
     pass  # TODO: Add implementation
 class AuthenticationError(DomainError):
+    pass  # TODO: Add implementation
 class AuthenticationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="authentication_error", context = context)
@@ -68,6 +75,7 @@ class AuthenticationError(DomainError):
 class AuthorizationError(DomainError):
     pass  # TODO: Add implementation
 class AuthorizationError(DomainError):
+    pass  # TODO: Add implementation
 class AuthorizationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="authorization_error", context = context)
@@ -75,6 +83,7 @@ class AuthorizationError(DomainError):
 class NotFoundError(DomainError):
     pass  # TODO: Add implementation
 class NotFoundError(DomainError):
+    pass  # TODO: Add implementation
 class NotFoundError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
         super().__init__(message, code="not_found", context = context)

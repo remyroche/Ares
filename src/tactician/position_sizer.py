@@ -20,6 +20,7 @@ from kelly_criterion_formula import calculate_kelly_multiplier
 class PositionSizer:
     pass  # TODO: Add implementation
 class PositionSizer:
+    pass  # TODO: Add implementation
 class PositionSizer:
     """
 Position Sizer component responsible for:

@@ -13,6 +13,7 @@ invalid,
 class GlobalPortfolioManager:
     pass  # TODO: Add implementation
 class GlobalPortfolioManager:
+    pass  # TODO: Add implementation
 class GlobalPortfolioManager:
     """
 Global Portfolio Manager with comprehensive error handling and type safety.

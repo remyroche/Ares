@@ -10,9 +10,12 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class PositionSizingConfig:
     pass  # TODO: Add implementation
 class PositionSizingConfig:
+    pass  # TODO: Add implementation
 class PositionSizingConfig:
     """Optimizable position sizing parameters."""
 

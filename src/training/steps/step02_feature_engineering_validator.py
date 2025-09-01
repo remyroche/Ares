@@ -126,6 +126,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Expected feature engineering output files (Parquet preferred)
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet" = f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
@@ -149,6 +152,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         # Validate feature data quality
         for file_path in expected_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     feature_data = pd.read_parquet(file_path)
 
         # Validate feature data quality
@@ -189,6 +195,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load labeled data files
             labeled_files = [
                 f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet" = f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
@@ -203,6 +212,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     labeled_data = pd.read_parquet(file_path)
 
         # Check for label column
@@ -294,6 +306,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load feature files
             feature_files = [
                 f"{data_dir}/{exchange}_{symbol}_features_train.pkl" = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl",
@@ -308,6 +323,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path = "rb") as f:
                         feature_data = pickle.load(f)
 
@@ -435,6 +453,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)...")
 
         # Load feature files
@@ -455,6 +476,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     continue
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path = "rb") as f:
                         feature_data = pickle.load(f)
 
@@ -540,6 +564,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load labeled data from all splits
             split_files = [
                 ("train", f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"),

@@ -23,6 +23,7 @@ ResultT = TypeVar("ResultT")
 class DataProvider(Protocol[DataT]):
     pass  # TODO: Add implementation
 class DataProvider(Protocol[DataT]):
+    pass  # TODO: Add implementation
 class DataProvider(Protocol[DataT]):
     """Protocol for data provider implementations."""
 
@@ -46,6 +47,7 @@ def is_connected(self) -> bool:
 class ModelPredictor(Protocol[T]):
     pass  # TODO: Add implementation
 class ModelPredictor(Protocol[T]):
+    pass  # TODO: Add implementation
 class ModelPredictor(Protocol[T]):
     """Protocol for ML model predictors."""
 
@@ -74,6 +76,7 @@ def is_trained(self) -> bool:
 class RiskManager(Protocol):
     pass  # TODO: Add implementation
 class RiskManager(Protocol):
+    pass  # TODO: Add implementation
 class RiskManager(Protocol):
     """Protocol for risk management implementations."""
 
@@ -102,6 +105,7 @@ async def update_risk_parameters(self, params: RiskParameters) -> bool:
 class OrderExecutor(Protocol):
     pass  # TODO: Add implementation
 class OrderExecutor(Protocol):
+    pass  # TODO: Add implementation
 class OrderExecutor(Protocol):
     """Protocol for order execution implementations."""
 
@@ -130,6 +134,7 @@ async def get_open_orders(self, symbol: Symbol | None = None) -> list[OrderInfo]
 class StateManager(Protocol[T]):
     pass  # TODO: Add implementation
 class StateManager(Protocol[T]):
+    pass  # TODO: Add implementation
 class StateManager(Protocol[T]):
     """Protocol for state management implementations."""
 
@@ -158,6 +163,7 @@ async def get_all_states(self) -> dict[str , T]:
 class EventHandler(Protocol[T]):
     pass  # TODO: Add implementation
 class EventHandler(Protocol[T]):
+    pass  # TODO: Add implementation
 class EventHandler(Protocol[T]):
     """Protocol for event handling implementations."""
 
@@ -181,6 +187,7 @@ async def unsubscribe(self, event_type: str) -> None:
 class Configurable(Protocol[ConfigT]):
     pass  # TODO: Add implementation
 class Configurable(Protocol[ConfigT]):
+    pass  # TODO: Add implementation
 class Configurable(Protocol[ConfigT]):
     """Protocol for configurable components."""
 
@@ -204,6 +211,7 @@ def validate_config(self, config: ConfigT) -> bool:
 class Monitorable(Protocol):
     pass  # TODO: Add implementation
 class Monitorable(Protocol):
+    pass  # TODO: Add implementation
 class Monitorable(Protocol):
     """Protocol for monitorable components."""
 
@@ -227,6 +235,7 @@ def get_status(self) -> str:
 class Startable(Protocol):
     pass  # TODO: Add implementation
 class Startable(Protocol):
+    pass  # TODO: Add implementation
 class Startable(Protocol):
     """Protocol for startable/stoppable components."""
 
@@ -261,6 +270,7 @@ Protocol[ConfigT],
 class DataProcessor(Protocol[DataT, ResultT]):
     pass  # TODO: Add implementation
 class DataProcessor(Protocol[DataT, ResultT]):
+    pass  # TODO: Add implementation
 class DataProcessor(Protocol[DataT, ResultT]):
     """Protocol for data processing components."""
 

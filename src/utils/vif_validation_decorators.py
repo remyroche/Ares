@@ -18,6 +18,7 @@ from src.utils.logger import system_logger
 class VIFValidationError(Exception):
     pass  # TODO: Add implementation
 class VIFValidationError(Exception):
+    pass  # TODO: Add implementation
 class VIFValidationError(Exception):
     """Custom exception for VIF validation errors."""
 pass

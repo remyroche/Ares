@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class FirestoreManager:
     pass  # TODO: Add implementation
 class FirestoreManager:
+    pass  # TODO: Add implementation
 class FirestoreManager:
     """
 Manages all interactions with Google Cloud Firestore.
@@ -54,6 +55,7 @@ context="firestore_initialization",
 async def initialize(self):
     pass  # TODO: Add implementation
 async def initialize(self):
+    pass  # TODO: Add implementation
 async def initialize(self):
         """Asynchronously initializes the Firestore connection."""
 if self._initialized:

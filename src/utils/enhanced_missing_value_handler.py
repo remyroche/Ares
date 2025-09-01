@@ -17,9 +17,6 @@ from .logger import system_logger
 from .error_handler import handle_errors
 
 class GapType(Enum):
-    pass  # TODO: Add implementation
-class GapType(Enum):
-class GapType(Enum):
     """Types of data gaps."""
 SMALL = "small"      # <= 5 seconds, use forward fill
 MEDIUM = "medium"    # 5 - 60 seconds, download data
@@ -29,6 +26,7 @@ CRITICAL = "critical" # > 300 seconds, require manual intervention
 class GapInfo:
     pass  # TODO: Add implementation
 class GapInfo:
+    pass  # TODO: Add implementation
 class GapInfo:
     """Information about a data gap."""
 
@@ -53,6 +51,7 @@ def __str__(self):
 class EnhancedMissingValueHandler:
     pass  # TODO: Add implementation
 class EnhancedMissingValueHandler:
+    pass  # TODO: Add implementation
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
 

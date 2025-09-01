@@ -13,6 +13,7 @@ from src.utils.error_handler import handle_file_operations, handle_data_processi
 class ParquetUtils:
     pass  # TODO: Add implementation
 class ParquetUtils:
+    pass  # TODO: Add implementation
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
 

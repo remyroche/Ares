@@ -9,12 +9,10 @@ using Optuna for Bayesian optimization.
 import optuna
 import numpy as np
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
 import asyncio
 import json
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 
 
 class TradingParameterOptimizer:

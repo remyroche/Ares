@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -174,7 +173,6 @@ class BaselinePerformanceAnalyzer:
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import train_test_split
-            from sklearn.metrics import accuracy_score, classification_report
 
             # Prepare features and labels
             feature_columns = [col for col in features.columns

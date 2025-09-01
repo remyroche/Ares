@@ -11,8 +11,6 @@ This enhanced version includes:
 - Real-time progress monitoring
 """
 
-import concurrent.futures
-from typing import Any, Dict, List, Optional, Tuple
 import time
 import warnings
 

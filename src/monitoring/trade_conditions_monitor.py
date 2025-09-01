@@ -9,7 +9,6 @@ Scaffolding for monitoring trade conditions and decisions.
 from enum import Enum
 from typing import Any, Dict
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 
 

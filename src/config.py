@@ -7,7 +7,6 @@ This module now uses the new modular configuration structure.
 
 from src.utils.logger import system_logger
 from typing import Any
-from src.config.environment import get_environment_settings, get_env_settings
 from dataclasses import dataclass
 
 # Import the new modular configuration

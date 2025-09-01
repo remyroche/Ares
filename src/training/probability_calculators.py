@@ -8,8 +8,6 @@ probability outputs for the Enhanced Prediction Service.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Union, Optional, Tuple
-from sklearn.metrics import accuracy_score, precision_score, recall_score
 import logging
 
 logger = logging.getLogger(__name__)

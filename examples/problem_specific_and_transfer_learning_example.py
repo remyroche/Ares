@@ -10,12 +10,9 @@ This example demonstrates:
 """
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, Any, List
 import time
-import json
 
 # Import our optimization systems
 from src.training.optimization.problem_specific_strategies import (
@@ -24,7 +21,6 @@ from src.training.optimization.problem_specific_strategies import (
 from src.training.optimization.transfer_learning_system import (
     TransferLearningOptimizer, ProblemSignature
 )
-from src.training.optimization.computational_optimization_manager import SurrogateOptimizer
 
 
 class ProblemSpecificAndTransferLearningDemo:

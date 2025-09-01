@@ -206,7 +206,6 @@ def test_enhanced_old_decorators():
         print("\n🔄 Testing Backwards Compatibility")
         print("-" * 40)
 
-        from src.utils.decorator_compatibility import (
             validate_call,  # Legacy name
             check_input,    # Legacy name
             check_output,   # Legacy name

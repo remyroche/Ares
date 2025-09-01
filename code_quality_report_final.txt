@@ -1,0 +1,4703 @@
+================================================================================
+CODE QUALITY ANALYSIS REPORT
+================================================================================
+Files analyzed: 516
+Unused imports found: 3
+Dead code issues found: 1348
+Formatting issues found: 133
+
+
+File: ./test_multi_output_final_integration.py
+----------------------------------------
+
+Dead Code:
+  - Function 'test_performance_and_accuracy' appears to be unused (line 365)
+  - Function 'test_step6_integration_simulation' appears to be unused (line 191)
+  - Function 'test_complete_multi_output_pipeline' appears to be unused (line 19)
+  - Function 'test_step9_integration_simulation' appears to be unused (line 282)
+
+Duplicate Imports:
+  - Import 'from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer' appears on lines: 24, 196, 287, 370
+  - Import 'import traceback' appears on lines: 187, 278, 361, 445
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 25)
+
+File: ./validation_decorators_example.py
+----------------------------------
+
+Dead Code:
+  - Function 'run_labeling_step' appears to be unused (line 80)
+  - Function 'custom_file_operation' appears to be unused (line 133)
+  - Function 'decorator' appears to be unused (line 33)
+  - Function 'debug_dataframe_operation' appears to be unused (line 141)
+  - Function 'select_dtypes' appears to be unused (line 189)
+  - Function 'duplicated' appears to be unused (line 186)
+  - Function 'isnull' appears to be unused (line 183)
+  - Function 'empty' appears to be unused (line 202)
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 143)
+
+File: ./create_regime_splits.py
+-------------------------
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 119)
+
+File: ./test_sr_training_integration.py
+---------------------------------
+
+Dead Code:
+  - Function 'test_step15_tactician_specialist_training' appears to be unused (line 181)
+  - Function 'test_sr_breakout_predictor_import' appears to be unused (line 26)
+  - Function 'test_sr_outcome_model_trainer' appears to be unused (line 218)
+  - Function 'test_step9_hmm_based_training' appears to be unused (line 255)
+  - Function 'test_step6_feature_engineering' appears to be unused (line 97)
+  - Function 'test_step10_unified_regime_intelligence' appears to be unused (line 144)
+
+File: ./example_cluster_validation.py
+-------------------------------
+
+Long Lines:
+  - Line is 154 characters (max 120) (line 197)
+  - Line is 162 characters (max 120) (line 198)
+  - Line is 138 characters (max 120) (line 199)
+  - Line is 175 characters (max 120) (line 200)
+  - Line is 130 characters (max 120) (line 205)
+
+File: ./fix_metadata_and_naming.py
+----------------------------
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 48)
+  - Line is 287 characters (max 120) (line 55)
+  - Line is 243 characters (max 120) (line 92)
+  - Line is 140 characters (max 120) (line 135)
+
+File: ./complete_remaining_steps_integration.py
+-----------------------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 82)
+
+File: ./test_sr_optimization_integration.py
+-------------------------------------
+
+Dead Code:
+  - Function 'test_hmm_uses_optimized_params' appears to be unused (line 70)
+  - Function 'test_pipeline_integration' appears to be unused (line 177)
+  - Function 'test_sr_optimization_step' appears to be unused (line 23)
+  - Function 'test_subsequent_steps_use_optimized_params' appears to be unused (line 118)
+
+File: ./test_multi_output_core_only.py
+--------------------------------
+
+Dead Code:
+  - Function 'test_step6_integration_direct' appears to be unused (line 198)
+  - Function 'test_multi_output_probability_trainer_complete' appears to be unused (line 17)
+  - Function 'test_model_saving_utils_complete' appears to be unused (line 121)
+  - Function 'test_step9_integration_direct' appears to be unused (line 288)
+
+Duplicate Imports:
+  - Import 'import sys' appears on lines: 8, 204
+  - Import 'import os' appears on lines: 9, 185
+  - Import 'from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer' appears on lines: 23, 126, 208, 294
+  - Import 'import traceback' appears on lines: 117, 194, 284, 363
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 61)
+  - Line is 121 characters (max 120) (line 127)
+
+File: ./final_targeted_fix_v3.py
+--------------------------
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 29)
+  - Line is 122 characters (max 120) (line 69)
+
+File: ./test_corrected_timeframes.py
+------------------------------
+
+Dead Code:
+  - Function 'test_corrected_timeframes' appears to be unused (line 15)
+  - Function 'test_training_steps_configuration' appears to be unused (line 75)
+
+Duplicate Imports:
+  - Import 'import traceback' appears on lines: 71, 130
+
+File: ./example_hmm_optimization.py
+-----------------------------
+
+Long Lines:
+  - Line is 212 characters (max 120) (line 117)
+
+File: ./test_tactician_multi_outcome_predictions_updated.py
+-----------------------------------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 249)
+
+File: ./test_enhanced_dynamic_feature_selection.py
+--------------------------------------------
+
+Long Lines:
+  - Line is 137 characters (max 120) (line 182)
+  - Line is 122 characters (max 120) (line 215)
+
+File: ./example_enhanced_multi_timeframe_optimization.py
+--------------------------------------------------
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 161)
+  - Line is 124 characters (max 120) (line 254)
+  - Line is 131 characters (max 120) (line 281)
+
+File: ./test_advanced_models_integration.py
+-------------------------------------
+
+Dead Code:
+  - Function 'test_model_configuration' appears to be unused (line 258)
+  - Function 'test_neural_network_specific_features' appears to be unused (line 303)
+  - Function 'test_all_model_types' appears to be unused (line 19)
+
+Duplicate Imports:
+  - Import 'from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer' appears on lines: 24, 263, 308
+  - Import 'import traceback' appears on lines: 254, 299, 352, 218
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 25)
+
+File: ./standardize_utility_modules.py
+--------------------------------
+
+Long Lines:
+  - Line is 140 characters (max 120) (line 42)
+  - Line is 122 characters (max 120) (line 53)
+
+File: ./test_data_quality_and_formatting.py
+-------------------------------------
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 347)
+  - Line is 127 characters (max 120) (line 462)
+
+File: ./optimize_hmm_regime_parameters.py
+-----------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 56)
+
+Duplicate Imports:
+  - Import 'from sklearn.cluster import KMeans' appears on lines: 27, 282
+  - Import 'from sklearn.preprocessing import StandardScaler' appears on lines: 30, 250, 283, 313, 352
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 844)
+  - Line is 138 characters (max 120) (line 921)
+  - Line is 134 characters (max 120) (line 924)
+  - Line is 138 characters (max 120) (line 933)
+  - Line is 145 characters (max 120) (line 934)
+  - Line is 247 characters (max 120) (line 935)
+  - Line is 140 characters (max 120) (line 963)
+  - Line is 147 characters (max 120) (line 964)
+  - Line is 249 characters (max 120) (line 965)
+  - Line is 137 characters (max 120) (line 1006)
+  - Line is 129 characters (max 120) (line 1012)
+  - Line is 144 characters (max 120) (line 1028)
+
+File: ./test_dynamic_tactician_barriers.py
+------------------------------------
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 105)
+  - Line is 132 characters (max 120) (line 106)
+  - Line is 168 characters (max 120) (line 134)
+
+File: ./final_utils_fix.py
+--------------------
+
+Long Lines:
+  - Line is 137 characters (max 120) (line 64)
+
+File: ./test_ml_profit_integration.py
+-------------------------------
+
+Dead Code:
+  - Function 'predict' appears to be unused (line 422)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 192)
+  - Line is 143 characters (max 120) (line 237)
+  - Line is 153 characters (max 120) (line 238)
+  - Line is 134 characters (max 120) (line 239)
+  - Line is 122 characters (max 120) (line 256)
+  - Line is 124 characters (max 120) (line 258)
+
+File: ./test_advanced_sr_methods.py
+-----------------------------
+
+Dead Code:
+  - Function 'error' appears to be unused (line 13)
+  - Function 'warning' appears to be unused (line 14)
+  - Function 'validate_data_quality' appears to be unused (line 20)
+  - Function 'info' appears to be unused (line 12)
+  - Function 'getChild' appears to be unused (line 17)
+  - Function 'decorator' appears to be unused (line 21)
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 204)
+  - Line is 132 characters (max 120) (line 216)
+
+File: ./test_step1_5_column_verification.py
+-------------------------------------
+
+Dead Code:
+  - Function 'create_test_data' appears to be unused (line 30)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 244)
+
+File: ./update_all_steps_mlflow_integration.py
+----------------------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 101)
+  - Line is 123 characters (max 120) (line 290)
+
+File: ./validate_sr_script_compatibility.py
+-------------------------------------
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 112)
+  - Line is 128 characters (max 120) (line 219)
+
+File: ./example_enhanced_decorators.py
+--------------------------------
+
+Duplicate Imports:
+  - Import 'from src.utils.enhanced_decorators import smart_error_recovery' appears on lines: 18, 245
+  - Import 'from src.utils.enhanced_decorators import cached_validation' appears on lines: 18, 245
+
+File: ./validate_sr_script_compatibility_simple.py
+--------------------------------------------
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 64)
+
+File: ./fix_remaining_25.py
+---------------------
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 33)
+
+File: ./test_optimized_parameters_usage.py
+------------------------------------
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 255)
+  - Line is 128 characters (max 120) (line 256)
+  - Line is 124 characters (max 120) (line 257)
+  - Line is 150 characters (max 120) (line 487)
+
+File: ./validate_advanced_sr_methods.py
+---------------------------------
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 237)
+
+File: ./test_step1_5_simple.py
+------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 89)
+  - Line is 148 characters (max 120) (line 130)
+  - Line is 127 characters (max 120) (line 135)
+  - Line is 127 characters (max 120) (line 164)
+  - Line is 130 characters (max 120) (line 176)
+  - Line is 143 characters (max 120) (line 182)
+  - Line is 126 characters (max 120) (line 215)
+
+File: ./validate_sr_imports.py
+------------------------
+
+Duplicate Imports:
+  - Import 'from src.tactician.sr_breakout_predictor import SRBreakoutPredictor' appears on lines: 25, 128
+
+File: ./fix_syntax_errors_enhanced.py
+-------------------------------
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 18)
+  - Line is 139 characters (max 120) (line 43)
+  - Line is 126 characters (max 120) (line 136)
+  - Line is 138 characters (max 120) (line 183)
+  - Line is 124 characters (max 120) (line 198)
+  - Line is 166 characters (max 120) (line 212)
+  - Line is 193 characters (max 120) (line 213)
+
+File: ./test_sr_levels_system.py
+--------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 233)
+  - Line is 137 characters (max 120) (line 234)
+  - Line is 131 characters (max 120) (line 235)
+  - Line is 133 characters (max 120) (line 239)
+  - Line is 136 characters (max 120) (line 240)
+  - Line is 130 characters (max 120) (line 241)
+  - Line is 141 characters (max 120) (line 249)
+
+File: ./test_fully_migrated_tactician.py
+----------------------------------
+
+Dead Code:
+  - Function 'test_fully_migrated_tactician' appears to be unused (line 274)
+  - Function 'test_full_migration_compatibility' appears to be unused (line 512)
+  - Function 'test_step17_optimization_parameters' appears to be unused (line 394)
+  - Function 'test_enhanced_scenario_predictor' appears to be unused (line 182)
+
+Duplicate Imports:
+  - Import 'from src.tactician.enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor' appears on lines: 187, 399
+  - Import 'from src.tactician.fully_migrated_tactician import FullyMigratedTactician' appears on lines: 279, 400, 517
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 473)
+  - Line is 139 characters (max 120) (line 474)
+  - Line is 134 characters (max 120) (line 475)
+  - Line is 129 characters (max 120) (line 476)
+  - Line is 132 characters (max 120) (line 478)
+  - Line is 166 characters (max 120) (line 479)
+  - Line is 160 characters (max 120) (line 480)
+  - Line is 160 characters (max 120) (line 481)
+  - Line is 154 characters (max 120) (line 482)
+  - Line is 152 characters (max 120) (line 483)
+  - Line is 147 characters (max 120) (line 484)
+  - Line is 167 characters (max 120) (line 495)
+  - Line is 161 characters (max 120) (line 496)
+  - Line is 179 characters (max 120) (line 497)
+  - Line is 148 characters (max 120) (line 498)
+  - Line is 133 characters (max 120) (line 499)
+  - Line is 157 characters (max 120) (line 500)
+  - Line is 163 characters (max 120) (line 501)
+
+File: ./test_enhanced_prediction_integration.py
+-----------------------------------------
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 158)
+  - Line is 125 characters (max 120) (line 350)
+
+File: ./test_tactician_multi_output_system.py
+---------------------------------------
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 353)
+  - Line is 123 characters (max 120) (line 354)
+
+File: ./download_missing_aggtrades_days.py
+------------------------------------
+
+Dead Code:
+  - Function 'signal_handler' appears to be unused (line 36)
+
+File: ./test_ml_profit_integration_simple.py
+--------------------------------------
+
+Dead Code:
+  - Function 'std' appears to be unused (line 51)
+  - Function 'iloc' appears to be unused (line 24)
+  - Function 'pct_change' appears to be unused (line 48)
+
+Duplicate Imports:
+  - Import 'import traceback' appears on lines: 801, 248
+
+Long Lines:
+  - Line is 142 characters (max 120) (line 358)
+  - Line is 125 characters (max 120) (line 471)
+  - Line is 143 characters (max 120) (line 490)
+  - Line is 140 characters (max 120) (line 555)
+  - Line is 129 characters (max 120) (line 580)
+  - Line is 169 characters (max 120) (line 590)
+
+File: ./test_centralized_sr_logic.py
+------------------------------
+
+Dead Code:
+  - Function 'test_analyst_integration' appears to be unused (line 250)
+  - Function 'test_core_methods' appears to be unused (line 67)
+  - Function 'test_feature_engineering_integration' appears to be unused (line 209)
+  - Function 'test_tactician_integration' appears to be unused (line 294)
+
+Formatting Issues:
+  - Line has trailing whitespace (line 36)
+  - Line has trailing whitespace (line 41)
+  - Line has trailing whitespace (line 48)
+  - Line has trailing whitespace (line 57)
+  - Line has trailing whitespace (line 61)
+  - Line has trailing whitespace (line 64)
+  - Line has trailing whitespace (line 71)
+  - Line has trailing whitespace (line 75)
+  - Line has trailing whitespace (line 79)
+  - Line has trailing whitespace (line 83)
+  - Line has trailing whitespace (line 87)
+  - Line has trailing whitespace (line 91)
+  - Line has trailing whitespace (line 97)
+  - Line has trailing whitespace (line 102)
+  - Line has trailing whitespace (line 104)
+  - Line has trailing whitespace (line 108)
+  - Line has trailing whitespace (line 112)
+  - Line has trailing whitespace (line 114)
+  - Line has trailing whitespace (line 118)
+  - Line has trailing whitespace (line 122)
+  - Line has trailing whitespace (line 124)
+  - Line has trailing whitespace (line 128)
+  - Line has trailing whitespace (line 132)
+  - Line has trailing whitespace (line 138)
+  - Line has trailing whitespace (line 143)
+  - Line has trailing whitespace (line 145)
+  - Line has trailing whitespace (line 149)
+  - Line has trailing whitespace (line 153)
+  - Line has trailing whitespace (line 155)
+  - Line has trailing whitespace (line 159)
+  - Line has trailing whitespace (line 163)
+  - Line has trailing whitespace (line 165)
+  - Line has trailing whitespace (line 169)
+  - Line has trailing whitespace (line 173)
+  - Line has trailing whitespace (line 179)
+  - Line has trailing whitespace (line 181)
+  - Line has trailing whitespace (line 190)
+  - Line has trailing whitespace (line 192)
+  - Line has trailing whitespace (line 196)
+  - Line has trailing whitespace (line 198)
+  - Line has trailing whitespace (line 201)
+  - Line has trailing whitespace (line 204)
+  - Line has trailing whitespace (line 213)
+  - Line has trailing whitespace (line 216)
+  - Line has trailing whitespace (line 219)
+  - Line has trailing whitespace (line 222)
+  - Line has trailing whitespace (line 225)
+  - Line has trailing whitespace (line 231)
+  - Line has trailing whitespace (line 235)
+  - Line has trailing whitespace (line 240)
+  - Line has trailing whitespace (line 242)
+  - Line has trailing whitespace (line 245)
+  - Line has trailing whitespace (line 254)
+  - Line has trailing whitespace (line 258)
+  - Line has trailing whitespace (line 261)
+  - Line has trailing whitespace (line 264)
+  - Line has trailing whitespace (line 268)
+  - Line has trailing whitespace (line 272)
+  - Line has trailing whitespace (line 282)
+  - Line has trailing whitespace (line 286)
+  - Line has trailing whitespace (line 289)
+  - Line has trailing whitespace (line 298)
+  - Line has trailing whitespace (line 301)
+  - Line has trailing whitespace (line 304)
+  - Line has trailing whitespace (line 307)
+  - Line has trailing whitespace (line 310)
+  - Line has trailing whitespace (line 320)
+  - Line has trailing whitespace (line 324)
+  - Line has trailing whitespace (line 327)
+  - Line has trailing whitespace (line 336)
+  - Line has trailing whitespace (line 349)
+  - Line has trailing whitespace (line 357)
+  - Line has trailing whitespace (line 359)
+  - Line has trailing whitespace (line 364)
+  - Line has trailing whitespace (line 368)
+  - Line has trailing whitespace (line 374)
+  - Line has trailing whitespace (line 379)
+  - Line has trailing whitespace (line 384)
+  - Line has trailing whitespace (line 388)
+  - Line has trailing whitespace (line 393)
+  - Line has trailing whitespace (line 395)
+  - Line has trailing whitespace (line 405)
+
+Duplicate Imports:
+  - Import 'from src.tactician.sr_breakout_predictor import SRBreakoutPredictor' appears on lines: 20, 218, 260, 303
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 164)
+  - Line is 151 characters (max 120) (line 283)
+
+File: ./test_sr_backtesting_validation.py
+-----------------------------------
+
+Long Lines:
+  - Line is 151 characters (max 120) (line 366)
+  - Line is 122 characters (max 120) (line 371)
+  - Line is 149 characters (max 120) (line 412)
+  - Line is 154 characters (max 120) (line 419)
+  - Line is 168 characters (max 120) (line 426)
+  - Line is 174 characters (max 120) (line 433)
+  - Line is 159 characters (max 120) (line 440)
+  - Line is 122 characters (max 120) (line 447)
+
+File: ./test_advanced_models_core.py
+------------------------------
+
+Dead Code:
+  - Function 'test_model_type_coverage' appears to be unused (line 292)
+  - Function 'test_multi_output_trainer_enhancements' appears to be unused (line 142)
+  - Function 'test_advanced_neural_models_structure' appears to be unused (line 101)
+  - Function 'test_model_configuration_framework' appears to be unused (line 16)
+  - Function 'test_training_steps_integration' appears to be unused (line 202)
+
+Duplicate Imports:
+  - Import 'import traceback' appears on lines: 97, 138, 198, 288, 337
+
+File: ./analyze_strict_thresholds.py
+------------------------------
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 124)
+
+File: ./simple_validation_test.py
+---------------------------
+
+Dead Code:
+  - Function 'test_validation_requirements' appears to be unused (line 111)
+  - Function 'test_configuration' appears to be unused (line 144)
+  - Function 'test_file_structure' appears to be unused (line 13)
+  - Function 'test_documentation' appears to be unused (line 91)
+  - Function 'test_step_integration' appears to be unused (line 53)
+
+File: ./test_profit_feature_engineering.py
+------------------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 72)
+  - Line is 123 characters (max 120) (line 105)
+  - Line is 121 characters (max 120) (line 117)
+  - Line is 129 characters (max 120) (line 123)
+  - Line is 125 characters (max 120) (line 135)
+  - Line is 127 characters (max 120) (line 141)
+  - Line is 125 characters (max 120) (line 178)
+
+File: ./demo_pipeline_testing.py
+--------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 112)
+  - Line is 125 characters (max 120) (line 113)
+  - Line is 128 characters (max 120) (line 114)
+
+File: ./universal_syntax_fixer.py
+---------------------------
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 110)
+  - Line is 156 characters (max 120) (line 164)
+  - Line is 142 characters (max 120) (line 190)
+
+File: ./test_step17_optimized_tactician.py
+------------------------------------
+
+Duplicate Imports:
+  - Import 'import traceback' appears on lines: 602, 618
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 495)
+  - Line is 125 characters (max 120) (line 498)
+  - Line is 122 characters (max 120) (line 503)
+  - Line is 122 characters (max 120) (line 511)
+  - Line is 131 characters (max 120) (line 569)
+
+File: ./test_scenario_based_tactician_implementation.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'test_enhanced_ml_tactics_manager' appears to be unused (line 210)
+  - Function 'test_integration_with_existing_system' appears to be unused (line 369)
+  - Function 'test_scenario_optimization_parameters' appears to be unused (line 288)
+  - Function 'test_error_handling_and_fallbacks' appears to be unused (line 431)
+  - Function 'test_scenario_based_predictor' appears to be unused (line 129)
+
+Duplicate Imports:
+  - Import 'from src.tactician.scenario_based_predictor import ScenarioBasedPredictor' appears on lines: 134, 293, 436
+  - Import 'from src.tactician.ml_tactics_manager import MLTacticsManager' appears on lines: 215, 374
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 346)
+  - Line is 124 characters (max 120) (line 347)
+  - Line is 123 characters (max 120) (line 348)
+  - Line is 147 characters (max 120) (line 351)
+  - Line is 141 characters (max 120) (line 352)
+  - Line is 141 characters (max 120) (line 353)
+  - Line is 122 characters (max 120) (line 358)
+
+File: ./test_step2_with_existing_data.py
+----------------------------------
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 11, 292
+  - Import 'from src.config import CONFIG' appears on lines: 109, 235
+
+File: ./test_simple_profit_integration.py
+-----------------------------------
+
+Duplicate Imports:
+  - Import 'from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import ProfitBasedFeatureEngineering' appears on lines: 60, 119
+  - Import 'import traceback' appears on lines: 106, 153
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 54)
+  - Line is 127 characters (max 120) (line 60)
+  - Line is 124 characters (max 120) (line 79)
+  - Line is 127 characters (max 120) (line 119)
+  - Line is 128 characters (max 120) (line 137)
+
+File: ./complete_remaining_16_steps.py
+--------------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 100)
+  - Line is 154 characters (max 120) (line 330)
+  - Line is 124 characters (max 120) (line 341)
+
+File: ./test_enhanced_missing_value_handler.py
+----------------------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 122)
+
+File: ./optimize_hmm_regime_parameters_advanced.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 676)
+  - Function 'stream_data' appears to be unused (line 50)
+  - Function 'process_chunk' appears to be unused (line 56)
+
+Long Lines:
+  - Line is 140 characters (max 120) (line 304)
+  - Line is 121 characters (max 120) (line 629)
+  - Line is 200 characters (max 120) (line 722)
+  - Line is 124 characters (max 120) (line 760)
+
+File: ./example_pytorch_trading.py
+----------------------------
+
+Dead Code:
+  - Function 'forward' appears to be unused (line 36)
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 412)
+
+File: ./example_diverse_lookback_optimization.py
+------------------------------------------
+
+Long Lines:
+  - Line is 148 characters (max 120) (line 87)
+
+File: ./test_standardized_pipeline.py
+-------------------------------
+
+Dead Code:
+  - Function 'test_data_quality_validation' appears to be unused (line 239)
+  - Function 'test_directory_structure' appears to be unused (line 77)
+  - Function 'test_file_naming' appears to be unused (line 299)
+  - Function 'test_timestamp_standardization' appears to be unused (line 120)
+  - Function 'test_import_management' appears to be unused (line 38)
+  - Function 'test_metadata_creation' appears to be unused (line 341)
+  - Function 'test_schema_validation' appears to be unused (line 177)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 63)
+  - Line is 132 characters (max 120) (line 99)
+  - Line is 138 characters (max 120) (line 109)
+  - Line is 121 characters (max 120) (line 321)
+
+File: ./consolidate_data.py
+---------------------
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 144)
+
+File: ./validate_enhanced_sr_strength.py
+----------------------------------
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 295)
+
+File: ./test_sr_data_integration.py
+-----------------------------
+
+Dead Code:
+  - Function 'test_sr_level_detection_with_data_integration' appears to be unused (line 184)
+  - Function 'test_optimization_with_data_integration' appears to be unused (line 362)
+  - Function 'test_data_integration_initialization' appears to be unused (line 82)
+  - Function 'test_market_data_loading' appears to be unused (line 115)
+  - Function 'test_backtesting_validation_with_data_integration' appears to be unused (line 252)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 79)
+  - Line is 153 characters (max 120) (line 241)
+
+File: ./test_multi_output_minimal.py
+------------------------------
+
+Dead Code:
+  - Function 'test_step6_integration_core' appears to be unused (line 94)
+  - Function 'test_enhanced_step6_integration_core' appears to be unused (line 146)
+  - Function 'test_step9_integration_core' appears to be unused (line 123)
+  - Function 'test_model_saving_utils_core' appears to be unused (line 172)
+  - Function 'test_multi_output_probability_trainer_core' appears to be unused (line 16)
+
+Duplicate Imports:
+  - Import 'import traceback' appears on lines: 90, 119, 142, 168, 184
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 60)
+
+File: ./test_pipeline_flow.py
+-----------------------
+
+Duplicate Imports:
+  - Import 'from src.training.steps.step6_feature_engineering import run_step' appears on lines: 116, 195
+  - Import 'from src.training.steps.step7_enhanced_matrix_operations import run_step' appears on lines: 120, 219
+
+File: ./analyze_validation_issues.py
+------------------------------
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 209)
+
+File: ./test_comprehensive_security.py
+--------------------------------
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 619)
+
+File: ./comprehensive_syntax_fixer.py
+-------------------------------
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 117)
+  - Line is 137 characters (max 120) (line 145)
+
+File: ./fix_syntax_errors.py
+----------------------
+
+Formatting Issues:
+  - Line has trailing whitespace (line 15)
+  - Line has trailing whitespace (line 19)
+  - Line has trailing whitespace (line 23)
+  - Line has trailing whitespace (line 33)
+  - Line has trailing whitespace (line 40)
+  - Line has trailing whitespace (line 47)
+  - Line has trailing whitespace (line 56)
+  - Line has trailing whitespace (line 64)
+  - Line has trailing whitespace (line 69)
+  - Line has trailing whitespace (line 76)
+  - Line has trailing whitespace (line 79)
+  - Line has trailing whitespace (line 81)
+  - Line has trailing whitespace (line 93)
+  - Line has trailing whitespace (line 102)
+  - Line has trailing whitespace (line 106)
+  - Line has trailing whitespace (line 111)
+  - Line has trailing whitespace (line 121)
+
+File: ./test_tactician_multi_outcome_predictions.py
+---------------------------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 253)
+  - Line is 128 characters (max 120) (line 413)
+
+File: ./test_enhanced_sr_optimization.py
+----------------------------------
+
+Long Lines:
+  - Line is 145 characters (max 120) (line 356)
+  - Line is 123 characters (max 120) (line 360)
+  - Line is 122 characters (max 120) (line 361)
+  - Line is 155 characters (max 120) (line 464)
+  - Line is 126 characters (max 120) (line 469)
+
+File: ./test_4_barrier_system_simple.py
+---------------------------------
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 206)
+
+File: ./example_matrix_diverse_lookback_optimization.py
+-------------------------------------------------
+
+Long Lines:
+  - Line is 149 characters (max 120) (line 269)
+  - Line is 136 characters (max 120) (line 270)
+  - Line is 147 characters (max 120) (line 271)
+  - Line is 146 characters (max 120) (line 272)
+  - Line is 135 characters (max 120) (line 277)
+  - Line is 122 characters (max 120) (line 278)
+  - Line is 133 characters (max 120) (line 279)
+  - Line is 132 characters (max 120) (line 280)
+
+File: ./test_ml_profit_integration_complete.py
+----------------------------------------
+
+Dead Code:
+  - Function 'std' appears to be unused (line 52)
+  - Function 'iloc' appears to be unused (line 25)
+  - Function 'pct_change' appears to be unused (line 49)
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 554)
+  - Line is 123 characters (max 120) (line 648)
+  - Line is 134 characters (max 120) (line 649)
+  - Line is 122 characters (max 120) (line 657)
+  - Line is 138 characters (max 120) (line 658)
+
+File: ./test_fractional_implementations.py
+------------------------------------
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 8)
+
+File: ./test_multi_output_integration.py
+----------------------------------
+
+Dead Code:
+  - Function 'test_step6_integration' appears to be unused (line 108)
+  - Function 'test_enhanced_step6_integration' appears to be unused (line 229)
+  - Function 'test_step9_integration' appears to be unused (line 174)
+  - Function 'test_multi_output_probability_trainer' appears to be unused (line 19)
+  - Function 'test_model_saving_utils' appears to be unused (line 288)
+
+Duplicate Imports:
+  - Import 'from src.training.multi_output_probability_trainer import MultiOutputProbabilityTrainer' appears on lines: 24, 293
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 62)
+  - Line is 125 characters (max 120) (line 294)
+
+File: ./standardize_remaining_steps.py
+--------------------------------
+
+Long Lines:
+  - Line is 140 characters (max 120) (line 40)
+  - Line is 132 characters (max 120) (line 92)
+
+File: ./test_hmm_cluster_relevance.py
+-------------------------------
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 135)
+  - Line is 131 characters (max 120) (line 136)
+  - Line is 125 characters (max 120) (line 137)
+  - Line is 128 characters (max 120) (line 164)
+  - Line is 138 characters (max 120) (line 255)
+  - Line is 127 characters (max 120) (line 340)
+  - Line is 122 characters (max 120) (line 346)
+  - Line is 122 characters (max 120) (line 391)
+  - Line is 122 characters (max 120) (line 414)
+  - Line is 136 characters (max 120) (line 466)
+  - Line is 141 characters (max 120) (line 558)
+  - Line is 128 characters (max 120) (line 568)
+
+File: ./test_full_dynamic_tactician_implementation.py
+-----------------------------------------------
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 108)
+  - Line is 132 characters (max 120) (line 109)
+  - Line is 168 characters (max 120) (line 136)
+  - Line is 135 characters (max 120) (line 407)
+  - Line is 131 characters (max 120) (line 410)
+  - Line is 151 characters (max 120) (line 411)
+
+File: ./test_optimized_parameters_integration.py
+------------------------------------------
+
+Long Lines:
+  - Line is 159 characters (max 120) (line 172)
+  - Line is 123 characters (max 120) (line 191)
+  - Line is 132 characters (max 120) (line 220)
+  - Line is 148 characters (max 120) (line 239)
+  - Line is 143 characters (max 120) (line 248)
+  - Line is 134 characters (max 120) (line 257)
+  - Line is 133 characters (max 120) (line 266)
+  - Line is 148 characters (max 120) (line 275)
+  - Line is 137 characters (max 120) (line 284)
+  - Line is 150 characters (max 120) (line 329)
+
+File: ./optimize_hmm_regime_parameters_enhanced.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 207)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 165)
+  - Line is 124 characters (max 120) (line 298)
+  - Line is 124 characters (max 120) (line 316)
+
+File: ./final_targeted_fix.py
+-----------------------
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 18)
+  - Line is 133 characters (max 120) (line 19)
+  - Line is 122 characters (max 120) (line 35)
+
+File: ./test_enhanced_hmm_capabilities.py
+-----------------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 273)
+
+File: ./complete_remaining_steps.py
+-----------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 99)
+  - Line is 126 characters (max 120) (line 324)
+  - Line is 124 characters (max 120) (line 336)
+
+File: ./fix_utils_syntax.py
+---------------------
+
+Long Lines:
+  - Line is 200 characters (max 120) (line 18)
+  - Line is 123 characters (max 120) (line 61)
+
+File: ./test_multi_output_working.py
+------------------------------
+
+Dead Code:
+  - Function 'test_step9_integration' appears to be unused (line 216)
+  - Function 'test_step6_integration' appears to be unused (line 124)
+  - Function 'test_core_multi_output_functionality' appears to be unused (line 17)
+
+Duplicate Imports:
+  - Import 'from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer' appears on lines: 22, 129, 221
+  - Import 'import traceback' appears on lines: 120, 212, 297
+
+File: ./example_enhanced_optimization.py
+----------------------------------
+
+Long Lines:
+  - Line is 156 characters (max 120) (line 131)
+  - Line is 155 characters (max 120) (line 152)
+
+File: ./test_comprehensive_sr_integration.py
+--------------------------------------
+
+Long Lines:
+  - Line is 152 characters (max 120) (line 126)
+
+File: ./download_specific_missing_data.py
+-----------------------------------
+
+Dead Code:
+  - Function 'signal_handler' appears to be unused (line 37)
+
+File: ./fix_remaining_indentation.py
+------------------------------
+
+Long Lines:
+  - Line is 156 characters (max 120) (line 27)
+  - Line is 142 characters (max 120) (line 53)
+
+File: ./fix_all_remaining_files.py
+----------------------------
+
+Long Lines:
+  - Line is 143 characters (max 120) (line 35)
+  - Line is 144 characters (max 120) (line 38)
+  - Line is 130 characters (max 120) (line 41)
+  - Line is 158 characters (max 120) (line 70)
+  - Line is 122 characters (max 120) (line 84)
+
+File: ./scripts/optimize_fractional_differentiation_params.py
+-------------------------------------------------------
+
+Duplicate Imports:
+  - Import 'import pandas' appears on lines: 526, 547
+  - Import 'import random' appears on lines: 52, 311
+
+Long Lines:
+  - Line is 140 characters (max 120) (line 133)
+  - Line is 152 characters (max 120) (line 324)
+  - Line is 163 characters (max 120) (line 410)
+  - Line is 134 characters (max 120) (line 428)
+  - Line is 141 characters (max 120) (line 434)
+  - Line is 123 characters (max 120) (line 504)
+  - Line is 132 characters (max 120) (line 507)
+
+File: ./scripts/verify_timeframe_data.py
+----------------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 128)
+
+File: ./scripts/analyze_sr_position.py
+--------------------------------
+
+Long Lines:
+  - Line is 147 characters (max 120) (line 148)
+  - Line is 122 characters (max 120) (line 163)
+  - Line is 124 characters (max 120) (line 215)
+  - Line is 122 characters (max 120) (line 218)
+  - Line is 135 characters (max 120) (line 221)
+  - Line is 125 characters (max 120) (line 248)
+
+File: ./scripts/diagnose_feature_quality.py
+-------------------------------------
+
+Dead Code:
+  - Function 'wrapper' appears to be unused (line 49)
+  - Function 'decorator' appears to be unused (line 32)
+
+File: ./scripts/test_fractional_labeling_implementation.py
+----------------------------------------------------
+
+Long Lines:
+  - Line is 143 characters (max 120) (line 229)
+  - Line is 148 characters (max 120) (line 272)
+  - Line is 148 characters (max 120) (line 273)
+  - Line is 148 characters (max 120) (line 278)
+  - Line is 147 characters (max 120) (line 360)
+
+File: ./scripts/validate_fix_simple.py
+--------------------------------
+
+Dead Code:
+  - Function 'wrapper' appears to be unused (line 29)
+  - Function 'decorator' appears to be unused (line 28)
+
+File: ./scripts/test_combined_fractional_system.py
+--------------------------------------------
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 9, 564
+  - Import 'import pandas' appears on lines: 543, 565
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 54)
+  - Line is 133 characters (max 120) (line 133)
+  - Line is 126 characters (max 120) (line 198)
+  - Line is 124 characters (max 120) (line 235)
+  - Line is 134 characters (max 120) (line 271)
+  - Line is 131 characters (max 120) (line 308)
+  - Line is 121 characters (max 120) (line 313)
+  - Line is 231 characters (max 120) (line 549)
+  - Line is 148 characters (max 120) (line 551)
+
+File: ./scripts/mock_production_integration_test.py
+---------------------------------------------
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 96)
+  - Line is 132 characters (max 120) (line 102)
+  - Line is 125 characters (max 120) (line 142)
+  - Line is 122 characters (max 120) (line 157)
+  - Line is 130 characters (max 120) (line 290)
+
+File: ./scripts/unified_optuna_optimization_demo.py
+---------------------------------------------
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 454)
+
+File: ./scripts/test_fractional_differentiation_integration.py
+--------------------------------------------------------
+
+Duplicate Imports:
+  - Import 'import pandas' appears on lines: 480, 501
+  - Import 'from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineering' appears on lines: 128, 175
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 111)
+  - Line is 135 characters (max 120) (line 158)
+  - Line is 128 characters (max 120) (line 213)
+  - Line is 154 characters (max 120) (line 267)
+  - Line is 126 characters (max 120) (line 323)
+
+File: ./scripts/post_steps_cleaner.py
+-------------------------------
+
+Dead Code:
+  - Function 'repl' appears to be unused (line 18)
+
+File: ./scripts/training_cli.py
+-------------------------
+
+Long Lines:
+  - Line is 135 characters (max 120) (line 388)
+  - Line is 130 characters (max 120) (line 392)
+
+File: ./scripts/train_multi_timeframe_hmm_ensemble.py
+-----------------------------------------------
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 270)
+
+File: ./scripts/assess_data_quality.py
+--------------------------------
+
+Dead Code:
+  - Function 'convert_numpy_types' appears to be unused (line 399)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 316)
+  - Line is 127 characters (max 120) (line 324)
+
+File: ./scripts/fix_multicollinearity_issue.py
+----------------------------------------
+
+Dead Code:
+  - Function 'decorator' appears to be unused (line 26)
+  - Function 'wrapper' appears to be unused (line 28)
+
+File: ./scripts/mock_combined_fractional_test.py
+------------------------------------------
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 110)
+  - Line is 130 characters (max 120) (line 129)
+  - Line is 127 characters (max 120) (line 141)
+  - Line is 136 characters (max 120) (line 166)
+  - Line is 136 characters (max 120) (line 167)
+  - Line is 231 characters (max 120) (line 322)
+  - Line is 148 characters (max 120) (line 324)
+
+File: ./scripts/regenerate_timeframes.py
+----------------------------------
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 134)
+  - Line is 133 characters (max 120) (line 137)
+
+File: ./scripts/test_production_integration.py
+----------------------------------------
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 11, 597
+  - Import 'import pandas' appears on lines: 572, 598
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 84)
+  - Line is 126 characters (max 120) (line 162)
+  - Line is 127 characters (max 120) (line 192)
+  - Line is 136 characters (max 120) (line 217)
+  - Line is 125 characters (max 120) (line 246)
+  - Line is 126 characters (max 120) (line 272)
+  - Line is 129 characters (max 120) (line 308)
+  - Line is 130 characters (max 120) (line 503)
+
+File: ./scripts/test_strength_weighted_sr_position.py
+-----------------------------------------------
+
+Long Lines:
+  - Line is 145 characters (max 120) (line 146)
+  - Line is 168 characters (max 120) (line 177)
+  - Line is 125 characters (max 120) (line 235)
+
+File: ./scripts/update_logging_warnings.py
+------------------------------------
+
+Dead Code:
+  - Function 'replace_print' appears to be unused (line 103)
+  - Function 'replace_logger' appears to be unused (line 87)
+
+File: ./scripts/analyze_sr_position_enhanced.py
+-----------------------------------------
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 143)
+  - Line is 139 characters (max 120) (line 144)
+  - Line is 155 characters (max 120) (line 162)
+  - Line is 164 characters (max 120) (line 170)
+  - Line is 130 characters (max 120) (line 298)
+  - Line is 139 characters (max 120) (line 299)
+  - Line is 127 characters (max 120) (line 300)
+
+File: ./scripts/investigate_high_vif_features.py
+------------------------------------------
+
+Formatting Issues:
+  - Mixed tabs and spaces (line 105)
+  - Mixed tabs and spaces (line 106)
+  - Mixed tabs and spaces (line 184)
+
+File: ./scripts/optimize_fractional_labeling_params.py
+------------------------------------------------
+
+Long Lines:
+  - Line is 149 characters (max 120) (line 207)
+  - Line is 133 characters (max 120) (line 360)
+  - Line is 134 characters (max 120) (line 370)
+
+File: ./scripts/fix_corrupted_data.py
+-------------------------------
+
+Dead Code:
+  - Function 'wrapper' appears to be unused (line 32)
+  - Function 'decorator' appears to be unused (line 30)
+
+File: ./scripts/configure_optimization_settings.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'safe_call' appears to be unused (line 32)
+  - Function 'wrapper' appears to be unused (line 35)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 230)
+
+File: ./scripts/advanced_syntax_repair.py
+-----------------------------------
+
+Dead Code:
+  - Function 'repl' appears to be unused (line 18)
+
+File: ./scripts/run_enhanced_backtesting.py
+-------------------------------------
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 103)
+
+File: ./scripts/analyze_timeframe.py
+------------------------------
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 375)
+  - Line is 121 characters (max 120) (line 599)
+  - Line is 158 characters (max 120) (line 615)
+  - Line is 131 characters (max 120) (line 710)
+  - Line is 153 characters (max 120) (line 804)
+
+File: ./scripts/validate_fractional_differentiation_performance.py
+------------------------------------------------------------
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 10, 687
+  - Import 'import pandas' appears on lines: 668, 688
+
+Long Lines:
+  - Line is 135 characters (max 120) (line 41)
+  - Line is 131 characters (max 120) (line 120)
+  - Line is 126 characters (max 120) (line 135)
+  - Line is 156 characters (max 120) (line 161)
+  - Line is 127 characters (max 120) (line 247)
+  - Line is 145 characters (max 120) (line 348)
+  - Line is 170 characters (max 120) (line 527)
+  - Line is 130 characters (max 120) (line 530)
+  - Line is 167 characters (max 120) (line 647)
+  - Line is 259 characters (max 120) (line 648)
+
+File: ./scripts/analyze_hmm_regimes.py
+--------------------------------
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 153)
+  - Line is 222 characters (max 120) (line 201)
+  - Line is 174 characters (max 120) (line 245)
+  - Line is 121 characters (max 120) (line 265)
+  - Line is 148 characters (max 120) (line 276)
+  - Line is 140 characters (max 120) (line 377)
+  - Line is 139 characters (max 120) (line 435)
+  - Line is 136 characters (max 120) (line 453)
+  - Line is 172 characters (max 120) (line 475)
+  - Line is 134 characters (max 120) (line 495)
+  - Line is 139 characters (max 120) (line 1516)
+  - Line is 142 characters (max 120) (line 1522)
+  - Line is 125 characters (max 120) (line 1604)
+  - Line is 131 characters (max 120) (line 1799)
+  - Line is 138 characters (max 120) (line 1806)
+  - Line is 169 characters (max 120) (line 1832)
+  - Line is 140 characters (max 120) (line 1875)
+  - Line is 142 characters (max 120) (line 1907)
+  - Line is 142 characters (max 120) (line 1973)
+  - Line is 163 characters (max 120) (line 2023)
+
+File: ./scripts/fix_multicollinearity.py
+----------------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 139)
+  - Line is 126 characters (max 120) (line 165)
+
+File: ./scripts/test_vif_fixes.py
+---------------------------
+
+Dead Code:
+  - Function 'wrapper' appears to be unused (line 28)
+  - Function 'decorator' appears to be unused (line 26)
+
+File: ./scripts/optimize_partitions.py
+--------------------------------
+
+Dead Code:
+  - Function 'suggest_partition_strategy' appears to be unused (line 224)
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 324)
+
+File: ./scripts/download_mexc_agg_trades.py
+-------------------------------------
+
+Dead Code:
+  - Code after return in function 'download_mexc_agg_trades' (line 149)
+
+File: ./scripts/migrate_parquet_datasets.py
+-------------------------------------
+
+Dead Code:
+  - Function 'wrapper' appears to be unused (line 50)
+  - Function 'decorator' appears to be unused (line 49)
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 280)
+  - Line is 132 characters (max 120) (line 289)
+  - Line is 125 characters (max 120) (line 487)
+
+File: ./scripts/surgical_pass2.py
+---------------------------
+
+Dead Code:
+  - Function 'fix_brackets' appears to be unused (line 18)
+
+File: ./scripts/run_feature_diagnostic.py
+-----------------------------------
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 345)
+  - Line is 139 characters (max 120) (line 476)
+
+File: ./scripts/optimize_combined_parameters.py
+-----------------------------------------
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 11, 614
+  - Import 'import pandas' appears on lines: 592, 615
+  - Import 'import random' appears on lines: 67, 362
+
+Long Lines:
+  - Line is 146 characters (max 120) (line 135)
+  - Line is 126 characters (max 120) (line 147)
+  - Line is 154 characters (max 120) (line 376)
+  - Line is 155 characters (max 120) (line 377)
+  - Line is 163 characters (max 120) (line 463)
+  - Line is 123 characters (max 120) (line 564)
+  - Line is 132 characters (max 120) (line 567)
+
+File: ./scripts/mock_baseline_analysis.py
+-----------------------------------
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 106)
+
+File: ./scripts/bulk_steps_fixer.py
+-----------------------------
+
+Long Lines:
+  - Line is 153 characters (max 120) (line 36)
+
+File: ./scripts/investigate_regime_calculations.py
+--------------------------------------------
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 397)
+  - Line is 128 characters (max 120) (line 402)
+  - Line is 130 characters (max 120) (line 407)
+
+File: ./scripts/establish_baseline_performance.py
+-------------------------------------------
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 90)
+
+File: ./backtesting/ares_data_downloader_optimized.py
+-----------------------------------------------
+
+Duplicate Imports:
+  - Import 'from datetime import datetime' appears on lines: 18, 30
+
+Long Lines:
+  - Line is 175 characters (max 120) (line 313)
+  - Line is 135 characters (max 120) (line 553)
+  - Line is 135 characters (max 120) (line 798)
+  - Line is 136 characters (max 120) (line 820)
+  - Line is 171 characters (max 120) (line 867)
+  - Line is 159 characters (max 120) (line 870)
+  - Line is 233 characters (max 120) (line 875)
+  - Line is 151 characters (max 120) (line 879)
+  - Line is 224 characters (max 120) (line 882)
+  - Line is 125 characters (max 120) (line 950)
+  - Line is 156 characters (max 120) (line 1057)
+  - Line is 147 characters (max 120) (line 1060)
+  - Line is 139 characters (max 120) (line 1184)
+  - Line is 147 characters (max 120) (line 1228)
+  - Line is 138 characters (max 120) (line 1234)
+  - Line is 130 characters (max 120) (line 1282)
+  - Line is 121 characters (max 120) (line 1285)
+  - Line is 163 characters (max 120) (line 1360)
+  - Line is 154 characters (max 120) (line 1363)
+  - Line is 133 characters (max 120) (line 1463)
+  - Line is 121 characters (max 120) (line 1466)
+  - Line is 217 characters (max 120) (line 1471)
+  - Line is 208 characters (max 120) (line 1474)
+  - Line is 131 characters (max 120) (line 1516)
+  - Line is 122 characters (max 120) (line 1519)
+  - Line is 170 characters (max 120) (line 1536)
+  - Line is 161 characters (max 120) (line 1539)
+  - Line is 147 characters (max 120) (line 1555)
+  - Line is 138 characters (max 120) (line 1558)
+  - Line is 131 characters (max 120) (line 1648)
+  - Line is 137 characters (max 120) (line 1754)
+  - Line is 137 characters (max 120) (line 1803)
+  - Line is 125 characters (max 120) (line 1806)
+  - Line is 203 characters (max 120) (line 1811)
+  - Line is 194 characters (max 120) (line 1814)
+  - Line is 135 characters (max 120) (line 1824)
+  - Line is 141 characters (max 120) (line 1879)
+  - Line is 132 characters (max 120) (line 1882)
+
+File: ./code_quality/tools/code_quality_analyzer.py
+---------------------------------------------
+
+Unused Imports:
+  - {'type': 'import', 'name': 'sys', 'asname': None, 'lineno': 9, 'used_name': 'sys'} (line 9)
+  - {'type': 'from_import', 'module': 'pathlib', 'name': 'Path', 'asname': None, 'lineno': 10, 'used_name': 'Path'} (line 10)
+  - {'type': 'from_import', 'module': 'typing', 'name': 'Tuple', 'asname': None, 'lineno': 11, 'used_name': 'Tuple'} (line 11)
+
+File: ./src/tasks.py
+--------------
+
+Dead Code:
+  - Function 'run_monthly_training_pipeline' appears to be unused (line 34)
+  - Function 'run_trading_bot_instance' appears to be unused (line 16)
+
+File: ./src/ares_pipeline.py
+----------------------
+
+Dead Code:
+  - Function 'get_pipeline_status' appears to be unused (line 901)
+
+Long Lines:
+  - Line is 156 characters (max 120) (line 724)
+  - Line is 156 characters (max 120) (line 730)
+  - Line is 188 characters (max 120) (line 888)
+
+File: ./src/config.py
+---------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 450)
+  - Function 'get_environment_settings' appears to be unused (line 63)
+  - Function 'get_status' appears to be unused (line 460)
+  - Function 'run' appears to be unused (line 345)
+  - Function 'get_config_service' appears to be unused (line 478)
+  - Function 'get_config_sections' appears to be unused (line 474)
+  - Function 'setup_configuration_manager' appears to be unused (line 524)
+  - Function 'get_history' appears to be unused (line 467)
+  - Function 'get_config' appears to be unused (line 54)
+
+File: ./src/config_optuna.py
+----------------------
+
+Dead Code:
+  - Function 'get_confidence_thresholds' appears to be unused (line 342)
+  - Function 'get_zone_multipliers' appears to be unused (line 334)
+  - Function 'get_breakout_thresholds' appears to be unused (line 326)
+  - Function 'validate_sr_optimization_config' appears to be unused (line 579)
+  - Function 'get_parameter_value' appears to be unused (line 478)
+  - Function 'get_parameter_search_space' appears to be unused (line 503)
+  - Function 'create_optimization_study_config' appears to be unused (line 615)
+  - Function 'get_level_detection_params' appears to be unused (line 316)
+  - Function 'get_optimizable_parameters' appears to be unused (line 530)
+  - Function 'get_sr_optimization_config' appears to be unused (line 493)
+  - Function 'get_hyperparameter_optimization_config' appears to be unused (line 498)
+  - Function 'update_parameter_value' appears to be unused (line 539)
+  - Function 'get_optuna_config' appears to be unused (line 511)
+
+Long Lines:
+  - Line is 167 characters (max 120) (line 230)
+  - Line is 132 characters (max 120) (line 337)
+  - Line is 122 characters (max 120) (line 346)
+  - Line is 124 characters (max 120) (line 557)
+  - Line is 130 characters (max 120) (line 558)
+  - Line is 140 characters (max 120) (line 559)
+
+File: ./src/paper_trader.py
+---------------------
+
+Dead Code:
+  - Function 'calculate_performance' appears to be unused (line 608)
+  - Function 'get_position' appears to be unused (line 497)
+  - Function 'get_balance' appears to be unused (line 564)
+  - Function 'stop' appears to be unused (line 711)
+  - Function 'get_all_positions' appears to be unused (line 546)
+  - Function 'execute_buy_order' appears to be unused (line 222)
+  - Function 'get_trader_status' appears to be unused (line 689)
+  - Function 'execute_sell_order' appears to be unused (line 334)
+  - Function 'setup_paper_trader' appears to be unused (line 737)
+  - Function 'mark_price' appears to be unused (line 516)
+  - Function 'get_trade_history' appears to be unused (line 582)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 365)
+
+File: ./src/monitoring/error_detection_system.py
+------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 62)
+
+File: ./src/monitoring/tracking_system.py
+-----------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 37)
+
+File: ./src/monitoring/correlation_manager.py
+---------------------------------------
+
+Dead Code:
+  - Function 'complete_correlation_request' appears to be unused (line 108)
+  - Function 'initialize' appears to be unused (line 75)
+  - Function 'track_correlation_request' appears to be unused (line 84)
+  - Function 'list_requests' appears to be unused (line 125)
+  - Function 'get_request' appears to be unused (line 122)
+
+File: ./src/monitoring/report_scheduler.py
+------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 76)
+
+File: ./src/monitoring/fractional_system_monitor.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'track_performance' appears to be unused (line 80)
+  - Function 'get_fractional_system_monitor_config' appears to be unused (line 662)
+  - Function 'start_monitoring' appears to be unused (line 67)
+  - Function 'stop_monitoring' appears to be unused (line 73)
+  - Function 'export_monitoring_report' appears to be unused (line 617)
+
+Long Lines:
+  - Line is 149 characters (max 120) (line 324)
+  - Line is 143 characters (max 120) (line 335)
+  - Line is 151 characters (max 120) (line 346)
+  - Line is 135 characters (max 120) (line 359)
+  - Line is 164 characters (max 120) (line 370)
+  - Line is 123 characters (max 120) (line 533)
+  - Line is 133 characters (max 120) (line 539)
+
+File: ./src/monitoring/enhanced_ml_tracker.py
+---------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 48)
+
+File: ./src/monitoring/performance_dashboard.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 76)
+
+File: ./src/monitoring/integration_manager.py
+---------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 50)
+
+File: ./src/monitoring/performance_monitor.py
+---------------------------------------
+
+Dead Code:
+  - Function 'record_metrics' appears to be unused (line 79)
+  - Function 'initialize' appears to be unused (line 73)
+  - Function 'latest_metrics' appears to be unused (line 82)
+
+File: ./src/monitoring/surrogate_optimization_monitor.py
+--------------------------------------------------
+
+Dead Code:
+  - Function 'get_recent_alerts' appears to be unused (line 460)
+  - Function 'clear_old_metrics' appears to be unused (line 465)
+  - Function 'export_metrics' appears to be unused (line 474)
+  - Function 'record_metrics' appears to be unused (line 117)
+  - Function 'create_performance_visualizations' appears to be unused (line 359)
+  - Function 'generate_performance_report' appears to be unused (line 308)
+
+File: ./src/monitoring/metrics_dashboard.py
+-------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 63)
+
+File: ./src/monitoring/fractional_performance_tracker.py
+--------------------------------------------------
+
+Dead Code:
+  - Function 'set_baseline_metrics' appears to be unused (line 76)
+  - Function 'update_current_metrics' appears to be unused (line 86)
+  - Function 'export_performance_report' appears to be unused (line 363)
+
+Long Lines:
+  - Line is 137 characters (max 120) (line 250)
+  - Line is 121 characters (max 120) (line 251)
+  - Line is 121 characters (max 120) (line 285)
+  - Line is 122 characters (max 120) (line 293)
+
+File: ./src/monitoring/csv_exporter.py
+--------------------------------
+
+Dead Code:
+  - Function 'export_performance_metrics' appears to be unused (line 76)
+  - Function 'initialize' appears to be unused (line 53)
+
+File: ./src/monitoring/regime_sr_tracker.py
+-------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 38)
+
+File: ./src/monitoring/advanced_tracer.py
+-----------------------------------
+
+Dead Code:
+  - Function 'start_span' appears to be unused (line 141)
+  - Function 'initialize' appears to be unused (line 126)
+  - Function 'finish_span' appears to be unused (line 161)
+  - Function 'create_correlation_id' appears to be unused (line 136)
+  - Function 'record_trace' appears to be unused (line 170)
+  - Function 'get_trace' appears to be unused (line 179)
+  - Function 'get_traces_count' appears to be unused (line 182)
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 161)
+
+File: ./src/monitoring/trade_conditions_monitor.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 39)
+
+File: ./src/monitoring/ml_monitor.py
+------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 102)
+  - Function 'list_alerts' appears to be unused (line 119)
+  - Function 'get_latest_performance' appears to be unused (line 113)
+  - Function 'record_performance' appears to be unused (line 110)
+
+File: ./src/backtesting/enhanced_backtester.py
+----------------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 846)
+  - Function 'run_backtest' appears to be unused (line 240)
+  - Function 'generate_backtest_report' appears to be unused (line 788)
+  - Function 'setup_enhanced_backtester' appears to be unused (line 857)
+
+Duplicate Imports:
+  - Import 'from src.utils.comprehensive_logger import get_comprehensive_logger' appears on lines: 322, 295
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 300)
+  - Line is 143 characters (max 120) (line 670)
+
+File: ./src/launcher/enhanced_trading_launcher.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'launch_backtest' appears to be unused (line 281)
+  - Function 'launch_paper_trading' appears to be unused (line 183)
+  - Function 'get_launcher_status' appears to be unused (line 518)
+  - Function 'launch_live_trading' appears to be unused (line 233)
+  - Function 'setup_enhanced_trading_launcher' appears to be unused (line 560)
+
+File: ./src/components/modular_analyst.py
+-----------------------------------
+
+Dead Code:
+  - Function 'analyze_market_data' appears to be unused (line 278)
+  - Function 'stop' appears to be unused (line 869)
+  - Function 'get_analysis_results' appears to be unused (line 791)
+  - Function 'get_analyst_status' appears to be unused (line 840)
+  - Function 'setup_modular_analyst' appears to be unused (line 896)
+  - Function 'get_analysis_history' appears to be unused (line 818)
+
+File: ./src/components/modular_tactician.py
+-------------------------------------
+
+Dead Code:
+  - Function 'get_tactician_results' appears to be unused (line 930)
+  - Function 'stop' appears to be unused (line 1008)
+  - Function 'get_tactician_history' appears to be unused (line 957)
+  - Function 'execute_tactician' appears to be unused (line 273)
+  - Function 'setup_modular_tactician' appears to be unused (line 1035)
+  - Function 'get_tactician_status' appears to be unused (line 979)
+
+File: ./src/components/modular_supervisor.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_supervision_history' appears to be unused (line 1010)
+  - Function 'stop' appears to be unused (line 1061)
+  - Function 'get_supervision_results' appears to be unused (line 983)
+  - Function 'get_supervisor_status' appears to be unused (line 1032)
+  - Function 'setup_modular_supervisor' appears to be unused (line 1088)
+  - Function 'execute_supervision' appears to be unused (line 289)
+
+File: ./src/components/modular_strategist.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_strategy_results' appears to be unused (line 939)
+  - Function 'stop' appears to be unused (line 1017)
+  - Function 'get_strategist_status' appears to be unused (line 988)
+  - Function 'setup_modular_strategist' appears to be unused (line 1044)
+  - Function 'get_strategy_history' appears to be unused (line 966)
+  - Function 'execute_strategy' appears to be unused (line 272)
+
+File: ./src/interfaces/event_bus.py
+-----------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 235)
+  - Function 'get_event_history' appears to be unused (line 313)
+  - Function 'unsubscribe' appears to be unused (line 265)
+  - Function 'setup_event_bus' appears to be unused (line 332)
+  - Function 'get_history' appears to be unused (line 307)
+  - Function 'get_subscribers' appears to be unused (line 319)
+  - Function 'get_status' appears to be unused (line 304)
+  - Function 'run' appears to be unused (line 149)
+  - Function 'subscribe' appears to be unused (line 249)
+  - Function 'publish' appears to be unused (line 288)
+
+File: ./src/interfaces/base_interfaces.py
+-----------------------------------
+
+Dead Code:
+  - Function 'load_models' appears to be unused (line 172)
+  - Function 'stop' appears to be unused (line 153)
+  - Function 'get_strategy_performance' appears to be unused (line 198)
+  - Function 'formulate_strategy' appears to be unused (line 188)
+  - Function 'get_analyst' appears to be unused (line 260)
+  - Function 'execute_trade_decision' appears to be unused (line 214)
+  - Function 'get_strategist' appears to be unused (line 264)
+  - Function 'calculate_risk_parameters' appears to be unused (line 226)
+  - Function 'get_tactician' appears to be unused (line 268)
+  - Function 'monitor_performance' appears to be unused (line 244)
+  - Function 'get_klines' appears to be unused (line 72)
+  - Function 'manage_risk' appears to be unused (line 248)
+  - Function 'subscribe' appears to be unused (line 137)
+  - Function 'update_strategy_parameters' appears to be unused (line 194)
+  - Function 'calculate_position_size' appears to be unused (line 220)
+  - Function 'unsubscribe' appears to be unused (line 141)
+  - Function 'get_state' appears to be unused (line 100)
+  - Function 'get_account_info' appears to be unused (line 79)
+  - Function 'generate_report' appears to be unused (line 125)
+  - Function 'start' appears to be unused (line 149)
+  - Function 'get_historical_analysis' appears to be unused (line 161)
+  - Function 'coordinate_components' appears to be unused (line 252)
+  - Function 'publish' appears to be unused (line 133)
+  - Function 'log_trade' appears to be unused (line 117)
+  - Function 'analyze_market_data' appears to be unused (line 157)
+  - Function 'train_models' appears to be unused (line 168)
+  - Function 'get_performance_summary' appears to be unused (line 121)
+  - Function 'promote_challenger_to_champion' appears to be unused (line 276)
+  - Function 'set_state' appears to be unused (line 104)
+  - Function 'get_position_risk' appears to be unused (line 92)
+  - Function 'create_order' appears to be unused (line 83)
+  - Function 'get_state_if_not_exists' appears to be unused (line 108)
+
+File: ./src/interfaces/enhanced_event_bus.py
+--------------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 712)
+  - Function 'replay_events' appears to be unused (line 806)
+  - Function 'rebuild_from_events' appears to be unused (line 838)
+  - Function 'setup_enhanced_event_bus' appears to be unused (line 919)
+  - Function 'get_event_history' appears to be unused (line 903)
+  - Function 'get_metrics' appears to be unused (line 910)
+  - Function 'get_status' appears to be unused (line 885)
+  - Function 'run' appears to be unused (line 578)
+  - Function 'subscribe' appears to be unused (line 731)
+  - Function 'unsubscribe' appears to be unused (line 743)
+  - Function 'migrate_event' appears to be unused (line 371)
+  - Function 'publish' appears to be unused (line 759)
+  - Function 'get_history' appears to be unused (line 896)
+
+File: ./src/trading/live_wavelet_analyzer.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_performance_stats' appears to be unused (line 388)
+  - Function 'initialize' appears to be unused (line 84)
+  - Function 'generate_signal' appears to be unused (line 165)
+  - Function 'get_latest_signal' appears to be unused (line 418)
+  - Function 'clear_history' appears to be unused (line 422)
+
+File: ./src/trading/live_wavelet_demo.py
+----------------------------------
+
+Dead Code:
+  - Function 'stop_demo' appears to be unused (line 278)
+
+File: ./src/trading/live_wavelet_integration.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'disable' appears to be unused (line 404)
+  - Function 'process_market_data' appears to be unused (line 92)
+  - Function 'enable' appears to be unused (line 409)
+  - Function 'is_healthy' appears to be unused (line 374)
+
+File: ./src/trading/sr_trading_intelligence.py
+----------------------------------------
+
+Dead Code:
+  - Function 'close_position' appears to be unused (line 433)
+  - Function 'update_position' appears to be unused (line 402)
+  - Function 'create_sr_trading_intelligence' appears to be unused (line 575)
+  - Function 'shutdown' appears to be unused (line 554)
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 356)
+  - Line is 143 characters (max 120) (line 369)
+
+File: ./src/supervisor/enhanced_prediction_service.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'get_service_info' appears to be unused (line 703)
+  - Function 'initialize' appears to be unused (line 58)
+
+Duplicate Imports:
+  - Import 'import json' appears on lines: 192, 219
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 113)
+  - Line is 135 characters (max 120) (line 163)
+  - Line is 124 characters (max 120) (line 331)
+  - Line is 128 characters (max 120) (line 337)
+  - Line is 126 characters (max 120) (line 380)
+  - Line is 128 characters (max 120) (line 386)
+  - Line is 122 characters (max 120) (line 397)
+  - Line is 121 characters (max 120) (line 531)
+  - Line is 135 characters (max 120) (line 536)
+  - Line is 158 characters (max 120) (line 547)
+  - Line is 186 characters (max 120) (line 552)
+  - Line is 134 characters (max 120) (line 630)
+  - Line is 134 characters (max 120) (line 643)
+  - Line is 142 characters (max 120) (line 650)
+  - Line is 181 characters (max 120) (line 651)
+  - Line is 133 characters (max 120) (line 653)
+  - Line is 131 characters (max 120) (line 659)
+
+File: ./src/supervisor/performance_monitor.py
+---------------------------------------
+
+Dead Code:
+  - Function 'clear_retraining_triggers' appears to be unused (line 675)
+  - Function 'stop' appears to be unused (line 213)
+  - Function 'get_alerts' appears to be unused (line 234)
+  - Function 'get_drift_alerts' appears to be unused (line 237)
+  - Function 'detect_concept_drift' appears to be unused (line 241)
+  - Function 'update_model_performance' appears to be unused (line 381)
+  - Function 'get_performance_metrics' appears to be unused (line 231)
+  - Function 'select_best_models' appears to be unused (line 536)
+  - Function 'setup_performance_monitor' appears to be unused (line 686)
+  - Function 'get_performance_feedback' appears to be unused (line 618)
+  - Function 'get_retraining_triggers' appears to be unused (line 671)
+  - Function 'get_history' appears to be unused (line 225)
+  - Function 'get_status' appears to be unused (line 222)
+  - Function 'run' appears to be unused (line 127)
+  - Function 'clear_drift_alerts' appears to be unused (line 368)
+  - Function 'get_model_performance_history' appears to be unused (line 364)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 442)
+  - Line is 123 characters (max 120) (line 443)
+  - Line is 129 characters (max 120) (line 623)
+
+File: ./src/supervisor/global_portfolio_manager.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'get_management_results' appears to be unused (line 1041)
+  - Function 'get_management_history' appears to be unused (line 1067)
+  - Function 'stop' appears to be unused (line 1118)
+  - Function 'setup_global_portfolio_manager' appears to be unused (line 1144)
+  - Function 'execute_portfolio_management' appears to be unused (line 324)
+  - Function 'get_management_status' appears to be unused (line 1089)
+
+File: ./src/supervisor/performance_reporter.py
+----------------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 820)
+  - Function 'get_latest_report' appears to be unused (line 855)
+  - Function 'get_history' appears to be unused (line 841)
+  - Function 'get_status' appears to be unused (line 829)
+  - Function 'run' appears to be unused (line 595)
+  - Function 'get_real_time_metrics' appears to be unused (line 859)
+  - Function 'setup_performance_reporter' appears to be unused (line 1063)
+  - Function 'get_reports' appears to be unused (line 848)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 364)
+
+File: ./src/supervisor/exchange_ab_tester.py
+--------------------------------------
+
+Dead Code:
+  - Function 'setup_exchange_ab_tester' appears to be unused (line 427)
+  - Function 'get_test_status' appears to be unused (line 383)
+  - Function 'cleanup' appears to be unused (line 409)
+  - Function 'start_ab_test' appears to be unused (line 98)
+  - Function 'process_prediction' appears to be unused (line 141)
+
+File: ./src/supervisor/multi_exchange_ab_tester.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'execute_multi_exchange_test' appears to be unused (line 229)
+  - Function 'setup_multi_exchange_ab_tester' appears to be unused (line 523)
+  - Function 'start_multi_exchange_test' appears to be unused (line 184)
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 367)
+
+File: ./src/supervisor/dynamic_weighter.py
+------------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 1506)
+  - Function 'get_weighting_history' appears to be unused (line 1208)
+  - Function 'get_weighting_results' appears to be unused (line 1182)
+  - Function 'setup_dynamic_weighter' appears to be unused (line 1533)
+  - Function 'update_model_weights_online' appears to be unused (line 1269)
+  - Function 'execute_weighting' appears to be unused (line 328)
+  - Function 'calculate_enhanced_ensemble_weights' appears to be unused (line 1417)
+  - Function 'get_weighting_status' appears to be unused (line 1230)
+
+File: ./src/supervisor/enhanced_model_monitor.py
+------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 166)
+
+File: ./src/supervisor/monitoring.py
+------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 156)
+  - Function 'get_alerts' appears to be unused (line 177)
+  - Function 'get_metrics' appears to be unused (line 174)
+  - Function 'setup_monitoring' appears to be unused (line 186)
+  - Function 'get_history' appears to be unused (line 168)
+  - Function 'get_status' appears to be unused (line 165)
+  - Function 'run' appears to be unused (line 91)
+
+File: ./src/supervisor/main.py
+------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 424)
+  - Function 'get_history' appears to be unused (line 436)
+  - Function 'get_status' appears to be unused (line 433)
+  - Function 'run' appears to be unused (line 390)
+  - Function 'setup_main_supervisor' appears to be unused (line 449)
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 299)
+
+File: ./src/supervisor/ab_tester.py
+-----------------------------
+
+Dead Code:
+  - Function 'get_ab_test_status' appears to be unused (line 317)
+  - Function 'stop' appears to be unused (line 354)
+  - Function 'promote_challenger_if_superior' appears to be unused (line 276)
+  - Function 'execute_ab_test' appears to be unused (line 140)
+  - Function 'initialize_ab_test' appears to be unused (line 46)
+  - Function 'get_champion_params' appears to be unused (line 331)
+  - Function 'get_challenger_params' appears to be unused (line 340)
+
+File: ./src/supervisor/risk_allocator.py
+----------------------------------
+
+Dead Code:
+  - Function 'setup_risk_allocator' appears to be unused (line 435)
+  - Function 'get_risk_allocations' appears to be unused (line 200)
+  - Function 'stop' appears to be unused (line 182)
+  - Function 'get_history' appears to be unused (line 194)
+  - Function 'get_risk_metrics' appears to be unused (line 367)
+  - Function 'get_status' appears to be unused (line 191)
+  - Function 'run' appears to be unused (line 108)
+  - Function 'calculate_expected_shortfall' appears to be unused (line 231)
+  - Function 'monitor_risk_limits' appears to be unused (line 296)
+  - Function 'calculate_multi_timeframe_var' appears to be unused (line 266)
+
+File: ./src/supervisor/pnl_loss_functions.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_calculation_status' appears to be unused (line 1097)
+  - Function 'create_pnl_aware_loss' appears to be unused (line 7)
+  - Function 'stop' appears to be unused (line 1121)
+  - Function 'pnl_aware_loss' appears to be unused (line 19)
+  - Function 'setup_pnl_loss_functions' appears to be unused (line 1148)
+  - Function 'get_calculation_results' appears to be unused (line 1049)
+  - Function 'get_calculation_history' appears to be unused (line 1075)
+  - Function 'execute_calculation' appears to be unused (line 383)
+
+File: ./src/supervisor/supervisor.py
+------------------------------
+
+Dead Code:
+  - Function 'call' appears to be unused (line 35)
+  - Function 'stop' appears to be unused (line 1871)
+  - Function 'get_components' appears to be unused (line 1896)
+  - Function 'get_component_monitors' appears to be unused (line 1907)
+  - Function 'get_supervision_results' appears to be unused (line 1893)
+  - Function 'get_history' appears to be unused (line 1887)
+  - Function 'get_status' appears to be unused (line 1879)
+  - Function 'run' appears to be unused (line 1245)
+  - Function 'setup_supervisor' appears to be unused (line 1966)
+  - Function 'get_online_learning_status' appears to be unused (line 1899)
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 187)
+  - Line is 130 characters (max 120) (line 553)
+  - Line is 131 characters (max 120) (line 675)
+  - Line is 139 characters (max 120) (line 886)
+  - Line is 134 characters (max 120) (line 961)
+  - Line is 125 characters (max 120) (line 1022)
+  - Line is 143 characters (max 120) (line 1041)
+  - Line is 140 characters (max 120) (line 1116)
+  - Line is 129 characters (max 120) (line 1141)
+  - Line is 169 characters (max 120) (line 1151)
+  - Line is 161 characters (max 120) (line 1219)
+  - Line is 144 characters (max 120) (line 1227)
+  - Line is 144 characters (max 120) (line 1672)
+  - Line is 121 characters (max 120) (line 1948)
+
+File: ./src/supervisor/model_behavior_tracker.py
+------------------------------------------
+
+Dead Code:
+  - Function 'export_behavior_data' appears to be unused (line 682)
+  - Function 'get_behavior_history' appears to be unused (line 531)
+  - Function 'setup_model_behavior_tracker' appears to be unused (line 713)
+  - Function 'start_tracking' appears to be unused (line 235)
+  - Function 'stop_tracking' appears to be unused (line 514)
+
+File: ./src/supervisor/optimizer.py
+-----------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 163)
+  - Function 'get_optimization_results' appears to be unused (line 181)
+  - Function 'implement_global_system_optimization' appears to be unused (line 192)
+  - Function 'get_history' appears to be unused (line 175)
+  - Function 'get_status' appears to be unused (line 172)
+  - Function 'run' appears to be unused (line 93)
+  - Function 'setup_optimizer' appears to be unused (line 289)
+  - Function 'get_parameters' appears to be unused (line 184)
+
+File: ./src/pipelines/improved_pipeline_executor.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 57)
+  - Function 'get_pipeline_status' appears to be unused (line 680)
+  - Function 'execute_complete_pipeline' appears to be unused (line 597)
+  - Function 'get_cycle_history' appears to be unused (line 673)
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 113)
+  - Line is 129 characters (max 120) (line 285)
+  - Line is 165 characters (max 120) (line 436)
+  - Line is 124 characters (max 120) (line 449)
+  - Line is 123 characters (max 120) (line 536)
+  - Line is 188 characters (max 120) (line 575)
+  - Line is 127 characters (max 120) (line 626)
+  - Line is 148 characters (max 120) (line 629)
+  - Line is 141 characters (max 120) (line 644)
+
+File: ./src/pipelines/base_pipeline.py
+--------------------------------
+
+Dead Code:
+  - Function 'validate' appears to be unused (line 45)
+  - Function 'initialize' appears to be unused (line 101)
+  - Function 'shutdown' appears to be unused (line 112)
+
+File: ./src/pipelines/components/data_manager.py
+------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 36)
+  - Function 'process' appears to be unused (line 44)
+
+File: ./src/transition/seq2seq_trainer.py
+-----------------------------------
+
+Dead Code:
+  - Function 'training_step' appears to be unused (line 159)
+  - Function 'train_seq2seq' appears to be unused (line 375)
+  - Function 'validation_step' appears to be unused (line 201)
+  - Function 'configure_optimizers' appears to be unused (line 237)
+  - Function 'forward' appears to be unused (line 150)
+
+File: ./src/transition/combined_features_builder.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'build' appears to be unused (line 91)
+
+File: ./src/transition/inference_combiner.py
+--------------------------------------
+
+Dead Code:
+  - Function 'combine_probs' appears to be unused (line 69)
+  - Function 'gate_decision' appears to be unused (line 94)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 75)
+  - Line is 129 characters (max 120) (line 101)
+  - Line is 135 characters (max 120) (line 130)
+
+File: ./src/transition/rolling_inference.py
+-------------------------------------
+
+Dead Code:
+  - Function 'predict_latest' appears to be unused (line 133)
+
+File: ./src/transition/event_trigger_indexer.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'build_event_index' appears to be unused (line 214)
+
+File: ./src/transition/multitask_rf.py
+--------------------------------
+
+Dead Code:
+  - Function 'save' appears to be unused (line 314)
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 357)
+
+File: ./src/transition/rolling_window_dataset.py
+------------------------------------------
+
+Dead Code:
+  - Function 'build' appears to be unused (line 87)
+
+File: ./src/transition/path_targets.py
+--------------------------------
+
+Dead Code:
+  - Function 'compute_path_class' appears to be unused (line 39)
+
+File: ./src/transition/state_sequence_builder.py
+------------------------------------------
+
+Dead Code:
+  - Function 'infer_states' appears to be unused (line 68)
+
+File: ./src/transition/event_window_dataset.py
+----------------------------------------
+
+Dead Code:
+  - Function 'build' appears to be unused (line 105)
+
+Long Lines:
+  - Line is 158 characters (max 120) (line 113)
+
+File: ./src/custom_types/validation.py
+--------------------------------
+
+Dead Code:
+  - Function 'decorator' appears to be unused (line 178)
+  - Function 'validate_ohlcv_data' appears to be unused (line 121)
+  - Function 'validate_model_input' appears to be unused (line 117)
+  - Function 'validate_price' appears to be unused (line 204)
+  - Function 'validate_market_data' appears to be unused (line 113)
+  - Function 'validate_symbol' appears to be unused (line 198)
+  - Function 'validate_volume' appears to be unused (line 210)
+  - Function 'wrapper' appears to be unused (line 132)
+  - Function 'type_safe' appears to be unused (line 125)
+  - Function 'validate_critical_path' appears to be unused (line 170)
+  - Function 'validate_config' appears to be unused (line 109)
+
+File: ./src/custom_types/protocol_types.py
+------------------------------------
+
+Dead Code:
+  - Function 'predict_single' appears to be unused (line 52)
+  - Function 'stop' appears to be unused (line 212)
+  - Function 'is_running' appears to be unused (line 217)
+  - Function 'validate_input' appears to be unused (line 243)
+  - Function 'get_feature_importance' appears to be unused (line 57)
+  - Function 'get_data' appears to be unused (line 27)
+  - Function 'get_all_states' appears to be unused (line 137)
+  - Function 'handle_event' appears to be unused (line 147)
+  - Function 'execute_order' appears to be unused (line 97)
+  - Function 'get_metrics' appears to be unused (line 192)
+  - Function 'get_risk_parameters' appears to be unused (line 82)
+  - Function 'get_health_status' appears to be unused (line 187)
+  - Function 'get_status' appears to be unused (line 197)
+  - Function 'validate_order' appears to be unused (line 77)
+  - Function 'subscribe' appears to be unused (line 152)
+  - Function 'assess_risk' appears to be unused (line 72)
+  - Function 'configure' appears to be unused (line 167)
+  - Function 'unsubscribe' appears to be unused (line 157)
+  - Function 'get_state' appears to be unused (line 122)
+  - Function 'get_order_status' appears to be unused (line 107)
+  - Function 'start' appears to be unused (line 207)
+  - Function 'delete_state' appears to be unused (line 132)
+  - Function 'get_open_orders' appears to be unused (line 112)
+  - Function 'validate_config' appears to be unused (line 177)
+  - Function 'predict' appears to be unused (line 47)
+  - Function 'update_risk_parameters' appears to be unused (line 87)
+  - Function 'cancel_order' appears to be unused (line 102)
+  - Function 'process' appears to be unused (line 238)
+  - Function 'set_state' appears to be unused (line 127)
+  - Function 'is_trained' appears to be unused (line 62)
+  - Function 'is_connected' appears to be unused (line 37)
+  - Function 'get_latest_data' appears to be unused (line 32)
+  - Function 'get_config' appears to be unused (line 172)
+
+File: ./src/optimization/parameter_optimizer.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 112)
+
+File: ./src/optimization/backtesting_evaluator.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'evaluate_parameters_with_backtesting' appears to be unused (line 509)
+  - Function 'get_detailed_analysis' appears to be unused (line 442)
+
+Long Lines:
+  - Line is 138 characters (max 120) (line 333)
+  - Line is 121 characters (max 120) (line 373)
+
+File: ./src/integration/paper_trading_integration.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'setup_paper_trading_integration' appears to be unused (line 463)
+  - Function 'execute_trade' appears to be unused (line 169)
+  - Function 'get_integration_status' appears to be unused (line 424)
+
+File: ./src/tactician/position_sizer.py
+---------------------------------
+
+Dead Code:
+  - Function 'calculate_position_size' appears to be unused (line 173)
+  - Function 'setup_position_sizer' appears to be unused (line 619)
+  - Function 'get_position_sizing_history' appears to be unused (line 575)
+  - Function 'cleanup' appears to be unused (line 603)
+  - Function 'refresh_step17_configuration' appears to be unused (line 128)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 55)
+  - Line is 127 characters (max 120) (line 144)
+  - Line is 122 characters (max 120) (line 403)
+  - Line is 137 characters (max 120) (line 500)
+  - Line is 150 characters (max 120) (line 502)
+  - Line is 134 characters (max 120) (line 504)
+  - Line is 167 characters (max 120) (line 506)
+  - Line is 123 characters (max 120) (line 507)
+
+File: ./src/tactician/sr_weight_optimizer.py
+--------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 78)
+  - Function 'get_optimization_results' appears to be unused (line 470)
+  - Function 'get_best_weights' appears to be unused (line 461)
+  - Function 'optimize_weights' appears to be unused (line 140)
+  - Function 'load_optimization_results' appears to be unused (line 551)
+  - Function 'save_optimization_results' appears to be unused (line 508)
+  - Function 'cleanup' appears to be unused (line 594)
+  - Function 'get_optimization_history' appears to be unused (line 489)
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 317)
+  - Line is 135 characters (max 120) (line 322)
+  - Line is 124 characters (max 120) (line 352)
+
+File: ./src/tactician/position_closing.py
+-----------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 62)
+  - Function 'should_close_position' appears to be unused (line 144)
+  - Function 'get_performance_metrics' appears to be unused (line 345)
+  - Function 'close_position' appears to be unused (line 256)
+  - Function 'cleanup' appears to be unused (line 381)
+  - Function 'refresh_step17_configuration' appears to be unused (line 110)
+  - Function 'get_closed_positions' appears to be unused (line 327)
+  - Function 'get_position_history' appears to be unused (line 336)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 129)
+  - Line is 122 characters (max 120) (line 131)
+
+File: ./src/tactician/sr_backtesting_validator.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'validate_sr_levels' appears to be unused (line 214)
+  - Function 'setup_sr_backtesting_validator' appears to be unused (line 757)
+  - Function 'initialize_data_integration' appears to be unused (line 159)
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 136)
+  - Line is 130 characters (max 120) (line 137)
+  - Line is 128 characters (max 120) (line 138)
+  - Line is 128 characters (max 120) (line 139)
+  - Line is 122 characters (max 120) (line 143)
+  - Line is 122 characters (max 120) (line 144)
+  - Line is 125 characters (max 120) (line 668)
+  - Line is 129 characters (max 120) (line 669)
+  - Line is 129 characters (max 120) (line 681)
+
+File: ./src/tactician/ml_target_updater.py
+------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 73)
+  - Function 'get_statistics' appears to be unused (line 494)
+  - Function 'cleanup' appears to be unused (line 525)
+  - Function 'start_updating' appears to be unused (line 131)
+  - Function 'get_target_history' appears to be unused (line 475)
+  - Function 'remove_position' appears to be unused (line 458)
+  - Function 'add_position' appears to be unused (line 443)
+
+File: ./src/tactician/position_division_strategy.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 58)
+  - Function 'get_performance_metrics' appears to be unused (line 461)
+  - Function 'close_position' appears to be unused (line 329)
+  - Function 'get_strategy_summary' appears to be unused (line 470)
+  - Function 'cleanup' appears to be unused (line 492)
+  - Function 'get_active_positions' appears to be unused (line 433)
+  - Function 'calculate_position_division' appears to be unused (line 120)
+  - Function 'get_position_history' appears to be unused (line 442)
+  - Function 'add_position' appears to be unused (line 289)
+
+File: ./src/tactician/tactician.py
+----------------------------
+
+Dead Code:
+  - Function 'get_history' appears to be unused (line 314)
+  - Function 'get_status' appears to be unused (line 301)
+  - Function 'run' appears to be unused (line 277)
+  - Function 'setup_tactician' appears to be unused (line 414)
+  - Function 'get_tactics_modules' appears to be unused (line 338)
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 291)
+  - Line is 125 characters (max 120) (line 346)
+  - Line is 137 characters (max 120) (line 347)
+
+File: ./src/tactician/comprehensive_enhanced_scenario_predictor.py
+------------------------------------------------------------
+
+Dead Code:
+  - Function 'handle_errors' appears to be unused (line 23)
+  - Function 'initialize' appears to be unused (line 302)
+  - Function 'get_comprehensive_configuration_summary' appears to be unused (line 705)
+  - Function 'wrapper' appears to be unused (line 25)
+  - Function 'extract_comprehensive_features' appears to be unused (line 354)
+
+Long Lines:
+  - Line is 179 characters (max 120) (line 400)
+  - Line is 124 characters (max 120) (line 436)
+  - Line is 123 characters (max 120) (line 525)
+  - Line is 129 characters (max 120) (line 563)
+
+File: ./src/tactician/tactics_orchestrator.py
+---------------------------------------
+
+Dead Code:
+  - Function 'get_decision_history' appears to be unused (line 1099)
+  - Function 'generate_decision' appears to be unused (line 183)
+  - Function 'start_orchestration' appears to be unused (line 650)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 778)
+
+File: ./src/tactician/position_monitor.py
+-----------------------------------
+
+Dead Code:
+  - Function 'get_position_assessments' appears to be unused (line 656)
+  - Function 'start_monitoring' appears to be unused (line 190)
+  - Function 'get_active_positions' appears to be unused (line 647)
+  - Function 'get_position_alerts' appears to be unused (line 670)
+  - Function 'resolve_alert' appears to be unused (line 684)
+  - Function 'remove_position' appears to be unused (line 630)
+  - Function 'add_position' appears to be unused (line 611)
+
+Duplicate Imports:
+  - Import 'import yaml' appears on lines: 11, 587
+
+Long Lines:
+  - Line is 138 characters (max 120) (line 377)
+  - Line is 128 characters (max 120) (line 379)
+  - Line is 133 characters (max 120) (line 383)
+  - Line is 129 characters (max 120) (line 385)
+  - Line is 137 characters (max 120) (line 562)
+  - Line is 134 characters (max 120) (line 563)
+  - Line is 149 characters (max 120) (line 564)
+
+File: ./src/tactician/enhanced_order_manager.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'update_order' appears to be unused (line 252)
+  - Function 'initialize' appears to be unused (line 144)
+  - Function 'get_order_history' appears to be unused (line 386)
+  - Function 'cleanup' appears to be unused (line 407)
+  - Function 'get_order' appears to be unused (line 395)
+  - Function 'get_active_orders' appears to be unused (line 377)
+  - Function 'process_fill' appears to be unused (line 327)
+  - Function 'create_order' appears to be unused (line 170)
+
+File: ./src/tactician/dynamic_barrier_calculator.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'get_analyst_barrier_info' appears to be unused (line 207)
+  - Function 'get_timeframe_weights' appears to be unused (line 176)
+  - Function 'calculate_multi_timeframe_barriers' appears to be unused (line 181)
+  - Function 'validate_barrier_calculation' appears to be unused (line 220)
+
+Long Lines:
+  - Line is 152 characters (max 120) (line 39)
+  - Line is 149 characters (max 120) (line 78)
+  - Line is 143 characters (max 120) (line 79)
+  - Line is 135 characters (max 120) (line 110)
+  - Line is 135 characters (max 120) (line 111)
+  - Line is 122 characters (max 120) (line 138)
+  - Line is 140 characters (max 120) (line 161)
+
+File: ./src/tactician/scenario_based_predictor.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'handle_errors' appears to be unused (line 21)
+  - Function 'initialize' appears to be unused (line 140)
+  - Function 'train_model' appears to be unused (line 327)
+  - Function 'predict_scenarios' appears to be unused (line 399)
+  - Function 'get_configuration_summary' appears to be unused (line 666)
+  - Function 'wrapper' appears to be unused (line 23)
+  - Function 'extract_features' appears to be unused (line 585)
+
+Long Lines:
+  - Line is 179 characters (max 120) (line 629)
+  - Line is 132 characters (max 120) (line 637)
+  - Line is 134 characters (max 120) (line 638)
+
+File: ./src/tactician/leverage_sizer.py
+---------------------------------
+
+Dead Code:
+  - Function 'get_leverage_sizing_history' appears to be unused (line 454)
+  - Function 'calculate_leverage' appears to be unused (line 153)
+  - Function 'cleanup' appears to be unused (line 482)
+  - Function 'setup_leverage_sizer' appears to be unused (line 498)
+  - Function 'refresh_step17_configuration' appears to be unused (line 112)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 136)
+  - Line is 138 characters (max 120) (line 137)
+
+File: ./src/tactician/sr_levels_manager.py
+------------------------------------
+
+Dead Code:
+  - Function 'update_levels_with_live_data' appears to be unused (line 405)
+  - Function 'calculate_sr_levels_with_method' appears to be unused (line 331)
+  - Function 'get_sr_levels_for_trading' appears to be unused (line 458)
+  - Function 'create_sr_levels_manager' appears to be unused (line 843)
+  - Function 'calculate_sr_levels_from_backtest' appears to be unused (line 201)
+  - Function 'compare_price_vs_vwap_predictions' appears to be unused (line 524)
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 242)
+  - Line is 139 characters (max 120) (line 266)
+  - Line is 147 characters (max 120) (line 302)
+  - Line is 130 characters (max 120) (line 320)
+  - Line is 128 characters (max 120) (line 812)
+
+File: ./src/tactician/step17_optimized_tactician.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'handle_errors' appears to be unused (line 18)
+  - Function 'get_performance_summary' appears to be unused (line 787)
+  - Function 'get_step17_configuration_summary' appears to be unused (line 801)
+  - Function 'generate_predictions' appears to be unused (line 217)
+  - Function 'update_position' appears to be unused (line 748)
+  - Function 'update_performance_metrics' appears to be unused (line 764)
+  - Function 'wrapper' appears to be unused (line 20)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 95)
+  - Line is 132 characters (max 120) (line 97)
+  - Line is 122 characters (max 120) (line 104)
+  - Line is 122 characters (max 120) (line 106)
+  - Line is 137 characters (max 120) (line 338)
+  - Line is 157 characters (max 120) (line 429)
+  - Line is 149 characters (max 120) (line 430)
+  - Line is 127 characters (max 120) (line 431)
+  - Line is 147 characters (max 120) (line 445)
+  - Line is 139 characters (max 120) (line 446)
+  - Line is 211 characters (max 120) (line 780)
+  - Line is 205 characters (max 120) (line 781)
+  - Line is 153 characters (max 120) (line 782)
+  - Line is 176 characters (max 120) (line 797)
+  - Line is 142 characters (max 120) (line 811)
+  - Line is 128 characters (max 120) (line 813)
+
+File: ./src/tactician/sr_data_integration_simple.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'get_multi_timeframe_data' appears to be unused (line 305)
+  - Function 'get_lookback_period_for_timeframe' appears to be unused (line 346)
+  - Function 'create_sr_data_integration_simple' appears to be unused (line 508)
+  - Function 'validate_data_quality' appears to be unused (line 374)
+  - Function 'cleanup_cache' appears to be unused (line 479)
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 208)
+
+File: ./src/tactician/enhanced_scenario_based_predictor.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'get_enhanced_configuration_summary' appears to be unused (line 853)
+  - Function 'handle_errors' appears to be unused (line 25)
+  - Function 'initialize' appears to be unused (line 200)
+  - Function 'train_model' appears to be unused (line 544)
+  - Function 'predict_scenarios' appears to be unused (line 617)
+  - Function 'extract_comprehensive_features' appears to be unused (line 268)
+  - Function 'wrapper' appears to be unused (line 27)
+
+Long Lines:
+  - Line is 179 characters (max 120) (line 314)
+  - Line is 129 characters (max 120) (line 344)
+  - Line is 122 characters (max 120) (line 609)
+  - Line is 128 characters (max 120) (line 743)
+  - Line is 170 characters (max 120) (line 810)
+  - Line is 132 characters (max 120) (line 839)
+
+File: ./src/tactician/sr_detection_optimization.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'setup_sr_detection_optimizer' appears to be unused (line 1033)
+  - Function 'get_optimized_parameters' appears to be unused (line 977)
+  - Function 'load_optimization_results' appears to be unused (line 1009)
+  - Function 'save_optimization_results' appears to be unused (line 989)
+  - Function 'optimize_sr_detection' appears to be unused (line 273)
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 327)
+  - Line is 135 characters (max 120) (line 370)
+  - Line is 129 characters (max 120) (line 563)
+  - Line is 129 characters (max 120) (line 572)
+  - Line is 133 characters (max 120) (line 761)
+  - Line is 136 characters (max 120) (line 763)
+  - Line is 130 characters (max 120) (line 861)
+
+File: ./src/tactician/ml_target_validator.py
+--------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 55)
+  - Function 'get_validation_history' appears to be unused (line 337)
+  - Function 'cleanup' appears to be unused (line 409)
+  - Function 'get_status' appears to be unused (line 394)
+  - Function 'validate_prediction' appears to be unused (line 235)
+  - Function 'validate_target' appears to be unused (line 132)
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 163)
+  - Line is 141 characters (max 120) (line 179)
+  - Line is 123 characters (max 120) (line 203)
+  - Line is 133 characters (max 120) (line 266)
+  - Line is 132 characters (max 120) (line 299)
+  - Line is 124 characters (max 120) (line 379)
+
+File: ./src/tactician/async_order_executor.py
+---------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 478)
+  - Function 'execute_order' appears to be unused (line 192)
+  - Function 'get_performance_metrics' appears to be unused (line 516)
+  - Function 'get_execution_history' appears to be unused (line 507)
+  - Function 'get_active_executions' appears to be unused (line 498)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 528)
+
+File: ./src/tactician/ml_tactics_manager.py
+-------------------------------------
+
+Dead Code:
+  - Function 'evaluate_exit_signal' appears to be unused (line 1769)
+  - Function 'setup_ml_tactics_manager' appears to be unused (line 1851)
+  - Function 'cleanup' appears to be unused (line 1015)
+  - Function 'execute_ml_tactics' appears to be unused (line 386)
+  - Function 'generate_enhanced_predictions' appears to be unused (line 1103)
+  - Function 'get_ml_decisions' appears to be unused (line 986)
+  - Function 'refresh_step17_configuration' appears to be unused (line 207)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 221)
+  - Line is 131 characters (max 120) (line 227)
+  - Line is 128 characters (max 120) (line 228)
+  - Line is 127 characters (max 120) (line 233)
+  - Line is 134 characters (max 120) (line 238)
+  - Line is 126 characters (max 120) (line 239)
+  - Line is 130 characters (max 120) (line 243)
+  - Line is 122 characters (max 120) (line 244)
+  - Line is 137 characters (max 120) (line 248)
+  - Line is 129 characters (max 120) (line 249)
+  - Line is 130 characters (max 120) (line 1244)
+  - Line is 132 characters (max 120) (line 1249)
+  - Line is 123 characters (max 120) (line 1334)
+  - Line is 131 characters (max 120) (line 1670)
+  - Line is 126 characters (max 120) (line 1809)
+
+File: ./src/tactician/fully_migrated_tactician.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'handle_errors' appears to be unused (line 20)
+  - Function 'get_performance_summary' appears to be unused (line 590)
+  - Function 'get_configuration_summary' appears to be unused (line 609)
+  - Function 'generate_predictions' appears to be unused (line 160)
+  - Function 'update_position' appears to be unused (line 542)
+  - Function 'update_performance_metrics' appears to be unused (line 563)
+  - Function 'wrapper' appears to be unused (line 22)
+
+Long Lines:
+  - Line is 137 characters (max 120) (line 272)
+  - Line is 121 characters (max 120) (line 582)
+  - Line is 176 characters (max 120) (line 605)
+  - Line is 137 characters (max 120) (line 619)
+
+File: ./src/tracking/trade_tracker.py
+-------------------------------
+
+Dead Code:
+  - Function 'update_trade' appears to be unused (line 352)
+  - Function 'cleanup_old_records' appears to be unused (line 679)
+  - Function 'record_trade' appears to be unused (line 223)
+  - Function 'get_performance_metrics' appears to be unused (line 431)
+  - Function 'get_trade' appears to be unused (line 390)
+  - Function 'get_feature_importance_analysis' appears to be unused (line 460)
+  - Function 'export_trade_data' appears to be unused (line 620)
+  - Function 'get_model_performance_summary' appears to be unused (line 435)
+  - Function 'get_regime_analysis_summary' appears to be unused (line 576)
+  - Function 'get_decision_path_analysis' appears to be unused (line 539)
+  - Function 'get_trade_history' appears to be unused (line 394)
+
+Long Lines:
+  - Line is 159 characters (max 120) (line 5)
+
+File: ./src/training/enhanced_lm_config.py
+------------------------------------
+
+Dead Code:
+  - Function 'get_comprehensive_config' appears to be unused (line 250)
+  - Function 'get_memory_efficient_config' appears to be unused (line 271)
+  - Function 'to_dict' appears to be unused (line 172)
+  - Function 'get_optimization_summary' appears to be unused (line 197)
+  - Function 'get_fast_config' appears to be unused (line 232)
+  - Function 'validate_timeout' appears to be unused (line 104)
+  - Function 'validate_ranges' appears to be unused (line 82)
+  - Function 'validate_methods' appears to be unused (line 50)
+  - Function 'from_dict' appears to be unused (line 177)
+  - Function 'validate_config' appears to be unused (line 181)
+
+File: ./src/training/data_cleaning.py
+-------------------------------
+
+Dead Code:
+  - Function 'handle_missing_data' appears to be unused (line 7)
+
+File: ./src/training/enhanced_training_manager_enhanced.py
+----------------------------------------------------
+
+Duplicate Imports:
+  - Import 'import pandas' appears on lines: 1892, 1928, 1959
+
+Long Lines:
+  - Line is 203 characters (max 120) (line 72)
+  - Line is 184 characters (max 120) (line 113)
+  - Line is 137 characters (max 120) (line 168)
+  - Line is 121 characters (max 120) (line 169)
+  - Line is 149 characters (max 120) (line 170)
+  - Line is 121 characters (max 120) (line 189)
+  - Line is 132 characters (max 120) (line 203)
+  - Line is 122 characters (max 120) (line 297)
+  - Line is 123 characters (max 120) (line 310)
+  - Line is 125 characters (max 120) (line 317)
+  - Line is 123 characters (max 120) (line 334)
+  - Line is 124 characters (max 120) (line 339)
+  - Line is 126 characters (max 120) (line 341)
+  - Line is 125 characters (max 120) (line 445)
+  - Line is 194 characters (max 120) (line 452)
+  - Line is 122 characters (max 120) (line 462)
+  - Line is 289 characters (max 120) (line 482)
+  - Line is 244 characters (max 120) (line 485)
+  - Line is 261 characters (max 120) (line 498)
+  - Line is 302 characters (max 120) (line 516)
+  - Line is 282 characters (max 120) (line 517)
+  - Line is 133 characters (max 120) (line 529)
+  - Line is 305 characters (max 120) (line 530)
+  - Line is 300 characters (max 120) (line 531)
+  - Line is 268 characters (max 120) (line 546)
+  - Line is 268 characters (max 120) (line 547)
+  - Line is 242 characters (max 120) (line 575)
+  - Line is 237 characters (max 120) (line 576)
+  - Line is 242 characters (max 120) (line 577)
+  - Line is 242 characters (max 120) (line 578)
+  - Line is 289 characters (max 120) (line 585)
+  - Line is 241 characters (max 120) (line 594)
+  - Line is 238 characters (max 120) (line 603)
+  - Line is 247 characters (max 120) (line 609)
+  - Line is 277 characters (max 120) (line 610)
+  - Line is 252 characters (max 120) (line 611)
+  - Line is 267 characters (max 120) (line 612)
+  - Line is 244 characters (max 120) (line 618)
+  - Line is 289 characters (max 120) (line 620)
+  - Line is 264 characters (max 120) (line 625)
+  - Line is 269 characters (max 120) (line 626)
+  - Line is 229 characters (max 120) (line 627)
+  - Line is 260 characters (max 120) (line 636)
+  - Line is 129 characters (max 120) (line 1911)
+  - Line is 131 characters (max 120) (line 2003)
+  - Line is 123 characters (max 120) (line 2012)
+  - Line is 121 characters (max 120) (line 2158)
+  - Line is 127 characters (max 120) (line 2430)
+  - Line is 131 characters (max 120) (line 2461)
+  - Line is 123 characters (max 120) (line 2547)
+  - Line is 125 characters (max 120) (line 2548)
+  - Line is 200 characters (max 120) (line 2549)
+  - Line is 158 characters (max 120) (line 2550)
+  - Line is 150 characters (max 120) (line 2551)
+  - Line is 123 characters (max 120) (line 2555)
+  - Line is 124 characters (max 120) (line 2556)
+  - Line is 121 characters (max 120) (line 2561)
+  - Line is 121 characters (max 120) (line 2566)
+  - Line is 157 characters (max 120) (line 2572)
+  - Line is 126 characters (max 120) (line 2578)
+  - Line is 157 characters (max 120) (line 2584)
+  - Line is 126 characters (max 120) (line 2590)
+  - Line is 122 characters (max 120) (line 2776)
+
+File: ./src/training/enhanced_dynamic_feature_selection.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'get_correlation_analysis' appears to be unused (line 657)
+  - Function 'select_features_dynamically' appears to be unused (line 54)
+  - Function 'get_feature_importance_summary' appears to be unused (line 640)
+
+Duplicate Imports:
+  - Import 'from scipy.cluster.hierarchy import fcluster' appears on lines: 246, 510
+
+Long Lines:
+  - Line is 140 characters (max 120) (line 47)
+  - Line is 137 characters (max 120) (line 76)
+  - Line is 125 characters (max 120) (line 134)
+  - Line is 137 characters (max 120) (line 180)
+  - Line is 121 characters (max 120) (line 231)
+  - Line is 133 characters (max 120) (line 277)
+  - Line is 131 characters (max 120) (line 280)
+  - Line is 126 characters (max 120) (line 300)
+  - Line is 132 characters (max 120) (line 331)
+  - Line is 138 characters (max 120) (line 373)
+  - Line is 126 characters (max 120) (line 448)
+  - Line is 136 characters (max 120) (line 612)
+  - Line is 131 characters (max 120) (line 616)
+
+File: ./src/training/data_access_utils.py
+-----------------------------------
+
+Dead Code:
+  - Function 'get_validation_features_and_labels' appears to be unused (line 324)
+  - Function 'get_full_dataset' appears to be unused (line 340)
+  - Function 'get_training_features_and_labels' appears to be unused (line 316)
+  - Function 'load_validation_data_for_optimization' appears to be unused (line 72)
+  - Function 'get_test_features_and_labels' appears to be unused (line 332)
+  - Function 'ensure_temporal_consistency' appears to be unused (line 272)
+  - Function 'update_dataset_with_new_features' appears to be unused (line 177)
+  - Function 'validate_dataset_integrity' appears to be unused (line 145)
+  - Function 'get_time_splits_info' appears to be unused (line 246)
+  - Function 'check_unified_database_exists' appears to be unused (line 208)
+
+File: ./src/training/gpu_acceleration_m1.py
+-------------------------------------
+
+Dead Code:
+  - Function 'get_performance_stats' appears to be unused (line 302)
+
+File: ./src/training/regularization.py
+--------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 254)
+  - Function 'validate_and_report_regularization' appears to be unused (line 126)
+  - Function 'optimize_regularization_for_model' appears to be unused (line 216)
+  - Function 'apply_regularization_to_ensembles' appears to be unused (line 67)
+  - Function 'forward' appears to be unused (line 419)
+
+File: ./src/training/feature_engineering_optimizer.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'get_optimized_parameters' appears to be unused (line 1005)
+  - Function 'optimize_feature_parameters' appears to be unused (line 140)
+
+Duplicate Imports:
+  - Import 'from sklearn.ensemble import RandomForestClassifier' appears on lines: 21, 965
+  - Import 'from sklearn.model_selection import cross_val_score' appears on lines: 23, 966
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 197)
+  - Line is 139 characters (max 120) (line 698)
+  - Line is 121 characters (max 120) (line 778)
+  - Line is 124 characters (max 120) (line 792)
+  - Line is 123 characters (max 120) (line 1013)
+
+File: ./src/training/feature_integration.py
+-------------------------------------
+
+Dead Code:
+  - Function 'get_feature_importance' appears to be unused (line 300)
+  - Function 'get_liquidity_feature_summary' appears to be unused (line 327)
+  - Function 'integrate_features' appears to be unused (line 90)
+
+File: ./src/training/feature_engineering.py
+-------------------------------------
+
+Dead Code:
+  - Function 'technical_indicators' appears to be unused (line 95)
+  - Function 'volatility_features' appears to be unused (line 70)
+  - Function 'volume_features' appears to be unused (line 82)
+  - Function 'generate_labels' appears to be unused (line 36)
+  - Function 'generate' appears to be unused (line 29)
+  - Function 'moving_averages' appears to be unused (line 57)
+  - Function 'price_features' appears to be unused (line 44)
+
+File: ./src/training/enhanced_feature_engineering_optimizer.py
+--------------------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 266)
+  - Function 'optimize_feature_parameters_enhanced' appears to be unused (line 130)
+  - Function 'get_enhanced_optimized_parameters' appears to be unused (line 908)
+
+Duplicate Imports:
+  - Import 'import itertools' appears on lines: 553, 809
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 916)
+
+File: ./src/training/enhanced_matrix_operations.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'select_features_step2' appears to be unused (line 993)
+  - Function 'comprehensive_matrix_enhancement' appears to be unused (line 1553)
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 203)
+  - Line is 121 characters (max 120) (line 1003)
+  - Line is 129 characters (max 120) (line 1019)
+  - Line is 128 characters (max 120) (line 1082)
+  - Line is 127 characters (max 120) (line 1210)
+  - Line is 133 characters (max 120) (line 1228)
+  - Line is 123 characters (max 120) (line 1287)
+  - Line is 143 characters (max 120) (line 1295)
+  - Line is 138 characters (max 120) (line 1313)
+  - Line is 123 characters (max 120) (line 1362)
+  - Line is 123 characters (max 120) (line 1367)
+  - Line is 125 characters (max 120) (line 1402)
+  - Line is 270 characters (max 120) (line 1489)
+  - Line is 126 characters (max 120) (line 1499)
+  - Line is 132 characters (max 120) (line 1649)
+
+File: ./src/training/model_saving_utils.py
+------------------------------------
+
+Dead Code:
+  - Function 'update_model_probabilities' appears to be unused (line 319)
+  - Function 'load_multi_output_model_with_probabilities' appears to be unused (line 225)
+  - Function 'list_models_with_probabilities' appears to be unused (line 402)
+  - Function 'get_model_probability_summary' appears to be unused (line 432)
+  - Function 'generate_and_save_model_probabilities' appears to be unused (line 356)
+  - Function 'batch_validate_models' appears to be unused (line 468)
+  - Function 'save_multi_output_model_with_probabilities' appears to be unused (line 84)
+
+File: ./src/training/probabilistic_model_integration.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'factory' appears to be unused (line 290)
+
+Duplicate Imports:
+  - Import 'from sklearn.ensemble import RandomForestClassifier' appears on lines: 293, 312
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 339)
+  - Line is 123 characters (max 120) (line 342)
+  - Line is 127 characters (max 120) (line 372)
+
+File: ./src/training/enhanced_lm_optimizer.py
+---------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 1577)
+  - Function 'optimize_lm_model' appears to be unused (line 454)
+  - Function 'log_trial' appears to be unused (line 793)
+  - Function 'forward' appears to be unused (line 1715)
+
+Duplicate Imports:
+  - Import 'import asyncio' appears on lines: 13, 1071
+  - Import 'import json' appears on lines: 14, 268, 591
+  - Import 'from datetime import datetime' appears on lines: 16, 270, 593
+  - Import 'from sklearn.model_selection import TimeSeriesSplit' appears on lines: 35, 1357
+  - Import 'import os' appears on lines: 269, 592
+  - Import 'from optuna.pruners import MedianPruner' appears on lines: 395, 404
+  - Import 'import mlflow' appears on lines: 430, 824
+  - Import 'import wandb' appears on lines: 441, 885
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 369)
+  - Line is 129 characters (max 120) (line 370)
+  - Line is 127 characters (max 120) (line 420)
+  - Line is 136 characters (max 120) (line 529)
+  - Line is 150 characters (max 120) (line 573)
+  - Line is 175 characters (max 120) (line 588)
+  - Line is 147 characters (max 120) (line 795)
+  - Line is 127 characters (max 120) (line 929)
+  - Line is 128 characters (max 120) (line 990)
+  - Line is 122 characters (max 120) (line 1016)
+  - Line is 129 characters (max 120) (line 1203)
+  - Line is 133 characters (max 120) (line 1396)
+  - Line is 124 characters (max 120) (line 1423)
+  - Line is 126 characters (max 120) (line 1485)
+  - Line is 134 characters (max 120) (line 1573)
+  - Line is 159 characters (max 120) (line 1605)
+  - Line is 147 characters (max 120) (line 1624)
+  - Line is 133 characters (max 120) (line 1670)
+
+File: ./src/training/enhanced_training_manager_optimized.py
+-----------------------------------------------------
+
+Dead Code:
+  - Function 'materialize_projection' appears to be unused (line 1265)
+  - Function 'get_optimization_stats' appears to be unused (line 1137)
+  - Function 'get_memory_profile' appears to be unused (line 1133)
+  - Function 'initialize' appears to be unused (line 786)
+  - Function 'cleanup' appears to be unused (line 1156)
+  - Function 'write_partitioned_dataset' appears to be unused (line 1205)
+  - Function 'execute_optimized_training' appears to be unused (line 818)
+  - Function 'write_flat_parquet' appears to be unused (line 1187)
+  - Function 'get_subset' appears to be unused (line 654)
+  - Function 'get_parquet_info' appears to be unused (line 1351)
+
+Duplicate Imports:
+  - Import 'import pyarrow' appears on lines: 18, 420
+  - Import 'import pyarrow.parquet' appears on lines: 20, 421
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 31)
+  - Line is 135 characters (max 120) (line 178)
+
+File: ./src/training/multi_objective_optimizer.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'run_optimization' appears to be unused (line 256)
+  - Function 'objective' appears to be unused (line 76)
+
+File: ./src/training/data_sharing_manager.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_data_sharing_manager' appears to be unused (line 443)
+  - Function 'to_dict' appears to be unused (line 117)
+  - Function 'get_unified_data' appears to be unused (line 231)
+  - Function 'get_cached_data' appears to be unused (line 313)
+  - Function 'reset_data_sharing_manager' appears to be unused (line 451)
+  - Function 'log_cache_stats' appears to be unused (line 425)
+  - Function 'cache_data' appears to be unused (line 348)
+
+File: ./src/training/bayesian_optimizer.py
+------------------------------------
+
+Dead Code:
+  - Function 'model_optimization_objective' appears to be unused (line 299)
+  - Function 'suggest_hyperparameter_ranges' appears to be unused (line 589)
+  - Function 'run_decomposed_optimization' appears to be unused (line 424)
+  - Function 'feature_engineering_objective' appears to be unused (line 270)
+  - Function 'trading_strategy_objective' appears to be unused (line 332)
+
+File: ./src/training/memory_profiler.py
+---------------------------------
+
+Dead Code:
+  - Function 'generate_memory_report' appears to be unused (line 460)
+  - Function 'check_for_leaks' appears to be unused (line 552)
+  - Function 'optimize_memory_usage' appears to be unused (line 413)
+
+File: ./src/training/integration_guide.py
+-----------------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 119)
+
+File: ./src/training/matrix_diverse_lookback_optimizer.py
+---------------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 550)
+  - Function 'find_diverse_lookback_periods_matrix' appears to be unused (line 136)
+  - Function 'get_optimized_feature_parameters' appears to be unused (line 888)
+  - Function 'constraint' appears to be unused (line 568)
+
+Long Lines:
+  - Line is 139 characters (max 120) (line 897)
+  - Line is 151 characters (max 120) (line 901)
+  - Line is 122 characters (max 120) (line 1209)
+  - Line is 132 characters (max 120) (line 1296)
+  - Line is 122 characters (max 120) (line 1387)
+  - Line is 122 characters (max 120) (line 1411)
+  - Line is 122 characters (max 120) (line 1420)
+  - Line is 122 characters (max 120) (line 1428)
+  - Line is 122 characters (max 120) (line 1440)
+  - Line is 122 characters (max 120) (line 1448)
+
+File: ./src/training/unified_data_orchestrator.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'cleanup_unified_data_orchestrator' appears to be unused (line 1556)
+  - Function 'get_multi_timeframe_data' appears to be unused (line 570)
+  - Function 'initialize_unified_data_orchestrator' appears to be unused (line 1539)
+  - Function 'get_cache_info' appears to be unused (line 1513)
+  - Function 'get_stats' appears to be unused (line 1505)
+  - Function 'get_unified_data_orchestrator' appears to be unused (line 1527)
+
+File: ./src/training/timeframe_relevance_analyzer.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'get_optimized_ensemble_config' appears to be unused (line 801)
+  - Function 'analyze_timeframe_relevance' appears to be unused (line 60)
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 678)
+  - Line is 139 characters (max 120) (line 680)
+  - Line is 144 characters (max 120) (line 682)
+
+File: ./src/training/dual_model_system.py
+-----------------------------------
+
+Dead Code:
+  - Function 'get_current_signal' appears to be unused (line 1394)
+  - Function 'setup_dual_model_system' appears to be unused (line 1696)
+  - Function 'should_trigger_training' appears to be unused (line 1624)
+  - Function 'get_system_info' appears to be unused (line 1637)
+  - Function 'clear_current_signal' appears to be unused (line 1398)
+  - Function 'make_trading_decision' appears to be unused (line 526)
+
+Duplicate Imports:
+  - Import 'import pickle' appears on lines: 410, 438
+
+File: ./src/training/performance_comparison.py
+----------------------------------------
+
+Dead Code:
+  - Function 'setup_performance_comparison' appears to be unused (line 729)
+  - Function 'compare_ensemble_methods' appears to be unused (line 166)
+  - Function 'compare_optimization_strategies' appears to be unused (line 221)
+  - Function 'compare_model_performances' appears to be unused (line 98)
+  - Function 'measure_trading_performance_improvements' appears to be unused (line 280)
+  - Function 'generate_performance_report' appears to be unused (line 554)
+
+File: ./src/training/adaptive_optimizer.py
+------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 325)
+  - Function 'get_regime_insights' appears to be unused (line 258)
+  - Function 'optimize_for_regime' appears to be unused (line 228)
+  - Function 'detect_market_regime' appears to be unused (line 103)
+
+File: ./src/training/demo_pipeline_execution.py
+-----------------------------------------
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 265)
+  - Line is 192 characters (max 120) (line 349)
+
+File: ./src/training/launcher_integration_patch.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'enable_optimizations_in_launcher' appears to be unused (line 386)
+  - Function 'run_optimized_enhanced_blank_training' appears to be unused (line 300)
+  - Function 'run_optimized_backtesting' appears to be unused (line 315)
+  - Function 'patch_launcher' appears to be unused (line 343)
+  - Function 'check_optimization_status' appears to be unused (line 330)
+
+File: ./src/training/optimized_feature_selection_manager.py
+-----------------------------------------------------
+
+Dead Code:
+  - Function 'save_selection_metadata' appears to be unused (line 770)
+  - Function 'apply_matrix_operations' appears to be unused (line 861)
+  - Function 'select_features_optimized' appears to be unused (line 106)
+  - Function 'apply_vectorized_operations' appears to be unused (line 780)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 148)
+  - Line is 130 characters (max 120) (line 175)
+  - Line is 122 characters (max 120) (line 354)
+  - Line is 126 characters (max 120) (line 357)
+  - Line is 165 characters (max 120) (line 417)
+  - Line is 126 characters (max 120) (line 443)
+  - Line is 121 characters (max 120) (line 456)
+  - Line is 152 characters (max 120) (line 474)
+  - Line is 129 characters (max 120) (line 484)
+  - Line is 127 characters (max 120) (line 500)
+  - Line is 127 characters (max 120) (line 517)
+  - Line is 129 characters (max 120) (line 543)
+
+File: ./src/training/feature_selection_manager.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'select_features_step2' appears to be unused (line 40)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 50)
+  - Line is 129 characters (max 120) (line 66)
+  - Line is 127 characters (max 120) (line 216)
+  - Line is 133 characters (max 120) (line 234)
+  - Line is 123 characters (max 120) (line 293)
+  - Line is 143 characters (max 120) (line 301)
+  - Line is 123 characters (max 120) (line 319)
+  - Line is 270 characters (max 120) (line 405)
+  - Line is 126 characters (max 120) (line 415)
+  - Line is 128 characters (max 120) (line 437)
+  - Line is 138 characters (max 120) (line 478)
+  - Line is 123 characters (max 120) (line 527)
+
+File: ./src/training/progress_manager.py
+----------------------------------
+
+Dead Code:
+  - Function 'step_exists' appears to be unused (line 216)
+  - Function 'get_step_timestamp' appears to be unused (line 230)
+  - Function 'clear_progress' appears to be unused (line 181)
+  - Function 'get_latest_step' appears to be unused (line 131)
+  - Function 'get_all_progress' appears to be unused (line 156)
+  - Function 'save_step_progress' appears to be unused (line 41)
+
+File: ./src/training/wavelet_feature_selection_demo.py
+------------------------------------------------
+
+Dead Code:
+  - Function 'save_results' appears to be unused (line 355)
+
+File: ./src/training/calibration_manager.py
+-------------------------------------
+
+Dead Code:
+  - Function 'setup_calibration_manager' appears to be unused (line 583)
+  - Function 'stop' appears to be unused (line 568)
+  - Function 'get_calibration_results' appears to be unused (line 554)
+  - Function 'calibrate_models' appears to be unused (line 157)
+  - Function 'get_calibration_status' appears to be unused (line 539)
+
+File: ./src/training/model_probability_generator.py
+---------------------------------------------
+
+Dead Code:
+  - Function 'generate_calibrated_probabilities' appears to be unused (line 283)
+  - Function 'validate_probabilities' appears to be unused (line 186)
+  - Function 'generate_model_probabilities' appears to be unused (line 327)
+  - Function 'generate_ensemble_probabilities' appears to be unused (line 218)
+
+File: ./src/training/training_orchestrator.py
+---------------------------------------
+
+Dead Code:
+  - Function 'get_training_results' appears to be unused (line 668)
+  - Function 'validate_training_pipeline' appears to be unused (line 111)
+  - Function 'setup_training_orchestrator' appears to be unused (line 709)
+  - Function 'get_training_status' appears to be unused (line 652)
+  - Function 'execute_training' appears to be unused (line 478)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 226)
+  - Line is 127 characters (max 120) (line 644)
+
+File: ./src/training/advanced_neural_models.py
+----------------------------------------
+
+Dead Code:
+  - Function 'create_neural_model' appears to be unused (line 543)
+  - Function 'predict' appears to be unused (line 506)
+  - Function 'predict_proba' appears to be unused (line 524)
+  - Function 'fit' appears to be unused (line 450)
+  - Function 'forward' appears to be unused (line 72)
+
+File: ./src/training/comprehensive_feature_optimizer.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'generate_comprehensive_features' appears to be unused (line 141)
+  - Function 'save_optimization_results' appears to be unused (line 879)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 459)
+  - Line is 131 characters (max 120) (line 522)
+  - Line is 134 characters (max 120) (line 595)
+  - Line is 126 characters (max 120) (line 653)
+  - Line is 124 characters (max 120) (line 661)
+  - Line is 122 characters (max 120) (line 777)
+  - Line is 123 characters (max 120) (line 854)
+  - Line is 127 characters (max 120) (line 863)
+  - Line is 125 characters (max 120) (line 868)
+  - Line is 127 characters (max 120) (line 871)
+  - Line is 125 characters (max 120) (line 876)
+
+File: ./src/training/model_specific_pruning.py
+----------------------------------------
+
+Dead Code:
+  - Function 'prune_for_step7_ensemble' appears to be unused (line 364)
+  - Function 'prune_for_step6_hmm_models' appears to be unused (line 264)
+  - Function 'prune_for_step9_tactician' appears to be unused (line 408)
+  - Function 'prune_for_step6_5_unified_regime' appears to be unused (line 310)
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 100)
+  - Line is 121 characters (max 120) (line 234)
+  - Line is 147 characters (max 120) (line 472)
+  - Line is 141 characters (max 120) (line 512)
+  - Line is 138 characters (max 120) (line 520)
+  - Line is 123 characters (max 120) (line 592)
+  - Line is 124 characters (max 120) (line 603)
+
+File: ./src/training/matrix_enhancement_manager.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'enhance_training_features' appears to be unused (line 491)
+
+Long Lines:
+  - Line is 133 characters (max 120) (line 131)
+  - Line is 153 characters (max 120) (line 192)
+  - Line is 132 characters (max 120) (line 558)
+
+File: ./src/training/factory.py
+-------------------------
+
+Dead Code:
+  - Function 'get_optimization_recommendations' appears to be unused (line 164)
+  - Function 'create_optimized_training_system' appears to be unused (line 150)
+  - Function 'get_optimization_summary' appears to be unused (line 107)
+
+File: ./src/training/training_manager.py
+----------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 1080)
+  - Function 'get_training_history' appears to be unused (line 1027)
+  - Function 'get_training_results' appears to be unused (line 998)
+  - Function 'setup_training_manager' appears to be unused (line 1111)
+  - Function 'get_training_status' appears to be unused (line 1051)
+  - Function 'execute_training' appears to be unused (line 325)
+
+File: ./src/training/enhanced_matrix_gpu_integration.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'gpu_optimized_training_pipeline' appears to be unused (line 205)
+  - Function 'get_integration_summary' appears to be unused (line 425)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 191)
+
+File: ./src/training/enhanced_coarse_optimizer.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'progress_callback' appears to be unused (line 1000)
+  - Function 'run' appears to be unused (line 1097)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 678)
+
+File: ./src/training/hmm_regime_barrier_optimizer.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 183)
+  - Function 'optimize_hmm_regime_barriers' appears to be unused (line 865)
+  - Function 'get_optimized_barriers' appears to be unused (line 790)
+  - Function 'get_optimized_hmm_barriers' appears to be unused (line 886)
+  - Function 'get_regime_barriers' appears to be unused (line 809)
+  - Function 'load_barrier_map' appears to be unused (line 849)
+
+Duplicate Imports:
+  - Import 'import json' appears on lines: 843, 851, 660
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 529)
+  - Line is 138 characters (max 120) (line 530)
+  - Line is 147 characters (max 120) (line 577)
+  - Line is 140 characters (max 120) (line 578)
+  - Line is 156 characters (max 120) (line 579)
+  - Line is 160 characters (max 120) (line 580)
+  - Line is 138 characters (max 120) (line 704)
+  - Line is 138 characters (max 120) (line 705)
+
+File: ./src/training/ensemble_manager.py
+----------------------------------
+
+Dead Code:
+  - Function 'get_ensemble_results' appears to be unused (line 675)
+  - Function 'stop' appears to be unused (line 689)
+  - Function 'get_ensemble_status' appears to be unused (line 660)
+  - Function 'setup_ensemble_manager' appears to be unused (line 706)
+  - Function 'create_ensembles' appears to be unused (line 162)
+
+Long Lines:
+  - Line is 145 characters (max 120) (line 625)
+
+File: ./src/training/model_training_integrator.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 641)
+  - Function 'train_ensemble_models' appears to be unused (line 481)
+  - Function 'load_trained_models' appears to be unused (line 545)
+  - Function 'train_ml_confidence_predictor' appears to be unused (line 410)
+  - Function 'setup_model_training_integrator' appears to be unused (line 665)
+  - Function 'get_model_training_integrator' appears to be unused (line 678)
+
+Long Lines:
+  - Line is 142 characters (max 120) (line 280)
+  - Line is 137 characters (max 120) (line 283)
+
+File: ./src/training/di_training_manager.py
+-------------------------------------
+
+Dead Code:
+  - Function 'run_training_pipeline' appears to be unused (line 198)
+  - Function 'get_training_status' appears to be unused (line 422)
+
+Duplicate Imports:
+  - Import 'from src.training.core.pipeline_base import TrainingPipeline' appears on lines: 98, 107
+
+File: ./src/training/probability_calculators.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'calculate_magnitude_probability' appears to be unused (line 130)
+  - Function 'get_probability_calculator' appears to be unused (line 404)
+  - Function 'calculate_direction_probability' appears to be unused (line 94)
+  - Function 'calculate_barrier_avoidance_probability' appears to be unused (line 171)
+  - Function 'calculate_triple_barrier_probability' appears to be unused (line 42)
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 404)
+
+File: ./src/training/wavelet_feature_selection_workflow.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'run_complete_workflow' appears to be unused (line 927)
+
+Long Lines:
+  - Line is 142 characters (max 120) (line 268)
+  - Line is 137 characters (max 120) (line 271)
+
+File: ./src/training/data_efficiency_optimizer.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'get_latest_checkpoint' appears to be unused (line 880)
+  - Function 'create_processing_checkpoint' appears to be unused (line 858)
+  - Function 'load_data_with_caching' appears to be unused (line 221)
+  - Function 'store_features_in_database' appears to be unused (line 673)
+  - Function 'migrate_pickle_to_parquet' appears to be unused (line 1002)
+  - Function 'cleanup_old_data' appears to be unused (line 1059)
+  - Function 'process_data_in_chunks' appears to be unused (line 569)
+  - Function 'optimize_dataframe_memory' appears to be unused (line 900)
+  - Function 'load_features_from_database' appears to be unused (line 736)
+  - Function 'segment_data_by_time' appears to be unused (line 524)
+  - Function 'get_database_stats' appears to be unused (line 952)
+
+Duplicate Imports:
+  - Import 'import pickle' appears on lines: 1016, 444
+
+File: ./src/training/optimization_manager.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_optimization_status' appears to be unused (line 617)
+  - Function 'get_optimization_results' appears to be unused (line 632)
+  - Function 'stop' appears to be unused (line 646)
+  - Function 'setup_optimization_manager' appears to be unused (line 661)
+  - Function 'optimize_models' appears to be unused (line 160)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 386)
+
+File: ./src/training/validator.py
+---------------------------
+
+Dead Code:
+  - Function 'add_error' appears to be unused (line 23)
+  - Function 'get_step_errors' appears to be unused (line 151)
+  - Function 'clear_step_errors' appears to be unused (line 140)
+  - Function 'get_step_summary' appears to be unused (line 85)
+  - Function 'validate_step_results' appears to be unused (line 102)
+  - Function 'can_proceed_to_next_step' appears to be unused (line 49)
+  - Function 'validate_step_thresholds' appears to be unused (line 112)
+  - Function 'add_warning' appears to be unused (line 35)
+  - Function 'get_step_warnings' appears to be unused (line 155)
+  - Function 'clear_all_errors' appears to be unused (line 145)
+  - Function 'has_critical_errors' appears to be unused (line 94)
+  - Function 'get_successful_steps' appears to be unused (line 167)
+  - Function 'get_failed_steps' appears to be unused (line 159)
+  - Function 'get_critical_errors' appears to be unused (line 98)
+  - Function 'set_step_status' appears to be unused (line 41)
+
+File: ./src/training/vectorized_training_pipeline.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'optimize_for_performance' appears to be unused (line 200)
+  - Function 'enhance_training_data' appears to be unused (line 87)
+  - Function 'get_pipeline_summary' appears to be unused (line 302)
+  - Function 'optimize_for_memory' appears to be unused (line 229)
+  - Function 'optimize_for_accuracy' appears to be unused (line 260)
+
+File: ./src/training/enhanced_optimization_orchestrator.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'get_optimization_history' appears to be unused (line 372)
+  - Function 'run_scheduled_optimization' appears to be unused (line 410)
+  - Function 'get_performance_trends' appears to be unused (line 382)
+
+File: ./src/training/enhanced_multi_timeframe_optimizer.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'save_optimization_results' appears to be unused (line 620)
+  - Function 'generate_optimized_multi_timeframe_features' appears to be unused (line 101)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 254)
+  - Line is 126 characters (max 120) (line 307)
+  - Line is 126 characters (max 120) (line 308)
+  - Line is 122 characters (max 120) (line 602)
+  - Line is 129 characters (max 120) (line 605)
+
+File: ./src/training/data_manager.py
+------------------------------
+
+Dead Code:
+  - Function 'get_features_and_labels' appears to be unused (line 662)
+  - Function 'validate_database_integrity' appears to be unused (line 691)
+  - Function 'create_unified_database' appears to be unused (line 67)
+  - Function 'update_data_split' appears to be unused (line 626)
+
+Duplicate Imports:
+  - Import 'import os' appears on lines: 3, 198
+  - Import 'import json' appears on lines: 485, 621
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 303)
+
+File: ./src/training/probabilistic_bayesian_optimizer.py
+--------------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 353)
+  - Function 'create_tactician_model' appears to be unused (line 601)
+  - Function 'plot_optimization_results' appears to be unused (line 564)
+  - Function 'get_recommended_hyperparameters' appears to be unused (line 496)
+  - Function 'create_analyst_model' appears to be unused (line 617)
+
+Duplicate Imports:
+  - Import 'from sklearn.ensemble import RandomForestClassifier' appears on lines: 605, 621
+
+Long Lines:
+  - Line is 125 characters (max 120) (line 169)
+  - Line is 123 characters (max 120) (line 186)
+  - Line is 124 characters (max 120) (line 577)
+  - Line is 128 characters (max 120) (line 578)
+
+File: ./src/training/diverse_lookback_optimizer.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'get_diverse_lookback_periods' appears to be unused (line 689)
+  - Function 'find_diverse_lookback_periods' appears to be unused (line 74)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 697)
+
+File: ./src/training/optimized_backtester.py
+--------------------------------------
+
+Dead Code:
+  - Function 'progressive_evaluate' appears to be unused (line 312)
+  - Function 'evaluate_batch_parallel' appears to be unused (line 246)
+  - Function 'get_performance_stats' appears to be unused (line 347)
+
+File: ./src/training/optimization/cached_optimizer.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'get_cache_statistics' appears to be unused (line 376)
+  - Function 'cleanup_cache' appears to be unused (line 348)
+  - Function 'run_optimization_with_warm_start' appears to be unused (line 274)
+
+File: ./src/training/optimization/transfer_learning_system.py
+-------------------------------------------------------
+
+Dead Code:
+  - Function 'train_meta_models' appears to be unused (line 446)
+  - Function 'optimize_with_transfer' appears to be unused (line 531)
+  - Function 'predict_optimal_strategy' appears to be unused (line 489)
+
+File: ./src/training/optimization/progressive_optimizer.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'run_progressive_optimization' appears to be unused (line 323)
+  - Function 'tier1_objective' appears to be unused (line 104)
+  - Function 'tier3_objective' appears to be unused (line 267)
+  - Function 'tier2_objective' appears to be unused (line 186)
+  - Function 'get_progressive_statistics' appears to be unused (line 553)
+
+File: ./src/training/optimization/problem_specific_strategies.py
+----------------------------------------------------------
+
+Dead Code:
+  - Function 'select_and_apply_strategy' appears to be unused (line 618)
+
+File: ./src/training/optimization/parallel_optimizer.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'risk_objective' appears to be unused (line 196)
+  - Function 'confidence_objective' appears to be unused (line 112)
+  - Function 'optimize_parameters_parallel' appears to be unused (line 231)
+  - Function 'sizing_objective' appears to be unused (line 153)
+  - Function 'get_parallel_statistics' appears to be unused (line 412)
+
+File: ./src/training/optimization/rollback_manager.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'execute_rollback' appears to be unused (line 310)
+  - Function 'delete_rollback_point' appears to be unused (line 535)
+  - Function 'get_rollback_points' appears to be unused (line 464)
+  - Function 'get_rollback_point_details' appears to be unused (line 490)
+  - Function 'get_rollback_history' appears to be unused (line 521)
+  - Function 'setup_rollback_manager' appears to be unused (line 587)
+  - Function 'get_rollback_summary' appears to be unused (line 558)
+  - Function 'create_rollback_point' appears to be unused (line 101)
+
+File: ./src/training/optimization/computational_optimization_manager.py
+-----------------------------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 1697)
+  - Function 'get_optimization_statistics' appears to be unused (line 1717)
+  - Function 'get_adaptive_params' appears to be unused (line 554)
+  - Function 'evaluate_progressively' appears to be unused (line 307)
+  - Function 'get_surrogate_statistics' appears to be unused (line 1462)
+  - Function 'initialize' appears to be unused (line 1614)
+  - Function 'train_incrementally' appears to be unused (line 484)
+  - Function 'cleanup' appears to be unused (line 391)
+  - Function 'evaluate_batch' appears to be unused (line 398)
+  - Function 'get_cached_selection' appears to be unused (line 663)
+  - Function 'get_subset' appears to be unused (line 1553)
+  - Function 'optimize_parameters' appears to be unused (line 1663)
+  - Function 'get_features' appears to be unused (line 645)
+  - Function 'create_computational_optimization_manager' appears to be unused (line 1745)
+
+Long Lines:
+  - Line is 132 characters (max 120) (line 1316)
+
+File: ./src/training/optimization/advanced_surrogate_models.py
+--------------------------------------------------------
+
+Dead Code:
+  - Function 'create_model' appears to be unused (line 593)
+  - Function 'add_task' appears to be unused (line 488)
+  - Function 'get_model_info' appears to be unused (line 70)
+  - Function 'save_model' appears to be unused (line 74)
+  - Function 'add_model' appears to be unused (line 105)
+  - Function 'get_available_models' appears to be unused (line 607)
+  - Function 'load_model' appears to be unused (line 85)
+
+File: ./src/training/optimization/adaptive_trial_allocator.py
+-------------------------------------------------------
+
+Dead Code:
+  - Function 'check_dynamic_reallocation' appears to be unused (line 269)
+  - Function 'calculate_optimal_allocation' appears to be unused (line 312)
+  - Function 'get_allocation_statistics' appears to be unused (line 362)
+  - Function 'allocate_trials_adaptively' appears to be unused (line 176)
+  - Function 'track_parameter_performance' appears to be unused (line 247)
+  - Function 'get_parameter_performance_summary' appears to be unused (line 386)
+  - Function 'validate_allocation' appears to be unused (line 412)
+
+File: ./src/training/tests/test_regime_change_prediction.py
+-----------------------------------------------------
+
+Dead Code:
+  - Function 'test_sequence_creation' appears to be unused (line 132)
+  - Function 'sample_hmm_data' appears to be unused (line 20)
+  - Function 'temp_data_dir' appears to be unused (line 66)
+  - Function 'test_vocabulary_creation' appears to be unused (line 102)
+  - Function 'test_hmm_based_training_step' appears to be unused (line 188)
+  - Function 'test_config_integration' appears to be unused (line 222)
+  - Function 'sample_feature_data' appears to be unused (line 53)
+  - Function 'test_feature_preparation' appears to be unused (line 163)
+  - Function 'test_regime_change_detection' appears to be unused (line 71)
+  - Function 'test_step_order_integration' appears to be unused (line 255)
+
+Duplicate Imports:
+  - Import 'from src.config import get_complete_config' appears on lines: 224, 257
+
+File: ./src/training/steps/step04_triple_barrier_method_validator.py
+--------------------------------------------------------------
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 64)
+
+File: ./src/training/steps/multi_timeframe_hmm_ensemble.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'load_ensemble' appears to be unused (line 733)
+  - Function 'predict' appears to be unused (line 382)
+  - Function 'train_ensemble' appears to be unused (line 122)
+  - Function 'get_ensemble_status' appears to be unused (line 760)
+
+File: ./src/training/steps/step03_hmm_regime_discovery_validator.py
+-------------------------------------------------------------
+
+Dead Code:
+  - Function 'run_step_validator' appears to be unused (line 183)
+
+File: ./src/training/steps/step1/test_missing_data_downloader.py
+----------------------------------------------------------
+
+Long Lines:
+  - Line is 134 characters (max 120) (line 147)
+
+File: ./src/training/steps/step1/run_step1.py
+---------------------------------------
+
+Long Lines:
+  - Line is 153 characters (max 120) (line 46)
+  - Line is 128 characters (max 120) (line 138)
+
+File: ./src/training/core/stage_registry.py
+-------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 47)
+
+File: ./src/exchange/binance.py
+-------------------------
+
+Dead Code:
+  - Function 'stop' appears to be unused (line 862)
+  - Function 'unsubscribe_fills' appears to be unused (line 550)
+  - Function 'get_order_book' appears to be unused (line 665)
+  - Function 'get_ticker' appears to be unused (line 628)
+  - Function 'futures_funding_rate' appears to be unused (line 803)
+  - Function 'get_klines' appears to be unused (line 582)
+  - Function 'get_historical_agg_trades_ccxt' appears to be unused (line 750)
+  - Function 'set_margin_mode' appears to be unused (line 523)
+  - Function 'get_aggregate_trades' appears to be unused (line 707)
+  - Function 'get_account_info' appears to be unused (line 239)
+  - Function 'get_order_status' appears to be unused (line 566)
+  - Function 'get_open_orders' appears to be unused (line 508)
+  - Function 'subscribe_fills' appears to be unused (line 540)
+  - Function 'set_leverage' appears to be unused (line 531)
+  - Function 'cancel_order' appears to be unused (line 499)
+  - Function 'setup_binance_exchange' appears to be unused (line 887)
+  - Function 'get_exchange_status' appears to be unused (line 840)
+  - Function 'get_position_risk' appears to be unused (line 286)
+  - Function 'create_order' appears to be unused (line 348)
+
+File: ./src/core/di_integration.py
+----------------------------
+
+Dead Code:
+  - Function 'get_integration_status' appears to be unused (line 174)
+  - Function 'demonstrate_di_integration' appears to be unused (line 199)
+
+File: ./src/core/injectable_base.py
+-----------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 57)
+  - Function 'stop' appears to be unused (line 114)
+  - Function 'configure' appears to be unused (line 49)
+  - Function 'is_active' appears to be unused (line 123)
+  - Function 'is_initialized' appears to be unused (line 75)
+  - Function 'start' appears to be unused (line 106)
+  - Function 'shutdown' appears to be unused (line 69)
+
+File: ./src/core/di_launcher.py
+-------------------------
+
+Dead Code:
+  - Function 'get_status' appears to be unused (line 212)
+  - Function 'launch_paper_trading' appears to be unused (line 41)
+  - Function 'launch_live_trading' appears to be unused (line 92)
+
+Duplicate Imports:
+  - Import 'from src.exchange.binance import BinanceClient' appears on lines: 62, 113
+  - Import 'from src.utils.state_manager import StateManager' appears on lines: 66, 117
+  - Import 'from src.supervisor.performance_reporter import PerformanceReporter' appears on lines: 70, 121
+
+File: ./src/core/enhanced_factories.py
+--------------------------------
+
+Dead Code:
+  - Function 'create_exchange_client' appears to be unused (line 97)
+  - Function 'create_complete_trading_system' appears to be unused (line 39)
+  - Function 'create_performance_reporter' appears to be unused (line 191)
+  - Function 'create_influxdb_manager' appears to be unused (line 148)
+  - Function 'create_firestore_manager' appears to be unused (line 137)
+  - Function 'create_state_manager' appears to be unused (line 169)
+
+File: ./src/core/generic_base.py
+--------------------------
+
+Dead Code:
+  - Function 'is_running' appears to be unused (line 83)
+  - Function 'get_processing_stats' appears to be unused (line 112)
+  - Function 'handle_error' appears to be unused (line 127)
+  - Function 'clear_components' appears to be unused (line 201)
+  - Function 'remove_component' appears to be unused (line 169)
+  - Function 'from_dict' appears to be unused (line 39)
+  - Function 'get_validation_rules' appears to be unused (line 224)
+  - Function 'get_created_components' appears to be unused (line 197)
+  - Function 'get_components' appears to be unused (line 174)
+  - Function 'to_dict' appears to be unused (line 34)
+  - Function 'get_metrics' appears to be unused (line 88)
+  - Function 'config' appears to be unused (line 69)
+  - Function 'get_health_status' appears to be unused (line 93)
+  - Function 'add_validation_rule' appears to be unused (line 220)
+  - Function 'create' appears to be unused (line 193)
+  - Function 'is_active' appears to be unused (line 178)
+  - Function 'get_error_count' appears to be unused (line 131)
+  - Function 'validate' appears to be unused (line 48)
+  - Function 'process' appears to be unused (line 108)
+  - Function 'get_validation_errors' appears to be unused (line 52)
+  - Function 'add_component' appears to be unused (line 165)
+
+File: ./src/core/service_registry.py
+------------------------------
+
+Dead Code:
+  - Function 'get_registered_services' appears to be unused (line 141)
+  - Function 'validate_registrations' appears to be unused (line 145)
+  - Function 'register_all_services' appears to be unused (line 40)
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 6)
+
+File: ./src/core/enhanced_dependency_injection.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'register_service' appears to be unused (line 31)
+  - Function 'resolve_service' appears to be unused (line 48)
+
+File: ./src/core/dependency_injection.py
+----------------------------------
+
+Dead Code:
+  - Function 'create_strategist' appears to be unused (line 285)
+  - Function 'end_scope' appears to be unused (line 138)
+  - Function 'initialize' appears to be unused (line 310)
+  - Function 'shutdown' appears to be unused (line 316)
+  - Function 'get_service_config' appears to be unused (line 155)
+  - Function 'set_config' appears to be unused (line 150)
+  - Function 'create_supervisor' appears to be unused (line 295)
+  - Function 'create_analyst' appears to be unused (line 280)
+  - Function 'register_instance' appears to be unused (line 115)
+  - Function 'get_config' appears to be unused (line 146)
+  - Function 'create_tactician' appears to be unused (line 290)
+  - Function 'register' appears to be unused (line 57)
+  - Function 'begin_scope' appears to be unused (line 131)
+
+File: ./src/core/config_service.py
+----------------------------
+
+Dead Code:
+  - Function 'get_config_service' appears to be unused (line 593)
+  - Function 'initialize' appears to be unused (line 213)
+  - Function 'update_config' appears to be unused (line 517)
+  - Function 'get_history' appears to be unused (line 562)
+  - Function 'get_status' appears to be unused (line 545)
+  - Function 'on_modified' appears to be unused (line 99)
+  - Function 'get_config' appears to be unused (line 506)
+  - Function 'get_value' appears to be unused (line 172)
+  - Function 'shutdown' appears to be unused (line 574)
+
+File: ./src/config/sr_optimization_config.py
+--------------------------------------
+
+Dead Code:
+  - Function 'to_dict' appears to be unused (line 113)
+  - Function 'create_optimization_config' appears to be unused (line 228)
+
+File: ./src/config/training_modes.py
+------------------------------
+
+Dead Code:
+  - Function 'get_training_config_dict' appears to be unused (line 128)
+  - Function 'validate_mode_parameters' appears to be unused (line 208)
+  - Function 'get_training_input_dict' appears to be unused (line 163)
+  - Function 'calculate_intensity_percentage' appears to be unused (line 254)
+  - Function 'get_mode_recommendations' appears to be unused (line 314)
+  - Function 'get_intensity_comparison' appears to be unused (line 288)
+  - Function 'list_available_modes' appears to be unused (line 198)
+  - Function 'apply_mode_parameters_to_config' appears to be unused (line 474)
+  - Function 'get_optimization_parameters' appears to be unused (line 415)
+
+Long Lines:
+  - Line is 149 characters (max 120) (line 322)
+  - Line is 155 characters (max 120) (line 323)
+  - Line is 173 characters (max 120) (line 324)
+
+File: ./src/config/system.py
+----------------------
+
+Dead Code:
+  - Function 'get_database_config' appears to be unused (line 111)
+  - Function 'get_reporting_config' appears to be unused (line 133)
+  - Function 'get_logging_config' appears to be unused (line 100)
+  - Function 'get_checkpointing_config' appears to be unused (line 122)
+  - Function 'get_version_info' appears to be unused (line 155)
+  - Function 'get_mlflow_config' appears to be unused (line 144)
+
+Long Lines:
+  - Line is 128 characters (max 120) (line 83)
+  - Line is 143 characters (max 120) (line 84)
+
+File: ./src/config/fractional_implementations_config.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'get_fractional_config' appears to be unused (line 125)
+  - Function 'validate_fractional_config' appears to be unused (line 159)
+
+File: ./src/config/computational_optimization_config.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'get_memory_optimization_config' appears to be unused (line 150)
+  - Function 'get_caching_config' appears to be unused (line 160)
+  - Function 'is_optimization_enabled' appears to be unused (line 175)
+  - Function 'get_optimization_config' appears to be unused (line 113)
+  - Function 'get_early_stopping_config' appears to be unused (line 165)
+  - Function 'get_performance_expectations' appears to be unused (line 234)
+  - Function 'get_adaptive_sampling_config' appears to be unused (line 170)
+  - Function 'validate_optimization_config' appears to be unused (line 242)
+  - Function 'get_parallelization_config' appears to be unused (line 155)
+
+File: ./src/config/environment.py
+---------------------------
+
+Dead Code:
+  - Function 'get_database_config' appears to be unused (line 184)
+  - Function 'get_email_config' appears to be unused (line 208)
+  - Function 'validate_credentials' appears to be unused (line 169)
+  - Function 'get_mlflow_config' appears to be unused (line 221)
+  - Function 'get_environment_settings' appears to be unused (line 242)
+  - Function 'is_testnet_mode' appears to be unused (line 125)
+  - Function 'is_live_mode' appears to be unused (line 120)
+  - Function 'is_paper_mode' appears to be unused (line 130)
+
+File: ./src/config/label_model_mapping.py
+-----------------------------------
+
+Dead Code:
+  - Function 'select_model_for_label_timeframe' appears to be unused (line 361)
+
+File: ./src/config/config_confidence.py
+---------------------------------
+
+Dead Code:
+  - Function 'get_confidence_search_space' appears to be unused (line 64)
+  - Function 'get_confidence_config' appears to be unused (line 59)
+
+File: ./src/config/multi_timeframe_hmm_ensemble_config.py
+---------------------------------------------------
+
+Dead Code:
+  - Function 'get_default_ensemble_config' appears to be unused (line 153)
+  - Function 'validate_ensemble_config' appears to be unused (line 169)
+  - Function 'get_adaptive_weighting_config' appears to be unused (line 226)
+  - Function 'get_optimized_timeframe_weights' appears to be unused (line 211)
+  - Function 'get_multi_timeframe_hmm_ensemble_config' appears to be unused (line 41)
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 75)
+
+File: ./src/config/enhanced_feature_selection_config.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'get_comprehensive_feature_selection_config' appears to be unused (line 194)
+
+Long Lines:
+  - Line is 131 characters (max 120) (line 35)
+  - Line is 122 characters (max 120) (line 78)
+  - Line is 122 characters (max 120) (line 81)
+  - Line is 134 characters (max 120) (line 83)
+  - Line is 123 characters (max 120) (line 93)
+  - Line is 123 characters (max 120) (line 95)
+  - Line is 121 characters (max 120) (line 283)
+
+File: ./src/config/config.py
+----------------------
+
+Dead Code:
+  - Function 'get_config_section' appears to be unused (line 152)
+
+File: ./src/config/m1_gpu_config.py
+-----------------------------
+
+Dead Code:
+  - Function 'get_production_m1_config' appears to be unused (line 317)
+  - Function 'validate_m1_config' appears to be unused (line 252)
+  - Function 'get_optimized_m1_config' appears to be unused (line 182)
+  - Function 'get_minimal_m1_config' appears to be unused (line 227)
+  - Function 'get_default_m1_config' appears to be unused (line 312)
+
+File: ./src/config/config_tpsl.py
+---------------------------
+
+Dead Code:
+  - Function 'get_tpsl_config' appears to be unused (line 101)
+  - Function 'get_tpsl_search_space' appears to be unused (line 106)
+
+File: ./src/config/config_regime_transitions.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'get_regime_transition_search_space' appears to be unused (line 66)
+  - Function 'get_regime_transition_config' appears to be unused (line 61)
+
+File: ./src/config/config_position_sizing.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_position_sizing_config' appears to be unused (line 121)
+  - Function 'get_position_sizing_search_space' appears to be unused (line 126)
+
+File: ./src/config/enhanced_multi_timeframe_config.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'get_performance_config' appears to be unused (line 274)
+  - Function 'get_cross_timeframe_period_pairs' appears to be unused (line 204)
+  - Function 'get_timeframe_period_mapping' appears to be unused (line 144)
+  - Function 'get_quality_validation_config' appears to be unused (line 254)
+  - Function 'get_regime_specific_config' appears to be unused (line 215)
+  - Function 'get_enhanced_multi_timeframe_config' appears to be unused (line 10)
+
+File: ./src/config/config_manager.py
+------------------------------
+
+Dead Code:
+  - Function 'get_static_config_global' appears to be unused (line 176)
+
+File: ./src/config/typed_config.py
+----------------------------
+
+Dead Code:
+  - Function 'get_database_config' appears to be unused (line 182)
+  - Function 'get_typed_config' appears to be unused (line 262)
+  - Function 'get_monitoring_config' appears to be unused (line 203)
+  - Function 'validate_runtime_config' appears to be unused (line 213)
+  - Function 'save_config' appears to be unused (line 229)
+  - Function 'load_typed_config' appears to be unused (line 257)
+  - Function 'get_trading_config' appears to be unused (line 193)
+  - Function 'get_ml_config' appears to be unused (line 198)
+  - Function 'get_exchange_config' appears to be unused (line 187)
+  - Function 'get_system_config' appears to be unused (line 208)
+
+File: ./src/config/config_sr.py
+-------------------------
+
+Dead Code:
+  - Function 'get_confidence_thresholds' appears to be unused (line 119)
+  - Function 'get_sr_search_space' appears to be unused (line 134)
+  - Function 'get_zone_multipliers' appears to be unused (line 109)
+  - Function 'get_sr_config' appears to be unused (line 129)
+  - Function 'get_breakout_thresholds' appears to be unused (line 99)
+  - Function 'get_strength_score_weights' appears to be unused (line 79)
+  - Function 'get_level_detection_params' appears to be unused (line 89)
+
+File: ./src/config/matrix_diverse_lookback_config.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'get_vector_operation_settings' appears to be unused (line 573)
+  - Function 'get_matrix_optimization_objectives' appears to be unused (line 525)
+  - Function 'get_file_output_settings' appears to be unused (line 635)
+  - Function 'get_matrix_diverse_lookback_config' appears to be unused (line 11)
+  - Function 'get_integration_settings' appears to be unused (line 678)
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 689)
+
+File: ./src/config/diverse_lookback_config.py
+---------------------------------------
+
+Dead Code:
+  - Function 'get_diverse_lookback_config' appears to be unused (line 12)
+  - Function 'get_diverse_period_selection_strategy' appears to be unused (line 200)
+  - Function 'get_high_leverage_period_priorities' appears to be unused (line 356)
+  - Function 'get_period_insight_mapping' appears to be unused (line 268)
+
+File: ./src/config/computational_optimization.py
+------------------------------------------
+
+Dead Code:
+  - Function 'get_memory_management_config' appears to be unused (line 162)
+  - Function 'get_optimization_statistics' appears to be unused (line 225)
+  - Function 'get_model_training_optimization_config' appears to be unused (line 129)
+  - Function 'get_feature_engineering_optimization_config' appears to be unused (line 140)
+  - Function 'get_performance_monitoring_config' appears to be unused (line 173)
+  - Function 'is_optimization_enabled' appears to be unused (line 195)
+  - Function 'get_optimization_phase_config' appears to be unused (line 103)
+  - Function 'get_backtesting_optimization_config' appears to be unused (line 118)
+  - Function 'get_multi_objective_optimization_config' appears to be unused (line 151)
+
+File: ./src/config/config_two_tier.py
+-------------------------------
+
+Dead Code:
+  - Function 'get_two_tier_config' appears to be unused (line 84)
+  - Function 'get_two_tier_search_space' appears to be unused (line 89)
+
+File: ./src/config/config_technical_indicators.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'get_technical_indicators_config' appears to be unused (line 105)
+  - Function 'get_technical_indicators_search_space' appears to be unused (line 110)
+
+File: ./src/config/enhanced_reporting_config.py
+-----------------------------------------
+
+Dead Code:
+  - Function 'validate_enhanced_reporting_config' appears to be unused (line 378)
+  - Function 'get_minimal_config' appears to be unused (line 422)
+  - Function 'get_paper_trading_config' appears to be unused (line 300)
+  - Function 'get_backtesting_config' appears to be unused (line 326)
+  - Function 'get_live_trading_config' appears to be unused (line 352)
+
+File: ./src/config/config_system_monitoring.py
+----------------------------------------
+
+Dead Code:
+  - Function 'get_system_monitoring_config' appears to be unused (line 107)
+  - Function 'get_system_monitoring_search_space' appears to be unused (line 112)
+
+File: ./src/config/training.py
+------------------------
+
+Dead Code:
+  - Function 'get_enhanced_training_config' appears to be unused (line 230)
+  - Function 'get_model_training_config' appears to be unused (line 208)
+  - Function 'get_feature_engineering_config' appears to be unused (line 252)
+  - Function 'get_data_config' appears to be unused (line 219)
+  - Function 'get_hmm_lm_config' appears to be unused (line 241)
+  - Function 'get_validation_config' appears to be unused (line 263)
+  - Function 'get_training_pipeline_config' appears to be unused (line 197)
+
+File: ./src/config/enhanced_matrix_config.py
+--------------------------------------
+
+Dead Code:
+  - Function 'get_minimal_enhanced_matrix_config' appears to be unused (line 226)
+  - Function 'get_default_enhanced_matrix_config' appears to be unused (line 323)
+  - Function 'get_enhanced_matrix_config_for_training_type' appears to be unused (line 333)
+  - Function 'validate_enhanced_matrix_config' appears to be unused (line 300)
+
+File: ./src/config/validation.py
+--------------------------
+
+Dead Code:
+  - Function 'validate_complete_config' appears to be unused (line 93)
+
+File: ./src/config/enhanced_prediction_service_config.py
+--------------------------------------------------
+
+Dead Code:
+  - Function 'get_integration_config' appears to be unused (line 229)
+
+File: ./src/config/config_training_optimization.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'get_training_optimization_search_space' appears to be unused (line 60)
+  - Function 'get_training_optimization_config' appears to be unused (line 55)
+
+File: ./src/config/__init__.py
+------------------------
+
+Dead Code:
+  - Function 'get_system_config_section' appears to be unused (line 96)
+  - Function 'get_environment_config' appears to be unused (line 86)
+  - Function 'get_trading_config_section' appears to be unused (line 106)
+  - Function 'get_training_config_section' appears to be unused (line 116)
+
+File: ./src/config/feature_engineering_optimization_config.py
+-------------------------------------------------------
+
+Dead Code:
+  - Function 'get_optimization_output_schema' appears to be unused (line 236)
+  - Function 'get_feature_optimization_validation_rules' appears to be unused (line 199)
+  - Function 'get_feature_engineering_optimization_config' appears to be unused (line 12)
+  - Function 'get_optimized_timeframe_config' appears to be unused (line 131)
+
+File: ./src/config/config_leverage.py
+-------------------------------
+
+Dead Code:
+  - Function 'get_leverage_search_space' appears to be unused (line 85)
+  - Function 'get_leverage_config' appears to be unused (line 80)
+
+File: ./src/config/enhanced_feature_optimization_config.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'get_meta_optimization_objectives' appears to be unused (line 223)
+  - Function 'get_enhanced_feature_optimization_config' appears to be unused (line 12)
+  - Function 'get_enhanced_output_schema' appears to be unused (line 362)
+  - Function 'get_parameter_importance_weights' appears to be unused (line 270)
+  - Function 'get_optimization_strategies' appears to be unused (line 321)
+
+File: ./src/config/trading.py
+-----------------------
+
+Dead Code:
+  - Function 'get_stop_loss_config' appears to be unused (line 196)
+  - Function 'get_exchange_config' appears to be unused (line 159)
+  - Function 'get_position_sizing_config' appears to be unused (line 185)
+  - Function 'get_take_profit_config' appears to be unused (line 207)
+  - Function 'get_time_based_exit_config' appears to be unused (line 218)
+
+File: ./src/config/config_ensemble.py
+-------------------------------
+
+Dead Code:
+  - Function 'get_ensemble_config' appears to be unused (line 62)
+  - Function 'get_ensemble_search_space' appears to be unused (line 67)
+
+File: ./src/utils/observability.py
+----------------------------
+
+Dead Code:
+  - Function 'init_observability' appears to be unused (line 66)
+
+File: ./src/utils/comprehensive_file_validation.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'validate_step1_5_file' appears to be unused (line 665)
+  - Function 'validate_step4_file' appears to be unused (line 675)
+  - Function 'validate_step2_file' appears to be unused (line 670)
+  - Function 'wrapper' appears to be unused (line 684)
+  - Function 'validate_step1_file' appears to be unused (line 660)
+  - Function 'decorator' appears to be unused (line 683)
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 235)
+  - Line is 127 characters (max 120) (line 425)
+  - Line is 122 characters (max 120) (line 511)
+
+File: ./src/validation/critical_path_validators.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'get_type_safety_monitor' appears to be unused (line 307)
+  - Function 'validate_trade_decision_critical' appears to be unused (line 205)
+  - Function 'wrapper' appears to be unused (line 198)
+  - Function 'validate_ml_input_critical' appears to be unused (line 247)
+  - Function 'validate_trading_signal_critical' appears to be unused (line 194)
+  - Function 'validate_order_execution_critical' appears to be unused (line 218)
+  - Function 'validate_position_info' appears to be unused (line 165)
+  - Function 'reset_violations' appears to be unused (line 297)
+  - Function 'safe_execute_with_validation' appears to be unused (line 312)
+  - Function 'validate_market_data_critical' appears to be unused (line 234)
+  - Function 'get_violation_summary' appears to be unused (line 289)
+
+File: ./src/analyst/multi_timeframe_regime_integration.py
+---------------------------------------------------
+
+Dead Code:
+  - Function 'train_regime_classifier' appears to be unused (line 480)
+  - Function 'get_regime_specific_optimization' appears to be unused (line 419)
+  - Function 'get_integration_statistics' appears to be unused (line 513)
+
+File: ./src/analyst/feature_engineering_orchestrator.py
+-------------------------------------------------
+
+Dead Code:
+  - Function 'classify_vol_regime' appears to be unused (line 434)
+  - Function 'get_orchestrator_info' appears to be unused (line 573)
+  - Function 'apply_wavelet_transforms' appears to be unused (line 672)
+  - Function 'get_feature_summary' appears to be unused (line 594)
+
+Duplicate Imports:
+  - Import 'from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering' appears on lines: 11, 260
+
+File: ./src/analyst/enhanced_prediction_integrator.py
+-----------------------------------------------
+
+Dead Code:
+  - Function 'initialize' appears to be unused (line 72)
+
+File: ./src/analyst/predictive_ensembles.py
+-------------------------------------
+
+Dead Code:
+  - Function 'get_ensemble_results' appears to be unused (line 1067)
+  - Function 'stop' appears to be unused (line 1143)
+  - Function 'get_ensemble_status' appears to be unused (line 1113)
+  - Function 'execute_ensemble_prediction' appears to be unused (line 333)
+  - Function 'setup_predictive_ensembles' appears to be unused (line 1172)
+  - Function 'get_ensemble_history' appears to be unused (line 1091)
+
+File: ./src/analyst/regime_runtime.py
+-------------------------------
+
+Dead Code:
+  - Function 'get_current_regime_info' appears to be unused (line 109)
+
+File: ./src/analyst/multi_timeframe_feature_engineering.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'generate_multi_timeframe_features' appears to be unused (line 299)
+  - Function 'get_feature_statistics' appears to be unused (line 870)
+  - Function 'get_timeframe_parameters' appears to be unused (line 849)
+
+File: ./src/analyst/dynamic_regime_mapper.py
+--------------------------------------
+
+Dead Code:
+  - Function 'create_dynamic_regime_mapper' appears to be unused (line 356)
+  - Function 'map_cluster_to_regime' appears to be unused (line 273)
+  - Function 'get_regime_clusters' appears to be unused (line 283)
+  - Function 'get_cluster_centroid' appears to be unused (line 265)
+  - Function 'get_archetype_description' appears to be unused (line 260)
+  - Function 'save_regime_mapping' appears to be unused (line 312)
+  - Function 'get_all_regimes' appears to be unused (line 278)
+  - Function 'load_regime_mapping' appears to be unused (line 334)
+
+File: ./src/analyst/enhanced_regime_predictor.py
+------------------------------------------
+
+Dead Code:
+  - Function 'get_model_summary' appears to be unused (line 576)
+  - Function 'predict_regime_changes' appears to be unused (line 48)
+
+Long Lines:
+  - Line is 121 characters (max 120) (line 598)
+
+File: ./src/analyst/decision_aggregator.py
+------------------------------------
+
+Dead Code:
+  - Function 'aggregate_weights' appears to be unused (line 27)
+
+Long Lines:
+  - Line is 160 characters (max 120) (line 36)
+  - Line is 157 characters (max 120) (line 40)
+
+File: ./src/analyst/data_utils.py
+---------------------------
+
+Dead Code:
+  - Function 'load_klines_data' appears to be unused (line 1120)
+  - Function 'execute_data_processing' appears to be unused (line 302)
+  - Function 'load_futures_data' appears to be unused (line 1326)
+  - Function 'get_processing_results' appears to be unused (line 928)
+  - Function 'stop' appears to be unused (line 1006)
+  - Function 'get_processing_status' appears to be unused (line 977)
+  - Function 'create_ethusdt_1h_csv' appears to be unused (line 1893)
+  - Function 'get_processing_history' appears to be unused (line 955)
+  - Function 'setup_data_utils' appears to be unused (line 1035)
+  - Function 'validate_klines_data' appears to be unused (line 1074)
+  - Function 'calculate_volume_profile' appears to be unused (line 1725)
+  - Function 'simulate_order_book_data' appears to be unused (line 1400)
+  - Function 'create_dummy_data' appears to be unused (line 1818)
+  - Function 'load_agg_trades_data' appears to be unused (line 1239)
+
+File: ./src/analyst/unified_regime_intelligence_runtime.py
+----------------------------------------------------
+
+Dead Code:
+  - Function 'predict' appears to be unused (line 572)
+  - Function 'get_performance_metrics' appears to be unused (line 871)
+  - Function 'get_current_state' appears to be unused (line 861)
+  - Function 'analyze_market_with_sr_monitoring' appears to be unused (line 245)
+  - Function 'get_sr_opportunity_alert' appears to be unused (line 388)
+
+Duplicate Imports:
+  - Import 'import os' appears on lines: 7, 210
+  - Import 'import pickle' appears on lines: 8, 211
+
+File: ./src/analyst/example_directional_analysis.py
+---------------------------------------------
+
+Duplicate Imports:
+  - Import 'from src.analyst.ml_confidence_predictor import MLConfidencePredictor' appears on lines: 7, 8
+
+Long Lines:
+  - Line is 129 characters (max 120) (line 136)
+
+File: ./src/analyst/regime_expert_orchestrator.py
+-------------------------------------------
+
+Dead Code:
+  - Function 'get_regime_expert_decision' appears to be unused (line 553)
+  - Function 'start_continuous_monitoring' appears to be unused (line 523)
+
+File: ./src/analyst/meta_label_relevance.py
+-------------------------------------
+
+Duplicate Imports:
+  - Import 'import numpy' appears on lines: 8, 111
+
+Long Lines:
+  - Line is 130 characters (max 120) (line 166)
+
+File: ./src/analyst/ml_confidence_predictor.py
+----------------------------------------
+
+Dead Code:
+  - Function 'get_execution_performance' appears to be unused (line 2405)
+  - Function 'stop' appears to be unused (line 2617)
+  - Function 'trigger_model_training' appears to be unused (line 2417)
+  - Function 'ablation_study' appears to be unused (line 2649)
+  - Function 'predict_directional_with_adversarial_analysis' appears to be unused (line 1550)
+  - Function 'compute_mixture_scores' appears to be unused (line 2750)
+  - Function 'predict_label_confidences_mtf' appears to be unused (line 2799)
+  - Function 'predict_tactician_label_confidences_mtf' appears to be unused (line 2897)
+  - Function 'setup_ml_confidence_predictor' appears to be unused (line 2919)
+  - Function 'execute_limit_order_return' appears to be unused (line 2142)
+  - Function 'predict_ensemble_confidence' appears to be unused (line 1349)
+  - Function 'execute_chase_micro_breakout' appears to be unused (line 2072)
+  - Function 'predict_with_meta_labeling' appears to be unused (line 494)
+  - Function 'update_model_performance' appears to be unused (line 2573)
+  - Function 'execute_order_with_strategy' appears to be unused (line 2283)
+  - Function 'get_order_manager_performance' appears to be unused (line 2271)
+  - Function 'get_training_status' appears to be unused (line 2590)
+  - Function 'update_ensemble_weights' appears to be unused (line 2626)
+
+Duplicate Imports:
+  - Import 'import os' appears on lines: 2, 1219
+  - Import 'from src.config_optuna import get_parameter_value' appears on lines: 59, 135
+
+Long Lines:
+  - Line is 148 characters (max 120) (line 285)
+  - Line is 121 characters (max 120) (line 1164)
+
+File: ./src/analyst/di_analyst.py
+---------------------------
+
+Dead Code:
+  - Function 'analyze_market_data' appears to be unused (line 141)
+  - Function 'train_models' appears to be unused (line 302)
+  - Function 'get_historical_analysis' appears to be unused (line 265)
+
+Duplicate Imports:
+  - Import 'from src.interfaces.event_bus import EventType' appears on lines: 127, 163
+
+File: ./src/analyst/unified_regime_classifier.py
+------------------------------------------
+
+Dead Code:
+  - Function 'predict_regime' appears to be unused (line 1863)
+  - Function 'get_system_status' appears to be unused (line 2348)
+  - Function 'predict_regime_and_location' appears to be unused (line 1931)
+
+Duplicate Imports:
+  - Import 'import os' appears on lines: 2, 103
+  - Import 'import numpy' appears on lines: 7, 297
+
+Long Lines:
+  - Line is 135 characters (max 120) (line 374)
+  - Line is 123 characters (max 120) (line 530)
+  - Line is 124 characters (max 120) (line 613)
+  - Line is 121 characters (max 120) (line 618)
+  - Line is 122 characters (max 120) (line 635)
+  - Line is 124 characters (max 120) (line 657)
+  - Line is 124 characters (max 120) (line 1683)
+
+File: ./src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
+--------------------------------------------------------------
+
+Dead Code:
+  - Function 'save_model' appears to be unused (line 809)
+  - Function 'train_multi_timeframe_ensemble' appears to be unused (line 78)
+  - Function 'load_model' appears to be unused (line 852)
+  - Function 'get_prediction' appears to be unused (line 601)
+
+File: ./src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py
+--------------------------------------------------------------------
+
+Dead Code:
+  - Function 'save_models' appears to be unused (line 201)
+  - Function 'load_models' appears to be unused (line 217)
+  - Function 'train_all_models' appears to be unused (line 57)
+  - Function 'get_ensemble_summary' appears to be unused (line 239)
+
+Long Lines:
+  - Line is 154 characters (max 120) (line 6)
+  - Line is 136 characters (max 120) (line 146)
+
+File: ./src/analyst/predictive_ensembles/ensemble_orchestrator.py
+-----------------------------------------------------------
+
+Dead Code:
+  - Function 'train_all_models' appears to be unused (line 76)
+  - Function 'get_current_weights' appears to be unused (line 775)
+  - Function 'get_current_regime' appears to be unused (line 607)
+  - Function 'load_weights' appears to be unused (line 768)
+  - Function 'get_all_predictions' appears to be unused (line 227)
+
+Long Lines:
+  - Line is 182 characters (max 120) (line 278)
+  - Line is 152 characters (max 120) (line 558)
+
+File: ./src/analyst/predictive_ensembles/two_tier_integration.py
+----------------------------------------------------------
+
+Dead Code:
+  - Function 'enhance_ensemble_prediction' appears to be unused (line 56)
+
+File: ./src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
+--------------------------------------------------------------------
+
+Dead Code:
+  - Function 'objective' appears to be unused (line 596)
+  - Function 'train_ensemble' appears to be unused (line 363)
+  - Function 'check_ensemble_health' appears to be unused (line 844)
+  - Function 'save_model' appears to be unused (line 926)
+  - Function 'load_model' appears to be unused (line 948)
+  - Function 'get_prediction_on_historical_data' appears to be unused (line 748)
+  - Function 'get_prediction' appears to be unused (line 512)
+
+Long Lines:
+  - Line is 127 characters (max 120) (line 439)
+  - Line is 191 characters (max 120) (line 590)
+  - Line is 134 characters (max 120) (line 692)
+
+File: ./src/database/influxdb_manager.py
+----------------------------------
+
+Dead Code:
+  - Function 'write_kline_data' appears to be unused (line 55)
+  - Function 'query_kline_data' appears to be unused (line 94)
+
+File: ./src/database/precomputed_features_manager.py
+----------------------------------------------
+
+Dead Code:
+  - Function 'store_features' appears to be unused (line 151)
+  - Function 'initialize' appears to be unused (line 84)
+  - Function 'generate_feature_name' appears to be unused (line 94)
+  - Function 'retrieve_features' appears to be unused (line 211)
+  - Function 'get_feature_statistics' appears to be unused (line 488)
+  - Function 'get_available_features' appears to be unused (line 420)
+
+File: ./src/database/firestore_manager.py
+-----------------------------------
+
+Dead Code:
+  - Function 'set_document' appears to be unused (line 180)
+  - Function 'initialize' appears to be unused (line 48)
+  - Function 'get_collection' appears to be unused (line 278)
+  - Function 'delete_document' appears to be unused (line 315)
+  - Function 'add_document' appears to be unused (line 247)
+  - Function 'get_document' appears to be unused (line 213)
+
+Long Lines:
+  - Line is 123 characters (max 120) (line 63)
+
+File: ./src/database/sqlite_manager.py
+--------------------------------
+
+Dead Code:
+  - Function 'get_trades' appears to be unused (line 656)
+  - Function 'set_document' appears to be unused (line 980)
+  - Function 'get_performance' appears to be unused (line 759)
+  - Function 'get_setting' appears to be unused (line 880)
+  - Function 'stop' appears to be unused (line 1176)
+  - Function 'get_positions' appears to be unused (line 716)
+  - Function 'update_position' appears to be unused (line 583)
+  - Function 'get_database_status' appears to be unused (line 1144)
+  - Function 'insert_performance' appears to be unused (line 816)
+  - Function 'insert_trade' appears to be unused (line 513)
+  - Function 'set_setting' appears to be unused (line 927)
+  - Function 'setup_sqlite_manager' appears to be unused (line 1201)
+
+File: ./examples/surrogate_training_integration.py
+--------------------------------------------
+
+Dead Code:
+  - Function 'training_objective' appears to be unused (line 197)
+
+Long Lines:
+  - Line is 124 characters (max 120) (line 184)
+  - Line is 122 characters (max 120) (line 186)
+
+File: ./examples/problem_specific_and_transfer_learning_example.py
+------------------------------------------------------------
+
+Dead Code:
+  - Function 'high_dim_function' appears to be unused (line 174)
+  - Function 'constrained_function' appears to be unused (line 185)
+  - Function 'varied_function' appears to be unused (line 228)
+  - Function 'discrete_function' appears to be unused (line 201)
+  - Function 'rosenbrock_function' appears to be unused (line 133)
+
+Long Lines:
+  - Line is 139 characters (max 120) (line 278)
+  - Line is 121 characters (max 120) (line 334)
+
+File: ./crypto_analysis/data_downloader.py
+------------------------------------
+
+Long Lines:
+  - Line is 122 characters (max 120) (line 204)
+  - Line is 132 characters (max 120) (line 226)
+
+File: ./crypto_analysis/data_analyzer.py
+----------------------------------
+
+Long Lines:
+  - Line is 141 characters (max 120) (line 365)
+  - Line is 127 characters (max 120) (line 426)
+  - Line is 128 characters (max 120) (line 428)
+  - Line is 124 characters (max 120) (line 429)
+  - Line is 134 characters (max 120) (line 503)
+  - Line is 157 characters (max 120) (line 628)
+  - Line is 122 characters (max 120) (line 668)
+  - Line is 134 characters (max 120) (line 670)
+  - Line is 130 characters (max 120) (line 671)
+  - Line is 144 characters (max 120) (line 716)
+
+File: ./crypto_analysis/test_parquet.py
+---------------------------------
+
+Formatting Issues:
+  - Line has trailing whitespace (line 15)
+  - Line has trailing whitespace (line 19)
+  - Line has trailing whitespace (line 34)
+  - Line has trailing whitespace (line 37)
+  - Line has trailing whitespace (line 41)
+  - Line has trailing whitespace (line 45)
+  - Line has trailing whitespace (line 50)
+  - Line has trailing whitespace (line 55)
+  - Line has trailing whitespace (line 59)
+  - Line has trailing whitespace (line 64)
+  - Line has trailing whitespace (line 68)
+  - Line has trailing whitespace (line 72)
+  - Line has trailing whitespace (line 76)
+  - Line has trailing whitespace (line 79)
+  - Line has trailing whitespace (line 83)
+  - Line has trailing whitespace (line 89)
+  - Line has trailing whitespace (line 92)
+  - Line has trailing whitespace (line 94)
+  - Line has trailing whitespace (line 97)
+  - Line has trailing whitespace (line 99)
+  - Line has trailing whitespace (line 107)
+  - Line has trailing whitespace (line 114)
+  - Line has trailing whitespace (line 118)
+  - Line has trailing whitespace (line 133)
+  - Line has trailing whitespace (line 136)
+  - Line has trailing whitespace (line 141)
+  - Line has trailing whitespace (line 145)
+  - Line has trailing whitespace (line 148)
+  - Line has trailing whitespace (line 154)
+  - Line has trailing whitespace (line 160)
+  - Line has trailing whitespace (line 164)
+
+File: ./exchange/factory.py
+---------------------
+
+Dead Code:
+  - Function 'get_exchange' appears to be unused (line 12)
+
+File: ./exchange/base_exchange.py
+---------------------------
+
+Dead Code:
+  - Function 'get_liquidation_price' appears to be unused (line 304)
+  - Function 'subscribe_ticker' appears to be unused (line 258)
+  - Function 'fetch_price' appears to be unused (line 273)
+  - Function 'subscribe_order_book' appears to be unused (line 265)
+  - Function 'get_historical_klines' appears to be unused (line 100)
+  - Function 'get_klines' appears to be unused (line 45)
+  - Function 'get_account_info' appears to be unused (line 63)
+  - Function 'get_order_status' appears to be unused (line 166)
+  - Function 'get_open_orders' appears to be unused (line 152)
+  - Function 'cancel_order' appears to be unused (line 159)
+  - Function 'get_historical_agg_trades' appears to be unused (line 128)
+  - Function 'subscribe_trades' appears to be unused (line 251)
+  - Function 'create_order' appears to be unused (line 70)

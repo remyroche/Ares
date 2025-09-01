@@ -5,7 +5,6 @@ Test script to verify Parquet functionality and demonstrate data storage
 
 import pandas as pd
 import numpy as np
-from pathlib import Path
 import tempfile
 import os
 

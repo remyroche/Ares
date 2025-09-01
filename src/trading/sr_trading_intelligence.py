@@ -12,13 +12,10 @@ This module provides:
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
 
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.tactician.sr_levels_manager import SRLevelsManager, SRLevel
 
 logger = system_logger.getChild("SRTradingIntelligence")
 

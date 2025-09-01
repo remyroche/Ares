@@ -13,7 +13,6 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 
-from dataclasses import asdict, dataclass
 from enum import Enum
 from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors

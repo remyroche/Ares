@@ -12,7 +12,6 @@ import numpy as np
 import optuna
 from typing import Dict, Any, List, Tuple, Optional, Callable
 from dataclasses import dataclass
-from sklearn.metrics import log_loss, brier_score_loss, roc_auc_score
 import warnings
 
 # Suppress warnings for cleaner output

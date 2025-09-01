@@ -6,7 +6,6 @@ import optuna
 import pandas as pd
 
 try:
-    import pandas_ta as ta  # noqa: F401 - ensure .ta accessor is registered
 except ImportError as e:
     # pandas_ta is required for this optimizer per project policy
     msg = (

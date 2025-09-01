@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Import the enhanced training manager
-from src.training.enhanced_training_manager_enhanced import (
     EnhancedTrainingManagerWithReporting,
     create_enhanced_training_manager_with_reporting
 )

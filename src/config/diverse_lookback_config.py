@@ -7,7 +7,6 @@ Configuration settings for finding 2-3 lookback periods for each feature that de
 meaningful yet significantly different information.
 """
 
-from typing import Any, Dict, List
 
 
 def get_diverse_lookback_config() -> dict[str, Any]:

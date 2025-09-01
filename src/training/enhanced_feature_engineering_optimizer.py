@@ -13,13 +13,10 @@ This module optimizes the period optimization process itself using:
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional, Callable
 
 import numpy as np
 import pandas as pd
 import shap
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold
 import optuna
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner

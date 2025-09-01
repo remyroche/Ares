@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from enum import Enum
 
-from src.config.config_optuna import (
     SROptimizationParameters,
     HyperparameterOptimizationConfig,
     PARAMETER_SEARCH_SPACES

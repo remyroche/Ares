@@ -5,7 +5,6 @@ Comprehensive script to complete the integration of the remaining 16 steps.
 
 import re
 from pathlib import Path
-from typing import List, Dict, Any
 
 # Steps that need full integration
 STEPS_TO_INTEGRATE = [

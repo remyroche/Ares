@@ -13,8 +13,6 @@ This advanced version includes:
 - Multi-objective optimization framework
 """
 
-import concurrent.futures
-from typing import Any, Dict, List, Optional, Tuple, Union
 import time
 import warnings
 from dataclasses import dataclass
@@ -23,7 +21,6 @@ import numpy as np
 import pandas as pd
 import optuna
 from optuna.samplers import TPESampler, CmaEsSampler, NSGAIISampler
-from optuna.pruners import MedianPruner, HyperbandPruner
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import IsolationForest
 

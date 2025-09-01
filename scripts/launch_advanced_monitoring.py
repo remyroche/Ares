@@ -13,7 +13,6 @@ import signal
 import sys
 
 from src.monitoring import MonitoringIntegrationManager
-from src.utils.warning_symbols import error, failed, initialization_error, warning
 
 class AdvancedMonitoringLauncher:
     """

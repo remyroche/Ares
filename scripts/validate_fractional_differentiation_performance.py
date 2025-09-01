@@ -3,7 +3,6 @@
 """Comprehensive validation and testing of fractional differentiation performance."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime

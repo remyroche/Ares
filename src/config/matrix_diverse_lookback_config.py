@@ -6,7 +6,6 @@ Matrix-Based Diverse Lookback Period Configuration
 Configuration settings for matrix/vector-based optimization of diverse lookback periods.
 """
 
-from typing import Any, Dict, List
 
 
 def get_matrix_diverse_lookback_config() -> dict[str, Any]:

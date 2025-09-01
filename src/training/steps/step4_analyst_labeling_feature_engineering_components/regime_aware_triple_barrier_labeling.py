@@ -28,6 +28,8 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.logger import get_logger
+from dataclasses import dataclass
+from pathlib import Path
 
 try:
     import numba  # type: ignore
@@ -260,6 +262,21 @@ class RegimeAwareTripleBarrierLabeling:
             "position_size": self.config.regime_position_sizes.get(regime_name, 0.1),
         }
 
+    def _get_param_with_fallback(self, regime_name: str, regime_value: Any, param_map: Dict[str, Any], default_value: Any) -> Any:
+        """Retrieve parameter with multiple naming fallbacks to align with various regime namings."""
+        candidates: List[str] = [regime_name]
+        try:
+            if isinstance(regime_value, (int, np.integer)):
+                candidates += [f"HMM_Cluster_{int(regime_value)}", f"REGIME_{int(regime_value)}", str(int(regime_value))]
+            else:
+                candidates += [str(regime_value)]
+        except Exception:
+            candidates += [str(regime_value)]
+        for key in candidates:
+            if key in param_map:
+                return param_map[key]
+        return default_value
+
     @handle_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
@@ -408,9 +425,21 @@ class RegimeAwareTripleBarrierLabeling:
         
         for regime in unique_regimes:
             regime_name = self.config.regime_id_to_name.get(regime_to_id[regime], f"REGIME_{regime}")
-            params = self.get_regime_parameters(regime_name)
-            pt_multipliers.append(params["profit_take_multiplier"])
-            sl_multipliers.append(params["stop_loss_multiplier"])
+            # Use flexible lookup against configured maps
+            pt = self._get_param_with_fallback(
+                regime_name,
+                regime,
+                self.config.regime_profit_take_multipliers,
+                self.config.default_profit_take_multiplier,
+            )
+            sl = self._get_param_with_fallback(
+                regime_name,
+                regime,
+                self.config.regime_stop_loss_multipliers,
+                self.config.default_stop_loss_multiplier,
+            )
+            pt_multipliers.append(pt)
+            sl_multipliers.append(sl)
 
         pt_multipliers = np.array(pt_multipliers)
         sl_multipliers = np.array(sl_multipliers)
@@ -654,57 +683,57 @@ class RegimeAwareTripleBarrierLabeling:
 
 
 # Utility functions for integration
-def create_regime_aware_labeler_from_optimization_results(
-    optimization_results: Dict[str, Any]
+
+def create_regime_aware_labeler_from_barrier_map(
+    barrier_map_or_path: Union[str, Path, Dict[str, Any]],
+    default_time_barrier_minutes: int = 30,
+    default_max_lookahead: int = 100,
+    binary_classification: bool = True,
 ) -> RegimeAwareTripleBarrierLabeling:
-    """Create a regime-aware labeler from optimization results.
+    """Create a regime-aware labeler from a barrier map (dict or JSON path).
 
-    Args:
-        optimization_results: Results from regime-specific optimization
-
-    Returns:
-        Configured regime-aware triple barrier labeler
+    barrier_map keys should be regime names; values must contain 'upper_barrier' and 'lower_barrier' in decimals.
     """
-    config = RegimeTripleBarrierConfig()
-    
-    # Set regime-specific parameters from optimization results
-    for regime_name, result in optimization_results.items():
-        if isinstance(result, dict) and 'triple_barrier_params' in result:
-            tb_params = result['triple_barrier_params']
-            tpsl_params = result.get('tpsl_params', {})
-            
-            config.regime_profit_take_multipliers[regime_name] = tb_params.get('profit_take_multiplier', 0.02)
-            config.regime_stop_loss_multipliers[regime_name] = tb_params.get('stop_loss_multiplier', 0.01)
-            config.regime_time_barrier_minutes[regime_name] = tb_params.get('time_barrier_minutes', 30)
-            config.regime_max_lookahead[regime_name] = tb_params.get('max_lookahead', 100)
-            
-            config.regime_tp_multipliers[regime_name] = tpsl_params.get('tp_multiplier', 2.0)
-            config.regime_sl_multipliers[regime_name] = tpsl_params.get('sl_multiplier', 1.0)
-            config.regime_position_sizes[regime_name] = tpsl_params.get('position_size', 0.1)
-    
-    return RegimeAwareTripleBarrierLabeling(config)
-
-
-def apply_regime_aware_triple_barrier_labeling(
-    data: pd.DataFrame,
-    optimization_results: Optional[Dict[str, Any]] = None,
-    regime_column: str = "composite_cluster_id",
-    binary_classification: bool = True
-) -> pd.DataFrame:
-    """Apply regime-aware triple barrier labeling to data.
-
-    Args:
-        data: DataFrame with OHLCV and regime data
-        optimization_results: Optional optimization results for regime-specific parameters
-        regime_column: Column containing regime labels
-        binary_classification: Whether to use binary classification
-
-    Returns:
-        DataFrame with regime-aware labels
-    """
-    if optimization_results:
-        labeler = create_regime_aware_labeler_from_optimization_results(optimization_results)
+    import json
+    if isinstance(barrier_map_or_path, (str, Path)):
+        with open(barrier_map_or_path) as f:
+            barrier_map = json.load(f)
     else:
-        labeler = RegimeAwareTripleBarrierLabeling(binary_classification=binary_classification)
-    
+        barrier_map = barrier_map_or_path
+
+    config = RegimeTripleBarrierConfig(
+        default_time_barrier_minutes=default_time_barrier_minutes,
+        default_max_lookahead=default_max_lookahead,
+    )
+
+    for regime_name, vals in barrier_map.items():
+        try:
+            pt = float(vals.get("upper_barrier"))
+            sl = float(vals.get("lower_barrier"))
+        except Exception:
+            continue
+        config.regime_profit_take_multipliers[regime_name] = pt
+        config.regime_stop_loss_multipliers[regime_name] = sl
+
+    return RegimeAwareTripleBarrierLabeling(config=config, binary_classification=binary_classification)
+
+
+def apply_regime_aware_triple_barrier_labeling_with_barriers(
+    data: pd.DataFrame,
+    barrier_map_or_path: Union[str, Path, Dict[str, Any]],
+    regime_column: str = "composite_cluster_id",
+    binary_classification: bool = True,
+    default_time_barrier_minutes: int = 30,
+    default_max_lookahead: int = 100,
+) -> pd.DataFrame:
+    """Apply regime-aware labeling using barrier map from the HMM optimizer.
+
+    Accepts a dict or a JSON path for barriers.json produced by HMMRegimeBarrierOptimizer.
+    """
+    labeler = create_regime_aware_labeler_from_barrier_map(
+        barrier_map_or_path,
+        default_time_barrier_minutes=default_time_barrier_minutes,
+        default_max_lookahead=default_max_lookahead,
+        binary_classification=binary_classification,
+    )
     return labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)

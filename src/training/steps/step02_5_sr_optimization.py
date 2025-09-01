@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
 import json
-import os
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -24,14 +23,8 @@ sys.path.insert(0, str(project_root))
 from src.utils.centralized_decorators import (
     comprehensive_data_validation,
     handle_errors,
-    memory_efficient,
     resource_monitor,
     secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-    ensure_data_integrity,
     monitor_step_execution,
     secure_step_execution,
     validate_pipeline_step
@@ -39,14 +32,13 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
+from src.tactician.sr_data_integration_simple import create_sr_data_integration_simple
 from src.tactician.sr_levels_manager import create_sr_levels_manager
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
-    log_step_metrics,
-    log_step_artifact_with_standardized_name
+    log_step_metrics
 )
 
 logger = system_logger.getChild("Step2_5SROptimization")
@@ -253,7 +245,6 @@ class SROptimizationStep:
                 "exchange": self.config.get("EXCHANGE", "BINANCE"),
                 "timeframe": self.config.get("TIMEFRAME", "1m"),
                 "lookback_years": self.config.get("LOOKBACK_YEARS", 2),
-            ,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
                 "project_version": self.config.get("project_version", "1.0.0"),  # Default version
@@ -288,7 +279,6 @@ class SROptimizationStep:
                     "optimization_success": True,
                     "optimization_methods": list(optimization_result.keys()) if optimization_result else [],
                     "timeframe": training_input["timeframe"],
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
@@ -306,8 +296,7 @@ class SROptimizationStep:
                     additional_metadata={
                         "optimization_methods": list(optimization_result.keys()),
                         "timeframe": training_input["timeframe"],
-                    ,
-                    "asset": symbol,
+                        "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
@@ -324,8 +313,7 @@ class SROptimizationStep:
                     additional_metadata={
                         "analysis_reports_count": len(sr_analysis_reports),
                         "timeframe": training_input["timeframe"],
-                    ,
-                    "asset": symbol,
+                        "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
@@ -342,8 +330,7 @@ class SROptimizationStep:
                     additional_metadata={
                         "integration_analysis_count": len(sr_integration_analysis),
                         "timeframe": training_input["timeframe"],
-                    ,
-                    "asset": symbol,
+                        "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
@@ -360,8 +347,7 @@ class SROptimizationStep:
                     additional_metadata={
                         "detailed_reports_count": len(detailed_reports),
                         "timeframe": training_input["timeframe"],
-                    ,
-                    "asset": symbol,
+                        "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
                 }
@@ -376,7 +362,6 @@ class SROptimizationStep:
                 additional_metadata={
                     "metrics_type": "sr_optimization_performance",
                     "timeframe": training_input["timeframe"],
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),

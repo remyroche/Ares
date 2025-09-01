@@ -182,15 +182,12 @@ class BacktestingQualityAnalyzer:
             performance_quality = 'excellent' if value >= 2.0 else 'good' if value >= 1.5 else 'fair' if value >= 1.0 else 'poor'
         else:  # calmar_ratio, sortino_ratio
             performance_quality = 'excellent' if value >= 1.5 else 'good' if value >= 1.0 else 'fair' if value >= 0.5 else 'poor'
-                else:
-        # For max_drawdown, lower is better
-                    performance_quality = 'excellent' if value <= 0.1 else 'good' if value <= 0.2 else 'fair' if value <= 0.3 else 'poor'
-                
-                performance_analysis[metric_name] = {
-                    'value': value,
-                    'quality': performance_quality,
-                    'score': performance_score
-                }
+        
+        performance_analysis[metric_name] = {
+            'value': value,
+            'quality': performance_quality,
+            'score': performance_score
+        }
         
         # Print performance summary
         print(f"{'Metric':<20} {'Value':<12} {'Quality':<12} {'Score':<8}")
@@ -218,8 +215,8 @@ class BacktestingQualityAnalyzer:
         
         found_risk_metrics = {}
         for metric_name, possible_names in risk_metrics.items():
-        for name in possible_names:
-        if name in self.backtest_data.columns:
+            for name in possible_names:
+                if name in self.backtest_data.columns:
                     found_risk_metrics[metric_name] = name
                     break
         
@@ -312,64 +309,69 @@ class BacktestingQualityAnalyzer:
         
         # Analyze PnL distribution
         if 'pnl' in self.trades_data.columns:
-            pnl_values, self.trades_data['pnl'].dropna()
+            pnl_values = self.trades_data['pnl'].dropna()
             
-        if len(pnl_values) > 0:
+            if len(pnl_values) > 0:
                 winning_trades = (pnl_values > 0).sum()
                 losing_trades = (pnl_values < 0).sum()
-                win_rate, winning_trades / len(pnl_values) if len(pnl_values) > 0 else 0
+                win_rate = winning_trades / len(pnl_values) if len(pnl_values) > 0 else 0
                 
-        # PnL consistency
-                pnl_std, pnl_values.std()
-                pnl_mean, pnl_values.mean()
+                # PnL consistency
+                pnl_std = pnl_values.std()
+                pnl_mean = pnl_values.mean()
                 pnl_cv = (pnl_std / abs(pnl_mean)) * 100 if pnl_mean != 0 else float('inf')
                 
         # Consistency score based on coefficient of variation
         if pnl_cv != float('inf'):
-                    consistency_score, max(0, 100 - pnl_cv * 2)
-                else:
-                    consistency_score, 0
-                
-                consistency_analysis['pnl_consistency'] = {
-                    'winning_trades': winning_trades,
-                    'losing_trades': losing_trades,
-                    'win_rate': win_rate,
-                    'pnl_std': pnl_std,
-                    'pnl_cv': pnl_cv,
-                    'consistency_score': consistency_score
-                }
+            consistency_score = max(0, 100 - pnl_cv * 2)
+        else:
+            consistency_score = 0
+        
+        consistency_analysis['pnl_consistency'] = {
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': win_rate,
+            'pnl_std': pnl_std,
+            'pnl_cv': pnl_cv,
+            'consistency_score': consistency_score
+        }
         
         # Analyze trade timing
         if 'timestamp' in self.trades_data.columns:
-        try:
-        self.trades_data['timestamp'] = pd.to_datetime(self.trades_data['timestamp'])
-                time_diff, self.trades_data['timestamp'].diff().dropna()
+            try:
+                self.trades_data['timestamp'] = pd.to_datetime(self.trades_data['timestamp'])
+                time_diff = self.trades_data['timestamp'].diff().dropna()
                 
-        if len(time_diff) > 0:
-                    avg_time_between_trades, time_diff.mean()
-                    time_consistency, time_diff.std() / avg_time_between_trades if avg_time_between_trades.total_seconds() > 0 else float('inf')
+                if len(time_diff) > 0:
+                    avg_time_between_trades = time_diff.mean()
+                    time_consistency = time_diff.std() / avg_time_between_trades if avg_time_between_trades.total_seconds() > 0 else float('inf')
                     
-        # Time consistency score
-        if time_consistency != float('inf'):
-                        time_consistency_score, max(0, 100 - time_consistency * 50)
+                    # Time consistency score
+                    if time_consistency != float('inf'):
+                        time_consistency_score = max(0, 100 - time_consistency * 50)
                     else:
-                        time_consistency_score, 0
+                        time_consistency_score = 0
                     
                     consistency_analysis['timing_consistency'] = {
                         'avg_time_between_trades': avg_time_between_trades,
                         'time_consistency': time_consistency,
                         'time_consistency_score': time_consistency_score
                     }
-        except Exception as e:
-                print(f"Error analyzing trade timing: {e}")
+                else:
+                    consistency_analysis['timing_consistency'] = {'error': 'No time differences found'}
+                    
+            except Exception as e:
+                consistency_analysis['timing_consistency'] = {'error': f'Time analysis failed: {str(e)}'}
+        else:
+            consistency_analysis['timing_consistency'] = {'error': 'No timestamp column found'}
         
         # Print consistency summary
         if consistency_analysis:
             print(f"{'Consistency Metric':<25} {'Value':<15} {'Score':<8}")
             print("-" * 50)
             
-        for metric, analysis in consistency_analysis.items():
-        if 'balance_score' in analysis:
+            for metric, analysis in consistency_analysis.items():
+                if 'balance_score' in analysis:
                     print(f"{'Trade Balance':<25} {analysis['buy_trades']}/{analysis['sell_trades']:<15} {analysis['balance_score']:<8.1f}")
                 elif 'consistency_score' in analysis:
                     print(f"{'PnL Consistency':<25} {analysis['pnl_cv']:<15.1f}% {analysis['consistency_score']:<8.1f}")
@@ -416,40 +418,40 @@ class BacktestingQualityAnalyzer:
         
         # Check for data consistency
         if 'timestamp' in self.backtest_data.columns:
-        try:
-        self.backtest_data['timestamp'] = pd.to_datetime(self.backtest_data['timestamp'])
-                time_diff, self.backtest_data['timestamp'].diff().dropna()
+            try:
+                self.backtest_data['timestamp'] = pd.to_datetime(self.backtest_data['timestamp'])
+                time_diff = self.backtest_data['timestamp'].diff().dropna()
                 
-        if len(time_diff) > 0:
-        # Check for gaps in data
-                    large_gaps, time_diff[time_diff > time_diff.mean() * 3]
-                    gap_score, max(0, 100 - len(large_gaps) * 5)
+                if len(time_diff) > 0:
+                    # Check for gaps in data
+                    large_gaps = time_diff[time_diff > time_diff.mean() * 3]
+                    gap_score = max(0, 100 - len(large_gaps) * 5)
                     
                     data_quality_analysis['time_consistency'] = {
                         'large_gaps': len(large_gaps),
                         'gap_score': gap_score
                     }
-        except Exception as e:
+            except Exception as e:
                 print(f"Error analyzing time consistency: {e}")
         
         # Check for logical consistency
-        logical_issues, 0
+        logical_issues = 0
         if 'equity' in self.backtest_data.columns and 'drawdown' in self.backtest_data.columns:
-        # Check if drawdown is consistent with equity
-            equity, self.backtest_data['equity'].dropna()
-            drawdown, self.backtest_data['drawdown'].dropna()
+            # Check if drawdown is consistent with equity
+            equity = self.backtest_data['equity'].dropna()
+            drawdown = self.backtest_data['drawdown'].dropna()
             
-        if len(equity) > 0 and len(drawdown) > 0:
-                min_len, min(len(equity), len(drawdown))
-                equity_aligned, equity[:min_len]
-                drawdown_aligned, drawdown[:min_len]
+            if len(equity) > 0 and len(drawdown) > 0:
+                min_len = min(len(equity), len(drawdown))
+                equity_aligned = equity[:min_len]
+                drawdown_aligned = drawdown[:min_len]
                 
-        # Check if drawdown is always negative
+                # Check if drawdown is always negative
                 positive_drawdown = (drawdown_aligned > 0).sum()
-        if positive_drawdown > 0:
+                if positive_drawdown > 0:
                     logical_issues += positive_drawdown
         
-        logical_score, max(0, 100 - logical_issues * 10)
+        logical_score = max(0, 100 - logical_issues * 10)
         data_quality_analysis['logical_consistency'] = {
             'logical_issues': logical_issues,
             'logical_score': logical_score
@@ -481,38 +483,38 @@ class BacktestingQualityAnalyzer:
             performance_scores = [analysis['score'] for analysis in self.report['performance_metrics'].values()]
             performance_score, np.mean(performance_scores) if performance_scores else 0
         
-        risk_score, 0
+        risk_score = 0
         if self.report.get('risk_metrics'):
             risk_scores = [analysis['score'] for analysis in self.report['risk_metrics'].values()]
-            risk_score, np.mean(risk_scores) if risk_scores else 0
+            risk_score = np.mean(risk_scores) if risk_scores else 0
         
-        consistency_score, 0
+        consistency_score = 0
         if self.report.get('trading_consistency'):
             consistency_scores = []
-        for analysis in self.report['trading_consistency'].values():
-        if 'balance_score' in analysis:
+            for analysis in self.report['trading_consistency'].values():
+                if 'balance_score' in analysis:
                     consistency_scores.append(analysis['balance_score'])
-        if 'consistency_score' in analysis:
+                if 'consistency_score' in analysis:
                     consistency_scores.append(analysis['consistency_score'])
-        if 'time_consistency_score' in analysis:
+                if 'time_consistency_score' in analysis:
                     consistency_scores.append(analysis['time_consistency_score'])
             
-            consistency_score, np.mean(consistency_scores) if consistency_scores else 0
+            consistency_score = np.mean(consistency_scores) if consistency_scores else 0
         
-        data_quality_score, 0
+        data_quality_score = 0
         if self.report.get('data_quality'):
             quality_scores = []
-        for analysis in self.report['data_quality'].values():
-        if 'quality_score' in analysis:
+            for analysis in self.report['data_quality'].values():
+                if 'quality_score' in analysis:
                     quality_scores.append(analysis['quality_score'])
-        if 'completeness_score' in analysis:
+                if 'completeness_score' in analysis:
                     quality_scores.append(analysis['completeness_score'])
-        if 'gap_score' in analysis:
+                if 'gap_score' in analysis:
                     quality_scores.append(analysis['gap_score'])
-        if 'logical_score' in analysis:
+                if 'logical_score' in analysis:
                     quality_scores.append(analysis['logical_score'])
             
-            data_quality_score, np.mean(quality_scores) if quality_scores else 0
+            data_quality_score = np.mean(quality_scores) if quality_scores else 0
         
         # Overall backtest score
         backtest_score = (performance_score * 0.4 + 

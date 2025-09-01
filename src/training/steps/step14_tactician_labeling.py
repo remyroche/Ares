@@ -179,39 +179,49 @@ class RegimeAwareTacticianLabeler:
     async def _get_regime_specific_barriers(
         self, regime: str, regime_data: pd.DataFrame
     ) -> Dict[str, Tuple[float, float]]:
-        """Get regime-specific barriers for tactician labeling."""
+        """Get regime-specific barriers for tactician labeling using existing HMM regime information."""
         
-        self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime}")
+        self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
         
         try:
             if self.regime_config["regime_specific_barriers"]:
-                # Calculate regime-specific barrier parameters
-                regime_volatility = regime_data['close'].pct_change().std()
-                regime_volume = regime_data['volume'].mean()
-                regime_spread = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
+                # Use existing HMM regime information instead of recalculating metrics
+                # The HMM clusters already capture volatility, volume, and market characteristics
                 
-                # Regime-specific barrier calculation
+                # Get regime-specific parameters from HMM cluster information
+                regime_info = await self._get_regime_info_from_hmm_cluster(regime, regime_data)
+                
+                # Base barriers
                 base_upper = 0.02  # 2% default
                 base_lower = 0.01  # 1% default
                 
-                # Adjust based on regime characteristics
-                if regime_volatility > 0.02:  # High volatility regime
+                # Use HMM regime characteristics for barrier adjustment
+                if regime_info.get("regime_type") == "high_volatility":
                     upper_multiplier = 1.5
                     lower_multiplier = 1.2
-                elif regime_volatility < 0.005:  # Low volatility regime
+                elif regime_info.get("regime_type") == "low_volatility":
                     upper_multiplier = 0.8
                     lower_multiplier = 0.7
-                else:  # Normal volatility regime
+                elif regime_info.get("regime_type") == "trending":
+                    upper_multiplier = 1.2
+                    lower_multiplier = 0.9
+                elif regime_info.get("regime_type") == "ranging":
+                    upper_multiplier = 0.9
+                    lower_multiplier = 1.1
+                else:  # Default regime
                     upper_multiplier = 1.0
                     lower_multiplier = 1.0
                 
-                # Volume-based adjustments
-                if regime_volume > 10000:  # High volume regime
-                    upper_multiplier *= 1.1
-                    lower_multiplier *= 1.1
-                elif regime_volume < 1000:  # Low volume regime
-                    upper_multiplier *= 0.9
-                    lower_multiplier *= 0.9
+                # Apply regime-specific adjustments based on HMM cluster characteristics
+                regime_intensity = regime_info.get("intensity", 1.0)
+                regime_stability = regime_info.get("stability", 1.0)
+                
+                # Adjust based on regime intensity and stability
+                intensity_adjustment = 1.0 + (regime_intensity - 1.0) * 0.3
+                stability_adjustment = 1.0 + (regime_stability - 1.0) * 0.2
+                
+                upper_multiplier *= intensity_adjustment * stability_adjustment
+                lower_multiplier *= intensity_adjustment * stability_adjustment
                 
                 # Calculate final barriers
                 upper_barrier = base_upper * upper_multiplier
@@ -224,7 +234,9 @@ class RegimeAwareTacticianLabeler:
                     "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5)
                 }
                 
-                self.logger.info(f"✅ Calculated regime {regime} barriers:")
+                self.logger.info(f"✅ Calculated regime {regime} barriers using HMM cluster information:")
+                self.logger.info(f"   Regime type: {regime_info.get('regime_type', 'unknown')}")
+                self.logger.info(f"   Intensity: {regime_intensity:.3f}, Stability: {regime_stability:.3f}")
                 for barrier_type, (upper, lower) in regime_barriers.items():
                     self.logger.info(f"   {barrier_type}: Upper={upper:.4f} ({upper*100:.2f}%), Lower={lower:.4f} ({lower*100:.2f}%)")
                 
@@ -236,6 +248,73 @@ class RegimeAwareTacticianLabeler:
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
             return self.barrier_combinations
+
+    async def _get_regime_info_from_hmm_cluster(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Get regime information from existing HMM cluster data."""
+        
+        try:
+            # Extract regime information from HMM cluster columns
+            regime_info = {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0
+            }
+            
+            # Check for HMM intensity columns
+            intensity_columns = [col for col in regime_data.columns if col.startswith('intensity_cluster_')]
+            if intensity_columns:
+                # Use intensity information from HMM clusters
+                intensity_values = regime_data[intensity_columns].mean()
+                regime_info["intensity"] = intensity_values.mean()
+                
+                # Determine regime type based on intensity patterns
+                if regime_info["intensity"] > 1.5:
+                    regime_info["regime_type"] = "high_volatility"
+                elif regime_info["intensity"] < 0.5:
+                    regime_info["regime_type"] = "low_volatility"
+                else:
+                    regime_info["regime_type"] = "normal"
+            
+            # Check for HMM probability columns
+            prob_columns = [col for col in regime_data.columns if col.endswith('_p_state_')]
+            if prob_columns:
+                # Calculate regime stability from probability distributions
+                prob_values = regime_data[prob_columns].mean()
+                regime_info["stability"] = 1.0 - prob_values.std()  # Higher std = lower stability
+            
+            # Check for composite cluster characteristics
+            if 'composite_cluster_id' in regime_data.columns:
+                # Use composite cluster information if available
+                cluster_stats = regime_data.groupby('composite_cluster_id').agg({
+                    'close': ['std', 'mean'],
+                    'volume': ['mean', 'std']
+                }).round(4)
+                
+                if not cluster_stats.empty:
+                    # Determine regime type based on cluster statistics
+                    price_volatility = cluster_stats[('close', 'std')].iloc[0]
+                    volume_level = cluster_stats[('volume', 'mean')].iloc[0]
+                    
+                    if price_volatility > 0.02:
+                        regime_info["regime_type"] = "high_volatility"
+                    elif price_volatility < 0.005:
+                        regime_info["regime_type"] = "low_volatility"
+                    elif volume_level > 10000:
+                        regime_info["regime_type"] = "high_volume"
+                    else:
+                        regime_info["regime_type"] = "normal"
+            
+            return regime_info
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
+            return {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0
+            }
 
     async def _apply_regime_barrier_labeling(
         self, regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float, float]], regime: str

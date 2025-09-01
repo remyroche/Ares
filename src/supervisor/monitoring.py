@@ -61,15 +61,7 @@ KeyError: (False, "Missing configuration keys"),
 default_return=False, context="monitoring initialization",
 )
 async def initialize(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "initialize"})
-            return None
+                try:
 self.logger.info("Initializing Monitoring...")
 await self._load_monitoring_configuration()
 if not self._validate_configuration():
@@ -86,15 +78,7 @@ exceptions=(ValueError, AttributeError),
 default_return=None, context="monitoring configuration loading",
 )
 async def _load_monitoring_configuration(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "_load_monitoring_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "_load_monitoring_configuration"})
-            return None
+                try:
 self.monitoring_config.setdefault("check_interval", 30)
 self.monitoring_config.setdefault("max_history", 100)
 self.check_interval = self.monitoring_config["check_interval"]
@@ -108,15 +92,7 @@ exceptions=(ValueError, AttributeError),
 default_return=False, context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "_validate_configuration"})
-            return None
+                try:
 if self.check_interval <= 0:
                 print(invalid("Invalid check interval"))
 return False
@@ -136,15 +112,7 @@ Exception: (False, "Monitoring run failed"),
 default_return=False, context="monitoring run",
 )
 async def run(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "run"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "run"})
-            return None
+                try:
 self.is_running = True
 self.logger.info("🚦 Monitoring started.")
 while self.is_running:
@@ -161,15 +129,7 @@ exceptions=(Exception,),
 default_return=None, context="monitoring step",
 )
 async def _perform_monitoring(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "_perform_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "_perform_monitoring"})
-            return None
+                try:
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -186,15 +146,7 @@ exceptions=(Exception,),
 default_return=None, context="system health check",
 )
 async def _check_system_health(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "_check_system_health"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "_check_system_health"})
-            return None
+                try:
 # Simulate system health checks
 health_status = {
 "cpu_usage": 45.2,
@@ -212,15 +164,7 @@ exceptions=(Exception,),
 default_return=None, context="metrics update",
 )
 async def _update_metrics(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "_update_metrics"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "_update_metrics"})
-            return None
+                try:
 # Update various metrics
 self.metrics["last_update"] = datetime.now().isoformat()
 self.metrics["uptime"] = "2h 15m 30s"
@@ -234,15 +178,7 @@ default_return=None, context="monitoring stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Monitoring...")
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "stop"})
-            return None
+        try:
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Monitoring stopped successfully")
@@ -273,15 +209,7 @@ default_return=None, context="monitoring setup",
 async def setup_monitoring(
 config: dict[str, Any] | None = None,
 ) -> Monitoring | None:
-    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("monitoring", e, {"operation": "setup_monitoring"})
-            return None
-        except Exception as e:
-            handle_component_failure("monitoring", e, {"operation": "setup_monitoring"})
-            return None
+            try:
 global monitoring
 if config is None:
             config = {"monitoring": {"check_interval": 30, "max_history": 100}}

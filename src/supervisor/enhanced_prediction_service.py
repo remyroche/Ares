@@ -64,15 +64,7 @@ context="initializing enhanced prediction service",
 @with_tracing_span("initialize_enhanced_prediction_service")
 async def initialize(self) -> bool:
         """Initialize the Enhanced Prediction Service."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "initialize"})
-            return None
+        try:
 self.logger.info("🚀 Initializing Enhanced Prediction Service...")
 
 # Load ML models for both Analyst and Tactician
@@ -100,15 +92,7 @@ context="loading analyst ML models",
 @intelligent_caching(cache_key="analyst_ml_models")
 async def _load_analyst_ml_models(self) -> None:
         """Load Analyst ML models (higher timeframe) from steps 6-14."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_analyst_ml_models"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_analyst_ml_models"})
-            return None
+        try:
 analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
 if not analyst_models_path.exists():
                 raise ValueError(f"Analyst ML models directory not found: {analyst_models_path}")
@@ -125,15 +109,7 @@ if type_path.exists():
                     self.analyst_ml_models[model_type] = {}
 
 for model_file in type_path.glob("*.pkl"):
-                        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+                                try:
 with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
 
@@ -166,15 +142,7 @@ context="loading tactician ML models",
 @intelligent_caching(cache_key="tactician_ml_models")
 async def _load_tactician_ml_models(self) -> None:
         """Load Tactician ML models (lower timeframe) from steps 6-14."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_tactician_ml_models"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_tactician_ml_models"})
-            return None
+        try:
 tactician_models_path = Path(self.data_dir) / "ml_profit_models" / "tactician_models"
 if not tactician_models_path.exists():
                 raise ValueError(f"Tactician ML models directory not found: {tactician_models_path}")
@@ -191,15 +159,7 @@ if type_path.exists():
                     self.tactician_ml_models[model_type] = {}
 
 for model_file in type_path.glob("*.pkl"):
-                        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+                                try:
 with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
 
@@ -231,27 +191,11 @@ context="loading calibration results",
 @with_tracing_span("load_calibration_results")
 async def _load_calibration_results(self) -> None:
         """Load calibration results from step 11 (model performance vs actual reliability)."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_calibration_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_calibration_results"})
-            return None
+        try:
 calibration_path = Path(self.data_dir) / "calibration_results"
 if calibration_path.exists():
                 for calibration_file in calibration_path.glob("*.json"):
-                    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_calibration_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_calibration_results"})
-            return None
+                            try:
 import json
 with open(calibration_file, "r") as f:
                             calibration_data = json.load(f)
@@ -274,27 +218,11 @@ context="loading optimization results",
 @with_tracing_span("load_optimization_results")
 async def _load_optimization_results(self) -> None:
         """Load optimization results from step 11 (model performance vs actual reliability)."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_optimization_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_optimization_results"})
-            return None
+        try:
 optimization_path = Path(self.data_dir) / "optimization_results"
 if optimization_path.exists():
                 for optimization_file in optimization_path.glob("*.json"):
-                    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_optimization_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_load_optimization_results"})
-            return None
+                            try:
 import json
 
 from src.utils.supervisor_error_handler import (
@@ -368,15 +296,7 @@ Returns:
 Raises:
             ValueError: If calibrated confidence doesn't exist for either model set
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+        try:
 if not self.is_initialized:
                 raise ValueError("Enhanced Prediction Service not initialized")
 
@@ -424,28 +344,12 @@ symbol: str,
 exchange: str
 ) -> Dict[str, float]:
         """Get calibrated confidence scores from Analyst ML models based on step 11 calibration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_get_analyst_calibrated_confidence"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_get_analyst_calibrated_confidence"})
-            return None
+        try:
 analyst_scores = {}
 
 for model_type, models in self.analyst_ml_models.items():
                 for model_name, model_data in models.items():
-                    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+                            try:
 # Get price action probabilities from ML model
 price_action_probabilities = model_data.get("price_action_probabilities", {})
 
@@ -489,28 +393,12 @@ symbol: str,
 exchange: str
 ) -> Dict[str, float]:
         """Get calibrated confidence scores from Tactician ML models based on step 11 calibration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_get_tactician_calibrated_confidence"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "_get_tactician_calibrated_confidence"})
-            return None
+        try:
 tactician_scores = {}
 
 for model_type, models in self.tactician_ml_models.items():
                 for model_name, model_data in models.items():
-                    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+                            try:
 # Get price action probabilities from ML model
 price_action_probabilities = model_data.get("price_action_probabilities", {})
 
@@ -562,15 +450,7 @@ model_type: Type of model (analyst/tactician)
 Returns:
             Calibrated confidence score or None if calibration fails
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Extract key probability metrics from ML model
 triple_barrier_prob = price_action_probabilities.get("triple_barrier_probability", 0.5)
 direction_prob = price_action_probabilities.get("direction_probability", 0.5)
@@ -664,15 +544,7 @@ model_name: Name of the model for logging
 Returns:
             True if probabilities are valid, False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+        try:
 required_probabilities = [
 "triple_barrier_probability",
 "direction_probability",
@@ -729,15 +601,7 @@ model_name: Name of the model for logging
 Returns:
             True if model has valid probability outputs, False otherwise
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "unknown_function"})
-            return None
+        try:
 # Check if model_data has price_action_probabilities
 if "price_action_probabilities" not in model_data:
                 self.logger.warning(warning(f"⚠️ Model {model_name} missing 'price_action_probabilities' key"))
@@ -769,15 +633,7 @@ Verify that ALL loaded models have probability outputs.
 Returns:
             Dictionary with verification results for all models
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "verify_all_models_probability_outputs"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "verify_all_models_probability_outputs"})
-            return None
+        try:
 verification_results = {
 "analyst_models": {},
 "tactician_models": {},
@@ -842,15 +698,7 @@ context="checking service health",
 @with_tracing_span("check_service_health")
 async def check_service_health(self) -> bool:
         """Check if the service is healthy and has loaded models with probability outputs."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "check_service_health"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "check_service_health"})
-            return None
+        try:
 if not self.is_initialized:
                 return False
 
@@ -880,15 +728,7 @@ return False
 
 def get_service_info(self) -> Dict[str, Any]:
         """Get service information and statistics."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "get_service_info"})
-            return None
-        except Exception as e:
-            handle_component_failure("enhanced_prediction_service", e, {"operation": "get_service_info"})
-            return None
+        try:
 analyst_model_count = sum(len(models) for models in self.analyst_ml_models.values())
 tactician_model_count = sum(len(models) for models in self.tactician_ml_models.values())
 

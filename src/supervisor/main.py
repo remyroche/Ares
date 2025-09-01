@@ -218,15 +218,7 @@ else:
 self.running = False
 return
 
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "unknown_function"})
-            return None
+        try:
 await asyncio.gather(*tasks)
 except asyncio.CancelledError:
             self.logger.info(
@@ -260,15 +252,7 @@ async def _synchronize_exchange_state(self):
 Fetches the current account equity and open positions from the exchange
 and updates the persistent state. This is key for crash recovery.
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "_synchronize_exchange_state"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "_synchronize_exchange_state"})
-            return None
+        try:
 # 1. Update account equity and peak equity
 account_info = await self.trader.get_account_info()  # Use self.trader
 current_equity = float(account_info.get("totalWalletBalance", 0))
@@ -386,14 +370,6 @@ context="main supervisor initialization",
 )
 async def initialize(self) -> bool:
         try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "initialize"})
-            return None
 self.logger.info("Initializing Main Supervisor...")
 await self._load_supervisor_configuration()
 if not self._validate_configuration():
@@ -412,14 +388,6 @@ context="supervisor configuration loading",
 )
 async def _load_supervisor_configuration(self) -> None:
         try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "_load_supervisor_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "_load_supervisor_configuration"})
-            return None
 self.supervisor_config.setdefault("run_interval", 60)
 self.supervisor_config.setdefault("max_history", 100)
 self.run_interval = self.supervisor_config["run_interval"]
@@ -435,14 +403,6 @@ context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
         try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "_validate_configuration"})
-            return None
 if self.run_interval <= 0:
                 self.logger.error("Invalid run interval")
 return False
@@ -464,14 +424,6 @@ context="main supervisor run",
 )
 async def run(self) -> bool:
         try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "run"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "run"})
-            return None
 self.is_running = True
 self.logger.info("🚦 Main Supervisor started.")
 while self.is_running:
@@ -490,14 +442,6 @@ context="supervise step",
 )
 async def _supervise(self) -> None:
         try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "_supervise"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "_supervise"})
-            return None
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -514,15 +458,7 @@ context="main supervisor stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Main Supervisor...")
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "stop"})
-            return None
+        try:
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Main Supervisor stopped successfully")
@@ -549,14 +485,6 @@ async def setup_main_supervisor(
 config: dict[str, Any] | None = None,
 ) -> MainSupervisor | None:
     try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("main", e, {"operation": "setup_main_supervisor"})
-            return None
-        except Exception as e:
-            handle_component_failure("main", e, {"operation": "setup_main_supervisor"})
-            return None
 global main_supervisor
 if config is None:
             config = {"main_supervisor": {"run_interval": 60, "max_history": 100}}

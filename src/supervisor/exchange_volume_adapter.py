@@ -117,15 +117,7 @@ context="exchange volume adapter initialization",
 )
 async def initialize(self) -> bool:
         """Initialize the exchange volume adapter."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "initialize"})
-            return None
+        try:
 self.logger.info("Initializing Exchange Volume Adapter...")
 
 # Load configuration
@@ -157,15 +149,7 @@ context="adapter configuration loading",
 )
 async def _load_adapter_configuration(self) -> None:
         """Load adapter configuration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_load_adapter_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_load_adapter_configuration"})
-            return None
+        try:
 # Set defaults
 self.adapter_config.setdefault("enable_volume_adaptation", True)
 self.adapter_config.setdefault("enable_dynamic_adjustment", True)
@@ -185,15 +169,7 @@ context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
         """Validate adapter configuration."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_validate_configuration"})
-            return None
+        try:
 if self.volume_history_window <= 0:
                 self.logger.error("Invalid volume history window")
 return False
@@ -216,15 +192,7 @@ context="volume metrics initialization",
 )
 async def _initialize_volume_metrics(self) -> None:
         """Initialize volume metrics for all exchanges."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_initialize_volume_metrics"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "_initialize_volume_metrics"})
-            return None
+        try:
 for exchange in self.volume_profiles:
                 self.current_volume_metrics[exchange] = {
 "current_volume": 0,
@@ -269,15 +237,7 @@ confidence_score: Model confidence score (optional)
 Returns:
             Adjusted position size
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
+        try:
 profile = self.get_volume_profile(exchange)
 base_multiplier = profile["position_size_multiplier"]
 
@@ -325,15 +285,7 @@ return base_position_size * 0.5  # Conservative fallback
 
 def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
         """Calculate spread adjustment based on exchange characteristics."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "calculate_spread_adjustment"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "calculate_spread_adjustment"})
-            return None
+        try:
 profile = self.get_volume_profile(exchange)
 spread_multiplier = profile["spread_multiplier"]
 return base_spread * spread_multiplier
@@ -346,15 +298,7 @@ def calculate_slippage_adjustment(
 self, exchange: str,
 base_slippage: float = None) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "calculate_slippage_adjustment"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "calculate_slippage_adjustment"})
-            return None
+        try:
 profile = self.get_volume_profile(exchange)
 slippage_multiplier = profile["slippage_multiplier"]
 return base_slippage * slippage_multiplier
@@ -377,15 +321,7 @@ data_quality_metrics: Optional data quality metrics
 Returns:
             Adjusted confidence score
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
+        try:
 profile = self.get_volume_profile(exchange)
 data_quality_score = profile["data_quality_score"]
 
@@ -434,15 +370,7 @@ market_impact_threshold: Custom market impact threshold
 Returns:
             Tuple of (should_execute = reason)
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "unknown_function"})
-            return None
+        try:
 profile = self.get_volume_profile(exchange)
 threshold = market_impact_threshold or profile["market_impact_threshold"]
 
@@ -476,15 +404,7 @@ context="adaptation factor retrieval",
 )
 async def get_adaptation_factor(self, exchange: str) -> float:
         """Get adaptation factor for an exchange based on volume characteristics."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "get_adaptation_factor"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "get_adaptation_factor"})
-            return None
+        try:
 exchange_upper = exchange.upper()
 if exchange_upper not in self.volume_profiles:
                 self.logger.warning(f"No volume profile for exchange: {exchange}")
@@ -518,15 +438,7 @@ return 1.0
 
 def get_adaptation_summary(self) -> dict[str , Any]:
         """Get summary of current volume adaptations."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "get_adaptation_summary"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "get_adaptation_summary"})
-            return None
+        try:
 return {
 "enabled": self.enable_volume_adaptation,
 "dynamic_adjustment": self.enable_dynamic_adjustment,
@@ -544,15 +456,7 @@ self, exchange: str,
 current_volume: float = None, spread: float = None,
 slippage: float = None) -> None:
         """Update volume metrics for an exchange."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "update_volume_metrics"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "update_volume_metrics"})
-            return None
+        try:
 if exchange.upper() not in self.current_volume_metrics:
                 self.print(warning("No metrics tracking for {exchange}"))
 return
@@ -584,15 +488,7 @@ except Exception:
 
 async def cleanup(self) -> None:
         """Cleanup resources."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "cleanup"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "cleanup"})
-            return None
+        try:
 self.logger.info("Cleaning up Exchange Volume Adapter...")
 # Clear history
 self.adaptation_history.clear()
@@ -610,15 +506,7 @@ async def setup_exchange_volume_adapter(
 config: dict[str , Any] | None = None,
 ) -> ExchangeVolumeAdapter | None:
     """Setup exchange volume adapter."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "setup_exchange_volume_adapter"})
-            return None
-        except Exception as e:
-            handle_component_failure("exchange_volume_adapter", e, {"operation": "setup_exchange_volume_adapter"})
-            return None
+        try:
 if config is None:
             config = {}
 

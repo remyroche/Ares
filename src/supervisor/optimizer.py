@@ -60,15 +60,7 @@ default_return=False,
 context="optimizer initialization",
 )
 async def initialize(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "initialize"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "initialize"})
-            return None
+                try:
 self.logger.info("Initializing Optimizer...")
 await self._load_optimizer_configuration()
 if not self._validate_configuration():
@@ -86,15 +78,7 @@ default_return=None,
 context="optimizer configuration loading",
 )
 async def _load_optimizer_configuration(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_load_optimizer_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_load_optimizer_configuration"})
-            return None
+                try:
 self.optimizer_config.setdefault("optimization_interval", 300)
 self.optimizer_config.setdefault("max_history", 100)
 self.optimization_interval = self.optimizer_config["optimization_interval"]
@@ -109,15 +93,7 @@ default_return=False,
 context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_validate_configuration"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_validate_configuration"})
-            return None
+                try:
 if self.optimization_interval <= 0:
                 self.logger.error("Invalid optimization interval")
 return False
@@ -138,15 +114,7 @@ default_return=False,
 context="optimizer run",
 )
 async def run(self) -> bool:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "run"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "run"})
-            return None
+                try:
 self.is_running = True
 self.logger.info("🚦 Optimizer started.")
 while self.is_running:
@@ -164,15 +132,7 @@ default_return=None,
 context="optimization step",
 )
 async def _perform_optimization(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_perform_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_perform_optimization"})
-            return None
+                try:
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -190,15 +150,7 @@ default_return=None,
 context="parameter optimization",
 )
 async def _optimize_parameters(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_optimize_parameters"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_optimize_parameters"})
-            return None
+                try:
 # Simulate parameter optimization
 optimized_params = {
 "learning_rate": 0.001,
@@ -217,15 +169,7 @@ default_return=None,
 context="optimization results update",
 )
 async def _update_optimization_results(self) -> None:
-        try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_update_optimization_results"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_update_optimization_results"})
-            return None
+                try:
 # Update optimization results
 self.optimization_results["last_update"] = datetime.now().isoformat()
 self.optimization_results["optimization_score"] = 0.85
@@ -241,15 +185,7 @@ context="optimizer stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Optimizer...")
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "stop"})
-            return None
+        try:
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Optimizer stopped successfully")
@@ -297,15 +233,7 @@ futures_df: Futures data
 Returns:
             dict: Optimization results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "unknown_function"})
-            return None
+        try:
 self.logger.info(
 "Running Final Fine-Tuned System Optimization (Stage 3b)...",
 )
@@ -355,15 +283,7 @@ return {"status": "failed", "error": str(e)}
 
 def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
         """Get support/resistance levels from daily data."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "_get_sr_levels"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "_get_sr_levels"})
-            return None
+        try:
 # Simple SR level calculation
 levels = []
 if not daily_df.empty:
@@ -390,15 +310,7 @@ default_return=None,
 context="optimizer setup",
 )
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
-    try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("optimizer", e, {"operation": "setup_optimizer"})
-            return None
-        except Exception as e:
-            handle_component_failure("optimizer", e, {"operation": "setup_optimizer"})
-            return None
+            try:
 global optimizer
 if config is None:
             config = {"optimizer": {"optimization_interval": 300, "max_history": 100}}

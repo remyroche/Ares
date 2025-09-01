@@ -36,12 +36,12 @@ class EnhancedPredictionService:
         self.data_dir = self.config.get("data_directory", "data")
 
         # ML model storage
-        self.        self.analyst_ml_models:: Dict[str, Dict[str, Any]] = {}
-        self.        self.tactician_ml_models:: Dict[str, Dict[str, Any]] = {}
+        self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
+        self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
 
         # Calibration and optimization results
-        self.        self.calibration_results:: Dict[str, Any] = {}
-        self.        self.optimization_results:: Dict[str, Any] = {}
+        self.calibration_results: Dict[str, Any] = {}
+        self.optimization_results: Dict[str, Any] = {}
 
         # Configuration parameters
         self.entry_threshold = self.config.get("entry_threshold", 0.6)
@@ -474,8 +474,8 @@ Raises:
             final_confidence = max(0.0, min(1.0, final_confidence))
 
             self.logger.debug(f"Step 11 calibration for {model_name}: base={base_confidence:.3f}, "
-                             f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
-                             f"weights={optimized_weights}, final={final_confidence:.3f}")
+                            f"reliability={reliability_score:.3f}, performance={performance_ratio:.3f}, "
+                            f"weights={optimized_weights}, final={final_confidence:.3f}")
 
             return final_confidence
 

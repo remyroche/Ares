@@ -1,212 +1,170 @@
 #!/usr/bin/env python3
 """
-Targeted Syntax Fixer for specific issues found in the codebase
+Targeted Syntax Fixer
+Fixes specific syntax errors found in the supervisor files.
 """
 
 import os
 import re
-from typing import List, Dict
+from typing import List, Dict, Tuple
+import argparse
 
 
 class TargetedSyntaxFixer:
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="targetedsyntaxfixer initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TargetedSyntaxFixer."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    passpass"""Fixes specific syntax issues found in the codebase."""
+    """Fixes specific syntax errors found in supervisor files."""
     
-    def __init__(...):
-    passself.fixes_applied = 0
+    def __init__(self):
+        self.fixes_applied = 0
         self.files_fixed = 0
         
-    def fix_file(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def fix_file(self, filepath: str, dry_run: bool = False) -> bool:
+        """Fix syntax errors in a single file."""
+        try:
             with open(filepath, 'r', encoding='utf-8') as f:
-    passcontent = f.read()
+                content = f.read()
             
             original_content = content
-            content = self._fix_duplicate_classes(content)
-            content = self._fix_incomplete_code_blocks(content)
-            content = self._fix_missing_imports(content)
+            content = self._fix_specific_errors(content)
             
             if content != original_content:
-    passif not dry_run:
-    passwith open(filepath, 'w', encoding='utf-8') as f:
-    passf.write(content)
+                if not dry_run:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(content)
                     print(f"✅ Fixed: {filepath}")
                 else:
-    passprint(f"🔧 Would fix: {filepath}")
+                    print(f"🔧 Would fix: {filepath}")
                 self.fixes_applied += 1
+                self.files_fixed += 1
                 return True
                 
             return False
             
         except Exception as e:
-    passpasspasspasspasspasspassprint(f"❌ Error processing {filepath}: {e}")
+            print(f"❌ Error processing {filepath}: {e}")
             return False
     
-    def _fix_duplicate_classes(...) -> ...:
-    """..."""
-    passlines = content.split('\n')
+    def _fix_specific_errors(self, content: str) -> str:
+        """Fix specific syntax errors found in supervisor files."""
+        lines = content.split('\n')
         fixed_lines = []
-        i = 0
         
+        i = 0
         while i < len(lines):
-    passline = lines[i]
+            line = lines[i]
             
-            # Check for duplicate class definitions
-            if line.strip().startswith('class ') and ':' in line:
-                class_name = line.split('class ')[1].split('(')[0].split(':')[0].strip()
-                
-                # Look ahead for duplicate class definitions
-                j = i + 1
-                while j < len(lines):
-    passpassnext_line = lines[j]
-                    if next_line.strip().startswith('class ') and class_name in next_line:
-    pass# Skip this duplicate line
+            # Fix 1: Fix malformed type annotations with double colons
+            # Pattern: self.        self.variable_name:: Type = value
+            line = re.sub(r'self\.\s+self\.(\w+)::\s*([^=]+?)\s*=\s*(.+)', r'self.\1: \2 = \3', line)
+            
+            # Fix 2: Fix malformed type annotations without value
+            # Pattern: self.        self.variable_name:: Type
+            line = re.sub(r'self\.\s+self\.(\w+)::\s*([^=]+?)$', r'self.\1: \2', line)
+            
+            # Fix 3: Fix unterminated triple-quoted strings
+            if '"""' in line:
+                quote_count = line.count('"""')
+                if quote_count % 2 == 1:
+                    # Look for closing quote in next lines
+                    j = i + 1
+                    found_closing = False
+                    while j < len(lines):
+                        if '"""' in lines[j]:
+                            found_closing = True
+                            break
                         j += 1
+                    
+                    if not found_closing:
+                        # Add closing quote at end of current line
+                        line = line + '"""'
+            
+            # Fix 4: Fix empty triple-quoted strings
+            if line.strip() == '""""""':
+                line = '"""'
+            
+            # Fix 5: Fix indentation issues
+            stripped = line.strip()
+            if stripped:
+                # Remove leading whitespace and re-indent properly
+                if line.startswith(' ') or line.startswith('\t'):
+                    # Count current indentation
+                    indent_count = 0
+                    for char in line:
+                        if char == ' ':
+                            indent_count += 1
+                        elif char == '\t':
+                            indent_count += 4
+                        else:
+                            break
+                    
+                    # Normalize to 4-space indentation
+                    indent_level = max(0, indent_count // 4)
+                    line = '    ' * indent_level + stripped
+                else:
+                    # Check if this line should be indented
+                    should_indent = False
+                    for prev_line in reversed(fixed_lines):
+                        prev_stripped = prev_line.strip()
+                        if prev_stripped.endswith(':'):
+                            if any(prev_stripped.startswith(keyword) for keyword in 
+                                   ['try', 'except', 'if', 'for', 'while', 'def', 'class', 'else', 'elif']):
+                                should_indent = True
+                                break
+                        elif prev_stripped:  # Non-empty line that doesn't end with :
+                            break
+                    
+                    if should_indent:
+                        line = '    ' + stripped
+            
+            # Fix 6: Add missing pass statements after control structures
+            if (stripped.endswith(':') and 
+                any(stripped.startswith(keyword) for keyword in ['try', 'except', 'if', 'for', 'while', 'def', 'class'])):
+                # Check if next line is missing or not indented
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    if not next_line or (next_line and not lines[i + 1].startswith(' ') and not lines[i + 1].startswith('\t')):
+                        # Add pass statement
+                        fixed_lines.append(line)
+                        fixed_lines.append('    pass')
+                        i += 1
                         continue
-                    elif next_line.strip() and not next_line.startswith(' '):
-    passpassbreak
-                    j += 1
-                
-                # Add the first occurrence and skip duplicates
-                fixed_lines.append(line)
-                i += 1
-                
-                # Skip to the end of the class or next non-indented line
-                while i < len(lines):
-    passif lines[i].strip() and not lines[i].startswith(' '):
-    passbreak
-                    fixed_lines.append(lines[i])
-                    i += 1
-            else:
-    passfixed_lines.append(line)
-                i += 1
-        
-        return '\n'.join(fixed_lines)
-    
-    def _fix_incomplete_code_blocks(...) -> ...:
-    """..."""
-    passlines = content.split('\n')
-        fixed_lines = []
-        i = 0
-        
-        while i < len(lines):
-    passline = lines[i]
-            
-            # Fix incomplete dataclass definitions
-            if line.strip() == '@dataclass' and i + 1 < len(lines):
-    passnext_line = lines[i + 1]
-                if not next_line.strip() or next_line.strip().startswith('class'):
-    pass# Add a basic dataclass
-                    fixed_lines.append(line)
-                    fixed_lines.append('class PlaceholderDataClass:')
-                    fixed_lines.append('    self.logger.info("Implementation placeholder - needs specific logic")')
-                    i += 1
-                    continue
-            
-            # Fix incomplete enum definitions
-            if line.strip().startswith('class ') and 'Enum' in line and line.strip().endswith(':'):
-                if i + 1 < len(lines) and lines[i + 1].strip() == 'self.logger.info("Implementation placeholder - needs specific logic")':
-                    # Skip the incomplete enum
-                    i += 2
-                    continue
-            
-            # Fix incomplete function definitions
-            if line.strip().startswith('def ') and line.strip().endswith(':'):
-                if i + 1 < len(lines) and lines[i + 1].strip() == 'self.logger.info("Implementation placeholder - needs specific logic")':
-                    # Skip the incomplete function
-                    i += 2
-                    continue
             
             fixed_lines.append(line)
             i += 1
         
         return '\n'.join(fixed_lines)
     
-    def _fix_missing_imports(...) -> ...:
-    """..."""
-    passif '@dataclass' in content and 'from dataclasses import dataclass' not in content:
-    pass# Add dataclass import
-            lines = content.split('\n')
-            import_lines = []
-            other_lines = []
-            
-            for line in lines:
-    passif line.strip().startswith('import ') or line.strip().startswith('from '):
-    passimport_lines.append(line)
-                else:
-    passother_lines.append(line)
-            
-            if import_lines:
-    passimport_lines.append('from dataclasses import dataclass')
-                return '\n'.join(import_lines + [''] + other_lines)
-            else:
-    passreturn 'from dataclasses import dataclass\n\n' + content
-        
-        return content
-    
-    def fix_directory(...) -> ...:
-    """..."""
-    passresults = {'files_processed': 0, 'files_fixed': 0, 'total_fixes': 0}
+    def fix_directory(self, directory: str, dry_run: bool = False) -> Dict[str, int]:
+        """Fix syntax errors in all Python files in a directory."""
+        stats = {'files_processed': 0, 'files_fixed': 0, 'total_fixes': 0}
         
         for root, dirs, files in os.walk(directory):
-    passfor file in files:
-    passif file.endswith('.py'):
-    passfilepath = os.path.join(root, file)
-                    results['files_processed'] += 1
+            for file in files:
+                if file.endswith('.py'):
+                    filepath = os.path.join(root, file)
+                    stats['files_processed'] += 1
                     
                     if self.fix_file(filepath, dry_run):
-    passresults['files_fixed'] += 1
-                        results['total_fixes'] += self.fixes_applied
+                        stats['files_fixed'] += 1
+                        stats['total_fixes'] += self.fixes_applied
         
-        return results
+        return stats
 
 
-def main(...):
-    passimport argparse
-    
-    parser = argparse.ArgumentParser(description='Fix specific Python syntax issues')
+def main():
+    parser = argparse.ArgumentParser(description='Fix specific Python syntax errors')
     parser.add_argument('directory', help='Directory to fix')
-    parser.add_argument('--no-dry-run', action='store_true', help='Actually apply fixes')
-    parser.add_argument('--output', help='Output report to file')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be fixed without making changes')
     
     args = parser.parse_args()
     
     fixer = TargetedSyntaxFixer()
-    results = fixer.fix_directory(args.directory, dry_run=not args.no_dry_run)
+    stats = fixer.fix_directory(args.directory, args.dry_run)
     
-    report = f"""
-Targeted Syntax Fix Report
-====Files processed: {results['files_processed']}
-Files fixed: {results['files_fixed']}
-Total fixes applied: {results['total_fixes']}
-"""
-    
-    if args.output:
-    passwith open(args.output, 'w') as f:
-    passf.write(report)
-        print(f"Report written to {args.output}")
-    else:
-    passprint(report)
+    print(f"\n📊 Summary:")
+    print(f"Files processed: {stats['files_processed']}")
+    print(f"Files fixed: {stats['files_fixed']}")
+    print(f"Total fixes applied: {stats['total_fixes']}")
 
 
 if __name__ == '__main__':
-    passmain()
+    main()

@@ -17,11 +17,11 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.state_manager import StateManager
 
 from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler, supervisor_critical_error_handler, 
-    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
-    handle_portfolio_error, handle_risk_error, handle_performance_error, 
-    handle_model_error, handle_exchange_error, ComponentFailureError, 
-    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
+    supervisor_component_error_handler, supervisor_critical_error_handler,
+    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure,
+    handle_portfolio_error, handle_risk_error, handle_performance_error,
+    handle_model_error, handle_exchange_error, ComponentFailureError,
+    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError,
     ModelManagementError, ExchangeIntegrationError
 )
 
@@ -176,6 +176,7 @@ self.running = False
 return
 
         try:
+    pass
 await asyncio.gather(*tasks)
 except asyncio.CancelledError:
             self.logger.info(
@@ -203,6 +204,7 @@ Fetches the current account equity and open positions from the exchange
 and updates the persistent state. This is key for crash recovery.
         """
         try:
+    pass
 # 1. Update account equity and peak equity
 account_info = await self.trader.get_account_info()  # Use self.trader
 current_equity = float(account_info.get("totalWalletBalance", 0))
@@ -283,17 +285,17 @@ exc_info=True
 class MainSupervisor:
         """
 Main Supervisor Entrypoint with DI, type hints, and robust error handling.
-        """
+"""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.        self.config:: dict[str, Any] = config
+        self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("MainSupervisor")
-        self.        self.is_running:: bool = False
-        self.        self.status:: dict[str, Any] = {}
-        self.        self.history:: list[dict[str, Any]] = []
-        self.        self.supervisor_config:: dict[str, Any] = self.config.get("main_supervisor", {})
-        self.        self.run_interval:: int = self.supervisor_config.get("run_interval", 60)
-        self.        self.max_history:: int = self.supervisor_config.get("max_history", 100)
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.supervisor_config: dict[str, Any] = self.config.get("main_supervisor", {})
+        self.run_interval: int = self.supervisor_config.get("run_interval", 60)
+        self.max_history: int = self.supervisor_config.get("max_history", 100)
 
     @handle_specific_errors(
 error_handlers={
@@ -305,6 +307,7 @@ default_return=False,
 context="main supervisor initialization")
     async def initialize(self) -> bool:
         try:
+    pass
 self.logger.info("Initializing Main Supervisor...")
 await self._load_supervisor_configuration()
 if not self._validate_configuration():
@@ -322,6 +325,7 @@ default_return=None,
 context="supervisor configuration loading")
     async def _load_supervisor_configuration(self) -> None:
         try:
+    pass
 self.supervisor_config.setdefault("run_interval", 60)
 self.supervisor_config.setdefault("max_history", 100)
 self.run_interval = self.supervisor_config["run_interval"]
@@ -336,6 +340,7 @@ default_return=False,
 context="configuration validation")
     def _validate_configuration(self) -> bool:
         try:
+    pass
 if self.run_interval <= 0:
                 self.logger.error("Invalid run interval")
 return False
@@ -356,6 +361,7 @@ default_return=False,
 context="main supervisor run")
     async def run(self) -> bool:
         try:
+    pass
 self.is_running = True
 self.logger.info("🚦 Main Supervisor started.")
 while self.is_running:
@@ -373,6 +379,7 @@ default_return=None,
 context="supervise step")
     async def _supervise(self) -> None:
         try:
+    pass
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -389,6 +396,7 @@ context="main supervisor stop")
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Main Supervisor...")
         try:
+    pass
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Main Supervisor stopped successfully")
@@ -413,6 +421,7 @@ context="main supervisor setup")
     async def setup_main_supervisor(
 config: dict[str, Any] | None = None) -> MainSupervisor | None:
     try:
+    pass
 global main_supervisor
 if config is None:
             config = {"main_supervisor": {"run_interval": 60, "max_history": 100}}

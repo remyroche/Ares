@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Comprehensive Syntax Fixer
-Fixes complex Python syntax errors including indentation and unterminated strings.
+Working Syntax Fixer
+Fixes common Python syntax errors including indentation issues.
 """
 
 import os
 import re
+import ast
 from typing import List, Dict, Tuple
 import argparse
 
 
-class ComprehensiveSyntaxFixer:
-    """Fixes complex Python syntax errors."""
+class WorkingSyntaxFixer:
+    """Fixes common Python syntax errors."""
     
     def __init__(self):
         self.fixes_applied = 0
@@ -24,7 +25,7 @@ class ComprehensiveSyntaxFixer:
                 content = f.read()
             
             original_content = content
-            content = self._fix_complex_errors(content)
+            content = self._fix_common_errors(content)
             
             if content != original_content:
                 if not dry_run:
@@ -43,8 +44,8 @@ class ComprehensiveSyntaxFixer:
             print(f"❌ Error processing {filepath}: {e}")
             return False
     
-    def _fix_complex_errors(self, content: str) -> str:
-        """Fix complex syntax errors in Python code."""
+    def _fix_common_errors(self, content: str) -> str:
+        """Fix common syntax errors in Python code."""
         lines = content.split('\n')
         fixed_lines = []
         
@@ -53,75 +54,53 @@ class ComprehensiveSyntaxFixer:
             line = lines[i]
             
             # Fix 1: Fix unterminated triple-quoted strings
-            if '"""' in line:
-                quote_count = line.count('"""')
-                if quote_count % 2 == 1:
-                    # Look for closing quote in next lines
-                    j = i + 1
-                    found_closing = False
-                    while j < len(lines):
-                        if '"""' in lines[j]:
-                            found_closing = True
-                            break
-                        j += 1
-                    
-                    if not found_closing:
-                        # Add closing quote at end of current line
-                        line = line + '"""'
+            if '"""' in line and line.count('"""') % 2 == 1:
+                # Look for the closing quote in next lines
+                j = i + 1
+                while j < len(lines) and '"""' not in lines[j]:
+                    j += 1
+                if j >= len(lines):
+                    # Add closing quote
+                    fixed_lines.append(line + '"""')
+                    i += 1
+                    continue
             
-            # Fix 2: Fix empty triple-quoted strings
-            if line.strip() == '""""""':
-                line = '"""'
-            
-            # Fix 3: Fix indentation issues
+            # Fix 2: Fix indentation issues
             stripped = line.strip()
-            if stripped:
-                # Check if line should be indented
-                should_indent = False
-                
-                # Check previous lines for control structures
-                for prev_line in reversed(fixed_lines):
-                    prev_stripped = prev_line.strip()
-                    if prev_stripped.endswith(':'):
-                        if any(prev_stripped.startswith(keyword) for keyword in 
-                               ['try', 'except', 'if', 'for', 'while', 'def', 'class', 'else', 'elif']):
-                            should_indent = True
-                            break
-                    elif prev_stripped:  # Non-empty line that doesn't end with :
-                        break
-                
-                # Check if current line should be indented but isn't
-                if should_indent and not line.startswith(' ') and not line.startswith('\t'):
+            if stripped and not line.startswith(' ') and not line.startswith('\t'):
+                # Check if this should be indented (previous line ends with :)
+                if fixed_lines and fixed_lines[-1].strip().endswith(':'):
+                    # This line should be indented
                     line = '    ' + line
-                
-                # Fix inconsistent indentation
-                elif line.startswith(' ') or line.startswith('\t'):
-                    # Count leading spaces/tabs
-                    indent_count = 0
-                    for char in line:
-                        if char == ' ':
-                            indent_count += 1
-                        elif char == '\t':
-                            indent_count += 4
-                        else:
-                            break
-                    
-                    # Normalize to 4-space indentation
-                    indent_level = indent_count // 4
-                    line = '    ' * indent_level + line.lstrip()
             
-            # Fix 4: Add missing pass statements after control structures
+            # Fix 3: Fix missing indented blocks after try/except/if/for/while
             if (stripped.endswith(':') and 
                 any(stripped.startswith(keyword) for keyword in ['try', 'except', 'if', 'for', 'while', 'def', 'class'])):
-                # Check if next line is missing or not indented
+                # Check if next line is not indented
                 if i + 1 < len(lines):
                     next_line = lines[i + 1].strip()
-                    if not next_line or (next_line and not lines[i + 1].startswith(' ') and not lines[i + 1].startswith('\t')):
+                    if next_line and not lines[i + 1].startswith(' ') and not lines[i + 1].startswith('\t'):
                         # Add pass statement
                         fixed_lines.append(line)
                         fixed_lines.append('    pass')
                         i += 1
                         continue
+            
+            # Fix 4: Fix inconsistent indentation
+            if line.startswith(' ') or line.startswith('\t'):
+                # Normalize indentation to 4 spaces
+                indent_level = 0
+                for char in line:
+                    if char == ' ':
+                        indent_level += 1
+                    elif char == '\t':
+                        indent_level += 4
+                    else:
+                        break
+                
+                # Convert to 4-space indentation
+                new_indent = '    ' * (indent_level // 4)
+                line = new_indent + line.lstrip()
             
             fixed_lines.append(line)
             i += 1
@@ -146,13 +125,13 @@ class ComprehensiveSyntaxFixer:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Fix complex Python syntax errors')
+    parser = argparse.ArgumentParser(description='Fix Python syntax errors')
     parser.add_argument('directory', help='Directory to fix')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be fixed without making changes')
     
     args = parser.parse_args()
     
-    fixer = ComprehensiveSyntaxFixer()
+    fixer = WorkingSyntaxFixer()
     stats = fixer.fix_directory(args.directory, args.dry_run)
     
     print(f"\n📊 Summary:")

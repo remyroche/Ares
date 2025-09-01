@@ -22,26 +22,26 @@ Note: Position sizing is handled by the Tactician component
         """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.        self.config:: dict[str, Any] = config
+        self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("RiskAllocator")
-        self.        self.is_running:: bool = False
-        self.        self.status:: dict[str, Any] = {}
-        self.        self.history:: list[dict[str, Any]] = []
-        self.        self.risk_config:: dict[str, Any] = self.config.get("risk_allocator", {})
-        self.        self.allocation_interval:: int = self.risk_config.get("allocation_interval", 60)
-        self.        self.max_history:: int = self.risk_config.get("max_history", 100)
-        self.        self.risk_allocations:: dict[str, Any] = {}
-        self.        self.risk_limits:: dict[str, Any] = {}
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.risk_config: dict[str, Any] = self.config.get("risk_allocator", {})
+        self.allocation_interval: int = self.risk_config.get("allocation_interval", 60)
+        self.max_history: int = self.risk_config.get("max_history", 100)
+        self.risk_allocations: dict[str, Any] = {}
+        self.risk_limits: dict[str, Any] = {}
 
 # VaR and ES monitoring
-        self.        self.var_config:: dict[str, Any] = self.risk_config.get("var_monitoring", {})
-        self.        self.var_confidence_level:: float = self.var_config.get("confidence_level", 0.95)
-        self.        self.var_time_horizon:: int = self.var_config.get("time_horizon", 1)  # days
-        self.        self.es_confidence_level:: float = self.var_config.get(
+        self.var_config: dict[str, Any] = self.risk_config.get("var_monitoring", {})
+        self.var_confidence_level: float = self.var_config.get("confidence_level", 0.95)
+        self.var_time_horizon: int = self.var_config.get("time_horizon", 1)  # days
+        self.es_confidence_level: float = self.var_config.get(
 "es_confidence_level",
 0.95)
-        self.        self.var_history:: list[dict[str, Any]] = []
-        self.        self.es_history:: list[dict[str, Any]] = []
+        self.var_history: list[dict[str, Any]] = []
+        self.es_history: list[dict[str, Any]] = []
 
     @handle_specific_errors(
 error_handlers={
@@ -53,6 +53,7 @@ default_return=False,
 context="risk allocator initialization")
     async def initialize(self) -> bool:
                 try:
+    pass
 self.logger.info("Initializing Risk Allocator...")
 await self._load_risk_configuration()
 if not self._validate_configuration():
@@ -70,6 +71,7 @@ default_return=None,
 context="risk configuration loading")
     async def _load_risk_configuration(self) -> None:
                 try:
+    pass
 self.risk_config.setdefault("allocation_interval", 60)
 self.risk_config.setdefault("max_history", 100)
 self.allocation_interval = self.risk_config["allocation_interval"]
@@ -84,6 +86,7 @@ default_return=False,
 context="configuration validation")
     def _validate_configuration(self) -> bool:
                 try:
+    pass
 if self.allocation_interval <= 0:
                 self.logger.error("Invalid allocation interval")
 return False
@@ -104,6 +107,7 @@ default_return=False,
 context="risk allocator run")
     async def run(self) -> bool:
                 try:
+    pass
 self.is_running = True
 self.logger.info("🚦 Risk Allocator started.")
 while self.is_running:
@@ -121,6 +125,7 @@ default_return=None,
 context="risk allocation step")
     async def _perform_risk_allocation(self) -> None:
                 try:
+    pass
 now = datetime.now().isoformat()
 self.status = {"timestamp": now, "status": "running"}
 self.history.append(self.status.copy())
@@ -138,6 +143,7 @@ default_return=None,
 context="risk allocation calculation")
     async def _calculate_risk_allocations(self) -> None:
                 try:
+    pass
 # Simulate risk allocation calculations
 allocations = {
 "equity_allocation": 0.6,
@@ -156,6 +162,7 @@ default_return=None,
 context="risk limits update")
     async def _update_risk_limits(self) -> None:
                 try:
+    pass
 # Update risk limits
 limits = {
 "max_position_size": 0.1,
@@ -175,6 +182,7 @@ context="risk allocator stop")
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
         try:
+    pass
 self.is_running = False
 self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
 self.logger.info("✅ Risk Allocator stopped successfully")
@@ -208,6 +216,7 @@ Returns:
             float: VaR value
         """
         try:
+    pass
 if not returns:
                 return 0.0
 
@@ -236,6 +245,7 @@ Returns:
             float: Expected Shortfall value
         """
         try:
+    pass
 if not returns:
                 return 0.0
 
@@ -268,6 +278,7 @@ Returns:
             dict: VaR values for different timeframes
         """
         try:
+    pass
 var_results = {}
 
 # Calculate VaR for different timeframes
@@ -300,6 +311,7 @@ Returns:
             dict: Risk monitoring results and alerts
         """
         try:
+    pass
 risk_limits = self.risk_config.get("risk_limits", {})
 var_limit = risk_limits.get("max_var", 0.02)  # 2% VaR limit
 es_limit = risk_limits.get("max_es", 0.03)  # 3% ES limit
@@ -365,6 +377,7 @@ Returns:
             dict: Risk metrics for the specified timeframe
         """
         try:
+    pass
 if not self.var_history:
                 return {}
 
@@ -387,6 +400,7 @@ return {}
     def _calculate_risk_summary(self) -> dict[str, Any]:
         """Calculate summary statistics for risk metrics."""
         try:
+    pass
 if not self.var_history:
                 return {}
 
@@ -423,6 +437,7 @@ context="risk allocator setup")
     async def setup_risk_allocator(
 config: dict[str, Any] | None = None) -> RiskAllocator | None:
             try:
+    pass
 global risk_allocator
 if config is None:
             config = {"risk_allocator": {"allocation_interval": 60, "max_history": 100}}

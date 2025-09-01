@@ -56,11 +56,11 @@ class OnlineLearningManager:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
 self.logger = system_logger.getChild("OnlineLearningManager")
-        self.        self.model_performances:: dict[str, list[float]] = defaultdict(list)
-        self.        self.model_weights:: dict[str , float] = {}
-        self.        self.learning_rate:: float = config.get("learning_rate", 0.01)
-        self.        self.min_weight:: float = config.get("min_weight", 0.1)
-        self.        self.max_weight:: float = config.get("max_weight", 0.8)
+        self.model_performances: dict[str, list[float]] = defaultdict(list)
+        self.model_weights: dict[str , float] = {}
+        self.learning_rate: float = config.get("learning_rate", 0.01)
+        self.min_weight: float = config.get("min_weight", 0.1)
+        self.max_weight: float = config.get("max_weight", 0.8)
 
     @handle_errors(
 exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
@@ -145,29 +145,29 @@ System-Level Supervisor component responsible for:
         """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.        self.config:: dict[str , Any] = config
+        self.config: dict[str , Any] = config
 self.logger = system_logger.getChild("Supervisor")
-        self.        self.is_running:: bool = False
-        self.        self.status:: dict[str , Any] = {}
-        self.        self.history:: list[dict[str , Any]] = []
-        self.        self.supervisor_config:: dict[str , Any] = self.config.get("supervisor", {})
-        self.        self.supervision_interval:: int = self.supervisor_config.get(
+        self.is_running: bool = False
+        self.status: dict[str , Any] = {}
+        self.history: list[dict[str , Any]] = []
+        self.supervisor_config: dict[str , Any] = self.config.get("supervisor", {})
+        self.supervision_interval: int = self.supervisor_config.get(
 "supervision_interval",
 60)
-        self.        self.max_history:: int = self.supervisor_config.get("max_history", 100)
-        self.        self.supervision_results:: dict[str , Any] = {}
-        self.        self.components:: dict[str , Any] = {}
+        self.max_history: int = self.supervisor_config.get("max_history", 100)
+        self.supervision_results: dict[str , Any] = {}
+        self.components: dict[str , Any] = {}
 
 # Advanced error handling and recovery
-        self.        self.circuit_breakers:: dict[str , CircuitBreaker] = {}
-        self.        self.recovery_attempts:: dict[str, int] = defaultdict(int)
-        self.        self.max_recovery_attempts:: int = self.supervisor_config.get(
+        self.circuit_breakers: dict[str , CircuitBreaker] = {}
+        self.recovery_attempts: dict[str, int] = defaultdict(int)
+        self.max_recovery_attempts: int = self.supervisor_config.get(
 "max_recovery_attempts",
 3)
-        self.        self.recovery_cooldown:: int = self.supervisor_config.get(
+        self.recovery_cooldown: int = self.supervisor_config.get(
 "recovery_cooldown",
 300)  # 5 minutes
-        self.        self.last_recovery_attempt:: dict[str , float] = {}
+        self.last_recovery_attempt: dict[str , float] = {}
 
 # Online learning for model weighting
 self.online_learning = OnlineLearningManager(
@@ -175,10 +175,10 @@ self.supervisor_config.get("online_learning", {}))
 
 # Enhanced prediction service for ML model integration
 self.enhanced_prediction_service = None
-        self.        self.is_initialized:: bool = False
+        self.is_initialized: bool = False
 self.enhanced_prediction_service_config = self.supervisor_config.get("enhanced_prediction_service", {})
-        self.        self.entry_threshold:: float = self.enhanced_prediction_service_config.get("entry_threshold", 0.7)
-        self.        self.max_confidence_threshold:: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
+        self.entry_threshold: float = self.enhanced_prediction_service_config.get("entry_threshold", 0.7)
+        self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
 
 
     @supervisor_critical_error_handler("supervisor")
@@ -600,6 +600,7 @@ The Tactician decides when, how much, and with what leverage based on calibrated
 Must agree with Analyst on trade direction.
         """
         try:
+    pass
 if not self.is_initialized:
                 self.logger.error("❌ Supervisor not initialized"))
 return {}
@@ -649,6 +650,7 @@ exchange: str
 Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
         """
         try:
+    pass
 # Calculate aggregate Analyst confidence
 if not analyst_confidence_scores:
                 return {
@@ -701,6 +703,7 @@ market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Analyst model confidences."""
         try:
+    pass
 # Logic to determine if models suggest long, short, or neutral
 # This would be based on the specific Analyst model outputs
 bullish_confidence = sum(
@@ -750,6 +753,7 @@ Must agree with Analyst on trade direction.
 Enhanced with high precision triple barrier completion.
         """
         try:
+    pass
 # Import enhanced execution manager
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 
@@ -820,6 +824,7 @@ market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Tactician model confidences."""
         try:
+    pass
 # Logic to determine if Tactician models suggest long, short, or neutral
 # This would be based on the specific Tactician model outputs (lower timeframe)
 bullish_confidence = sum(
@@ -906,6 +911,7 @@ This function enhances the Analyst's decision-making by incorporating:
 4. Directional probability assessments
         """
         try:
+    pass
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_analyst_signals": {},
@@ -966,6 +972,7 @@ This function enhances the Tactician's execution by providing:
 4. Position decision signals (but NOT position sizing - that's Tactician's job)
         """
         try:
+    pass
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_tactician_signals": {},
@@ -1016,6 +1023,7 @@ regime_predictions: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced analyst signals with ML profit integration."""
         try:
+    pass
 enhanced_signals = {
 "directional_signals": {},
 "confidence_signals": {},
@@ -1080,6 +1088,7 @@ analyst_signals: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced tactician signals with ML profit integration."""
         try:
+    pass
 enhanced_signals = {
 "execution_signals": {},
 "timing_signals": {},
@@ -1163,6 +1172,7 @@ This provides signals to the Tactician about whether to take positions,
 but does NOT calculate position sizing - that's the Tactician's responsibility.
         """
         try:
+    pass
 position_decisions = {
 "position_recommendations": {},
 "aggregate_position_signal": {}
@@ -1251,6 +1261,7 @@ This provides confidence and probability data to help the Tactician
 make leverage decisions, but does NOT calculate leverage itself.
         """
         try:
+    pass
 leverage_inputs = {
 "confidence_inputs": {},
 "probability_inputs": {},
@@ -1324,6 +1335,7 @@ market_data: pd.DataFrame
 ) -> dict[str, Any]:
         """Calculate risk metrics for analyst decision making."""
         try:
+    pass
 risk_metrics = {
 "aggregate_risk": {},
 "individual_risks": {},
@@ -1581,6 +1593,7 @@ default_return=None, context="component features monitoring")
     async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
         try:
+    pass
 # Monitor each component's features
 self._monitor_analyst_features()
 self._monitor_strategist_features()
@@ -1819,6 +1832,7 @@ Strategy Coordination:
 - Supervisor orchestrates communication between the two
         """
         try:
+    pass
 strategist = self.components["strategist"]
 tactician = self.components["tactician"]
 
@@ -1848,6 +1862,7 @@ default_return=None, context="training manager coordination")
     async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
         try:
+    pass
 training_manager = self.components["enhanced_training_manager"]
 
 # Coordinate with Analyst for model updates
@@ -1877,6 +1892,7 @@ default_return=None, context="online learning update")
     async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
         try:
+    pass
 # Get current model performances from components
 model_performances = {}
 

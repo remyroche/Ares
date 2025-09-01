@@ -30,44 +30,44 @@ class PerformanceMonitor:
         """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.        self.config:: dict[str, Any] = config
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PerformanceMonitor")
-        self.        self.is_running:: bool = False
-        self.        self.status:: dict[str, Any] = {}
-        self.        self.history:: list[dict[str, Any]] = []
-        self.        self.monitor_config:: dict[str, Any] = self.config.get("performance_monitor", {})
-        self.        self.monitor_interval:: int = self.monitor_config.get("monitor_interval", 30)
-        self.        self.max_history:: int = self.monitor_config.get("max_history", 100)
-        self.        self.performance_metrics:: dict[str, Any] = {}
-        self.        self.alerts:: list[dict[str, Any]] = []
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.monitor_config: dict[str, Any] = self.config.get("performance_monitor", {})
+        self.monitor_interval: int = self.monitor_config.get("monitor_interval", 30)
+        self.max_history: int = self.monitor_config.get("max_history", 100)
+        self.performance_metrics: dict[str, Any] = {}
+        self.alerts: list[dict[str, Any]] = []
 
         # Concept drift detection
-        self.        self.concept_drift_config:: dict[str, Any] = self.monitor_config.get(
+        self.concept_drift_config: dict[str, Any] = self.monitor_config.get(
             "concept_drift",
             {}
         )
-        self.        self.drift_detection_window:: int = self.concept_drift_config.get(
+        self.drift_detection_window: int = self.concept_drift_config.get(
             "detection_window",
             100
         )
-        self.        self.drift_threshold:: float = self.concept_drift_config.get(
+        self.drift_threshold: float = self.concept_drift_config.get(
             "drift_threshold",
             0.05
         )
-        self.        self.model_performance_history:: dict[str, list] = {}
-        self.        self.drift_alerts:: list[dict[str, Any]] = []
+        self.model_performance_history: dict[str, list] = {}
+        self.drift_alerts: list[dict[str, Any]] = []
 
         # Real-time performance tracking
-        self.        self.real_time_config:: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
-        self.        self.enable_real_time_tracking:: bool = self.real_time_config.get("enable_real_time_tracking", True)
-        self.        self.performance_window:: int = self.real_time_config.get("performance_window", 100)
-        self.        self.retraining_threshold:: float = self.real_time_config.get("retraining_threshold", 0.1)
+        self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
+        self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
+        self.performance_window: int = self.real_time_config.get("performance_window", 100)
+        self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
 
         # Performance tracking state
-        self.        self.model_predictions:: dict[str, list] = {}
-        self.        self.model_outcomes:: dict[str, list] = {}
-        self.        self.model_metrics:: dict[str, dict] = {}
-        self.        self.retraining_triggers:: list[dict[str, Any]] = []
+        self.model_predictions: dict[str, list] = {}
+        self.model_outcomes: dict[str, list] = {}
+        self.model_metrics: dict[str, dict] = {}
+        self.retraining_triggers: list[dict[str, Any]] = []
 
     @handle_specific_errors(
         error_handlers={

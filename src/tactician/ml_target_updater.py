@@ -26,7 +26,7 @@ class MLTargetUpdater:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class MLTargetUpdater:
     pass  # TODO: Add implementation
 class MLTargetUpdater:
@@ -200,7 +200,7 @@ await self.update_task
 except asyncio.CancelledError:
                     # Implementation needed - add actual functionality
 
-                    pass
+        # TODO: Implement functionality
 self.logger.info("✅ ML target updating stopped")
 return True
 

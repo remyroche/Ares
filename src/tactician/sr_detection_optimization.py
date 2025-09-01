@@ -57,7 +57,7 @@ class OptimizationResult:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class OptimizationResult:
     pass  # TODO: Add implementation
 class OptimizationResult:
@@ -144,7 +144,7 @@ class SRDetectionOptimizer:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class SRDetectionOptimizer:
     pass  # TODO: Add implementation
 class SRDetectionOptimizer:

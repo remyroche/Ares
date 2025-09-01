@@ -41,7 +41,7 @@ class Step17OptimizedTactician:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class Step17OptimizedTactician:
     pass  # TODO: Add implementation
 class Step17OptimizedTactician:

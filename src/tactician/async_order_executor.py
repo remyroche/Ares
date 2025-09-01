@@ -47,7 +47,7 @@ class ExecutionStatus(Enum):
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class ExecutionStatus(Enum):
     """Execution status enumeration."""
 
@@ -66,7 +66,7 @@ class ExecutionRequest:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class ExecutionRequest:
     pass  # TODO: Add implementation
 class ExecutionRequest:
@@ -94,7 +94,7 @@ class ExecutionResult:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class ExecutionResult:
     pass  # TODO: Add implementation
 class ExecutionResult:
@@ -121,7 +121,7 @@ class AsyncOrderExecutor:
     # Implementation needed - add actual functionality
 
 
-    pass
+    # TODO: Implement class methods
 class AsyncOrderExecutor:
     pass  # TODO: Add implementation
 class AsyncOrderExecutor:

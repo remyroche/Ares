@@ -447,15 +447,7 @@ async def _perform_performance_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform performance-based weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_performance_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_performance_weighting"})
-            return None
+        try:
 results = {}
 
 # Return-based weighting
@@ -1084,15 +1076,7 @@ def _perform_regime_transition(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform regime transition."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_regime_transition"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_regime_transition"})
-            return None
+        try:
 # Simulate regime transition
 return {
 "regime_transition_completed": True,
@@ -1109,15 +1093,7 @@ def _perform_regime_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform regime optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_regime_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_regime_optimization"})
-            return None
+        try:
 # Simulate regime optimization
 return {
 "regime_optimization_completed": True,
@@ -1134,15 +1110,7 @@ def _perform_adaptive_learning(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform adaptive learning weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_adaptive_learning"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_adaptive_learning"})
-            return None
+        try:
 # Simulate adaptive learning weighting
 return {
 "adaptive_learning_completed": True,
@@ -1159,15 +1127,7 @@ def _perform_dynamic_adjustment(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform dynamic adjustment weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_dynamic_adjustment"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_dynamic_adjustment"})
-            return None
+        try:
 # Simulate dynamic adjustment weighting
 return {
 "dynamic_adjustment_completed": True,
@@ -1186,15 +1146,7 @@ def _perform_price_momentum(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform price momentum weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_price_momentum"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_price_momentum"})
-            return None
+        try:
 # Simulate price momentum weighting
 return {
 "price_momentum_completed": True,
@@ -1211,15 +1163,7 @@ def _perform_volume_momentum(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volume momentum weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volume_momentum"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volume_momentum"})
-            return None
+        try:
 # Simulate volume momentum weighting
 return {
 "volume_momentum_completed": True,
@@ -1236,15 +1180,7 @@ def _perform_momentum_regime(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum regime weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_regime"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_regime"})
-            return None
+        try:
 # Simulate momentum regime weighting
 return {
 "momentum_regime_completed": True,
@@ -1261,15 +1197,7 @@ def _perform_momentum_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_optimization"})
-            return None
+        try:
 # Simulate momentum optimization
 return {
 "momentum_optimization_completed": True,
@@ -1291,15 +1219,7 @@ async def _perform_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum-based weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_weighting"})
-            return None
+        try:
 results = {}
 
 # Price momentum weighting
@@ -1336,15 +1256,7 @@ def _perform_price_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform price momentum weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_price_momentum_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_price_momentum_weighting"})
-            return None
+        try:
 # Simulate price momentum weighting
 return {
 "price_momentum_weighting_completed": True,
@@ -1361,15 +1273,7 @@ def _perform_volume_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volume momentum weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volume_momentum_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volume_momentum_weighting"})
-            return None
+        try:
 # Simulate volume momentum weighting
 return {
 "volume_momentum_weighting_completed": True,
@@ -1386,15 +1290,7 @@ def _perform_momentum_breakout_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum breakout weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_breakout_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_breakout_weighting"})
-            return None
+        try:
 # Simulate momentum breakout weighting
 return {
 "momentum_breakout_weighting_completed": True,
@@ -1411,15 +1307,7 @@ def _perform_momentum_reversal_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum reversal weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_reversal_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_momentum_reversal_weighting"})
-            return None
+        try:
 # Simulate momentum reversal weighting
 return {
 "momentum_reversal_weighting_completed": True,
@@ -1438,15 +1326,7 @@ def _perform_historical_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform historical volatility weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_historical_volatility_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_historical_volatility_weighting"})
-            return None
+        try:
 # Simulate historical volatility weighting
 return {
 "historical_volatility_weighting_completed": True,
@@ -1465,15 +1345,7 @@ def _perform_implied_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform implied volatility weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_implied_volatility_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_implied_volatility_weighting"})
-            return None
+        try:
 # Simulate implied volatility weighting
 return {
 "implied_volatility_weighting_completed": True,
@@ -1490,15 +1362,7 @@ def _perform_volatility_regime_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility regime weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_regime_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_regime_weighting"})
-            return None
+        try:
 # Simulate volatility regime weighting
 return {
 "volatility_regime_weighting_completed": True,
@@ -1515,15 +1379,7 @@ def _perform_volatility_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility optimization."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_optimization"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_optimization"})
-            return None
+        try:
 # Simulate volatility optimization
 return {
 "volatility_optimization_completed": True,
@@ -1545,15 +1401,7 @@ async def _perform_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility-based weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_weighting"})
-            return None
+        try:
 results = {}
 
 # Realized volatility weighting
@@ -1590,15 +1438,7 @@ def _perform_realized_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform realized volatility weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_realized_volatility_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_realized_volatility_weighting"})
-            return None
+        try:
 # Simulate realized volatility weighting
 return {
 "realized_volatility_weighting_completed": True,
@@ -1615,15 +1455,7 @@ def _perform_implied_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform implied volatility weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_implied_volatility_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_implied_volatility_weighting"})
-            return None
+        try:
 # Simulate implied volatility weighting
 return {
 "implied_volatility_weighting_completed": True,
@@ -1640,15 +1472,7 @@ def _perform_volatility_regime_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility regime weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_regime_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_regime_weighting"})
-            return None
+        try:
 # Simulate volatility regime weighting
 return {
 "volatility_regime_weighting_completed": True,
@@ -1665,15 +1489,7 @@ def _perform_volatility_forecast_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility forecast weighting."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_forecast_weighting"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_perform_volatility_forecast_weighting"})
-            return None
+        try:
 # Simulate volatility forecast weighting
 return {
 "volatility_forecast_weighting_completed": True,
@@ -1693,15 +1509,7 @@ context="weighting results storage",
 )
 async def _update_weighting_history(self) -> None:
         """Store weighting results."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_update_weighting_history"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_update_weighting_history"})
-            return None
+        try:
 # Add timestamp
 self.weighting_results["timestamp"] = datetime.now().isoformat()
 
@@ -1734,15 +1542,7 @@ Args:
 Returns:
             dict[str, Any]: Weighting results
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
+        try:
 if weighting_type:
                 return self.weighting_results.get(weighting_type, {})
 return self.weighting_results.copy()
@@ -1766,15 +1566,7 @@ Args:
 Returns:
             list[dict[str, Any]]: Weighting history
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
+        try:
 history = self.weighting_history.copy()
 
 if limit:
@@ -1829,15 +1621,7 @@ async def update_model_weights_online(
 self, model_predictions: dict[str, float], actual_outcomes: dict[str, float], timestamp: datetime = None
 ) -> None:
         """Update model weights using online learning."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "update_model_weights_online"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "update_model_weights_online"})
-            return None
+        try:
 if not self.enable_online_learning:
                 return
 
@@ -1896,15 +1680,7 @@ async def get_regime_aware_weights(
 self, current_regime: str, model_names: list[str]
 ) -> dict[str, float]:
         """Get regime-specific ensemble weights."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "get_regime_aware_weights"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "get_regime_aware_weights"})
-            return None
+        try:
 if not self.enable_regime_awareness:
                 # Return equal weights if regime awareness is disabled
 return {model: 1.0 / len(model_names) for model in model_names}
@@ -1956,15 +1732,7 @@ async def get_uncertainty_aware_weights(
 self, model_predictions: dict[str, float], model_uncertainties: dict[str, float]
 ) -> dict[str, float]:
         """Get uncertainty-aware ensemble weights."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "get_uncertainty_aware_weights"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "get_uncertainty_aware_weights"})
-            return None
+        try:
 if not self.enable_uncertainty_weighting:
                 # Return equal weights if uncertainty weighting is disabled
 return {model: 1.0 / len(model_predictions) for model in model_predictions.keys()}
@@ -2001,15 +1769,7 @@ async def calculate_enhanced_ensemble_weights(
 self, model_predictions: dict[str, float], model_uncertainties: dict[str, float], current_regime: str = None
 ) -> dict[str, float]:
         """Calculate enhanced ensemble weights combining multiple factors."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "calculate_enhanced_ensemble_weights"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "calculate_enhanced_ensemble_weights"})
-            return None
+        try:
 model_names = list(model_predictions.keys())
 
 # Get different types of weights
@@ -2047,15 +1807,7 @@ return {model: 1.0 / len(model_predictions) for model in model_predictions.keys(
 
 def _get_recent_regime_performance(self, model_name: str, regime: str) -> float:
         """Get recent performance of a model in a specific regime."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_get_recent_regime_performance"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_get_recent_regime_performance"})
-            return None
+        try:
 if model_name not in self.model_performances:
                 return 0.5  # Default performance
 
@@ -2084,15 +1836,7 @@ context="weight normalization",
 )
 async def _normalize_weights(self) -> None:
         """Normalize model weights to sum to 1."""
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_normalize_weights"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "_normalize_weights"})
-            return None
+        try:
 total_weight = sum(self.model_weights.values())
 if total_weight > 0:
                 self.model_weights = {k: v/total_weight for k, v in self.model_weights.items()}
@@ -2114,15 +1858,7 @@ async def stop(self) -> None:
         """Stop the dynamic weighter."""
 self.logger.info("🛑 Stopping Dynamic Weighter...")
 
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "stop"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "stop"})
-            return None
+        try:
 # Stop weighting
 self.is_weighting = False
 
@@ -2157,15 +1893,7 @@ Args:
 Returns:
         DynamicWeighter | None: Global dynamic weighter instance
 """
-try:
-            # TODO: Implement the actual functionality here
-            raise NotImplementedError("Functionality not yet implemented")
-        except (ValueError, KeyError, AttributeError) as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
-        except Exception as e:
-            handle_component_failure("dynamic_weighter", e, {"operation": "unknown_function"})
-            return None
+        try:
 global dynamic_weighter
 
 if config is None:

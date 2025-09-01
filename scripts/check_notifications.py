@@ -11,15 +11,15 @@ from src.utils.warning_symbols import missing, warning
 
 
 def _safe_read_json(path: Path) -> Dict[str, Any] | None:
-            try:
+    try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-            except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         print(warning(f"Error reading JSON {path}: {e}"))
         return None
 
 
-        def check_notifications() -> None:
+def check_notifications() -> None:
     """Check for bot notifications and display them"""
     project_root = Path(__file__).parent.parent
     notification_file = project_root / "state/ai_notification.json"
@@ -28,7 +28,7 @@ def _safe_read_json(path: Path) -> Dict[str, Any] | None:
     print("🔍 Checking for ARES Bot notifications...")
 
     # Check if notification file exists
-            if notification_file.exists():
+    if notification_file.exists():
         notification = _safe_read_json(notification_file) or {}
 
         print("\n🚨 NOTIFICATION RECEIVED:")
@@ -56,7 +56,7 @@ def _safe_read_json(path: Path) -> Dict[str, Any] | None:
         print("✅ No new notifications")
 
     # Check current bot status
-            if status_file.exists():
+    if status_file.exists():
         status = _safe_read_json(status_file) or {}
 
         print("\n📊 Current Bot Status:")
@@ -72,48 +72,32 @@ def _safe_read_json(path: Path) -> Dict[str, Any] | None:
         print("ℹ️  Status file not found")
 
 
-        def check_logs_for_errors() -> None:
+def check_logs_for_errors() -> None:
     """Check recent log files for errors"""
     project_root = Path(__file__).parent.parent
     log_dir = project_root / "logs"
 
-            if not log_dir.exists():
+    if not log_dir.exists():
         print(missing("Logs directory not found"))
         return
 
     print("\n📋 Checking recent logs for errors...")
 
-            for log_file in log_dir.glob("*.log"):
+    for log_file in log_dir.glob("*.log"):
         try:
-    pass  # TODO: Add proper exception handling
+            # Check if log file was modified in the last 24 hours
+            import time
+            if time.time() - log_file.stat().st_mtime < 86400:  # 24 hours
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                # Check last 50 lines for errors
+                for line in lines[-50:]:
+                    if "ERROR" in line or "CRITICAL" in line:
+                        print(f"   ⚠️  {log_file.name}: {line.strip()}")
         except Exception as e:
-    pass  # TODO: Add proper exception handling
-            with open(log_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            # Check last 20 lines for errors
-            error_lines: List[str] = []
-            for line in lines[-20:]:
-                if any(
-                    error_keyword in line.lower()
-                    for error_keyword in [
-                        "error",
-                        "exception",
-                        "traceback",
-                        "failed",
-                        "❌",
-                        "💥",
-                    ]
-                ):
-                    error_lines.append(line.strip())
-
-            if error_lines:
-                print(f"\n⚠️ Errors in {log_file.name}:")
-                for line in error_lines:
-                    print(f"   {line}")
-        except Exception as e:  # noqa: BLE001
             print(warning(f"Error reading {log_file}: {e}"))
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     check_notifications()
     check_logs_for_errors()

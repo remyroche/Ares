@@ -176,67 +176,67 @@ class MulticollinearityFixer:
 
 
         @handle_errors(default_return=False, context="multicollinearity_main")
-    def main() -> bool:
-    """Main function to generate multicollinearity fixes."""
-    print("MULTICOLLINEARITY FIX GENERATOR")
-    print("=" * 60)
+        def main() -> bool:
+            """Main function to generate multicollinearity fixes."""
+            print("MULTICOLLINEARITY FIX GENERATOR")
+            print("=" * 60)
 
-    fixer = MulticollinearityFixer()
+            fixer = MulticollinearityFixer()
 
-    fixes = fixer.generate_feature_engineering_fixes()
+            fixes = fixer.generate_feature_engineering_fixes()
 
-    print("\nCRITICAL ISSUES IDENTIFIED:")
+            print("\nCRITICAL ISSUES IDENTIFIED:")
             for issue in fixes.get("critical_issues", []):
-        print(f"   - {issue}")
+                print(f"   - {issue}")
 
-    print("\nROOT CAUSE:")
+            print("\nROOT CAUSE:")
             for cause in fixes.get("root_cause", []):
-        print(f"   - {cause}")
+                print(f"   - {cause}")
 
-    print("\nIMMEDIATE FIXES:")
+            print("\nIMMEDIATE FIXES:")
             for fix in fixes.get("immediate_fixes", []):
-        print(f"   - {fix}")
+                print(f"   - {fix}")
 
-    print("\nCODE CHANGES REQUIRED:")
+            print("\nCODE CHANGES REQUIRED:")
             for change in fixes.get("code_changes", []):
-        print(f"   - {change}")
+                print(f"   - {change}")
 
-    print("\nCONFIGURATION CHANGES:")
+            print("\nCONFIGURATION CHANGES:")
             for config_change in fixes.get("configuration_changes", []):
-        print(f"   - {config_change}")
+                print(f"   - {config_change}")
 
-    print("\nRECOMMENDED CONFIGURATION:")
-    config_template = fixer.generate_configuration_template()
+            print("\nRECOMMENDED CONFIGURATION:")
+            config_template = fixer.generate_configuration_template()
             for section, settings in config_template.items():
-        print(f"\n   {section}:")
-        for key, value in settings.items():
-            if isinstance(value, dict):
-                print(f"     {key}:")
-                for sub_key, sub_value in value.items():
-                    print(f"       - {sub_key}: {sub_value}")
-            else:
-                print(f"     - {key}: {value}")
+                print(f"\n   {section}:")
+                for key, value in settings.items():
+                    if isinstance(value, dict):
+                        print(f"     {key}:")
+                        for sub_key, sub_value in value.items():
+                            print(f"       - {sub_key}: {sub_value}")
+                    else:
+                        print(f"     - {key}: {value}")
 
-    print("\nCODE FIXES:")
-    code_fixes = fixer.generate_code_fixes()
+            print("\nCODE FIXES:")
+            code_fixes = fixer.generate_code_fixes()
             for file_name, edits in code_fixes.items():
-        print(f"\n   {file_name}:")
-        for edit in edits:
-            print(f"     {edit}")
+                print(f"\n   {file_name}:")
+                for edit in edits:
+                    print(f"     {edit}")
 
-    print("\nACTION PLAN:")
-    print("   1. Update configuration to use stricter VIF thresholds")
-    print("   2. Add redundant feature filtering to feature engineering pipeline")
-    print("   3. Run data quality assessment to validate fixes")
-    print("   4. Ensure VIF < 10 for all features")
-    print("   5. Iterate feature engineering strategy if needed")
+            print("\nACTION PLAN:")
+            print("   1. Update configuration to use stricter VIF thresholds")
+            print("   2. Add redundant feature filtering to feature engineering pipeline")
+            print("   3. Run data quality assessment to validate fixes")
+            print("   4. Ensure VIF < 10 for all features")
+            print("   5. Iterate feature engineering strategy if needed")
 
-    print("\n" + "=" * 60)
-    print("Multicollinearity fix generation completed!")
-    print("=" * 60)
+            print("\n" + "=" * 60)
+            print("Multicollinearity fix generation completed!")
+            print("=" * 60)
             return True
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     success = main()
     raise SystemExit(0 if success else 1)

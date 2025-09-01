@@ -17,12 +17,12 @@ from typing import Tuple
 
 def _replace_once(content: str, old: str, new: str) -> Tuple[str, bool]:
     """Replace first occurrence; return updated content and whether replacement happened."""
-            if old in content:
+    if old in content:
         return content.replace(old, new, 1), True
-            return content, False
+    return content, False
 
 
-        def fix_feature_engineering_code() -> bool:
+def fix_feature_engineering_code() -> bool:
     """Fix the critical multicollinearity issue in the feature engineering code."""
 
     print("🔧 Starting multicollinearity fix...")
@@ -32,14 +32,11 @@ def _replace_once(content: str, old: str, new: str) -> Tuple[str, bool]:
         "src/training/steps/vectorized_advanced_feature_engineering.py",
     )
 
-            if not feature_eng_file.exists():
+    if not feature_eng_file.exists():
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
-            try:
-    pass  # TODO: Add proper exception handling
-        except Exception as e:
-    pass  # TODO: Add proper exception handling
+    try:
         # Read the current file
         content = feature_eng_file.read_text(encoding="utf-8")
 
@@ -89,17 +86,17 @@ def _replace_once(content: str, old: str, new: str) -> Tuple[str, bool]:
         print("ℹ️ No changes were necessary")
         return True
 
-            except Exception as e:
+    except Exception as e:
         print(f"❌ Error fixing multicollinearity issue: {e}")
         return False
 
 
-        def main() -> bool:
+def main() -> bool:
     """Main function to fix the multicollinearity issue."""
 
     print("🚀 Starting multicollinearity fix...")
 
-            if fix_feature_engineering_code():
+    if fix_feature_engineering_code():
         print("🎉 Multicollinearity fix completed successfully!")
         print("📋 The issue was in the _calculate_timeframe_features_vectorized method")
         print("📋 All timeframes were using the same pct_change() without periods")
@@ -109,12 +106,12 @@ def _replace_once(content: str, old: str, new: str) -> Tuple[str, bool]:
         print("   2. Monitor the logs for any remaining issues")
         return True
     print("❌ Multicollinearity fix failed!")
-            return False
+    return False
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     success = main()
-            if not success:
+    if not success:
         print("\n❌ MULTICOLLINEARITY FIX FAILED!")
         sys.exit(1)
     else:

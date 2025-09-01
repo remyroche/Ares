@@ -139,7 +139,7 @@ class SmallFileAnalyzer:
         }
 
 
-    def main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze small files in datasets")
     parser.add_argument(
         "--data_cache_path",
@@ -152,9 +152,9 @@ class SmallFileAnalyzer:
     results = analyzer.analyze_small_files()
 
     print("=== Summary ===")
-            for key, value in results["summary"].items():
+    for key, value in results["summary"].items():
         print(f"{key}: {value}")
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     main()

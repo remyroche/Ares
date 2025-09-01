@@ -21,16 +21,16 @@ def fix_consolidated_klines():
     print("🔧 Fixing consolidated klines data...")
 
     # Find all raw klines CSV files
-    raw_files, glob.glob("data_cache/klines_1m_ETHUSDT_1m_*.csv")
+    raw_files = glob.glob("data_cache/klines_1m_ETHUSDT_1m_*.csv")
     print(f"Found {len(raw_files)} raw CSV files")
 
-            if not raw_files:
+    if not raw_files:
         print(warning("No raw CSV files found!"))
         return False
 
     # Read and combine all raw CSV files
     all_data = []
-            for file in sorted(raw_files):
+    for file in sorted(raw_files):
         try:
             df = pd.read_csv(file)
             print(f"📊 Loaded {len(df)} records from {os.path.basename(file)}")
@@ -39,7 +39,7 @@ def fix_consolidated_klines():
             print(warning(f"Error reading {file}: {e}"))
             continue
 
-            if not all_data:
+    if not all_data:
         print(warning("No valid data found!"))
         return False
 
@@ -68,21 +68,23 @@ def fix_consolidated_klines():
     print("\n📋 Sample of fixed data:")
     print(combined_df.head())
 
-            return True
+    return True
 
-        def main():
+
+def main():
     """Main function to fix consolidated data."""
     print("🚀 Starting consolidated data fix...")
 
-    success, fix_consolidated_klines()
+    success = fix_consolidated_klines()
 
-            if success:
+    if success:
         print("✅ Consolidated data fix completed successfully!")
     else:
         print(failed("Consolidated data fix failed!"))
         return 1
 
-            return 0
+    return 0
 
-        if __name__ == "__main__":
+
+if __name__ == "__main__":
     sys.exit(main())

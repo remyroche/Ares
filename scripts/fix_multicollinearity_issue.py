@@ -35,11 +35,11 @@ def _log_exceptions(logger_name: str):
 
         return wrapper
 
-            return decorator
+    return decorator
 
 
-        @_log_exceptions("MulticollinearityFix")
-        def fix_feature_engineering_code() -> bool:
+@_log_exceptions("MulticollinearityFix")
+def fix_feature_engineering_code() -> bool:
     """Fix the critical multicollinearity issue in the feature engineering code."""
 
     logger = system_logger.getChild("MulticollinearityFix")
@@ -50,13 +50,13 @@ def _log_exceptions(logger_name: str):
         src_dir / "training" / "steps" / "vectorized_advanced_feature_engineering.py"
     )
 
-            if not feature_eng_file.exists():
+    if not feature_eng_file.exists():
         logger.error(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
     # Read the current file
     content: str
-            with open(feature_eng_file, "r", encoding="utf-8") as f:
+    with open(feature_eng_file, "r", encoding="utf-8") as f:
         content = f.read()
 
     logger.info("📖 Reading current feature engineering code...")
@@ -76,7 +76,7 @@ def _log_exceptions(logger_name: str):
             price_changes = price_data[price_column].pct_change(periods=periods)"""
     )
 
-            if old_price_change in content:
+    if old_price_change in content:
         content = content.replace(old_price_change, new_price_change)
         logger.info("✅ Fixed price_change calculation")
 
@@ -86,26 +86,26 @@ def _log_exceptions(logger_name: str):
         'volume_changes, volume_data["volume"].pct_change(periods=periods)'
     )
 
-            if old_volume_change in content:
+    if old_volume_change in content:
         content = content.replace(old_volume_change, new_volume_change)
         logger.info("✅ Fixed volume_change calculation")
 
     # Write the fixed content back
-            with open(feature_eng_file, "w", encoding="utf-8") as f:
+    with open(feature_eng_file, "w", encoding="utf-8") as f:
         f.write(content)
 
     logger.info("✅ Successfully fixed multicollinearity issue")
-            return True
+    return True
 
 
-        @_log_exceptions("MulticollinearityFixMain")
-        def main() -> bool:
+@_log_exceptions("MulticollinearityFixMain")
+def main() -> bool:
     """Main function to fix the multicollinearity issue."""
 
     logger = system_logger.getChild("MulticollinearityFixMain")
     logger.info("🚀 Starting multicollinearity fix...")
 
-            if fix_feature_engineering_code():
+    if fix_feature_engineering_code():
         logger.info("🎉 Multicollinearity fix completed successfully!")
         logger.info(
             "📋 The issue was in the _calculate_timeframe_features_vectorized method",
@@ -118,12 +118,12 @@ def _log_exceptions(logger_name: str):
         )
         return True
     logger.error("❌ Multicollinearity fix failed!")
-            return False
+    return False
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     success = main()
-            if not success:
+    if not success:
         print("\n❌ MULTICOLLINEARITY FIX FAILED!")
         sys.exit(1)
     else:

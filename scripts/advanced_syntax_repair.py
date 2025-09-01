@@ -53,10 +53,10 @@ def fix_multiline_function_params(text: str) -> str:
         return match.group(0)
 
     pattern = re.compile(r"(def\s+[A-Za-z_]\w*\s*\()([\s\S]*?)(\))", re.MULTILINE)
-            return pattern.sub(repl, text)
+    return pattern.sub(repl, text)
 
 
-        def fix_decorator_kw_commas(text: str) -> str:
+def fix_decorator_kw_commas(text: str) -> str:
     # Matches @decorator( ... ) blocks spanning multiple lines
     def repl(m: re.Match[str]) -> str:
         prefix = m.group(1)
@@ -82,40 +82,40 @@ def fix_multiline_function_params(text: str) -> str:
         return f"{prefix}{fixed}{suffix}"
 
     pattern = re.compile(r"(@[A-Za-z_]\w*\(\n)([\s\S]*?)(\n\))", re.MULTILINE)
-            return pattern.sub(repl, text)
+    return pattern.sub(repl, text)
 
 
-        def process_file(path: Path) -> bool:
+def process_file(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     original = text
     text = fix_multiline_function_params(text)
     text = fix_decorator_kw_commas(text)
-            if text != original:
+    if text != original:
         path.write_text(text, encoding="utf-8")
         print(f"advanced-fixed {path}")
         return True
-            return False
+    return False
 
 
-        def main() -> int:
-            if len(sys.argv) != 2:
+def main() -> int:
+    if len(sys.argv) != 2:
         print("Usage: advanced_syntax_repair.py <target_dir>")
         return 1
     target = Path(sys.argv[1])
-            if not target.exists():
+    if not target.exists():
         print(f"Target not found: {target}")
         return 1
     n = 0
-            for p in target.rglob("*.py"):
+    for p in target.rglob("*.py"):
         try:
             if process_file(p):
                 n += 1
         except Exception as e:
             print(f"error processing {p}: {e}")
     print(f"advanced-fixed {n} files")
-            return 0
+    return 0
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     raise SystemExit(main())
 

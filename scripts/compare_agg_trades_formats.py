@@ -95,5 +95,5 @@ def main():
     asyncio.run(compare_agg_trades_formats(args.symbol, args.hours))
 
 
-        if __name__ == "__main__":
+if __name__ == "__main__":
     main()

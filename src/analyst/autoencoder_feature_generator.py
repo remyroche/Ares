@@ -177,675 +177,641 @@ except Exception:
 
 
 class PriceReturnConverter:
-    # Implementation placeholder - add specific implementation as needed
-class PriceReturnConverter:
-    pass  # TODO: Add implementation
-class PriceReturnConverter:
     """Convert price features to returns (price differences) for better autoencoder training."""
 
-def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
     def __init__(self, config: AutoencoderConfig):
         self.config = config
-self.logger = system_logger.getChild("PriceReturnConverter")
-self.use_price_returns = config.get("preprocessing.use_price_returns", True)
-self.price_return_method = config.get(
-"preprocessing.price_return_method", "pct_change"
-)
-# New configuration for feature selection
-self.primary_price_feature = config.get(
-"preprocessing.primary_price_feature", "close"
-)
-self.primary_volume_feature = config.get(
-"preprocessing.primary_volume_feature", "volume"
-)
-self.enable_feature_selection = config.get(
-"preprocessing.enable_feature_selection", True
-)
+        self.logger = system_logger.getChild("PriceReturnConverter")
+        self.use_price_returns = config.get("preprocessing.use_price_returns", True)
+        self.price_return_method = config.get(
+            "preprocessing.price_return_method", "pct_change"
+        )
+        # New configuration for feature selection
+        self.primary_price_feature = config.get(
+            "preprocessing.primary_price_feature", "close"
+        )
+        self.primary_volume_feature = config.get(
+            "preprocessing.primary_volume_feature", "volume"
+        )
+        self.enable_feature_selection = config.get(
+            "preprocessing.enable_feature_selection", True
+        )
 
-def convert_price_features_to_returns(
-self, features_df: pd.DataFrame
-) -> pd.DataFrame:
+    def convert_price_features_to_returns(
+        self, features_df: pd.DataFrame
+    ) -> pd.DataFrame:
         """
-Convert price features to returns (price differences) to improve autoencoder training.
-Optimized to select only one representative price feature and one volume feature
-to avoid redundancy.
+        Convert price features to returns (price differences) to improve autoencoder training.
+        Optimized to select only one representative price feature and one volume feature
+        to avoid redundancy.
 
-Args:
+        Args:
             features_df: DataFrame containing features, potentially including price data
 
-Returns:
+        Returns:
             DataFrame with optimized price features converted to returns
-"""
-if not self.use_price_returns:
+        """
+        if not self.use_price_returns:
             self.logger.info(
-"📊 Price return conversion disabled, using original features"
-)
-return features_df
+                "📊 Price return conversion disabled, using original features"
+            )
+            return features_df
 
-self.logger.info(
-"🔄 Converting price features to returns for autoencoder training..."
-)
+        self.logger.info(
+            "🔄 Converting price features to returns for autoencoder training..."
+        )
 
-# Create a copy to avoid modifying the original
-converted_df = features_df.copy()
+        # Create a copy to avoid modifying the original
+        converted_df = features_df.copy()
 
-if self.enable_feature_selection:
+        if self.enable_feature_selection:
             # OPTIMIZED APPROACH: Select only one price feature and one volume feature
-self.logger.info("🎯 Using optimized feature selection to avoid redundancy")
+            self.logger.info("🎯 Using optimized feature selection to avoid redundancy")
 
-# Find available price and volume features
-available_price_features = []
-available_volume_features = []
+            # Find available price and volume features
+            available_price_features = []
+            available_volume_features = []
 
-for col in converted_df.columns:
+            for col in converted_df.columns:
                 col_lower = col.lower()
 
-# Skip regime and categorical features
-if any(
-exclude_pattern in col_lower
-for exclude_pattern in [
-"regime",
-"categorical",
-"class",
-"label",
-"category",
-"type",
-]
-):
+                # Skip regime and categorical features
+                if any(
+                    exclude_pattern in col_lower
+                    for exclude_pattern in [
+                        "regime",
+                        "categorical",
+                        "class",
+                        "label",
+                        "category",
+                        "type",
+                    ]
+                ):
                     continue
 
-# Skip features with very limited unique values (likely categorical)
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# Check if the column contains array-valued cells
-sample_value = converted_df[col].iloc[0]
-if isinstance(sample_value, (np.ndarray, list)):
+                # Skip features with very limited unique values (likely categorical)
+                try:
+                    # Check if the column contains array-valued cells
+                    sample_value = converted_df[col].iloc[0]
+                    if isinstance(sample_value, (np.ndarray, list)):
                         self.logger.warning(f"Skipping array-valued column {col}: contains {type(sample_value)}")
-continue
-
-unique_count = converted_df[col].nunique()
-if unique_count <= 5:
                         continue
-except (TypeError, ValueError) as e:
-                    # Handle numpy arrays and other non-hashable types
-self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
-continue
 
-# Categorize features
-if any(
-price_pattern in col_lower
-for price_pattern in [
-"open",
-"high",
-"low",
-"close",
-"price",
-"avg_price",
-"min_price",
-"max_price",
-]
-):
+                    unique_count = converted_df[col].nunique()
+                    if unique_count <= 5:
+                        continue
+                except (TypeError, ValueError) as e:
+                    # Handle numpy arrays and other non-hashable types
+                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
+                    continue
+
+                # Categorize features
+                if any(
+                    price_pattern in col_lower
+                    for price_pattern in [
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "price",
+                        "avg_price",
+                        "min_price",
+                        "max_price",
+                    ]
+                ):
                     if col not in available_price_features:
                         available_price_features.append(col)
-elif any(
-volume_pattern in col_lower
-for volume_pattern in ["volume", "trade_volume", "vol"]
-):
+                elif any(
+                    volume_pattern in col_lower
+                    for volume_pattern in ["volume", "trade_volume", "vol"]
+                ):
                     if col not in available_volume_features:
                         available_volume_features.append(col)
 
-self.logger.info(
-f"📊 Found {len(available_price_features)} price features: {available_price_features}"
-)
-self.logger.info(
-f"📊 Found {len(available_volume_features)} volume features: {available_volume_features}"
-)
+            self.logger.info(
+                f"📊 Found {len(available_price_features)} price features: {available_price_features}"
+            )
+            self.logger.info(
+                f"📊 Found {len(available_volume_features)} volume features: {available_volume_features}"
+            )
 
-# Select primary features
-selected_price_feature = None
-selected_volume_feature = None
+            # Select primary features
+            selected_price_feature = None
+            selected_volume_feature = None
 
-# Select price feature (prefer 'close' if available, otherwise first available)
-if self.primary_price_feature in available_price_features:
+            # Select price feature (prefer 'close' if available, otherwise first available)
+            if self.primary_price_feature in available_price_features:
                 selected_price_feature = self.primary_price_feature
-elif available_price_features:
+            elif available_price_features:
                 selected_price_feature = available_price_features[0]
-self.logger.info(
-f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
-)
-else:
+                self.logger.info(
+                    f"🎯 Selected '{selected_price_feature}' as primary price feature (preferred '{self.primary_price_feature}' not available)"
+                )
+            else:
                 self.logger.warning("⚠️ No price features found for conversion")
 
-# Select volume feature (prefer 'volume' if available, otherwise first available)
-if self.primary_volume_feature in available_volume_features:
+            # Select volume feature (prefer 'volume' if available, otherwise first available)
+            if self.primary_volume_feature in available_volume_features:
                 selected_volume_feature = self.primary_volume_feature
-elif available_volume_features:
+            elif available_volume_features:
                 selected_volume_feature = available_volume_features[0]
-self.logger.info(
-f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
-)
-else:
+                self.logger.info(
+                    f"🎯 Selected '{selected_volume_feature}' as primary volume feature (preferred '{self.primary_volume_feature}' not available)"
+                )
+            else:
                 self.logger.warning("⚠️ No volume features found for conversion")
 
-# Remove redundant price and volume features
-features_to_remove = []
-for col in converted_df.columns:
+            # Remove redundant price and volume features
+            features_to_remove = []
+            for col in converted_df.columns:
                 col_lower = col.lower()
 
-# Skip regime and categorical features
-if any(
-exclude_pattern in col_lower
-for exclude_pattern in [
-"regime",
-"categorical",
-"class",
-"label",
-"category",
-"type",
-]
-):
+                # Skip regime and categorical features
+                if any(
+                    exclude_pattern in col_lower
+                    for exclude_pattern in [
+                        "regime",
+                        "categorical",
+                        "class",
+                        "label",
+                        "category",
+                        "type",
+                    ]
+                ):
                     continue
 
-# Skip features with very limited unique values
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-unique_count = converted_df[col].nunique()
-if unique_count <= 5:
+                # Skip features with very limited unique values
+                try:
+                    unique_count = converted_df[col].nunique()
+                    if unique_count <= 5:
                         continue
-except (TypeError, ValueError) as e:
+                except (TypeError, ValueError) as e:
                     # Handle numpy arrays and other non-hashable types
-self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
-continue
+                    self.logger.warning(f"Error checking uniqueness for column {col}: {e}")
+                    continue
 
-# Remove redundant price features (keep only selected one)
-if any(
-price_pattern in col_lower
-for price_pattern in [
-"open",
-"high",
-"low",
-"close",
-"price",
-"avg_price",
-"min_price",
-"max_price",
-]
-):
+                # Remove redundant price features (keep only selected one)
+                if any(
+                    price_pattern in col_lower
+                    for price_pattern in [
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "price",
+                        "avg_price",
+                        "min_price",
+                        "max_price",
+                    ]
+                ):
                     if col != selected_price_feature:
                         features_to_remove.append(col)
 
-# Remove redundant volume features (keep only selected one)
-elif any(
-volume_pattern in col_lower
-for volume_pattern in ["volume", "trade_volume", "vol"]
-):
+                # Remove redundant volume features (keep only selected one)
+                elif any(
+                    volume_pattern in col_lower
+                    for volume_pattern in ["volume", "trade_volume", "vol"]
+                ):
                     if col != selected_volume_feature:
                         features_to_remove.append(col)
 
-# Remove redundant features
-if features_to_remove:
+            # Remove redundant features
+            if features_to_remove:
                 self.logger.info(
-f"🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}"
-)
-converted_df = converted_df.drop(columns=features_to_remove)
+                    f"🗑️ Removing {len(features_to_remove)} redundant features: {features_to_remove}"
+                )
+                converted_df = converted_df.drop(columns=features_to_remove)
 
-# Convert selected features to returns
-features_to_convert = []
-if selected_price_feature:
+            # Convert selected features to returns
+            features_to_convert = []
+            if selected_price_feature:
                 features_to_convert.append(selected_price_feature)
-if selected_volume_feature:
+            if selected_volume_feature:
                 features_to_convert.append(selected_volume_feature)
 
-self.logger.info(
-f"📊 Converting {len(features_to_convert)} selected features to returns: {features_to_convert}"
-)
+            self.logger.info(
+                f"📊 Converting {len(features_to_convert)} selected features to returns: {features_to_convert}"
+            )
 
-else:
+        else:
             # LEGACY APPROACH: Convert all price-related features (for backward compatibility)
-self.logger.info(
-"📊 Using legacy approach - converting all price-related features"
-)
+            self.logger.info(
+                "📊 Using legacy approach - converting all price-related features"
+            )
 
-# Define price-related feature patterns to convert
-price_patterns = [
-# OHLCV patterns
-"open",
-"high",
-"low",
-"close",
-"volume",
-# Price-related technical indicators
-"price",
-"Price",
-"PRICE",
-"sma_",
-"ema_",
-"SMA_",
-"EMA_",
-"bb_",
-"BB_",
-"bollinger",
-"atr",
-"ATR",
-"average_true_range",
-"vwap",
-"VWAP",
-# Price ratios and levels
-"price_",
-"Price_",
-"PRICE_",
-"level_",
-"Level_",
-"LEVEL_",
-"support_",
-"resistance_",
-"Support_",
-"Resistance_",
-# Moving averages (price-based)
-"ma_",
-"MA_",
-"moving_average",
-# Price momentum and change
-"momentum",
-"Momentum",
-"MOMENTUM",
-"change",
-"Change",
-"CHANGE",
-# Volume-weighted price features
-"vwap",
-"VWAP",
-"volume_weighted",
-# Price-based oscillators
-"cci",
-"CCI",
-"commodity_channel",
-"williams_r",
-"Williams_R",
-"WILLIAMS_R",
-# Price-based patterns
-"pattern_",
-"Pattern_",
-"PATTERN_",
-"candlestick_",
-"Candlestick_",
-"CANDLESTICK_",
-]
+            # Define price-related feature patterns to convert
+            price_patterns = [
+                # OHLCV patterns
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                # Price-related technical indicators
+                "price",
+                "Price",
+                "PRICE",
+                "sma_",
+                "ema_",
+                "SMA_",
+                "EMA_",
+                "bb_",
+                "BB_",
+                "bollinger",
+                "atr",
+                "ATR",
+                "average_true_range",
+                "vwap",
+                "VWAP",
+                # Price ratios and levels
+                "price_",
+                "Price_",
+                "PRICE_",
+                "level_",
+                "Level_",
+                "LEVEL_",
+                "support_",
+                "resistance_",
+                "Support_",
+                "Resistance_",
+                # Moving averages (price-based)
+                "ma_",
+                "MA_",
+                "moving_average",
+                # Price momentum and change
+                "momentum",
+                "Momentum",
+                "MOMENTUM",
+                "change",
+                "Change",
+                "CHANGE",
+                # Volume-weighted price features
+                "vwap",
+                "VWAP",
+                "volume_weighted",
+                # Price-based oscillators
+                "cci",
+                "CCI",
+                "commodity_channel",
+                "williams_r",
+                "Williams_R",
+                "WILLIAMS_R",
+                # Price-based patterns
+                "pattern_",
+                "Pattern_",
+                "PATTERN_",
+                "candlestick_",
+                "Candlestick_",
+                "CANDLESTICK_",
+            ]
 
-# Find columns that match price patterns
-features_to_convert = []
-for col in converted_df.columns:
+            # Find columns that match price patterns
+            features_to_convert = []
+            for col in converted_df.columns:
                 # Skip regime and categorical features
-if any(
-exclude_pattern in col.lower()
-for exclude_pattern in [
-"regime",
-"categorical",
-"class",
-"label",
-"category",
-"type",
-]
-):
+                if any(
+                    exclude_pattern in col.lower()
+                    for exclude_pattern in [
+                        "regime",
+                        "categorical",
+                        "class",
+                        "label",
+                        "category",
+                        "type",
+                    ]
+                ):
                     continue
 
-# Skip features with very limited unique values
-unique_count = converted_df[col].nunique()
-if unique_count <= 5:
+                # Skip features with very limited unique values
+                unique_count = converted_df[col].nunique()
+                if unique_count <= 5:
                     continue
 
-# Check if column matches price patterns
-if any(pattern in col.lower() for pattern in price_patterns):
+                # Check if column matches price patterns
+                if any(pattern in col.lower() for pattern in price_patterns):
                     # Skip columns that are already returns or differences
-if any(
-skip_pattern in col.lower()
-for skip_pattern in ["return", "diff", "change", "pct", "ratio"]
-):
+                    if any(
+                        skip_pattern in col.lower()
+                        for skip_pattern in ["return", "diff", "change", "pct", "ratio"]
+                    ):
                         continue
-features_to_convert.append(col)
+                    features_to_convert.append(col)
 
-# Convert selected features to returns
-converted_count = 0
-for col in features_to_convert:
+        # Convert selected features to returns
+        converted_count = 0
+        for col in features_to_convert:
             try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-if col in converted_df.columns:
+                if col in converted_df.columns:
                     # CRITICAL: Double-check for known problematic features
-if col.lower() in [
-"volume_regime",
-"volatility_regime",
-"trend_regime",
-]:
+                    if col.lower() in [
+                        "volume_regime",
+                        "volatility_regime",
+                        "trend_regime",
+                    ]:
                         self.logger.warning(
-f"⚠️ Skipping known regime feature '{col}' to prevent infinite values"
-)
-continue
+                            f"⚠️ Skipping known regime feature '{col}' to prevent infinite values"
+                        )
+                        continue
 
-original_values = converted_df[col].copy()
+                    original_values = converted_df[col].copy()
 
-# Handle different return calculation methods
-if self.price_return_method == "pct_change":
+                    # Handle different return calculation methods
+                    if self.price_return_method == "pct_change":
                         # Percentage change (most common)
-returns = original_values.pct_change().fillna(0)
-elif self.price_return_method == "diff":
+                        returns = original_values.pct_change().fillna(0)
+                    elif self.price_return_method == "diff":
                         # Simple difference
-returns = original_values.diff().fillna(0)
-elif self.price_return_method == "log_returns":
+                        returns = original_values.diff().fillna(0)
+                    elif self.price_return_method == "log_returns":
                         # Log returns (for financial data)
-returns = np.log(
-original_values / original_values.shift(1)
-).fillna(0)
-else:
+                        returns = np.log(
+                            original_values / original_values.shift(1)
+                        ).fillna(0)
+                    else:
                         # Default to percentage change
-returns = original_values.pct_change().fillna(0)
+                        returns = original_values.pct_change().fillna(0)
 
-# CRITICAL: Handle infinite values that can crash scikit-learn models
-inf_count_before = np.isinf(returns).sum()
-if inf_count_before > 0:
+                    # CRITICAL: Handle infinite values that can crash scikit-learn models
+                    inf_count_before = np.isinf(returns).sum()
+                    if inf_count_before > 0:
                         self.logger.warning(
-f"⚠️ Found {inf_count_before} infinite values in '{col}' returns - replacing with NaN"
-)
+                            f"⚠️ Found {inf_count_before} infinite values in '{col}' returns - replacing with NaN"
+                        )
 
-returns = returns.replace([np.inf, -np.inf], np.nan)
-returns = returns.fillna(0)
+                        returns = returns.replace([np.inf, -np.inf], np.nan)
+                        returns = returns.fillna(0)
 
-# Additional safety: clip extreme values to prevent numerical issues
-max_abs_value = 1000  # Reasonable limit for percentage changes
-extreme_count_before = (np.abs(returns) > max_abs_value).sum()
-if extreme_count_before > 0:
+                    # Additional safety: clip extreme values to prevent numerical issues
+                    max_abs_value = 1000  # Reasonable limit for percentage changes
+                    extreme_count_before = (np.abs(returns) > max_abs_value).sum()
+                    if extreme_count_before > 0:
                         self.logger.warning(
-f"⚠️ Found {extreme_count_before} extreme values (>±{max_abs_value}) in '{col}' returns - clipping"
-)
+                            f"⚠️ Found {extreme_count_before} extreme values (>±{max_abs_value}) in '{col}' returns - clipping"
+                        )
 
-returns = np.clip(returns, -max_abs_value, max_abs_value)
+                        returns = np.clip(returns, -max_abs_value, max_abs_value)
 
-# Replace the original column with returns
-converted_df[col] = returns
-converted_count += 1
+                    # Replace the original column with returns
+                    converted_df[col] = returns
+                    converted_count += 1
 
-# Log conversion details for first few columns
-if converted_count <= 5:
+                    # Log conversion details for first few columns
+                    if converted_count <= 5:
                         self.logger.info(
-f"   📊 Converted '{col}' to returns (method: {self.price_return_method})"
-)
-self.logger.info(
-f"      Original range: [{original_values.min():.6f}, {original_values.max():.6f}]"
-)
-self.logger.info(
-f"      Returns range: [{returns.min():.6f}, {returns.max():.6f}]"
-)
+                            f"   📊 Converted '{col}' to returns (method: {self.price_return_method})"
+                        )
+                        self.logger.info(
+                            f"      Original range: [{original_values.min():.6f}, {original_values.max():.6f}]"
+                        )
+                        self.logger.info(
+                            f"      Returns range: [{returns.min():.6f}, {returns.max():.6f}]"
+                        )
 
-except Exception as e:
+            except Exception as e:
                 self.logger.warning(
-f"⚠️ Failed to convert price feature '{col}' to returns: {e}"
-)
-continue
+                    f"⚠️ Failed to convert price feature '{col}' to returns: {e}"
+                )
+                continue
 
-self.logger.info(
-f"✅ Successfully converted {converted_count} price features to returns"
-)
-self.logger.info(f"📊 Final feature count: {converted_df.shape[1]} columns")
+        self.logger.info(
+            f"✅ Successfully converted {converted_count} price features to returns"
+        )
+        self.logger.info(f"📊 Final feature count: {converted_df.shape[1]} columns")
 
-# Final validation: ensure no infinite or extreme values remain
-final_inf_count = (
-np.isinf(converted_df.select_dtypes(include=[np.number])).sum().sum()
-)
-if final_inf_count > 0:
+        # Final validation: ensure no infinite or extreme values remain
+        final_inf_count = (
+            np.isinf(converted_df.select_dtypes(include=[np.number])).sum().sum()
+        )
+        if final_inf_count > 0:
             self.logger.error(
-f"🚨 CRITICAL: {final_inf_count} infinite values still present after conversion!"
-)
-# Emergency cleanup
-converted_df = converted_df.replace([np.inf, -np.inf], 0)
-else:
+                f"🚨 CRITICAL: {final_inf_count} infinite values still present after conversion!"
+            )
+            # Emergency cleanup
+            converted_df = converted_df.replace([np.inf, -np.inf], 0)
+        else:
             self.logger.info("✅ Final validation passed: no infinite values detected")
 
-return converted_df
+        return converted_df
 
 
-class FeatureFilter:
-    # Implementation placeholder - add specific implementation as needed
-class FeatureFilter:
-    pass  # TODO: Add implementation
 class FeatureFilter:
     """Random Forest + SHAP feature filtering."""
 
-def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
     def __init__(self, config: AutoencoderConfig):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(
-msg,
-)
-self.config = config
-self.logger = system_logger.getChild("FeatureFilter")
+            raise ImportError(
+                msg,
+            )
+        self.config = config
+        self.logger = system_logger.getChild("FeatureFilter")
 
-def filter_features(
-self,
-features_df: pd.DataFrame,
-labels: np.ndarray,
-) -> pd.DataFrame:
+    def filter_features(
+        self,
+        features_df: pd.DataFrame,
+        labels: np.ndarray,
+    ) -> pd.DataFrame:
         """Filter features using Random Forest + SHAP importance."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-self.logger.info(
-"🔍 Starting feature filtering with Random Forest + SHAP..."
-)
-self.logger.info(f"📊 Input data shape: {features_df.shape}")
-self.logger.info(f"🎯 Number of unique labels: {len(np.unique(labels))}")
-self.logger.info(
-f"📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}"
-)
+        try:
+            self.logger.info(
+                "🔍 Starting feature filtering with Random Forest + SHAP..."
+            )
+            self.logger.info(f"📊 Input data shape: {features_df.shape}")
+            self.logger.info(f"🎯 Number of unique labels: {len(np.unique(labels))}")
+            self.logger.info(
+                f"📈 Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}"
+            )
 
-# CRITICAL: Filter out raw OHLCV data that should not be used as features
-raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
-raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
+            # CRITICAL: Filter out raw OHLCV data that should not be used as features
+            raw_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'time']
+            raw_ohlcv_columns = [col for col in raw_ohlcv_columns if col in features_df.columns]
 
-if raw_ohlcv_columns:
+            if raw_ohlcv_columns:
                 self.logger.warning(f"🚨 CRITICAL: Found raw OHLCV columns in features: {raw_ohlcv_columns}")
-self.logger.warning("🚨 These should be excluded from feature filtering")
-self.logger.warning("🚨 Raw price data should be processed into engineered features first")
+                self.logger.warning("🚨 These should be excluded from feature filtering")
+                self.logger.warning("🚨 Raw price data should be processed into engineered features first")
 
-# Remove raw OHLCV columns
-features_df = features_df.drop(columns=raw_ohlcv_columns)
-self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
-self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
+                # Remove raw OHLCV columns
+                features_df = features_df.drop(columns=raw_ohlcv_columns)
+                self.logger.info(f"✅ Removed {len(raw_ohlcv_columns)} raw OHLCV columns from features")
+                self.logger.info(f"📊 Features shape after removal: {features_df.shape}")
 
-if features_df.empty:
-                    self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
-self.logger.error("🚨 This indicates a serious data pipeline issue")
-return pd.DataFrame()
+            if features_df.empty:
+                self.logger.error("🚨 CRITICAL: No engineered features remaining after removing raw OHLCV data")
+                self.logger.error("🚨 This indicates a serious data pipeline issue")
+                return pd.DataFrame()
 
-X = features_df.select_dtypes(include=[np.number]).fillna(0)
-y = labels
+            X = features_df.select_dtypes(include=[np.number]).fillna(0)
+            y = labels
 
-# Check if we have any numeric features
-if X.empty or X.shape[1] == 0:
+            # Check if we have any numeric features
+            if X.empty or X.shape[1] == 0:
                 self.logger.warning("⚠️ No numeric features available for filtering")
-self.logger.warning("⚠️ Returning original features without filtering")
-return features_df
+                self.logger.warning("⚠️ Returning original features without filtering")
+                return features_df
 
-self.logger.info(f"🔢 Numeric features selected: {len(X.columns)}")
-self.logger.info(f"📏 Feature names: {list(X.columns)}")
+            self.logger.info(f"🔢 Numeric features selected: {len(X.columns)}")
+            self.logger.info(f"📏 Feature names: {list(X.columns)}")
 
-if len(np.unique(y)) < 2:
+            if len(np.unique(y)) < 2:
                 self.logger.warning(
-"⚠️ Insufficient unique labels for classification, skipping filtering.",
-)
-return features_df
+                    "⚠️ Insufficient unique labels for classification, skipping filtering.",
+                )
+                return features_df
 
-# Random Forest training
-self.logger.info(
-"🌲 Training Random Forest model for feature importance..."
-)
-n_estimators = self.config.get("feature_filtering.n_estimators", 100)
-max_depth = self.config.get("feature_filtering.max_depth", 10)
-random_state = self.config.get("feature_filtering.random_state", 42)
+            # Random Forest training
+            self.logger.info(
+                "🌲 Training Random Forest model for feature importance..."
+            )
+            n_estimators = self.config.get("feature_filtering.n_estimators", 100)
+            max_depth = self.config.get("feature_filtering.max_depth", 10)
+            random_state = self.config.get("feature_filtering.random_state", 42)
 
-self.logger.info(
-f"🌲 RF Parameters: n_estimators={n_estimators}, max_depth={max_depth}, random_state={random_state}"
-)
+            self.logger.info(
+                f"🌲 RF Parameters: n_estimators={n_estimators}, max_depth={max_depth}, random_state={random_state}"
+            )
 
-rf_model = RandomForestClassifier(
-n_estimators=n_estimators,
-max_depth=max_depth,
-random_state=random_state,
-n_jobs=-1,
-)
+            rf_model = RandomForestClassifier(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                random_state=random_state,
+                n_jobs=-1,
+            )
 
-import time
+            import time
 
-start_time = time.time()
-rf_model.fit(X, y)
-training_time = time.time() - start_time
+            start_time = time.time()
+            rf_model.fit(X, y)
+            training_time = time.time() - start_time
 
-self.logger.info(
-f"✅ Random Forest training completed in {training_time:.2f} seconds"
-)
-self.logger.info(f"🎯 RF training score: {rf_model.score(X, y):.4f}")
+            self.logger.info(
+                f"✅ Random Forest training completed in {training_time:.2f} seconds"
+            )
+            self.logger.info(f"🎯 RF training score: {rf_model.score(X, y):.4f}")
 
-# ENHANCED SHAP analysis with multiple efficiency optimizations
-self.logger.info("🔍 Computing SHAP values with enhanced efficiency...")
-start_time = time.time()
+            # ENHANCED SHAP analysis with multiple efficiency optimizations
+            self.logger.info("🔍 Computing SHAP values with enhanced efficiency...")
+            start_time = time.time()
 
-# Try new import path first, then fallback to old path
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-from shap.explainers import TreeExplainer
-
-self.logger.info("📦 Using SHAP TreeExplainer from shap.explainers")
-except ImportError:
+            # Try new import path first, then fallback to old path
+            try:
+                from shap.explainers import TreeExplainer
+                self.logger.info("📦 Using SHAP TreeExplainer from shap.explainers")
+            except ImportError:
                 from shap import TreeExplainer
+                self.logger.info("📦 Using SHAP TreeExplainer from shap")
 
-self.logger.info("📦 Using SHAP TreeExplainer from shap")
+            # EFFICIENCY OPTIMIZATION 1: Percentage-based adaptive sampling
+            # Get sampling configuration from config
+            sample_percentage = self.config.get(
+                "feature_filtering.sample_percentage", 10.0
+            )  # Default 10%
+            min_sample_size = self.config.get(
+                "feature_filtering.min_sample_size", 1000
+            )  # Minimum 1000 rows
+            max_sample_size = self.config.get(
+                "feature_filtering.max_sample_size", 1000000
+            )  # Maximum 10000 rows
 
-# EFFICIENCY OPTIMIZATION 1: Percentage-based adaptive sampling
-# Get sampling configuration from config
-sample_percentage = self.config.get(
-"feature_filtering.sample_percentage", 10.0
-)  # Default 10%
-min_sample_size = self.config.get(
-"feature_filtering.min_sample_size", 1000
-)  # Minimum 1000 rows
-max_sample_size = self.config.get(
-"feature_filtering.max_sample_size", 1000000
-)  # Maximum 10000 rows
+            # Calculate sample size based on percentage
+            sample_size = int(len(X) * sample_percentage / 100)
 
-# Calculate sample size based on percentage
-sample_size = int(len(X) * sample_percentage / 100)
+            # Apply min/max constraints
+            sample_size = max(min_sample_size, min(sample_size, max_sample_size))
 
-# Apply min/max constraints
-sample_size = max(min_sample_size, min(sample_size, max_sample_size))
+            self.logger.info(f"📊 Dataset size: {len(X)} rows")
+            self.logger.info(f"📊 Sample percentage: {sample_percentage}%")
+            self.logger.info(f"📊 Calculated sample size: {sample_size} rows")
 
-self.logger.info(f"📊 Dataset size: {len(X)} rows")
-self.logger.info(f"📊 Sample percentage: {sample_percentage}%")
-self.logger.info(f"📊 Calculated sample size: {sample_size} rows")
-
-# EFFICIENCY OPTIMIZATION 2: Enhanced stratified sampling with fallback
-if sample_size < len(X):
+            # EFFICIENCY OPTIMIZATION 2: Enhanced stratified sampling with fallback
+            if sample_size < len(X):
                 self.logger.info(
-"🔄 Applying stratified sampling to maintain class balance..."
-)
+                    "🔄 Applying stratified sampling to maintain class balance..."
+                )
 
-# Check if we have enough samples per class for stratification
-unique_labels, label_counts = np.unique(y, return_counts=True)
-min_class_count = label_counts.min()
-max_class_count = label_counts.max()
-imbalance_ratio = (
-max_class_count / min_class_count
-if min_class_count > 0
-else float("inf")
-)
+                # Check if we have enough samples per class for stratification
+                unique_labels, label_counts = np.unique(y, return_counts=True)
+                min_class_count = label_counts.min()
+                max_class_count = label_counts.max()
+                imbalance_ratio = (
+                    max_class_count / min_class_count
+                    if min_class_count > 0
+                    else float("inf")
+                )
 
-self.logger.info("📊 Label distribution analysis:")
-self.logger.info(f"   Unique labels: {unique_labels}")
-self.logger.info(f"   Label counts: {label_counts}")
-self.logger.info(f"   Min class count: {min_class_count}")
-self.logger.info(f"   Imbalance ratio: {imbalance_ratio:.1f}")
+                self.logger.info("📊 Label distribution analysis:")
+                self.logger.info(f"   Unique labels: {unique_labels}")
+                self.logger.info(f"   Label counts: {label_counts}")
+                self.logger.info(f"   Min class count: {min_class_count}")
+                self.logger.info(f"   Imbalance ratio: {imbalance_ratio:.1f}")
 
-# CRITICAL FIX: Handle extreme imbalance for SHAP computation
-shap_imbalance_threshold = self.config.get(
-"feature_filtering.shap_imbalance_threshold", 100.0
-)
-enable_shap_imbalance_handling = self.config.get(
-"feature_filtering.enable_shap_imbalance_handling", True
-)
+                # CRITICAL FIX: Handle extreme imbalance for SHAP computation
+                shap_imbalance_threshold = self.config.get(
+                    "feature_filtering.shap_imbalance_threshold", 100.0
+                )
+                enable_shap_imbalance_handling = self.config.get(
+                    "feature_filtering.enable_shap_imbalance_handling", True
+                )
 
-if (
-enable_shap_imbalance_handling
-and imbalance_ratio > shap_imbalance_threshold
-):
+                if (
+                    enable_shap_imbalance_handling
+                    and imbalance_ratio > shap_imbalance_threshold
+                ):
                     self.logger.warning(
-f"🚨 CRITICAL FIX: Extreme label imbalance detected (ratio={imbalance_ratio:.1f} > {shap_imbalance_threshold})"
-)
-self.logger.info("🔄 Using random sampling for SHAP computation...")
-sample_indices = np.random.choice(
-len(X), sample_size, replace=False
-)
-X_sample = X.iloc[sample_indices]
-y_sample = y[sample_indices]
-self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
+                        f"🚨 CRITICAL FIX: Extreme label imbalance detected (ratio={imbalance_ratio:.1f} > {shap_imbalance_threshold})"
+                    )
+                    self.logger.info("🔄 Using random sampling for SHAP computation...")
+                    sample_indices = np.random.choice(
+                        len(X), sample_size, replace=False
+                    )
+                    X_sample = X.iloc[sample_indices]
+                    y_sample = y[sample_indices]
+                    self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
 
-elif (
-min_class_count >= 10
-):  # Need at least 10 samples per class for stratification
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-from sklearn.model_selection import train_test_split
+                elif (
+                    min_class_count >= 10
+                ):  # Need at least 10 samples per class for stratification
+                    try:
+                        from sklearn.model_selection import train_test_split
 
-# Calculate stratified sample size per class
-class_sample_sizes = {}
-for label, count in zip(unique_labels, label_counts):
+                        # Calculate stratified sample size per class
+                        class_sample_sizes = {}
+                        for label, count in zip(unique_labels, label_counts):
                             class_sample_size = int(count * sample_percentage / 100)
-class_sample_size = max(
-5, min(class_sample_size, count)
-)  # At least 5, at most all
-class_sample_sizes[label] = class_sample_size
+                            class_sample_size = max(
+                                5, min(class_sample_size, count)
+                            )  # At least 5, at most all
+                            class_sample_sizes[label] = class_sample_size
 
-# Perform stratified sampling
-X_sample, _, y_sample, _ = train_test_split(
-X, y, train_size=sample_size, stratify=y, random_state=42
-)
+                        # Perform stratified sampling
+                        X_sample, _, y_sample, _ = train_test_split(
+                            X, y, train_size=sample_size, stratify=y, random_state=42
+                        )
 
-# Verify stratification worked
-original_dist = dict(zip(unique_labels, label_counts))
-sample_dist = dict(
-zip(*np.unique(y_sample, return_counts=True))
-)
+                        # Verify stratification worked
+                        original_dist = dict(zip(unique_labels, label_counts))
+                        sample_dist = dict(
+                            zip(*np.unique(y_sample, return_counts=True))
+                        )
 
-self.logger.info("✅ Stratified sampling successful!")
-self.logger.info(
-f"📊 Original class distribution: {original_dist}"
-)
-self.logger.info(f"📊 Sample class distribution: {sample_dist}")
-self.logger.info(
-f"📊 Sample size: {len(X_sample)} rows ({len(X_sample)/len(X)*100:.1f}%)"
-)
+                        self.logger.info("✅ Stratified sampling successful!")
+                        self.logger.info(
+                            f"📊 Original class distribution: {original_dist}"
+                        )
+                        self.logger.info(f"📊 Sample class distribution: {sample_dist}")
+                        self.logger.info(
+                            f"📊 Sample size: {len(X_sample)} rows ({len(X_sample)/len(X)*100:.1f}%)"
+                        )
 
-except Exception as e:
+                    except Exception as e:
                         self.logger.warning(f"⚠️ Stratified sampling failed: {e}")
-self.logger.info("🔄 Falling back to random sampling...")
-sample_indices = np.random.choice(
-len(X), sample_size, replace=False
-)
-X_sample = X.iloc[sample_indices]
-y_sample = y[sample_indices]
-self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
+                        self.logger.info("🔄 Falling back to random sampling...")
+                        sample_indices = np.random.choice(
+                            len(X), sample_size, replace=False
+                        )
+                        X_sample = X.iloc[sample_indices]
+                        y_sample = y[sample_indices]
+                        self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
 else:
                     self.logger.warning(
 f"⚠️ Insufficient samples per class for stratification (min: {min_class_count})"

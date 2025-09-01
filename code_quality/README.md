@@ -8,6 +8,7 @@ Available categories:
 - Formatting (Python: black; Optional JS: prettier)
 - Type Checking (Python: mypy; Optional JS/TS: tsc if present)
 - Dead Code Detection (Python: vulture)
+- Circular Import Detection (Python: pylint)
 - Dependency Mapping (Python: pydeps; tree via pipdeptree)
 
 - Complexity Analysis (Python: radon)

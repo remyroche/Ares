@@ -25,6 +25,7 @@ pip_install black
 pip_install mypy
 pip_install vulture
 pip_install radon
+pip_install pylint
 pip_install pip-audit
 pip_install pydeps
 pip_install pipdeptree

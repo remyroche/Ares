@@ -68,9 +68,9 @@ class BotMonitor:
 
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 cmdline = " ".join(proc.info.get("cmdline") or [])
                 if (
                     "ares_launcher.py" in cmdline
@@ -101,9 +101,9 @@ except Exception as e:
 
         for log_file in log_dir.glob("*.log"):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Check if log file was modified in the last 5 minutes
                 if current_time - log_file.stat().st_mtime < 300:
     passwith open(log_file, "r", encoding="utf-8") as f:
@@ -148,9 +148,9 @@ except Exception as e:
         # Save notification to a file that the AI assistant can read
         notification_file = project_root / "state/ai_notification.json"
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             notification_file.parent.mkdir(parents=True, exist_ok=True)
             with open(notification_file, "w", encoding="utf-8") as f:
     passjson.dump(notification, f, indent=2, default=str)
@@ -176,9 +176,9 @@ except Exception as e:
 
         while True:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 current_time = datetime.now()
 
                 # Check for running processes

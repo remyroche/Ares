@@ -33,9 +33,9 @@ class ComprehensiveLogger:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpasspasspass  # TODO: Add implementation
+    passpasspassself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveLogger:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveLogger:
     pass"""
 Comprehensive logger that ensures all logs are stored in the log / directory.
@@ -177,9 +177,9 @@ return logger
 def _setup_full_run_log(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Route Python warnings through logging system so they get captured too
 logging.captureWarnings(True)
 
@@ -262,9 +262,9 @@ return logging.getLogger(component_name)
 def get_full_log_path(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._full_log_path)
 if getattr(self, "_full_log_path", None)
@@ -276,9 +276,9 @@ except Exception:
 def get_trades_log_path(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._trades_log_path)
 if getattr(self, "_trades_log_path", None)
@@ -290,9 +290,9 @@ except Exception:
 def get_backtest_log_path(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._backtest_log_path)
 if getattr(self, "_backtest_log_path", None)
@@ -326,9 +326,9 @@ def log_system_info(...):
     passdef log_system_info(...):
     pass"""Log system information."""
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.system_logger:
     passself.system_logger.info(message)
 if self.global_logger:
@@ -393,9 +393,9 @@ def log_session_summary(...) -> ...:
     passif not self.global_logger:
     passreturn
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.global_logger.info("=" * 80)
 self.global_logger.info("📊 SESSION SUMMARY")
 self.global_logger.info(
@@ -461,9 +461,9 @@ ef initialize(self) -> bool:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-ss  # TODO: Add proper exception handling
+ss  # TODO: Implement specific error handling based on context
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.log_system_info("=" * 80)
 self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
 self.log_system_info(
@@ -477,9 +477,9 @@ isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
     passraise
 
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SafeStreamHandler(...):
     """..."""
     passdef emit(...):
@@ -487,9 +487,9 @@ class _SafeStreamHandler(...):
     passdef emit(...):
     passdef emit(...):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 super().emit(record)
 except (BrokenPipeError, OSError) as e:
     passpasspasspasspasspasspassif not (
@@ -502,9 +502,9 @@ def flush(...):
     passdef flush(...):
     passdef flush(...):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 super().flush()
 except (BrokenPipeError, OSError) as e:
     passpasspasspasspasspasspassif not (

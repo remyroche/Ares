@@ -124,8 +124,7 @@ class ParameterInteraction(...):
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class CrossValidationResult:
     pass"""Results from cross - validation sensitivity analysis."""
     parameter: str
@@ -137,8 +136,7 @@ class CrossValidationResult:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class EnsembleOptimizationResult:
     pass"""Results from ensemble parameter optimization."""
     ensemble_params: List[str]

@@ -77,9 +77,9 @@ CONFIDENCE_WEIGHTED = "confidence_weighted"
 
 @dataclass
 class EnsembleConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnsembleConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnsembleConfig:
     pass"""Optimizable ensemble parameters."""
 

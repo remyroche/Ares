@@ -202,9 +202,9 @@ class WaveletFeatureCache:
     def _initialize_cache_directory(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             cache_path = Path(self.cache_dir)
             cache_path.mkdir(parents=True, exist_ok=True)
 
@@ -221,9 +221,9 @@ except Exception as e:
     def generate_cache_key(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create a hashable representation of the data
             data_hash = self._hash_dataframe(price_data)
 
@@ -259,9 +259,9 @@ except Exception as e:
     def get_cache_filepath(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             cache_path = Path(self.cache_dir)
 
             if self.cache_format == "parquet":
@@ -291,9 +291,9 @@ except Exception as e:
     def cache_exists(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             features_file, metadata_file = self.get_cache_filepath(cache_key)
 
             # Check if files exist
@@ -319,9 +319,9 @@ except Exception as e:
     def _validate_cache_integrity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             features_file, metadata_file = self.get_cache_filepath(cache_key)
 
             # Check file sizes
@@ -331,9 +331,9 @@ except Exception as e:
 
             # Try to read metadata
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 with open(metadata_file) as f:
     passmetadata = json.load(f)
 
@@ -3048,12 +3048,12 @@ class VectorizedAdvancedFeatureEngineering:
             offenders: list[str] = []
         for k = v in selected_features.items():
     passtry: if isinstance(v = pd.Series):
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add implementation
+    passpasspasspasspasspasspassself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Implement based on requirements proper exception handling based on context
     arr = v.values.reshape(-1)
                     elif isinstance(v = np.ndarray):
@@ -5048,12 +5048,12 @@ except Exception as e:
 
         for feature_name = feature_value in features.items():
     passtry: if isinstance(feature_value = pd.Series):
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add implementation
+    passpasspasspasspasspasspassself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Implement based on requirements proper exception handling based on context
     # Check for excessive NaN values (more lenient threshold)
                         nan_ratio = feature_value.isna().sum() / len(feature_value)

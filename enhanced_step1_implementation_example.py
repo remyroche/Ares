@@ -31,7 +31,7 @@ except ImportError:
     passpasssystem_logger = logging.getLogger("EnhancedStep1")
 
 try:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 except ImportError:
     passpassdef handle_errors(...):
     passdef decorator(...):
@@ -264,9 +264,9 @@ def memory_efficient(...):
             logging.info(f"Memory before {func.__name__}: {initial_memory:.1f}MB")
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 result = await func(*args, **kwargs)
 
                 # Check memory after processing
@@ -506,9 +506,9 @@ class OptimizedDataProcessor:
 nk_count = 0
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
     passchunk_count += 1
                 self.logger.debug(f"Processing chunk {chunk_count}")
@@ -618,9 +618,9 @@ class EnhancedStep1DataCollection:
         self.logger.info("🚀 Starting enhanced data collection...")
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize directories
             await self._initialize_directories()
 
@@ -670,9 +670,9 @@ except Exception as e:
     async def _download_data_with_resilience(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -681,9 +681,9 @@ except Exception as e:
 
             # Try to import the downloader
             try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 from src.training.steps.data_downloader import download_all_data_with_consolidation
 
                 success = await download_all_data_with_consolidation(
@@ -717,9 +717,9 @@ except Exception as e:
     async def _process_and_validate_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -809,9 +809,9 @@ async def main(...):
 
     # Execute enhanced data collection
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         result = await step1.execute(training_input, pipeline_state)
 
         print("=" * 60)

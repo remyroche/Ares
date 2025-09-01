@@ -46,9 +46,9 @@ elif col_type in ["float64"]:
     passpass# Check if we can use float32 (lose some precision but save memory)
 if df[col].isnull().sum() == 0:  # No NaN values
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Test if conversion preserves values within tolerance
 float32_vals, df[col].astype(np.float32)
 if np.allclose(df[col], float32_vals, rtol = 1e - 5):
@@ -143,9 +143,9 @@ for col in df.columns:
 for pattern, dtype in optimal_dtypes.items():
     passif pattern in col_lower:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if dtype == "int8":
     pass# For cluster IDs, ensure they're small integers
 if col_lower.startswith("cluster_") or "cluster" in col_lower:
@@ -154,9 +154,9 @@ elif dtype == "float32":
     passpass# For float features, use float32 if no precision loss
 if df[col].dtype == "float64":
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 float32_vals, df[col].astype("float32")
 if np.allclose(df[col], float32_vals, rtol = 1e - 5):
     passoptimized_df[col] = float32_vals

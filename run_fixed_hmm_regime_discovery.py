@@ -32,9 +32,9 @@ async def main(...):
     logger.info("=" * 80)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run the HMM regime discovery step with fixed parameters
         success = await run_step(
             symbol="ETHUSDT",

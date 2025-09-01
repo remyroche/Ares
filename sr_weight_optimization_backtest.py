@@ -69,9 +69,9 @@ class SRWeightOptimizationBacktest:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("🚀 Initializing SR Weight Optimization Backtest...")
 
             # Initialize weight optimizer
@@ -92,9 +92,9 @@ except Exception as e:
     async def run_comprehensive_backtest(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(
                 f"🎯 Starting comprehensive backtest for {symbol} on {exchange}",
             )
@@ -135,9 +135,9 @@ except Exception as e:
     def _prepare_backtest_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate returns
             price_data = price_data.copy()
             price_data["returns"] = price_data["close"].pct_change()
@@ -167,9 +167,9 @@ except Exception as e:
     def _identify_market_conditions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate rolling metrics
             returns = price_data["returns"].dropna()
             rolling_volatility = returns.rolling(window=30).std()
@@ -209,9 +209,9 @@ except Exception as e:
     async def _run_multi_period_optimization(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             period_results = {}
 
             for period_name , period_data in prepared_data["period_data"].items():
@@ -248,9 +248,9 @@ except Exception as e:
     def _analyze_cross_period_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             analysis = {
                 "weight_stability": {},
                 "performance_consistency": {},
@@ -327,9 +327,9 @@ except Exception as e:
     def _generate_recommended_weights(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             recommendations = {
                 "conservative": {},
                 "balanced": {},
@@ -405,9 +405,9 @@ except Exception as e:
     def _generate_optimization_recommendations(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             recommendations = {
                 "weight_recommendations": {},
                 "performance_insights": {},
@@ -499,9 +499,9 @@ except Exception as e:
     def _create_summary(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             summary = {
                 "optimization_status": "COMPLETED",
                 "key_findings": [],
@@ -566,9 +566,9 @@ except Exception as e:
     def _save_backtest_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create results directory
             results_dir = "backtest_results"
             os.makedirs(results_dir, exist_ok = True)

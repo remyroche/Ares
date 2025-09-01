@@ -69,9 +69,9 @@ def load_missing_dates(...):
 def validate_parquet_format(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         df = pd.read_parquet(file_path)
 
         # Check columns
@@ -114,9 +114,9 @@ except Exception as e:
 def fix_parquet_format(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         df = pd.read_parquet(file_path)
 
         # Ensure correct column order
@@ -152,9 +152,9 @@ async def download_single_day_aggtrades(...) -> ...:
     print("-" * 60)
 
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -214,9 +214,9 @@ async def main(...):
     print("=" * 80)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         results = {}
 
         for i , date_str in enumerate(missing_dates, 1):

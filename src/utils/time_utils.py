@@ -22,9 +22,9 @@ fmts = [
 ]
 for fmt in fmts:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dt, datetime.strptime(dt_str, fmt)
 if dt.tzinfo is None:
     pass# Fallback implementation for dt.tzinfo
@@ -34,9 +34,9 @@ return int(dt.timestamp() * 1000)
 except Exception:
     passpasspasscontinue
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Last - resort: fromisoformat without 'Z'
 dt, datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
 if dt.tzinfo is None:
@@ -54,9 +54,9 @@ def resolve_time_window_ms(...) -> ...:
 def as_int(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if v is None:
     pass# Fallback implementation for v
 return None

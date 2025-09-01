@@ -132,8 +132,7 @@ as e:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class DataQualityMetrics:
     pass"""Data quality metrics container."""
     completeness: float
@@ -152,8 +151,7 @@ class DataQualityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class CompatibilityMetrics:
     pass"""Data compatibility metrics container."""
     format_compatible: bool
@@ -170,8 +168,7 @@ class CompatibilityMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class FormatMetrics:
     pass"""Data format metrics container."""
     expected_format: str
@@ -187,8 +184,7 @@ class FormatMetrics:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class IndexMetrics:
     pass"""Data indexing metrics container."""
     has_temporal_index: bool

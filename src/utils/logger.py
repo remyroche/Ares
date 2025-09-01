@@ -80,9 +80,9 @@ failed, warning_symbols.failed
 warning, warning_symbols.warning
 
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
     """Filter to suppress noisy TensorFlow TPU client fallback warning.
 
@@ -94,9 +94,9 @@ TARGET_SUBSTRING = "Falling back to TensorFlow client; we recommended you instal
 
 def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if record and isinstance(record.msg, str):
     passmsg_text, record.getMessage()
 if (
@@ -112,9 +112,9 @@ return True
 def _configure_tensorflow_logging_suppression(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Reduce TF logger chatter globally
 tf_logger, logging.getLogger("tensorflow")
 tf_logger.setLevel(logging.ERROR)
@@ -126,18 +126,18 @@ suppress_filter, _SuppressTensorFlowTPUWarningFilter()
 root_logger, logging.getLogger()
 for handler in root_logger.handlers:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 handler.addFilter(suppress_filter)
 except Exception:
     passpasspass
 if system_logger is not None:
     passfor handler in getattr(system_logger, "handlers", [])[:]:
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 handler.addFilter(suppress_filter)
 except Exception:
     passpasspass
@@ -149,9 +149,9 @@ except Exception:
 pass
 
 class EnhancedLogger:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedLogger:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedLogger:
     pass"""
 Enhanced logger utility with comprehensive error handling and type safety.
@@ -187,9 +187,9 @@ self.log_config.get("warning_symbols", True),
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Load logger configuration
 await self._load_logger_configuration()
 
@@ -213,9 +213,9 @@ return False
 async def _load_logger_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Set default logger parameters
 self.log_config.setdefault("level", "INFO")
 self.log_config.setdefault(
@@ -251,9 +251,9 @@ except Exception as e:
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Validate log level
 valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 if self.log_level not in valid_levels:
@@ -285,9 +285,9 @@ return False
 async def _setup_logger(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Create logger
 self.logger, logging.getLogger("AresTradingSystem")
 self.logger.setLevel(getattr(logging, self.log_level))
@@ -305,34 +305,34 @@ else:
 if self.log_config.get("console_output", True):
     pass# Use a safe stream handler that swallows BrokenPipeError
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SafeStreamHandler(logging.StreamHandler):
                     def handleError(self, record: logging.LogRecord) -> None:  # type: ignore[override]
 exc_type, _, _, _sys.exc_info()
 # Silently ignore BrokenPipeError and similar I / O errors
 if exc_type is BrokenPipeError or exc_type is OSError:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.acquire()
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.flush()
 except Exception:
     passpasspass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.close()
 except Exception:
     passpasspass
@@ -343,9 +343,9 @@ except Exception:
 return
 # Delegate to base for all other errors (respects logging.raiseExceptions)
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 super().handleError(record)
 except Exception:
     passpasspass
@@ -387,9 +387,9 @@ logging.raiseExceptions, False
 
 # Reduce verbosity from noisy third - party libraries
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 logging.getLogger("hmmlearn").setLevel(logging.ERROR)
 logging.getLogger("hmmlearn.hmm").setLevel(logging.ERROR)
 except Exception:
@@ -418,9 +418,9 @@ return base_logger
 def _create_enhanced_logger(...) -> ...:
     """..."""
     passclass EnhancedLoggerWithWarnings:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedLoggerWithWarnings:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedLoggerWithWarnings:
     passdef __init__(...):
     passdef __init__(...):
@@ -489,9 +489,9 @@ return EnhancedLoggerWithWarnings(base_logger)
 def set_level(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.logger is None:
     passreturn False
 
@@ -525,9 +525,9 @@ async def stop(...) -> ...:
     passprint(error("Stopping Enhanced Logger..."))
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.logger:
     pass# Close all handlers
 for handler in self.logger.handlers[:]:
@@ -547,9 +547,9 @@ system_logger: logging.Logger | None, None
 def setup_logging(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 global system_logger
 
 # Create default configuration with comprehensive logging
@@ -584,14 +584,14 @@ enhanced_logger, EnhancedLogger(config)
 import asyncio
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check if there's already an event loop running
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 loop, asyncio.get_running_loop()
 # If we're in an async context, use it
 import concurrent.futures
@@ -604,9 +604,9 @@ except RuntimeError:
 loop, asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 success, loop.run_until_complete(enhanced_logger.initialize())
 finally:
     passloop.close()
@@ -685,9 +685,9 @@ if system_logger is None:
 
 # Check if comprehensive logging is available and integrate with it
 try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from src.utils.comprehensive_logger import get_comprehensive_logger
 
 comprehensive_logger, get_comprehensive_logger()
@@ -702,9 +702,9 @@ base_logger, system_logger.getChild(name)
 
 # Check if we should add warning symbols
 try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Try to get the enhanced logger configuration
 if (
 hasattr(system_logger, "_logger")
@@ -728,9 +728,9 @@ if system_logger is None:
 
 # Create a wrapper that integrates with comprehensive logging
 class ComprehensiveIntegratedLogger:
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveIntegratedLogger:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveIntegratedLogger:
     passdef __init__(...):
     passdef __init__(...):
@@ -739,9 +739,9 @@ class ComprehensiveIntegratedLogger:
     passself.base_logger, base_logger
 self.comprehensive_logger, None
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from src.utils.comprehensive_logger import get_comprehensive_logger
 
 self.comprehensive_logger, get_comprehensive_logger()
@@ -783,9 +783,9 @@ def ensure_comprehensive_logging_available(...):
     passdef ensure_comprehensive_logging_available(...):
     pass"""Ensure comprehensive logging is available for all logging calls."""
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from src.utils.comprehensive_logger import get_comprehensive_logger
 
 comprehensive_logger, get_comprehensive_logger()
@@ -802,9 +802,9 @@ return False
 def _format_bytes(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if num_bytes is None:
     passreturn "n / a"
 step_unit, 1024.0
@@ -827,9 +827,9 @@ def log_io_operation(...):
 """
 start, time.perf_counter()
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 ctx = " ".join(f"{k}={v}" for k, v in context.items() if v is not None)
 logger.info(
 f"🔧 {operation} start"
@@ -840,16 +840,16 @@ except Exception:
     passpasspasspass# Logging issues should never break execution
 pass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 yield
 elapsed, time.perf_counter() - start
 size_str = "n / a"
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if (
 path is not None
 and os.path.exists(str(path))
@@ -859,9 +859,9 @@ and os.path.isfile(str(path))
 except Exception:
     passpasspass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 logger.info(
 f"✅ {operation} ok"
 + (f" path={path}" if path is not None else "")
@@ -872,9 +872,9 @@ except Exception:
 except Exception as e:
     passpasspasspasspasspasspasselapsed, time.perf_counter() - start
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 logger.exception(
 f"❌ {operation} failed"
 + (f" path={path}" if path is not None else "")
@@ -887,9 +887,9 @@ raise
 def log_dataframe_overview(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if df is None:
     passlogger.info("📭 DataFrame is None")
 return
@@ -901,16 +901,16 @@ rows, cols, getattr(df, "shape", (None, None))
 columns_list, list(getattr(df, "columns", []))
 mem_mb, None
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 mem_mb, float(df.memory_usage(deep = True).sum()) / (1024.0**2)
 except Exception:
     passpasspass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dtypes_summary = (
 getattr(df, "dtypes", None)
 .astype(str)  # type: ignore[operator]
@@ -926,9 +926,9 @@ f"🧮 {df_name}: rows={rows} cols={cols} memory={mem_mb:.2f}MB dtypes={dtypes_s
 )
 # Nulls snapshot for up to 10 columns
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 nulls = (
 df[columns_list[:10]].isnull().sum().to_dict()  # type: ignore[index]
 if columns_list
@@ -940,9 +940,9 @@ except Exception:
     passpasspass
 # Sample rows
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if rows and rows > 0:
     passsample, df.head(min(sample_rows, int(rows)))
 # Convert to lightweight dict form
@@ -974,9 +974,9 @@ def _runner() -> None:
 while not stop_event.wait(interval_seconds):
     passtick += 1
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 elapsed, time.perf_counter() - start_time
 
 # Build context string
@@ -1002,9 +1002,9 @@ if context_parts:
 extra = ""
 if details_provider is not None:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 details_text, details_provider()
 if details_text:
     passextra, f" | {details_text}"
@@ -1021,13 +1021,13 @@ pass
 
 # Start heartbeating thread
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 logger.info(f"▶️ {name} start")
 except Exception:
     passpasspass
@@ -1037,9 +1037,9 @@ yield
 except Exception as e:
     passpasspasspasspasspasspassexited_with_error, True
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 elapsed, time.perf_counter() - start_time
 logger.exception(f"❌ {name} failed after {elapsed:.1f}s: {e}")
 except Exception:
@@ -1048,16 +1048,16 @@ raise
 finally:
     passstop_event.set()
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 t.join(timeout = 1.0)
 except Exception:
     passpasspass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 elapsed, time.perf_counter() - start_time
 if not exited_with_error:
     passlogger.info(f"✅ {name} done elapsed={elapsed:.1f}s")

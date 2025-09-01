@@ -72,9 +72,9 @@ LARGE = "large"      # > 60 seconds, download data with warning
 CRITICAL = "critical" # > 300 seconds, require manual intervention
 
 class GapInfo:
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class GapInfo:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class GapInfo:
     pass"""Information about a data gap."""
 
@@ -97,9 +97,9 @@ def __str__(...):
     passreturn f"Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})"
 
 class EnhancedMissingValueHandler:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedMissingValueHandler:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedMissingValueHandler:
     pass"""Enhanced missing value handler with intelligent gap filling."""
 
@@ -277,9 +277,9 @@ def _handle_large_gap_with_download(...) -> ...:
     passself.logger.info(f"Downloading data for gap: {gap}")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Download missing data
 downloaded_data, self._download_missing_data(
 symbol, exchange, timeframe, gap.start_time, gap.end_time
@@ -306,9 +306,9 @@ return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
 def _download_missing_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Convert timestamps to datetime
 start_dt, datetime.fromtimestamp(start_time)
 end_dt, datetime.fromtimestamp(end_time)

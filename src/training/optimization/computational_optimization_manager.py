@@ -712,9 +712,9 @@ class SurrogateOptimizer:
     passpasscontinue
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Perform expensive evaluation
                 result = objective_func(params)
 
@@ -833,9 +833,9 @@ except Exception as e:
 
         for model_type in model_types:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 if model_type == "gaussian_process":
     passmodel = self._create_gaussian_process_model(X, y)
                 elif model_type == "random_forest":
@@ -891,9 +891,9 @@ except Exception as e:
             if should_evaluate:
     pass# Perform expensive evaluation
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     actual_result = objective_func(selected_params)
 
                     if isinstance(actual_result, dict) and self.multi_objective:
@@ -1226,9 +1226,9 @@ except Exception as e:
     passreturn
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Cross-validation score
             if hasattr(self.surrogate_model, 'score'):
     passcv_scores = cross_val_score(
@@ -1492,9 +1492,9 @@ class ComputationalOptimizationManager:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing computational optimization components...")
 
             # Initialize memory manager first
@@ -1538,9 +1538,9 @@ except Exception as e:
     async def optimize_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(
                 f"Starting optimized parameter optimization with {n_trials} trials",
             )

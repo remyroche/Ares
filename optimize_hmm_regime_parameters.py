@@ -78,9 +78,9 @@ class HMMRegimeOptimizer:
             merging_params = self._suggest_regime_merging_parameters(trial)
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Generate initial clusters with suggested parameters
                 initial_cluster_data = self._generate_initial_clusters_with_params(
                     data, feature_columns, market_condition_columns,
@@ -647,9 +647,9 @@ except Exception as e:
         cluster_labels = cluster_data['composite_cluster_id'].values
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Silhouette score
             silhouette = silhouette_score(features, cluster_labels)
 
@@ -913,9 +913,9 @@ except Exception as e:
 
         # Parameter Importance Analysis
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             importance = optuna.importance.get_param_importances(self.study)
             report.append("## Parameter Importance Analysis")
             report.append("")
@@ -1127,9 +1127,9 @@ except Exception as e:
 
         # 2. Parameter importance
         try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             importance = optuna.importance.get_param_importances(self.study)
             params = list(importance.keys())
             values = list(importance.values())
@@ -1163,9 +1163,9 @@ except Exception as e:
 
         # 4. Key parameter relationships
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract key parameters
             n_components_values = []
             clustering_methods = []

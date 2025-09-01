@@ -207,9 +207,9 @@ def main(...):
     print("This demonstration shows how the enhancement works in practice.")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Demonstrate column verification
         df, missing_info = demonstrate_column_verification()
 

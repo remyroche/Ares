@@ -41,8 +41,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class SROptimizationResult:
     pass"""Result of S / R parameter optimization."""
 

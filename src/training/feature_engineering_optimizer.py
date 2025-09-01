@@ -4,7 +4,7 @@
 Feature Engineering Optimization Module
 
 This module optimizes feature engineering parameters using:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 1. Random Forest + SHAP for correlation analysis: Identifies feature importance and interactions
 2. Mutual importance matrix for feature parameter selection: Reduces parameter space efficiently
 3. Regime-specific optimization for each HMM regime: Tailors parameters to market conditions

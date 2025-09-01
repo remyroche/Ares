@@ -32,9 +32,9 @@ if TYPE_CHECKING:  # Avoid importing potentially missing modules at runtime
 
 
 class EnhancedBacktester:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedBacktester:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedBacktester:
     pass"""
 	Enhanced backtester with comprehensive reporting capabilities.
@@ -84,9 +84,9 @@ class EnhancedBacktester:
 	async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			self.logger.info("Initializing Enhanced Backtester...")
 
 			# Load backtester configuration
@@ -121,9 +121,9 @@ except Exception as e:
 	async def _load_backtester_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			# Set default parameters
 			self.backtest_config.setdefault("initial_balance", 10000.0)
 			self.backtest_config.setdefault("commission_rate", 0.001)
@@ -151,9 +151,9 @@ except Exception as e:
 	def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			if self.initial_balance <= 0:
     passself.logger.error(initialization_error("Initial balance must be positive"))
 				return False
@@ -184,9 +184,9 @@ except Exception as e:
 	async def _initialize_backtesting_state(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			self.portfolio_value = float(self.initial_balance)
 			self.current_position = {}
 			self.trade_history = []
@@ -210,14 +210,14 @@ except Exception as e:
 	async def _initialize_detailed_reporting(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			# Import lazily to avoid hard dependency when reporter is not available
 			try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 				from src.reports.paper_trading_reporter import (
 					setup_paper_trading_reporter as _setup_reporter,
 				)
@@ -289,12 +289,12 @@ except Exception as e:
     passresults["trades"].append(trade_result)
 					# Optional: also log to dedicated backtest log if available
 					try:  # pragma: no cover - best-effort logging
-    pass  # TODO: Add proper exception handling
+    self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
-pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 						from src.utils.comprehensive_logger import get_comprehensive_logger
 
 						cl = get_comprehensive_logger()
@@ -316,21 +316,21 @@ except Exception as e:
 		# Generate detailed analysis if available
 		if self.reporter:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 				results["detailed_analysis"] = await self._generate_detailed_analysis()
 			except Exception:
     passpassresults["detailed_analysis"] = {}
 
 		self.logger.info("✅ Enhanced backtest completed successfully")
 		try:  # pragma: no cover - best-effort logging
-    pass  # TODO: Add proper exception handling
+    self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
-pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			from src.utils.comprehensive_logger import get_comprehensive_logger
 
 			cl = get_comprehensive_logger()
@@ -634,12 +634,12 @@ except Exception as e:
 
 		# Best-effort reporter call; interface may vary
 		try:  # pragma: no cover - integration surface may vary
-    pass  # TODO: Add proper exception handling
+    self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
-pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			# Common interface: record_trade(trade_data, market_indicators=..., ml_confidence=...)
 			market_indicators = trade_metadata.get("market_indicators", {})
 			ml_confidence = trade_metadata.get("ml_confidence", {})
@@ -738,9 +738,9 @@ except Exception as e:
 	async def _generate_detailed_analysis(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			if self.reporter:
     passreturn await self.reporter.generate_detailed_report("backtest_analysis")  # type: ignore[attr-defined]
 			return {}
@@ -771,9 +771,9 @@ except Exception as e:
 
 		if self.reporter:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 				return await self.reporter.generate_detailed_report(report_type, export_formats)  # type: ignore[attr-defined]
 			except Exception:
     passpasspass
@@ -831,9 +831,9 @@ except Exception as e:
 async def setup_enhanced_backtester(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		if config is None:
     passconfig = {}
 

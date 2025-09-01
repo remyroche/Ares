@@ -84,9 +84,9 @@ context="global portfolio manager initialization",
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Global Portfolio Manager...")
 
 # Load global portfolio manager configuration
@@ -120,9 +120,9 @@ default_return=None, context="portfolio configuration loading",
 async def _load_portfolio_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Set default portfolio parameters
 self.portfolio_config.setdefault("management_interval", 3600)
 self.portfolio_config.setdefault("max_management_history", 100)
@@ -161,9 +161,9 @@ context="configuration validation",
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate management interval
 if self.management_interval <= 0:
     passself.print(invalid("Invalid management interval"))
@@ -201,9 +201,9 @@ default_return=None, context="portfolio modules initialization",
 async def _initialize_portfolio_modules(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize portfolio allocation module
 if self.enable_portfolio_allocation:
     passawait self._initialize_portfolio_allocation()

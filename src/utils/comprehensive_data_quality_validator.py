@@ -21,9 +21,9 @@ project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
@@ -62,9 +62,9 @@ ync def initialize(self) -> bool:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveDataQualityValidator:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveDataQualityValidator:
     pass"""
 Comprehensive data quality validator for all pipeline steps.
@@ -110,9 +110,9 @@ results = {
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check required files exist
 required_files = [
 f"klines_{exchange}_{symbol}_1m_consolidated.parquet",
@@ -167,9 +167,9 @@ results = {
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check unified data directory structure
 unified_dir, os.path.join(data_dir, "unified", exchange.lower(), symbol, "1m")
 
@@ -236,9 +236,9 @@ results = {
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check feature files exist
 feature_files = [
 f"{exchange}_{symbol}_features_train.parquet",
@@ -296,9 +296,9 @@ def _validate_file_structure(...) -> ...:
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if os.path.exists(file_path):
     passresult["exists"] = True
 result["size_bytes"] = os.path.getsize(file_path)
@@ -332,9 +332,9 @@ def _validate_dataframe_quality(...) -> ...:
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Load DataFrame
 if file_path.endswith('.parquet'):
     passdf, pd.read_parquet(file_path)
@@ -473,9 +473,9 @@ if type_issues:
 if not isinstance(df.index, pd.DatetimeIndex) and "timestamp" in df.columns:
     passpass# If timestamp column exists, it should be properly formatted
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 pd.to_datetime(df["timestamp"])
 except Exception:
     passpassissues.append(f"{file_name}: Timestamp column contains invalid datetime values")
@@ -541,9 +541,9 @@ def _validate_feature_quality(...) -> ...:
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Load feature DataFrame
 if file_path.endswith('.parquet'):
     passdf, pd.read_parquet(file_path)
@@ -740,9 +740,9 @@ self.logger.info("=" * 80)
 def save_validation_report(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 report = {
 "validation_timestamp": datetime.now().isoformat(),
 "config": self.config,

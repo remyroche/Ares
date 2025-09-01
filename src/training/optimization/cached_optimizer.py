@@ -129,9 +129,9 @@ class CachedOptimizer:
     def get_cached_optimization_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             cache_key = self._generate_cache_key(optimization_config)
             cache_file = self._get_cache_file_path(cache_key)
 
@@ -166,9 +166,9 @@ except Exception as e:
     def is_cache_valid(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if results have required fields
             required_fields = ["best_params", "best_value", "optimization_history"]
             if not all(field in cached_results for field in required_fields):
@@ -196,9 +196,9 @@ except Exception as e:
     def get_warm_start_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.cache_config.enable_warm_start:
     passreturn None
 
@@ -228,9 +228,9 @@ except Exception as e:
     def _calculate_config_similarity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Convert configs to comparable format
             config1_str = json.dumps(config1, sort_keys=True)
             config2_str = json.dumps(config2, sort_keys=True)
@@ -263,9 +263,9 @@ except Exception as e:
     def cache_optimization_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             cache_key = self._generate_cache_key(optimization_config)
             cache_file = self._get_cache_file_path(cache_key)
 
@@ -303,9 +303,9 @@ except Exception as e:
     def run_optimization_with_warm_start(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check for cached results first
             cached_results = self.get_cached_optimization_results(optimization_config)
             if cached_results and self.is_cache_valid(cached_results):
@@ -363,9 +363,9 @@ except Exception as e:
     def cleanup_expired_cache(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             current_time = datetime.now()
             cleaned_files = 0
             total_size_freed = 0
@@ -413,9 +413,9 @@ except Exception as e:
     def get_cache_statistics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             total_files = len(self.cache_metadata)
             total_size_mb = 0
 

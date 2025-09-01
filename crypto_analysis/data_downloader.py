@@ -208,9 +208,9 @@ def verify_parquet_file(...):
         original_df (pd.DataFrame): Original DataFrame for comparison
     """
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Read the Parquet file back
         loaded_df = pd.read_parquet(parquet_file)
 
@@ -284,9 +284,9 @@ def main(...):
     output_file = output_dir / f"crypto_15m_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
 
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Save with optimal Parquet settings
         df.to_parquet(
             output_file,

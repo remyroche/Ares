@@ -59,11 +59,11 @@ olderDataClass."""
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RollingInferenceConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RollingInferenceConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RollingInferenceConfig:
     passpre_window: int
 horizons: list[int]
@@ -71,9 +71,9 @@ path_class_priority: list[str]
 
 
 class RollingMTInference:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RollingMTInference:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RollingMTInference:
     pass"""
 Runtime helper for the rolling MultiTask RF.
@@ -111,9 +111,9 @@ self.feature_names: list[str] = []
 
 def load(self) -> bool:
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 models, meta, feat = MultiTaskRandomForest.load(
 self.models_dir, prefix=self.prefix,
 )
@@ -170,9 +170,9 @@ value: float,
 cls: str | None = None,
 ) -> float:
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if head == "path_class" and cls is not None:
     passscale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
 return float(np.clip(value * scale, 0.0, 1.0))
@@ -188,9 +188,9 @@ cls: str | None = None,
 default: float = 0.6,
 ) -> float:
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if head == "path_class" and cls is not None:
     passreturn float(self.thresholds.get("path_class", {}).get(cls, default))
 return float(self.thresholds.get(head, default))
@@ -208,9 +208,9 @@ pc = self.models.get("path_class")
 p_path: dict[str, float] = {}
 if pc is not None:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 proba = pc.predict_proba(X)[0]
 classes = list(getattr(pc, "classes_", []))
 for i, c in enumerate(classes):
@@ -234,9 +234,9 @@ for head in ("onset_beginning", "end_trend"):
 if mdl is None:
     passcontinue
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 p = float(mdl.predict_proba(X)[0, 1])
 out[f"p_{head}"] = self._apply_reliability(head, p)
 except Exception:
@@ -249,9 +249,9 @@ head = f"direction_up_{H}"
 mdl = self.models.get(head)
 if mdl is not None:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 p = float(mdl.predict_proba(X)[0, 1])
 out[f"p_direction_up_{H}"] = self._apply_reliability(head, p)
 except Exception:
@@ -267,9 +267,9 @@ out["horizon"] = H
 nr = self.models.get("next_regime")
 if nr is not None:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 proba = nr.predict_proba(X)[0]
 classes = list(getattr(nr, "classes_", []))
 p_nr = {}

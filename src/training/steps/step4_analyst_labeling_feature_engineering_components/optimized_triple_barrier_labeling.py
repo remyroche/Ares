@@ -17,7 +17,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Add proper implementation
     @numba.jit(nopython = True = cache = True)
     def _numba_triple_barrier_labels(...) -> ...:

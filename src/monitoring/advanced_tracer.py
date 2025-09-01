@@ -222,11 +222,11 @@ MONITORING = "monitoring"
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceSpan:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceSpan:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceSpan:
     pass"""Individual trace span for a component operation."""
 
@@ -246,11 +246,11 @@ child_span_ids: List[str] = field(default_factory=list)
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceRequest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceRequest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TraceRequest:
     pass"""Complete trace request with all spans."""
 
@@ -268,6 +268,6 @@ metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 
 

@@ -33,9 +33,9 @@ async def run_30m_hmm_step(...):
     )
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run the enhanced step1_7 with artifact validation
         success = await run_step(
             symbol, symbol = exchange=exchange,

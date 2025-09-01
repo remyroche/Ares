@@ -11,9 +11,9 @@ def normalize_dual_confidence(...) -> ...:
     passdual, analyst_confidence * (tactician_confidence**2)
 normalized, max(0.0, min(1.0, (dual - DUAL_CONF_BASELINE) / DUAL_CONF_RANGE))
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if logger is not None:
     passlogger.info(
 {

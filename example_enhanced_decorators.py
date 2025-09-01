@@ -283,9 +283,9 @@ def main(...):
     print("=" * 60)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run examples
         example_basic_usage()
         example_advanced_validation()

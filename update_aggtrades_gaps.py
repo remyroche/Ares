@@ -3,7 +3,7 @@
 Update Aggtrades Gaps - Comprehensive Gap Fixing Tool
 
 This script provides multiple options for fixing gaps in aggtrades files:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 1. Fix gaps in specific files
 2. Fix gaps in all files with >N gaps
 3. Fix all gaps in the dataset

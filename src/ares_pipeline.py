@@ -62,9 +62,9 @@ if str(project_root) not in sys.path:
 if TYPE_CHECKING:
     passpass  # TODO: Add proper implementation
 class AresPipeline:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class AresPipeline:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class AresPipeline:
     pass"""
 Enhanced main pipeline with dependency injection and comprehensive error handling.
@@ -111,9 +111,9 @@ default_return=False, context="pipeline initialization",
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("Initializing Ares Pipeline...")
 
 # Initialize configuration service
@@ -151,9 +151,9 @@ default_return=None, context="configuration service initialization",
 async def _initialize_configuration_service(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("   ⚙️ Initializing ConfigurationService...")
 self.logger.info("   ⚙️ Initializing ConfigurationService...")
 
@@ -189,9 +189,9 @@ default_return=None, context="core service registration",
 async def _register_core_services(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔧 Registering core services...")
 self.logger.info("🔧 Registering core services...")
 
@@ -199,9 +199,9 @@ self.logger.info("🔧 Registering core services...")
 print("   💾 Registering DatabaseManager...")
 self.logger.info("   💾 Registering DatabaseManager...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("DatabaseManager", SQLiteManager)
 print("   ✅ DatabaseManager registered successfully")
 self.logger.info("   ✅ DatabaseManager registered successfully")
@@ -213,9 +213,9 @@ self.logger.exception("   ❌ Failed to register DatabaseManager")
 print("   🏢 Registering ExchangeClient...")
 self.logger.info("   🏢 Registering ExchangeClient...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Use environment-configured exchange as default
 
 # Build exchange instance via factory and register the instance
@@ -233,9 +233,9 @@ self.logger.exception("   ❌ Failed to register ExchangeClient")
 print("   📊 Registering Analyst...")
 self.logger.info("   📊 Registering Analyst...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("Analyst", Analyst, config={"analyst": {}})
 print("   ✅ Analyst registered successfully")
 self.logger.info("   ✅ Analyst registered successfully")
@@ -247,9 +247,9 @@ self.logger.exception("   ❌ Failed to register Analyst")
 print("   🧠 Registering Strategist...")
 self.logger.info("   🧠 Registering Strategist...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Strategist",
 Strategist, config={"strategist": {}},
@@ -264,9 +264,9 @@ self.logger.exception("   ❌ Failed to register Strategist")
 print("   🎯 Registering Tactician...")
 self.logger.info("   🎯 Registering Tactician...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Tactician",
 Tactician, config={"tactician": {}},
@@ -281,9 +281,9 @@ self.logger.exception("   ❌ Failed to register Tactician")
 print("   👁️ Registering Supervisor...")
 self.logger.info("   👁️ Registering Supervisor...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Supervisor",
 Supervisor, config={"supervisor": {}},
@@ -298,9 +298,9 @@ self.logger.exception("   ❌ Failed to register Supervisor")
 print("   💾 Registering StateManager...")
 self.logger.info("   💾 Registering StateManager...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "StateManager",
 StateManager, config={"state_manager": {}},
@@ -315,9 +315,9 @@ self.logger.exception("   ❌ Failed to register StateManager")
 print("   📡 Registering EventBus...")
 self.logger.info("   📡 Registering EventBus...")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("EventBus", EventBus, config={"event_bus": {}})
 print("   ✅ EventBus registered successfully")
 self.logger.info("   ✅ EventBus registered successfully")
@@ -340,9 +340,9 @@ default_return=None, context="pipeline component resolution",
 async def _resolve_pipeline_components(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔧 Resolving pipeline components...")
 self.logger.info("🔧 Resolving pipeline components...")
 
@@ -422,9 +422,9 @@ default_return=None, context="component initialization",
 async def _initialize_components(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize components in dependency order
 if self.state_manager:
     passawait self.state_manager.initialize()
@@ -456,9 +456,9 @@ default_return=None, context="signal handler setup",
 def _setup_signal_handlers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 signal.signal(signal.SIGINT, self._signal_handler)
 signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -483,9 +483,9 @@ default_return=None, context="pipeline execution",
 async def run(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔄 Starting Ares Pipeline execution...")
 self.logger.info("🔄 Starting Ares Pipeline execution...")
 
@@ -509,9 +509,9 @@ max_duration = 300  # Maximum duration in seconds (5 minutes)
 # Main pipeline loop with timeout protection
 while self.is_running:
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check timeout conditions
 current_time = datetime.now()
 elapsed_time = (current_time - self.start_time).total_seconds()
@@ -552,9 +552,9 @@ f"✅ Cycle {self.cycle_count} completed successfully",
 
 # Get cycle interval from configuration
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 config_service = self.container.resolve("ConfigurationService")
 cycle_interval = config_service.get_value(
 "pipeline.loop_interval_seconds",
@@ -621,9 +621,9 @@ default_return=None, context="pipeline cycle execution",
 async def _execute_cycle(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 cycle_start = datetime.now()
 print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
@@ -842,9 +842,9 @@ raise
 async def _integrate_dual_model_with_tactician(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not self.tactician or not dual_model_decision:
     passreturn {"error": "Tactician or dual model decision not available"}
 
@@ -952,9 +952,9 @@ def get_pipeline_status(...) -> ...:
 # Add dual model system status if available
 if self.dual_model_system:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dual_model_status = self.dual_model_system.get_system_info()
 status["dual_model_system_status"] = dual_model_status
 except Exception as e:
@@ -963,9 +963,9 @@ except Exception as e:
 # Add performance monitoring status if available
 if self.performance_monitor:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 performance_status = self.performance_monitor.get_performance_summary()
 status["performance_monitoring_status"] = performance_status
 except Exception as e:
@@ -973,9 +973,9 @@ except Exception as e:
 
 if self.performance_dashboard:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dashboard_status = self.performance_dashboard.get_dashboard_summary()
 status["performance_dashboard_status"] = dashboard_status
 except Exception as e:
@@ -992,9 +992,9 @@ async def stop(...) -> ...:
     passself.logger.info("🛑 Stopping Ares Pipeline...")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Stop pipeline loop
 self.is_running = False
 
@@ -1039,9 +1039,9 @@ except Exception:
 async def _initialize_dual_model_system(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Get proper configuration for dual model system
 dual_model_config = self._get_dual_model_config()
 
@@ -1071,9 +1071,9 @@ except Exception:
 async def _initialize_performance_monitoring(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("📊 Initializing Performance Monitoring...")
 
 # Setup performance monitor
@@ -1103,9 +1103,9 @@ except Exception:
 def _get_dual_model_config(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Get configuration from the centralized config system
 dual_model_config = get_dual_model_config()
 
@@ -1147,9 +1147,9 @@ return {
 
 
 async def main(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def main(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def main(...):
     pass"""Main entry point for the Ares Pipeline."""
 
@@ -1182,9 +1182,9 @@ logger.info(f"🔧 Trading Mode: {trading_mode}")
 pipeline = AresPipeline()
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize pipeline
 if not await pipeline.initialize():
     passprint(failed("❌ Failed to initialize pipeline"))

@@ -304,9 +304,9 @@ e) -> None:
         self.config = config or {}
         self.logger = system_logger.getChild("OHLCVData")
         self.is_initialized = False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class OHLCVData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OHLCVData(...):
     """..."""
     passtimestamp: Timestamp
@@ -318,9 +318,9 @@ volume: Volume
 
 
 class TickerData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TickerData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TickerData(...):
     """..."""
     passsymbol: Symbol
@@ -333,9 +333,9 @@ timestamp: Timestamp
 
 
 class OrderBookLevel(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderBookLevel(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderBookLevel(...):
     """..."""
     passprice: Price
@@ -343,9 +343,9 @@ quantity: Volume
 
 
 class OrderBookData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderBookData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderBookData(...):
     """..."""
     passsymbol: Symbol
@@ -355,9 +355,9 @@ asks: list[OrderBookLevel]
 
 
 class TradeData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradeData(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradeData(...):
     """..."""
     passtrade_id: TradeId
@@ -369,9 +369,9 @@ timestamp: Timestamp
 
 
 class AccountInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class AccountInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class AccountInfo(...):
     """..."""
     passaccount_id: str
@@ -385,9 +385,9 @@ open_orders: list[dict[str, str]]  # Will be typed more specifically
 
 
 class PositionInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PositionInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PositionInfo(...):
     """..."""
     passposition_id: PositionId
@@ -403,9 +403,9 @@ timestamp: Timestamp
 
 
 class OrderInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderInfo(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderInfo(...):
     """..."""
     passorder_id: OrderId

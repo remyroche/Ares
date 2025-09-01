@@ -47,9 +47,9 @@ Args:
 Usage:
         @with_enhanced_mlflow_logging("step03_hmm_regime_discovery")
 async def execute(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def execute(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def execute(...):
     pass# Step execution logic
 return results
@@ -60,9 +60,9 @@ def decorator(...):
     passdef decorator(...):
     pass@wraps(func)
 async def wrapper(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def wrapper(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def wrapper(...):
     pass# Extract metadata from config
 config, getattr(self, 'config', {})
@@ -75,9 +75,9 @@ exchange, training_input.get("exchange", metadata["exchange"])
 # Start MLflow run for this step
 run_id, None
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Set up MLflow
 tracking_uri, config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
 experiment_name, config.get("mlflow", {}).get("experiment_name") or "ares_training"
@@ -201,9 +201,9 @@ run_id: Optional MLflow run ID
 additional_metadata: Additional metadata to log
 """
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not os.path.exists(artifact_path):
     passsystem_logger.warning(f"Artifact file not found: {artifact_path}")
 return
@@ -284,9 +284,9 @@ return artifact_name
 def log_step_dataframe(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Create temporary file
@@ -486,9 +486,9 @@ Returns:
         Generated report name
 """
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 exchange, metadata["exchange"]
 token, metadata["asset"]
@@ -564,9 +564,9 @@ run_id: Optional MLflow run ID
 additional_metadata: Additional metadata to log
 """
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Prepare additional metadata
@@ -598,9 +598,9 @@ except Exception as e:
 def log_step_metrics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Prepare additional metadata
@@ -644,9 +644,9 @@ class EnhancedMLflowManager:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedMLflowManager:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnhancedMLflowManager:
     pass"""Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
 
@@ -670,9 +670,9 @@ self._setup_mlflow()
 def _setup_mlflow(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 tracking_uri, self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
 experiment_name, self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
 
@@ -688,9 +688,9 @@ raise
 def start_run(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not run_name:
     passrun_name, f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -737,9 +737,9 @@ if not self.current_run_id:
     passraise ValueError("No active MLflow run. Call start_run() first.")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Prepare additional metadata
 extra_metadata = {
 "model_type": model_type,
@@ -772,9 +772,9 @@ def log_metrics(...) -> ...:
     passraise ValueError("No active MLflow run. Call start_run() first.")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Convert metrics to float
 float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
@@ -813,9 +813,9 @@ def log_parameters(...) -> ...:
     passraise ValueError("No active MLflow run. Call start_run() first.")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Prepare additional metadata
 extra_metadata = {
 "pipeline_step": "parameters_logging",
@@ -859,9 +859,9 @@ if not self.current_run_id:
     passraise ValueError("No active MLflow run. Call start_run() first.")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Prepare additional metadata
 extra_metadata = {
 "artifact_type": artifact_type,
@@ -891,9 +891,9 @@ raise
 def log_dataframe(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Create temporary file
 with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
     passdf.to_parquet(tmp_file.name, index = False)
@@ -927,9 +927,9 @@ raise
 def log_training_summary(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Create temporary file
 import json
 with tempfile.NamedTemporaryFile(suffix=".json", delete = False, mode="w") as tmp_file:
@@ -987,9 +987,9 @@ self.current_run_id, None
 def log_step_metadata(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Log enhanced training metadata for the step
@@ -1016,9 +1016,9 @@ except Exception as e:
 def log_model_performance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Log metrics with metadata
@@ -1045,9 +1045,9 @@ except Exception as e:
 def log_pipeline_completion(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metadata, extract_training_metadata(config)
 
 # Log enhanced training metadata for pipeline completion

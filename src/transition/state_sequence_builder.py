@@ -11,20 +11,20 @@ import pandas as pd
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class StateBuilderConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class StateBuilderConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class StateBuilderConfig:
     passhmm_n_states: int
 use_existing_urc_models: bool
 cache_dir: str | None
 
 class StateSequenceBuilder:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class StateSequenceBuilder:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class StateSequenceBuilder:
     pass"""
 Build per-timestep state sequences for pre/post windows using the existing
@@ -56,9 +56,9 @@ self.urc = UnifiedRegimeClassifier(config, exchange=exchange, symbol=symbol)
 
 async def initialize(self) -> bool:
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 await self.urc.initialize()
 # If not trained or different n_states, we trigger training with current data later
 return True
@@ -68,9 +68,9 @@ except Exception:
 def _ensure_trained(self, klines_df: pd.DataFrame) -> None:
         # Train URC if necessary or if state count differs
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 desired_states = self.sb_cfg.hmm_n_states
 # Force n_states if available
 self.urc.n_states = max(3, int(desired_states))
@@ -90,9 +90,9 @@ index=pd.Index([], name=getattr(klines_df, "index", None)),
 # Cache key: hash of index
 cache_dir = self.sb_cfg.cache_dir
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if cache_dir:
     passos.makedirs(cache_dir, exist_ok=True)
 key = f"states_{self.exchange}_{self.symbol}_{hash(tuple(klines_df.index))}.parquet"
@@ -104,9 +104,9 @@ except Exception:
 # Ensure trained
 self._ensure_trained(klines_df)
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Reuse the URC feature pipeline to get HMM states
 features_df = self.urc._calculate_features(klines_df)
 if features_df.empty:
@@ -151,9 +151,9 @@ out = pd.DataFrame(
 index=klines_df.index,
 )
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if cache_dir:
     passout.to_parquet(os.path.join(cache_dir, key))
 except Exception:

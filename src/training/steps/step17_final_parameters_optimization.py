@@ -1185,9 +1185,9 @@ def __init__(self = config: dict[str, Any]) -> None:
     def _evaluate_position_sizing_performance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Simulate position sizing performance evaluation
             base_size = params.get("base_position_size", 0.05)
             kelly_mult = params.get("kelly_multiplier", 0.25)

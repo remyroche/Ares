@@ -101,11 +101,11 @@ PROFILING = "profiling"
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorConfig:
     pass"""Global configuration for decorators."""
 

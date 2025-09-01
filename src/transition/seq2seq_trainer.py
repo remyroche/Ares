@@ -13,9 +13,9 @@ import numpy as np
 import torch
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 pass
 except Exception:  # pragma: no cover
 pl = None  # type: ignore
@@ -31,9 +31,9 @@ def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tenso
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 n, m = len(a), len(b)
 dtw = np.full((n + 1, m + 1), np.inf, dtype=float)
 dtw[0, 0] = 0.0
@@ -62,9 +62,9 @@ class TransitionSeqDataset(Dataset):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TransitionSeqDataset(Dataset):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TransitionSeqDataset(Dataset):
     pass  # TODO: Add proper implementation
 def __init__(...):
@@ -138,9 +138,9 @@ return {
 }
 
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     passpass  # TODO: Add proper implementation
 def __init__(...):
@@ -323,9 +323,9 @@ return {
 }
 
 class SmallTCN(SmallTransformer):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class SmallTCN(SmallTransformer):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
 def __init__(...):
@@ -500,9 +500,9 @@ model = _make_model()
 callbacks = []
 if artifact_dir_models:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 os.makedirs(artifact_dir_models, exist_ok=True)
 callbacks.append(
 ModelCheckpoint(
@@ -525,9 +525,9 @@ callbacks=callbacks,
 )
 trainer.fit(model, train_loader, val_loader)
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if artifact_dir_models:
     passos.makedirs(artifact_dir_models, exist_ok=True)
 trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))

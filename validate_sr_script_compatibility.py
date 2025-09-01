@@ -91,9 +91,9 @@ class SRCompatibilityValidator:
         }
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize SRBreakoutPredictor
             sr_predictor = SRBreakoutPredictor(config)
             init_success = await sr_predictor.initialize()
@@ -230,9 +230,9 @@ except Exception as e:
     passpath = Path(script_path)
             if path.exists():
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     with open(path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

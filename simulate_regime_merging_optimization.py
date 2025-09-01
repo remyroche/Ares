@@ -71,9 +71,9 @@ def simulate_regime_merging(...):
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
@@ -130,9 +130,9 @@ def run_parameter_sweep(...):
     passfor sim_thresh in similarity_thresholds:
     passfor max_reg in max_regimes_options:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     result = simulate_regime_merging(
                         regime_data = min_freq,
                         sim_thresh = max_reg,

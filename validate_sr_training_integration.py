@@ -36,9 +36,9 @@ def find_sr_method_calls(...) -> ...:
     }
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
             lines = content.split('\n')
@@ -56,9 +56,9 @@ except Exception as e:
 def check_sr_imports(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

@@ -87,9 +87,9 @@ class ParallelParameterOptimizer:
     def group_parameters_by_optimization_type(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             parameter_groups = {
                 "confidence_parameters": [],
                 "sizing_parameters": [],
@@ -134,9 +134,9 @@ except Exception as e:
     async def optimize_confidence_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(
                 f"Optimizing {len(confidence_params)} confidence parameters",
             )
@@ -177,9 +177,9 @@ except Exception as e:
     async def optimize_sizing_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"Optimizing {len(sizing_params)} sizing parameters")
 
             def sizing_objective(...):
@@ -220,9 +220,9 @@ except Exception as e:
     async def optimize_risk_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"Optimizing {len(risk_params)} risk parameters")
 
             def risk_objective(...):
@@ -263,9 +263,9 @@ except Exception as e:
     async def optimize_parameters_in_parallel(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Group parameters by optimization type
             parameter_groups = self.group_parameters_by_optimization_type(parameters)
 
@@ -328,9 +328,9 @@ except Exception as e:
     def _evaluate_confidence_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Simulate performance based on parameter values
             performance = 0.0
             
@@ -354,9 +354,9 @@ except Exception as e:
     def _evaluate_sizing_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Simulate performance based on parameter values
             performance = 0.0
             
@@ -383,9 +383,9 @@ except Exception as e:
     def _evaluate_risk_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Simulate performance based on parameter values
             performance = 0.0
             
@@ -412,9 +412,9 @@ except Exception as e:
     def get_optimization_statistics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             return {
                 "max_workers": self.parallel_config.max_workers,
                 "use_process_pool": self.parallel_config.use_process_pool,

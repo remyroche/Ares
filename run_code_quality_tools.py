@@ -30,9 +30,9 @@ def run_syntax_fixer(...):
     fixed_count = 0
     for file_path in python_files:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run([
                 'python3', 'code_quality/tools/syntax_fixer.py', 
                 file_path, '--no-dry-run'
@@ -71,9 +71,9 @@ def run_import_cleaner(...):
     cleaned_count = 0
     for file_path in python_files:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run([
                 'python3', 'code_quality/tools/batch_import_cleaner.py', 
                 file_path
@@ -112,9 +112,9 @@ def run_dead_code_remover(...):
     cleaned_count = 0
     for file_path in python_files:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run([
                 'python3', 'code_quality/tools/dead_code_remover.py', 
                 file_path, '--no-dry-run'

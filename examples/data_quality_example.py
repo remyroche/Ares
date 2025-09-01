@@ -192,9 +192,9 @@ async def example_with_real_data_loading(...):
 
         # 1. Load your data (implement based on your data format)
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Example for CSV files:
     pass# price_file = f"{data_path}/{symbol}_{exchange}_price.csv"
             # volume_file = f"{data_path}/{symbol}_{exchange}_volume.csv"

@@ -19,9 +19,9 @@ from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing
 import pandas as pd
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 PYARROW_AVAILABLE, True
 except ImportError:
     passpassPYARROW_AVAILABLE, False
@@ -43,9 +43,9 @@ class PartitionedDataLoader:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PartitionedDataLoader:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PartitionedDataLoader:
     pass"""Enhanced utility class for loading data from partitioned Parquet datasets."""
 
@@ -207,9 +207,9 @@ for file_path in parquet_files:
     passbreak
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 chunk, pd.read_parquet(file_path, columns = columns)
 chunks.append(chunk)
 total_rows += len(chunk)
@@ -296,9 +296,9 @@ total_size_mb += file_size / (1024 * 1024)
 # Estimate rows from file size (rough estimate)
 if PYARROW_AVAILABLE:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 parquet_file, pq.ParquetFile(file_path)
 total_rows += parquet_file.metadata.num_rows
 except Exception:
@@ -343,9 +343,9 @@ def _get_partition_info(...) -> ...:
     """..."""
     passif PYARROW_AVAILABLE:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dataset, ds.dataset(dataset_path)
 schema, dataset.schema
 
@@ -373,9 +373,9 @@ if not os.path.exists(dataset_path):
     passreturn {'error': 'Dataset not found'}
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 stats = {
 'dataset_path': dataset_path,
 'total_files': 0,

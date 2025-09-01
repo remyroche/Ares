@@ -54,9 +54,9 @@ class PositionDivisionStrategy:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Position Division Strategy...")
 
             # Validate configuration
@@ -79,9 +79,9 @@ except Exception as e:
     def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if self.max_positions <= 0:
     passself.logger.error(invalid("Max positions must be positive"))
                 return False
@@ -112,9 +112,9 @@ except Exception as e:
     async def calculate_position_division(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Calculating position division strategy...")
 
             # Calculate number of positions based on confidence
@@ -147,9 +147,9 @@ except Exception as e:
     def _calculate_num_positions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Higher confidence = fewer positions (more concentrated)
             # Lower confidence = more positions (more diversified)
 
@@ -171,9 +171,9 @@ except Exception as e:
     def _calculate_position_sizes(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             position_sizes = []
 
             if num_positions == 1:
@@ -205,9 +205,9 @@ except Exception as e:
     def _calculate_tp_sl_levels(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get market volatility
             volatility = market_conditions.get("volatility", 0.02)  # Default 2%
 
@@ -247,9 +247,9 @@ except Exception as e:
     async def add_position(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if we can add more positions
             if len(self.active_positions) >= self.max_positions:
     passself.logger.warning(warning(f"Cannot add position {position_id}: max positions reached"))
@@ -277,9 +277,9 @@ except Exception as e:
     async def close_position(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if position_id not in self.active_positions:
     passself.logger.warning(warning(f"Position {position_id} not found"))
                 return False
@@ -335,9 +335,9 @@ except Exception as e:
     def _update_performance_metrics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Update basic metrics
             total_positions = len(self.position_history)
             total_pnl = sum(pos.get("pnl", 0) for pos in self.position_history)
@@ -378,9 +378,9 @@ except Exception as e:
     def get_strategy_summary(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             return {
                 "active_positions": len(self.active_positions),
                 "max_positions": self.max_positions,
@@ -397,9 +397,9 @@ except Exception as e:
     async def cleanup(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Cleaning up Position Division Strategy...")
 
             # Save position history if needed

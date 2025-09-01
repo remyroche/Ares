@@ -358,9 +358,9 @@ class HMMBasedTrainingStep:
     def _get_available_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Exclude non-feature columns
             exclude_columns = [
                 "target", "timeframe",
@@ -383,9 +383,9 @@ except Exception as e:
     async def _apply_enhanced_optimization(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Enhanced LM optimizer is required - no fallbacks
             if self.enhanced_lm_optimizer is None:
     passmsg = "Enhanced LM optimizer is required but not initialized"
@@ -570,9 +570,9 @@ except Exception as e:
 
         # Enhanced regime forecasting artifacts with advanced capabilities
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             import json
             import os
             import pandas as _pd
@@ -773,9 +773,9 @@ except Exception as e:
     def _generate_multi_horizon_forecasts(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             horizons = [5, 10, 20, 50, 100]
             forecasts = {}
             
@@ -934,9 +934,9 @@ except Exception as e:
 
         for timeframe in timeframes:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Load composite clusters using the manager
                 clusters_df = hmm_manager.load_composite_clusters(
                     exchange=exchange, symbol=symbol, timeframe=timeframe, data_dir=data_dir,
@@ -960,9 +960,9 @@ except Exception as e:
                 intensity_df: pd.DataFrame | None = None
                 if os.path.exists(intensity_path):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         intensity_df = pd.read_parquet(intensity_path)
                         if "timestamp" in intensity_df.columns:
     passintensity_df["timestamp"] = pd.to_datetime(
@@ -1243,12 +1243,12 @@ except Exception as e:
     async def _load_and_combine_legacy_features(...) -> ...:
     """..."""
     passtry:  # Try to load train, test, and validation pickle files
-    pass  # TODO: Add proper exception handling
+    self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add implementation
+    passpasspasspasspasspasspassself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Implement based on requirements proper exception handling based on context
             splits: list[pd.DataFrame] = []
         for split_name in ["train" = "test", "validation"]:
@@ -1291,12 +1291,12 @@ except Exception as e:
     async def _create_timeframe_specific_features(...) -> ...:
     """..."""
     passtry:  # First, try to get combined feature data from any available source
-    pass  # TODO: Add proper exception handling
+    self.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add implementation
+    passpasspasspasspasspasspassself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Implement based on requirements proper exception handling based on context
             combined_features: pd.DataFrame | None = None
 
@@ -5002,7 +5002,7 @@ class TransformerTrainer:
             history["test_acc"].append(test_acc)
 
         if epoch % 30 == 0:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Add proper implementation
 
         return history

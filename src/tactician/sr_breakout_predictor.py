@@ -264,9 +264,9 @@ async def initialize(...) -> ...:
     passself.logger.info("Initializing SR breakout predictor...")
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate configuration
             if not self._validate_configuration():
     passreturn False
@@ -291,9 +291,9 @@ except Exception as e:
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             required_keys = [
                 "sr_proximity_threshold",
                 "breakout_confidence_threshold",
@@ -332,9 +332,9 @@ except Exception as e:
 async def _initialize_components(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize regime classifier if needed
             # Note: regime_classifier is currently commented out due to import issues
             # if hasattr(self, "regime_classifier"):
@@ -354,9 +354,9 @@ except Exception as e:
 async def _load_optimized_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try to load from optimization results file
             optimization_file = self.sr_config.get("optimization_results_file", "optimization_results.json")
 
@@ -391,9 +391,9 @@ except Exception as e:
     async def _apply_optimized_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.optimized_params:
     passreturn
 
@@ -490,9 +490,9 @@ except Exception as e:
     def _initialize_reporting_system(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             import os
             from pathlib import Path
 
@@ -524,9 +524,9 @@ except Exception as e:
     def _calculate_comprehensive_metrics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
 
             # Basic market metrics
@@ -642,9 +642,9 @@ return {}
     def _calculate_data_quality_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             score = 1.0
 
             # Check for missing data
@@ -677,9 +677,9 @@ except Exception as e:
     def _calculate_sr_confidence_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             score = 0.5  # Base score
 
             # Factor in number of levels
@@ -713,9 +713,9 @@ except Exception as e:
     def _calculate_overall_quality_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             score = 0.5  # Base score
 
             # Market data quality
@@ -749,9 +749,9 @@ except Exception as e:
     async def _generate_detailed_report(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.reporting_enabled:
     passreturn {}
 
@@ -813,9 +813,9 @@ except Exception as e:
     async def _save_report_to_file(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             import os
             from pathlib import Path
             import json
@@ -858,9 +858,9 @@ except Exception as e:
 def _save_metrics_to_csv(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             import csv
 
             # Flatten metrics for CSV
@@ -903,9 +903,9 @@ except Exception as e:
 def _save_html_report(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             html_content = f"""
 <!DOCTYPE html>
 <html>
@@ -997,9 +997,9 @@ async def get_report_history(...) -> ...:
 async def cleanup_old_reports(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             import os
             from pathlib import Path
             from datetime import datetime, timedelta
@@ -1029,9 +1029,9 @@ except Exception as e:
 async def generate_manual_report(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.reporting_enabled:
     passself.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
                 return {}
@@ -1084,9 +1084,9 @@ async def predict_sr_breakouts(...) -> ...:
 return {}
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Predicting SR breakouts...")
 
             # Detect support and resistance levels
@@ -1159,9 +1159,9 @@ async def get_sr_context(...) -> ...:
 return {}
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Detect support and resistance levels
             support_levels = await self._detect_support_levels(market_data)
             resistance_levels = await self._detect_resistance_levels(market_data)
@@ -1262,9 +1262,9 @@ context = {
 async def extract_ml_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
 
             # Get comprehensive SR context
@@ -1514,9 +1514,9 @@ def _get_default_sr_features(...) -> ...:
 async def _detect_support_levels(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     # Validate VWAP data availability
     vwap_available = self._validate_vwap_data(market_data)
 
@@ -1539,9 +1539,9 @@ except Exception as e:
 async def _detect_resistance_levels(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     # Validate VWAP data availability
     vwap_available = self._validate_vwap_data(market_data)
 
@@ -1564,9 +1564,9 @@ except Exception as e:
 async def _detect_fractal_support_levels(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     support_levels = []
 
     # Always detect support levels using price data
@@ -1594,9 +1594,9 @@ except Exception as e:
 async def _detect_fractal_support_levels_price(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     support_levels = []
 
     # Find local minima in price data

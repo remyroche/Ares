@@ -67,9 +67,9 @@ async def main(...):
     args = parser.parse_args()
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         results = await detect_and_fill_gaps_immediate(
             symbol=args.symbol, exchange = args.exchange,
             min_gap_seconds=args.min_gap_seconds, auto_fill = not args.detect_only

@@ -32,9 +32,9 @@ def main(...):
         print("-" * 30)
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get mode configuration
             config = get_training_mode_config(mode)
             print(f"Lookback Days: {config.lookback_days}")

@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 import shap  # type: ignore
 except Exception:  # pragma: no cover
 shap = None  # type: ignore
@@ -66,11 +66,11 @@ elf) -> bool:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RFConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RFConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class RFConfig:
     passenabled: bool
 n_estimators: int
@@ -81,9 +81,9 @@ max_train_samples: int
 enable_shap: bool
 
 class TransitionRandomForest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TransitionRandomForest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TransitionRandomForest:
     passpass  # TODO: Add proper implementation
 def __init__(self, config: dict[str, Any]) -> None:
@@ -160,9 +160,9 @@ y_pred = mdl.predict(X_val)
 rep = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
 # Validation probabilities for reliability calibration
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 proba = mdl.predict_proba(X_val)
 classes = list(mdl.classes_)
 # Build per-class prob list and true labels
@@ -178,9 +178,9 @@ if classes:
 # SHAP (optional)
 if self.cfg.enable_shap and shap is not None:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 explainer = shap.TreeExplainer(mdl)
 # Sample a subset for SHAP speed
 ns = min(2000, len(X_val))

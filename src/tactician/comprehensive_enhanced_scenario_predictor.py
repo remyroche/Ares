@@ -357,9 +357,9 @@ class ComprehensiveEnhancedScenarioPredictor:
     def _validate_configuration(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate scenarios
             for scenario_id, scenario in self.scenarios.items():
     passif scenario["zone_type"] != "neutral":

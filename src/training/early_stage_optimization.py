@@ -3,12 +3,12 @@
 Early Stage Optimization Module
 
 This module handles optimization that should happen BEFORE ML trading begins:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 1. SR (Stationarity and Randomness) optimization (step02_5): Ensures data quality and preprocessing parameters
 2. Regime-specific triple barrier optimization (step4): Optimizes trading parameters for each market regime
 
 These optimizations happen early in the pipeline to ensure:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 - Proper data preprocessing (SR): Clean, stationary data for reliable model training
 - Regime-aware trading parameters (triple barrier): Tailored parameters for different market conditions
 - Optimal foundation for ML model training: High-quality data and parameters for better model performance

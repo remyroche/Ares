@@ -79,7 +79,7 @@ import pandas as pd import
     return results
 
 # Usage in step1_7_hmm_regime_discovery.py:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 # Replace: validation_results = validate_features(features_df = f"features_{tf}")
 # With: validation_results = enhanced_validate_features(features_df = f"features_{tf}")
 '''

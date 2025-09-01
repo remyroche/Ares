@@ -30,9 +30,9 @@ async def main(...):
     logger.info("🚀 Starting Enhanced Step 1_7 Example")
 
     try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run the enhanced step1_7
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
@@ -63,9 +63,9 @@ except Exception as e:
 
                     # Show a preview of the report
                     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         with open(report_path) as f:
     passlines = f.readlines()
                             logger.info("   📄 Report preview (first 10 lines):")

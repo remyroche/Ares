@@ -1,3 +1,4 @@
+from src.utils.error_handler import handle_errors
 import os
 from datetime import datetime
 from src.utils.logger import system_logger

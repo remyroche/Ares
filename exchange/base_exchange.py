@@ -242,9 +242,9 @@ class BaseExchange(...):
     async def fetch_price(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Prefer a direct ticker if subclass implements get_ticker
             if hasattr(self, "get_ticker"):
     passticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
@@ -276,9 +276,9 @@ except Exception as e:
     async def get_liquidation_price(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             risk = await self.get_position_risk(symbol)
             # Try common ccxt fields
             if isinstance(risk, list) and risk:

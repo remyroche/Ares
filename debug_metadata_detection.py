@@ -11,9 +11,9 @@ def test_metadata_detection(...):
     print(f"\n🔍 Testing metadata detection in {file_path.name}")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

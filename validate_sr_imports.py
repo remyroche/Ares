@@ -20,9 +20,9 @@ def validate_imports(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test 1: Import SRBreakoutPredictor
         print("\n📦 Test 1: Importing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -112,9 +112,9 @@ async def validate_integration(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Configuration
         config = {
             "sr_levels_manager": {

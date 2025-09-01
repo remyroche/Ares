@@ -28,9 +28,9 @@ class BaseValidator(ABC):
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class BaseValidator(ABC):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class BaseValidator(...):
     """..."""
     passdef __init__(self, step_name: str, config: dict[str, Any]) -> None:
@@ -51,9 +51,9 @@ async def validate(...) -> ...:
 def validate_error_absence(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 errors, step_result.get("errors", [])
 warnings, step_result.get("warnings", [])
 
@@ -85,9 +85,9 @@ return False, {"error": str(e)}
 def validate_file_exists(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 exists, os.path.exists(file_path)
 metrics: dict[str, Any] = {
 "file_path": file_path,
@@ -109,9 +109,9 @@ return False, {"error": str(e)}
 def validate_dataframe_quality(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics: dict[str, Any] = {
 "total_rows": int(len(df)),
 "total_columns": int(len(df.columns)),
@@ -225,9 +225,9 @@ return False, {"error": str(e)}
 def validate_model_artifacts(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics: dict[str, Any] = {
 "model_path": model_path,
 "exists": os.path.exists(model_path),
@@ -252,9 +252,9 @@ if not os.path.exists(file_path):
 # Check model integrity
 if check_model_integrity and metrics["is_file"]:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 import pickle
 with open(model_path, 'rb') as f:
     passmodel, pickle.load(f)
@@ -288,9 +288,9 @@ return False, {"error": str(e)}
 def validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics: dict[str, Any] = {
 "config_keys": list(config.keys()) if isinstance(config, dict) else [],
 "missing_keys": [],
@@ -356,9 +356,9 @@ return False, {"error": str(e)}
 def validate_pipeline_state(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics: dict[str, Any] = {
 "state_keys": list(pipeline_state.keys()) if isinstance(pipeline_state, dict) else [],
 "missing_steps": [],
@@ -405,9 +405,9 @@ return False, {"error": str(e)}
 def validate_directory_structure(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 exists, os.path.exists(directory)
 is_directory, os.path.isdir(directory) if exists else False
 metrics: dict[str, Any] = {

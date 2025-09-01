@@ -7,7 +7,7 @@ The Tactician uses this multiplier to determine position sizing.
 
 The Kelly criterion formula is: f = (bp - q) / b
 where:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 - b = odds received (1 for 1:1 odds)
 - p = probability of win
 - q = probability of loss
@@ -21,9 +21,9 @@ from typing import Dict
 def calculate_kelly_multiplier(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
@@ -86,9 +86,9 @@ except Exception as e:
 def calculate_kelly_fraction(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []

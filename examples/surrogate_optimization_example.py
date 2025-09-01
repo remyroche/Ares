@@ -3,7 +3,7 @@
 Comprehensive Surrogate Optimization Example
 
 This example demonstrates the full surrogate optimization system with:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 - Multiple surrogate model types (Gaussian Process, Random Forest, XGBoost, Neural Network)
 - Advanced acquisition functions (Expected Improvement, UCB, Probability of Improvement)
 - Multi-objective optimization
@@ -144,9 +144,9 @@ class SurrogateOptimizationDemo:
                     self.logger.info(f"  Running {test_name}...")
 
                     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         result = optimizer.optimize_with_surrogates(
                             objective_func=objective_func,
                             n_trials=50,

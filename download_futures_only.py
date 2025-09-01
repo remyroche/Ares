@@ -2,7 +2,7 @@
 """Download Futures Data Only for Binance ETHUSDT.
 
 Based on user requirements:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 1. Futures: 2023 (12 months)
 2. Futures: 2025-01 to 2025-04 (4 months)
 """
@@ -53,9 +53,9 @@ async def download_futures_month(...):
     month_str = f"{year:04d}-{month:02d}"
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Calculate start and end dates for the FULL month
         start_date = datetime(year, month, 1)
         if month == 12:
@@ -131,9 +131,9 @@ async def main(...) -> ...:
     all_results = {}
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Download 2023 futures data
 
         if not shutdown_requested:

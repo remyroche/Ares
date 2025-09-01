@@ -24,9 +24,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     from src.config.constants import DEFAULT_LOOKBACK_DAYS
     from src.config.training_modes import (
         TRAINING_MODES,
@@ -149,9 +149,9 @@ class SRDataIntegration:
     async def load_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"Loading data for {symbol} {timeframe}")
 
             # Determine date range
@@ -197,9 +197,9 @@ except Exception as e:
     async def _load_raw_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try unified data loader first
             if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
     passloader = UnifiedDataLoader(self.config)
@@ -218,9 +218,9 @@ except Exception as e:
     async def _load_data_direct(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Implement actual data loading from exchange or database - will be added in future updates
             # For now, return placeholder data
             date_range = pd.date_range(start=start_date, end=end_date, freq=timeframe)
@@ -245,9 +245,9 @@ except Exception as e:
     def _perform_quality_checks(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             quality_report = {
                 "symbol": symbol,
                 "timeframe": timeframe,
@@ -293,9 +293,9 @@ except Exception as e:
     def _check_missing_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             missing_report = {
                 "total_missing": 0,
                 "missing_by_column": {},
@@ -343,9 +343,9 @@ except Exception as e:
     def _detect_outliers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             outlier_report = {
                 "price_outliers": {},
                 "volume_outliers": {},
@@ -388,9 +388,9 @@ except Exception as e:
     def _validate_data_consistency(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             consistency_report = {
                 "ohlc_consistency": {},
                 "price_volume_correlation": 0.0,
@@ -445,9 +445,9 @@ except Exception as e:
     def _clean_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             cleaned_data = data.copy()
 
             # Handle missing data
@@ -492,9 +492,9 @@ except Exception as e:
     def _validate_final_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             validation_result = {
                 "is_valid": True,
                 "errors": [],
@@ -542,9 +542,9 @@ except Exception as e:
     def _find_consecutive_missing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             missing_mask = series.isnull()
             consecutive_missing = []
             
@@ -571,9 +571,9 @@ except Exception as e:
     def _detect_price_outliers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             outliers = {
                 "z_score": [],
                 "iqr": [],
@@ -613,9 +613,9 @@ except Exception as e:
     def _detect_volume_outliers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             outliers = {
                 "z_score": [],
                 "iqr": [],
@@ -655,9 +655,9 @@ except Exception as e:
     def _check_ohlc_consistency(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             issues = {
                 "high_low_violations": 0,
                 "open_close_violations": 0,
@@ -688,9 +688,9 @@ except Exception as e:
     def _check_timestamp_continuity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             issues = []
             
             # Check for duplicates
@@ -712,9 +712,9 @@ except Exception as e:
     def _calculate_quality_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             score = 1.0
 
             # Deduct points for missing data

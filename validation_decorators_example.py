@@ -17,9 +17,9 @@ sys.path.insert(0, str(project_root))
 
 # Import validation decorators
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     from src.utils.validation_decorators import (
         validate_file_operation,
         validate_dataframe_operation,
@@ -158,9 +158,9 @@ async def demonstrate_file_validation(...):
     passf.write("test data")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test file operation validation
         result = await load_klines_data(test_file)
         print(f"File operation result: {result}")
@@ -270,9 +270,9 @@ async def main(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         await demonstrate_file_validation()
         await demonstrate_dataframe_validation()
         await demonstrate_step_validation()

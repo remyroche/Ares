@@ -6,7 +6,7 @@ This script creates mock data that matches what step1 actually produces
 and what the enhanced_training_manager expects for steps 1_5, 2, 3, and 4.
 
 Expected files from step1:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 - klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet
 - aggtrades_{exchange}_{symbol}_consolidated.parquet
 - futures_{exchange}_{symbol}_consolidated.parquet

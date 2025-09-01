@@ -61,9 +61,9 @@ class TrainingOptimizationConfig:
         self.config = config or {}
         self.logger = system_logger.getChild("TrainingOptimizationConfig")
         self.is_initialized = False
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class TrainingOptimizationConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TrainingOptimizationConfig:
     pass"""Optimizable training optimization parameters from other steps."""
 

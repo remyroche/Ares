@@ -76,9 +76,9 @@ def fix_specific_issues(...):
 def fix_file(...):
     pass"""Fix a single file."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

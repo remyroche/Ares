@@ -24,9 +24,9 @@ async def download_missing_data(...):
     })
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Define date range
         start_date = datetime(2022, 11, 1)
         end_date = datetime(2023, 7, 31)
@@ -44,9 +44,9 @@ except Exception as e:
 
         while current_since < end_timestamp:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 logger.info(f"📅 Downloading batch starting from {datetime.fromtimestamp(current_since/1000)}")
 
                 # Download klines

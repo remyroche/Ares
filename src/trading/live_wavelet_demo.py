@@ -15,9 +15,9 @@ import pandas as pd
 import yaml
 
 class LiveWaveletDemo:
-    passpasspasspass  # TODO: Add implementation
+    passpasspassself.logger.info("Implementation placeholder - needs specific logic")
 class LiveWaveletDemo:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class LiveWaveletDemo:
     pass"""
 Demo class for computationally-aware wavelet integration.
@@ -47,9 +47,9 @@ self.demo_data = []
 def _load_config(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(self.config_path) as f:
     passreturn yaml.safe_load(f)
 except Exception as e:
@@ -59,9 +59,9 @@ return {}
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("🚀 Initializing Live Wavelet Demo...")
 
 # Initialize wavelet integration
@@ -83,9 +83,9 @@ return False
 def _generate_demo_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Generate 1000 data points of realistic price data
 np.random.seed(42)
 n_points = 1000
@@ -135,9 +135,9 @@ except Exception as e:
 async def run_demo(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info(f"🎬 Starting Live Wavelet Demo (duration: {duration}s)")
 self.is_running = True
 
@@ -181,9 +181,9 @@ finally:
 def _create_market_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if index >= len(self.demo_data):
     passreturn {}
 
@@ -204,9 +204,9 @@ return {}
 def _log_signal_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 signal = results.get("wavelet_signal", "hold")
 confidence = results.get("wavelet_confidence", 0.0)
 energy = results.get("wavelet_energy", 0.0)
@@ -228,9 +228,9 @@ except Exception as e:
 def _log_performance_stats(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 stats = self.wavelet_integration.get_performance_stats()
 
 if stats:
@@ -254,9 +254,9 @@ except Exception as e:
 def _check_health(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 is_healthy = self.wavelet_integration.is_healthy()
 
 if not is_healthy:
@@ -270,9 +270,9 @@ except Exception as e:
 def _log_final_stats(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 stats = self.wavelet_integration.get_performance_stats()
 
 self.logger.info("📊 Final Statistics:")
@@ -310,15 +310,15 @@ def stop_demo(...) -> ...:
 self.logger.info("🛑 Demo stopped by user")
 
 async def main(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def main(...):
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 async def main(...):
     pass"""Main demo function."""
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Create and initialize demo
 demo = LiveWaveletDemo()
 

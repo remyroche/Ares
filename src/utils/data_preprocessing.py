@@ -19,9 +19,9 @@ def regularize_timestamps(...) -> ...:
     passlogger, system_logger.getChild("DataPreprocessing")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if data is None or data.empty:
     passreturn data
 
@@ -121,9 +121,9 @@ def preprocess_data_for_multi_timeframe(...) -> ...:
     passlogger, system_logger.getChild("DataPreprocessing")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Regularize timestamps for all data
 processed_price, regularize_timestamps(price_data)
 processed_volume = (
@@ -155,9 +155,9 @@ validation_results = {
 }
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 fixed_data, data.copy()
 
 # Fix common issues based on data type

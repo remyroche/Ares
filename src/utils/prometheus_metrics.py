@@ -5,9 +5,9 @@ Prometheus metrics collection utility for training step validators.
 import logging
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from prometheus_client import (
 Counter,
 Gauge,
@@ -48,9 +48,9 @@ class PrometheusMetrics:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PrometheusMetrics:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PrometheusMetrics:
     pass"""Prometheus metrics collection for training step validators."""
 
@@ -172,9 +172,9 @@ if not _PROM_AVAILABLE:
 import socket
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 sock, socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 result, sock.connect_ex(("localhost", self.port))
 sock.close()
@@ -189,9 +189,9 @@ except Exception:
     passpasspass
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 start_http_server(self.port)
 logger.info(f"Prometheus metrics server started on port {self.port}")
 self.metrics_initialized, True

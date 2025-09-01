@@ -1,3 +1,4 @@
+from src.utils.logger import system_logger
 import asyncio
 import json
 import logging
@@ -34,9 +35,9 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 
 # --- Import from your Ares Codebase ---
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     from src.config import CONFIG, AresConfig
     from src.database.sqlite_manager import SQLiteManager
     from src.supervisor.performance_reporter import PerformanceReporter
@@ -503,14 +504,14 @@ async def websocket_endpoint(...):
 async def get_dashboard_data(...):
     pass"""Fetches comprehensive dashboard data including real-time metrics."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get real data from database if available
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             await db_manager.initialize()
             open_positions_raw = await db_manager.get_collection(
                 "positions",
@@ -596,9 +597,9 @@ async def get_kill_switch_status(...):
 async def activate_kill_switch(...):
     pass"""Activate the kill switch."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         await state_manager.activate_kill_switch(request.reason)
 
         # Broadcast to WebSocket connections
@@ -624,9 +625,9 @@ except Exception as e:
 async def deactivate_kill_switch(...):
     pass"""Deactivate the kill switch."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         await state_manager.deactivate_kill_switch()
 
         # Broadcast to WebSocket connections
@@ -647,9 +648,9 @@ except Exception as e:
 async def start_backtest(...):
     pass"""Run a comprehensive backtest with detailed results."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Simulate backtest execution
         await asyncio.sleep(2)
 
@@ -706,9 +707,9 @@ except Exception as e:
 async def get_backtest_comparison(...):
     pass"""Get comparison data for multiple backtest runs."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Mock comparison data
         comparisons = [
             {
@@ -750,9 +751,9 @@ except Exception as e:
 async def get_models(...):
     pass"""Get all available models with their performance metrics."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         models = [
             ModelInfo(
                 id="model_1",
@@ -823,9 +824,9 @@ async def deploy_model(...):
 async def get_trade_analysis(...):
     pass"""Get comprehensive trade analysis data."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Mock detailed trade analysis
         trades = []
         for i in range(limit):
@@ -887,9 +888,9 @@ except Exception as e:
 async def get_trade_details(...):
     pass"""Get detailed analysis for a specific trade."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Mock detailed trade data
         trade_details = {
             "trade_id": trade_id,
@@ -982,9 +983,9 @@ async def toggle_bot(...):
 async def get_system_status(...):
     pass"""Get comprehensive system status."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get process info
         process = psutil.Process()
         memory_info = process.memory_info()
@@ -1019,9 +1020,9 @@ async def restart_system(...):
 async def get_monitoring_dashboard(...):
     pass"""Get comprehensive monitoring dashboard data from real monitoring/reporting modules."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         dashboard_data = {}
         # Metrics Dashboard
         if metrics_dashboard and hasattr(metrics_dashboard, 'get_dashboard_data'):
@@ -1043,9 +1044,9 @@ except Exception as e:
 async def export_monitoring_data(...):
     pass"""Export monitoring data as CSV."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         data = await request.json()
         data_type = data.get('dataType', 'performance')
         time_range = data.get('timeRange', '7d')
@@ -1166,9 +1167,9 @@ except Exception as e:
 async def get_tokens(...):
     passpass"""Get all configured tokens with their settings."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Try to get real data from config
         supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
         tokens = []
@@ -1223,9 +1224,9 @@ except Exception as e:
 async def update_token_config(...):
     pass"""Add or update token configuration."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         token_key = f"{request.symbol}_{request.exchange}"
         token_configs[token_key] = TokenConfig(
             symbol=request.symbol,
@@ -1253,9 +1254,9 @@ except Exception as e:
 async def remove_token(...):
     pass"""Remove a token from trading."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         token_key = f"{symbol}_{exchange}"
         if token_key in token_configs:
     passtoken_configs[token_key].enabled = False
@@ -1283,9 +1284,9 @@ except Exception as e:
 async def get_available_models(...):
     pass"""Get all available models for selection."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Try to get real model data from MLflow or model directory
         model_configs = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         models = []
@@ -1342,9 +1343,9 @@ except Exception as e:
 async def get_model_performance(...):
     pass"""Get performance metrics for all models on a specific token/exchange."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Try to get real performance data from performance_reporter
         performances = []
 
@@ -1383,9 +1384,9 @@ except Exception as e:
 async def select_model_for_token(...):
     pass"""Select a model for a specific token/exchange."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         token_key = f"{request.symbol}_{request.exchange}"
 
         if token_key in token_configs:
@@ -1418,9 +1419,9 @@ except Exception as e:
 async def compare_models(...):
     pass"""Compare two models for a specific token/exchange."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get performance data for both models
         performances = await get_model_performance(symbol, exchange)
         model_a_perf = next((p for p in performances if p.model_id == model_a), None)
@@ -1479,9 +1480,9 @@ except Exception as e:
 async def get_detailed_model_analysis(...):
     pass"""Get detailed analysis for a specific model on a token/exchange."""
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get performance data
         performances = await get_model_performance(symbol, exchange)
         performance = next((p for p in performances if p.model_id == model_id), None)

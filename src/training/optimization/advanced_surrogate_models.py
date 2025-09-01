@@ -3,7 +3,7 @@
 Advanced Surrogate Models for Optimization
 
 This module provides advanced surrogate models including:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 - Ensemble methods
 - Deep learning models
 - Specialized kernels

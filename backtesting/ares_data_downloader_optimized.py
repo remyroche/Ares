@@ -4,7 +4,7 @@
 Optimized Ares Data Downloader
 
 This script provides enhanced data downloading capabilities with:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 1. Parallel processing for multiple data types (klines = aggtrades, futures)
 2. Concurrent downloads for different time periods
 3. Optimized rate limiting and connection pooling
@@ -58,9 +58,9 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     # Try importing with relative path first
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -142,9 +142,9 @@ class OptimizedDataDownloader:
     """..."""
     passdef find_last_timestamp(csv_path: Path) -> int | None:
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
     passreturn None
@@ -162,9 +162,9 @@ except Exception as e:
 
         def find_first_timestamp(csv_path: Path) -> int | None:
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
     passreturn None
                 df = pd.read_csv(
@@ -211,9 +211,9 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
             # Use certifi CA bundle to avoid SSL verification issues on some systems
 
@@ -290,9 +290,9 @@ except Exception as e:
         logger.info("🔧 STEP 1: Initializing optimized downloader...")
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
             print(f"   📊 Exchange: {self.config.exchange}")
             print(f"   📊 Symbol: {self.config.symbol}")
@@ -309,9 +309,9 @@ except Exception as e:
             logger.info("🔌 Creating exchange client...")
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 self.exchange_client = ExchangeFactory.get_exchange(
                     self.config.exchange.lower(),
@@ -369,9 +369,9 @@ except Exception as e:
     def _find_latest_aggtrades_timestamp(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             from src.data.parquet_dataset_manager import ParquetDatasetManager
 
             pdm = ParquetDatasetManager(logger=logger)
@@ -388,9 +388,9 @@ except Exception as e:
         # Fallback: previous CSV tail logic
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
             if not files:
@@ -399,9 +399,9 @@ except Exception as e:
             latest_timestamp = None
             for file_path in files:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                     result = subprocess.run(
                         ["tail", "-100", file_path],
@@ -456,9 +456,9 @@ except Exception as e:
         if data_type == "aggtrades":
     passpassif self.config.start_date_str and self.config.end_date_str:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                     start_date = datetime.strptime(
                         self.config.start_date_str, "%Y-%m-%d",
@@ -499,9 +499,9 @@ except Exception as e:
         # For other data types, use explicit date range if provided, otherwise standard lookback
         elif self.config.start_date_str and self.config.end_date_str:
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 start_date = datetime.strptime(
                     self.config.start_date_str, "%Y-%m-%d",
@@ -596,9 +596,9 @@ except Exception as e:
 
             def _csv_ts_bounds(path: str) -> tuple[int | None , int | None]:
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                     if not os.path.exists(path) or os.path.getsize(path) == 0:
     passreturn None
@@ -820,9 +820,9 @@ except Exception as e:
         async with self.download_semaphore:
     passprint(f"🔍 DEBUG: Acquired semaphore for {start_dt.strftime('%Y-%m')}")
             try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 # Generate filename for this month
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{self.config.interval}_{start_dt.strftime('%Y-%m')}.csv"
@@ -891,9 +891,9 @@ except Exception as e:
                     )
 
                     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                         print("🔍 DEBUG: Making actual API call...")
                         batch_klines = await self.exchange_client.get_historical_klines(
@@ -1200,9 +1200,9 @@ except Exception as e:
     """..."""
     passasync with self.download_semaphore:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 # Generate filename for this day
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
@@ -1399,9 +1399,9 @@ except Exception as e:
     pass# For BINANCE and older dates, try archive first
                     if prefer_archive:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                             vision_trades = (
                                 await self._fetch_aggtrades_from_binance_vision(
@@ -1418,9 +1418,9 @@ except Exception as e:
                                 )
                                 merged_df.to_csv(filepath, index=False)
                                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                                     parquet_path = (
                                         os.path.splitext(filepath)[0] + ".parquet"
                                     )
@@ -1634,9 +1634,9 @@ except Exception as e:
                         f"⚠️ Empty aggtrades for {start_dt.strftime('%Y-%m-%d')}, trying CCXT fallback...",
                     )
                     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                         # First try CCXT aggregate trades
                         ccxt_trades: list[dict] = []
@@ -1777,9 +1777,9 @@ except Exception as e:
     """..."""
     passasync with self.download_semaphore:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
                 # Generate filename for this month
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
@@ -2135,9 +2135,9 @@ except Exception as e:
         )
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 
             # Initialize
             print("🔍 DEBUG: Starting initialization...")

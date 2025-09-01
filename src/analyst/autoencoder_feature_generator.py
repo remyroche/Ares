@@ -10,9 +10,9 @@ import yaml
 
 # Check for required dependencies
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     # Import required dependencies
     import numpy as np
     import optuna
@@ -259,9 +259,9 @@ class PriceReturnConverter:
 
                 # Skip features with very limited unique values (likely categorical)
                 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     # Check if the column contains array-valued cells
                     sample_value = converted_df[col].iloc[0]
                     if isinstance(sample_value, (np.ndarray, list)):
@@ -512,9 +512,9 @@ except Exception as e:
         converted_count = 0
         for col in features_to_convert:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 if col in converted_df.columns:
     pass# CRITICAL: Double-check for known problematic features
                     if col.lower() in [
@@ -639,9 +639,9 @@ class FeatureFilter:
     def filter_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(
                 "🔍 Starting feature filtering with Random Forest + SHAP..."
             )
@@ -801,9 +801,9 @@ except Exception as e:
                     min_class_count >= 10
                 ):  # Need at least 10 samples per class for stratification
                     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         from sklearn.model_selection import train_test_split
 
                         # Calculate stratified sample size per class
@@ -978,9 +978,9 @@ except Exception as e:
                 )
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # EFFICIENCY OPTIMIZATION 7: Use background values for faster computation
                 # Calculate background values from a small subset
                 background_size = min(100, len(X_sample) // 10)
@@ -1593,9 +1593,9 @@ class SequenceAwareAutoencoder:
         self.autoencoder.compile(optimizer=optimizer, loss="huber", metrics=["mae"])
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             total_params = int(
                 np.sum([np.prod(v.shape) for v in self.autoencoder.trainable_weights])
             )
@@ -1724,9 +1724,9 @@ self.logger.info(f"📊 Final training loss: {final_train_loss:.6f}")
 self.logger.info(f"📊 Final validation loss: {final_val_loss:.6f}")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     if val_mae:
     passbest_val_mae = val_mae[best_epoch]
         final_val_mae = val_mae[-1]
@@ -1790,9 +1790,9 @@ class AutoencoderFeatureAnalyzer:
         }
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # 1. Statistical Correlation Analysis
             self.logger.info("📊 Performing statistical correlation analysis...")
             correlation_results = self._analyze_correlations(encoded_features, labels)
@@ -1862,9 +1862,9 @@ except Exception as e:
 
         # Calculate mutual information (if scikit-learn available)
         try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             from sklearn.feature_selection import (
                 mutual_info_classif,
                 mutual_info_regression,
@@ -1944,9 +1944,9 @@ except Exception as e:
     def _compute_ml_importance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Prepare data
             X = encoded_features.select_dtypes(include=[np.number]).fillna(0)
             y = labels
@@ -1969,9 +1969,9 @@ except Exception as e:
 
             # 2. Gradient Boosting Importance (if available)
             try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 from sklearn.ensemble import GradientBoostingClassifier
 
                 gb_model = GradientBoostingClassifier(
@@ -1990,9 +1990,9 @@ except Exception as e:
 
             # 3. Permutation Importance (more robust)
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 from sklearn.inspection import permutation_importance
                 from sklearn.model_selection import train_test_split
 
@@ -2098,9 +2098,9 @@ except Exception as e:
     def _analyze_feature_stability(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate rolling statistics to assess stability
             window_size = self.config.get("feature_analysis.stability_window", 100)
 
@@ -2297,9 +2297,9 @@ except Exception as e:
     def _compare_with_original_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Exception handling placeholder - implement specific error handling as needed
             # Compute importance for both feature sets
             encoded_importance = self._compute_ml_importance(encoded_features, labels)
@@ -2350,9 +2350,9 @@ except Exception as e:
     def _generate_summary_and_recommendations(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Exception handling placeholder - implement specific error handling as needed
             summary = {}
             recommendations = []
@@ -2540,9 +2540,9 @@ class AutoencoderFeatureGenerator:
 
         """Generate autoencoder-based features for a specific market regime."""
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Exception handling placeholder - implement specific error handling as needed
             self.logger.info(
                 f"🚀 Starting autoencoder feature generation for regime: {regime_name}",
@@ -2915,9 +2915,9 @@ except Exception as e:
             if enable_analysis:
     passself.logger.info("🔍 Starting feature importance analysis...")
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     # Exception handling placeholder - implement specific error handling as needed
                     # Initialize feature analyzer
                     feature_analyzer = AutoencoderFeatureAnalyzer(self.config)

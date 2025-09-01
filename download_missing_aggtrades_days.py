@@ -3,7 +3,7 @@
 Download Missing Aggtrades Days for Binance ETHUSDT
 
 Based on the analysis, these are the 12 missing days:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 - 2024-03-05, 2024-04-05, 2024-04-16, 2024-04-29
 - 2024-07-08, 2024-07-15, 2024-08-05, 2024-08-06
 - 2024-11-07, 2025-01-20, 2025-02-04, 2025-03-06
@@ -72,9 +72,9 @@ async def download_single_day_aggtrades(...) -> ...:
     print("-" * 60)
 
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -197,9 +197,9 @@ async def download_missing_aggtrades_by_month(...):
             end_date = f"{month}-31"
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             config = DownloadConfig(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
@@ -287,9 +287,9 @@ async def main(...):
         print("❌ Invalid choice. Please enter 1 or 2.")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         if choice == "1":
     passsuccess = await download_missing_aggtrades_batch()
         else:

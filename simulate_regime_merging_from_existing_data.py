@@ -96,9 +96,9 @@ def simulate_merging_with_parameters(...):
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
@@ -168,9 +168,9 @@ def run_parameter_sweep(...):
                     )
 
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     result = simulate_merging_with_parameters(
                         counts = centroids,
                         min_freq = sim_thresh,

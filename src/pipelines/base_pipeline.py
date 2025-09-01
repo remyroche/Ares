@@ -97,16 +97,16 @@ ialize PlaceholderDataClass."""
         self.config = config or {}
         self.logger = system_logger.getChild("PlaceholderDataClass")
         self.is_initialized = False
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PipelineMetrics:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PipelineMetrics:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PipelineMetrics:
     passstart_time: Optional[datetime] = None
 end_time: Optional[datetime] = None

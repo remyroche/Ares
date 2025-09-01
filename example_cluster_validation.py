@@ -222,9 +222,9 @@ def main(...):
     print("This script demonstrates how to test HMM cluster relevance before ML training.")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Run basic example
         basic_results = run_basic_validation_example()
 

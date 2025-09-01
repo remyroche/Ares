@@ -99,9 +99,9 @@ context="configuration validation",
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             required_keys = [
                 "kelly_multiplier",
                 "max_position_size",
@@ -131,9 +131,9 @@ except Exception as e:
 def refresh_step17_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if "position_sizing" in step17_results:
     passposition_sizing_optimization = step17_results["position_sizing"]
 
@@ -180,9 +180,9 @@ return None
 self.logger.info("Calculating position size using ML intelligence...")
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
@@ -265,9 +265,9 @@ except Exception as e:
 def _calculate_kelly_position_size(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Use the new Kelly criterion formula module
             kelly_multiplier = calculate_kelly_multiplier(
                 price_target_confidences=price_target_confidences,
@@ -298,9 +298,9 @@ except Exception as e:
 def _calculate_ml_position_size(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence for target levels (0.5% to 2.0%)
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -356,9 +356,9 @@ except Exception as e:
 def _calculate_weighted_position_size(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         # Calculate weighted position size
             # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
@@ -382,9 +382,9 @@ except Exception as e:
 def _apply_position_size_modifiers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             adjusted = base_size
 
             # Market health: downscale size under high volatility or stress; upscale when healthy
@@ -448,9 +448,9 @@ except Exception as e:
 def _generate_sizing_reason(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence and risk
             key_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -507,9 +507,9 @@ def _generate_dual_confidence_sizing_reason(...) -> ...:
 def _get_historical_performance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Use local sizing history as a proxy when available
             # Expect entries with keys: {"pnl": float}
             history = self.position_sizing_history[-500:]  # recent window
@@ -589,9 +589,9 @@ context="position sizer setup",
 async def setup_position_sizer(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         if config is None:
     passconfig = {}
 

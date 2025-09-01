@@ -59,9 +59,9 @@ class DataPreparationQualityAnalyzer:
     def load_data(...):
     pass"""Load the prepared data for analysis."""
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if data_path.endswith('.pkl'):
     passwith open(data_path, 'rb') as f:
     passself.data = pickle.load(f)
@@ -384,9 +384,9 @@ except Exception as e:
         print("\n📈 GENERATING PREPARATION VISUALIZATIONS...")
 
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Data Preparation Quality Analysis Report', fontsize=16, fontweight='bold')
 

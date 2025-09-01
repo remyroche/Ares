@@ -40,9 +40,9 @@ class ValidatorOrchestrator:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class ValidatorOrchestrator:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ValidatorOrchestrator:
     pass"""Orchestrator for running step validators in the training pipeline."""
 
@@ -77,16 +77,16 @@ Returns:
 """
 start_perf, time.perf_counter()
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info(f"🔍 Running {validation_level} validator for {step_name}")
 
 # Debug - level context for troubleshooting
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.debug(
 "Input context - training_input_keys=%s pipeline_state_keys=%s validation_level=%s",
 list(training_input.keys())
@@ -143,9 +143,9 @@ failure_reason, self._extract_failure_reason(result)
 
 # Record metrics
 try:
-    passpasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics.record_step_execution(
 step_name = step_name, duration = duration, status = status
 )
@@ -197,9 +197,9 @@ self.validation_results[step_name] = error_result
 
 # Record failure metric
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 metrics.record_step_execution(
 step_name = step_name, duration = duration, status="EXCEPTION"
 )
@@ -220,9 +220,9 @@ return error_result
 async def _run_pre_validation_checks(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.debug(f"🔍 Running pre - validation checks for {step_name}")
 
 # Basic input validation
@@ -294,9 +294,9 @@ return {
 async def _run_post_validation_checks(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.debug(f"🔍 Running post - validation checks for {step_name}")
 
 post_checks = {
@@ -338,9 +338,9 @@ return {
 def _combine_validation_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 combined, dict(main_result)
 
 # Add post - validation information
@@ -424,9 +424,9 @@ raise ValueError(msg)
 
 module_path, f"src.training.steps.{validator_module_name}"
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Import the validator module
 module_path, f"src.training.steps.{validator_module_name}"
 validator_module, importlib.import_module(module_path)

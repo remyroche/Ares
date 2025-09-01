@@ -22,8 +22,7 @@ from src.utils.logger import system_logger
 
 @dataclass
 class PlaceholderDataClass:
-    passpasspasspass  # TODO: Add implementation
-# TODO: Add implementation
+    passpasspassself.logger.info(...)  # TODO: Add specific parameters and implementation
 class VectorizedTrainingConfig:
     pass"""Configuration for vectorized training pipeline."""
 

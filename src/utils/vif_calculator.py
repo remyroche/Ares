@@ -47,9 +47,9 @@ if len(X_clean) < 2 or X_clean.empty:
 continue
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Calculate R - squared
 from sklearn.linear_model import LinearRegression
 model, LinearRegression()
@@ -101,9 +101,9 @@ if len(features) < 2:
 return pd.Series([1.0] * len(features), index = features)
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Use Ledoit - Wolf shrinkage for robust covariance estimation
 X, data[features].copy()
 
@@ -128,9 +128,9 @@ index = X.index
 
 # Calculate correlation matrix using Ledoit - Wolf shrinkage
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 lw, LedoitWolf().fit(X_scaled.values)
 cov_matrix, lw.covariance_
 
@@ -145,9 +145,9 @@ corr_matrix, X_scaled.corr().values
 
 # Calculate VIF using matrix inversion
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Use pseudo - inverse for numerical stability
 corr_inv, np.linalg.pinv(corr_matrix)
 vif_values, np.diag(corr_inv)

@@ -323,9 +323,9 @@ rRequest."""
         self.config = config or {}
         self.logger = system_logger.getChild("OrderRequest")
         self.is_initialized = False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class OrderRequest(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class OrderRequest(...):
     """..."""
     passsymbol: Symbol
@@ -340,9 +340,9 @@ leverage: LeverageMultiplier | None
 
 
 class TradeDecision(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradeDecision(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradeDecision(...):
     """..."""
     passtimestamp: Timestamp
@@ -359,9 +359,9 @@ reasoning: str
 
 
 class PositionRisk(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PositionRisk(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PositionRisk(...):
     """..."""
     passposition_id: PositionId
@@ -376,9 +376,9 @@ risk_level: RiskLevel
 
 
 class RiskParameters(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class RiskParameters(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class RiskParameters(...):
     """..."""
     passmax_position_size: Volume
@@ -392,9 +392,9 @@ var_limit: float  # Value at Risk
 
 
 class TradingSignal(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingSignal(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingSignal(...):
     """..."""
     passtimestamp: Timestamp
@@ -408,9 +408,9 @@ source: str  # e.g., "analyst", "ml_model", "technical_indicator"
 
 
 class PerformanceMetrics(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PerformanceMetrics(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PerformanceMetrics(...):
     """..."""
     passtotal_return: Percentage
@@ -427,9 +427,9 @@ losing_trades: int
 
 
 class PortfolioState(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PortfolioState(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class PortfolioState(...):
     """..."""
     passtimestamp: Timestamp
@@ -444,9 +444,9 @@ performance: PerformanceMetrics
 
 
 class BacktestResult(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class BacktestResult(TypedDict):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class BacktestResult(...):
     """..."""
     passstart_date: Timestamp

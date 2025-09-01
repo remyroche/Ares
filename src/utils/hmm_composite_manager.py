@@ -43,9 +43,9 @@ class HMMCompositeManager:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class HMMCompositeManager:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class HMMCompositeManager:
     pass"""Centralized manager for HMM composite cluster files."""
 
@@ -105,9 +105,9 @@ if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
 ]
 for key in old_keys:
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 del self._cache[key]
 except Exception:
     passpasspass
@@ -142,9 +142,9 @@ f"HMM block states not found for {exchange}_{symbol}_{timeframe}",
 return None
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 df, pd.read_parquet(block_states_path)
 # Cache for subsequent calls and log only once per key
 self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -196,9 +196,9 @@ self._logged_events.add(event_key)
 return None
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 df, pd.read_parquet(composite_path)
 # Cache for subsequent calls and log only once per key
 self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -235,9 +235,9 @@ if not os.path.exists(meta_path):
 return None
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(meta_path) as f:
     passmeta, json.load(f)
 # Cache for subsequent calls and log only once per key
@@ -277,9 +277,9 @@ f"HMM intensity not found for {exchange}_{symbol}_{timeframe}",
 return None
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 df, pd.read_parquet(intensity_path)
 # Cache for subsequent calls and log only once per key
 self._cache[cache_key] = {"data": df, "timestamp": time.time()}
@@ -318,9 +318,9 @@ f"HMM basic meta not found for {exchange}_{symbol}_{timeframe}",
 return None
 
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(basic_meta_path) as f:
     passmeta, json.load(f)
 # Cache for subsequent calls and log only once per key
@@ -422,9 +422,9 @@ file_info: dict[str, Any] = {}
 for file_type, file_path in file_paths.items():
     passif os.path.exists(file_path):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 stat, os.stat(file_path)
 file_info[file_type] = {
 "exists": True,
@@ -467,9 +467,9 @@ validation_results["errors"].extend(
 for file_type, file_path in file_paths.items():
     passif os.path.exists(file_path):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if file_type in ["composite_clusters", "block_states", "intensity"]:
     passdf, pd.read_parquet(file_path)
 if df.empty:
@@ -508,9 +508,9 @@ keys_to_remove.append(key)
 
 for key in keys_to_remove:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 del self._cache[key]
 except Exception:
     passpasspass

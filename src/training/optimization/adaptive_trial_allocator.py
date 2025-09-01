@@ -86,9 +86,9 @@ class AdaptiveTrialAllocator:
     def calculate_parameter_importance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             importance_scores = {}
 
             for param_path in parameters:
@@ -131,9 +131,9 @@ except Exception as e:
     def _get_base_importance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Critical parameters get highest importance
             critical_params = [
                 "confidence_thresholds.base_entry_threshold",
@@ -168,9 +168,9 @@ except Exception as e:
     def _get_performance_importance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if param_path in self.parameter_performance:
     passperformances = self.parameter_performance[param_path]
                 if performances:
@@ -189,9 +189,9 @@ except Exception as e:
     def _get_sensitivity_importance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Parameters that affect multiple components get higher importance
             if "confidence" in param_path.lower():
     passreturn 0.8  # Confidence affects many decisions
@@ -217,9 +217,9 @@ except Exception as e:
     def allocate_trials_adaptively(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate parameter importance
             importance_scores = self.calculate_parameter_importance(parameters)
 
@@ -308,9 +308,9 @@ except Exception as e:
     def should_reallocate_trials(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.allocation_config.dynamic_allocation:
     passreturn False
 
@@ -345,9 +345,9 @@ except Exception as e:
     def calculate_optimal_allocation(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get importance scores
             importance_scores = self.calculate_parameter_importance(parameters)
 
@@ -387,9 +387,9 @@ except Exception as e:
     def get_allocation_statistics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.allocation_history:
     passreturn {"message": "No allocation history available"}
 
@@ -433,9 +433,9 @@ except Exception as e:
     def get_parameter_performance_summary(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             summary = {}
 
             for param_path, performances in self.parameter_performance.items():
@@ -463,9 +463,9 @@ except Exception as e:
     def validate_trial_allocation(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check total trials
             total_trials = sum(allocation.values())
 

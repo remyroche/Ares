@@ -116,9 +116,9 @@ class TacticianEnhancedPredictionIntegrator:
     async def generate_tactician_predictions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Determine timeframe
             if timeframe is None:
     passtimeframe = self._determine_optimal_timeframe(market_data)
@@ -167,9 +167,9 @@ except Exception as e:
     async def _generate_enhanced_prediction(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get base prediction from Analyst
             base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
 
@@ -199,9 +199,9 @@ except Exception as e:
     def _extract_analyst_prediction(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Map Tactician prediction types to Analyst prediction types
             analyst_type_mapping = {
                 "price_deviation_prediction": "price_prediction",
@@ -228,9 +228,9 @@ except Exception as e:
     def _create_synthetic_prediction(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract any available confidence or prediction values
             base_confidence = 0.5
             base_prediction = 0.0
@@ -277,9 +277,9 @@ except Exception as e:
     def _apply_tactician_enhancement(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get ML model confidence factor for this prediction type
             ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
             if ml_confidence_factor is None:
@@ -336,9 +336,9 @@ except Exception as e:
     def _enhance_prediction_value(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if prediction_type == "price_deviation_prediction":
     pass# Calculate price deviations for 2 barrier combinations
                 current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
@@ -392,9 +392,9 @@ except Exception as e:
     def _calculate_enhanced_confidence(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base enhancement from ML model factor
             enhanced_confidence = min(1.0, base_confidence * ml_confidence_factor)
 
@@ -419,9 +419,9 @@ except Exception as e:
     def _calculate_precision_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base precision from confidence
             precision_score = enhanced_confidence
 
@@ -444,9 +444,9 @@ except Exception as e:
     def _determine_optimal_timeframe(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if market_data.empty:
     passreturn self.primary_timeframe
 
@@ -472,9 +472,9 @@ except Exception as e:
     async def validate_tactician_predictions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             validation_results = {
                 "is_valid": True,
                 "validation_score": 0.0,
@@ -558,9 +558,9 @@ except Exception as e:
     def load_step12_ml_confidence_factors(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try to load from step12 results
             if step12_results_path and Path(step12_results_path).exists():
     pass# Load from specific file
@@ -618,9 +618,9 @@ except Exception as e:
     def auto_refresh_from_step12(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if step12 results have been updated
             step12_config = self.config.get("step12_confidence_optimization", {})
             auto_refresh = step12_config.get("auto_refresh", True)
@@ -638,9 +638,9 @@ except Exception as e:
     def get_prediction_summary(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             summary = {
                 "total_predictions": 0,
                 "high_precision_predictions": 0,

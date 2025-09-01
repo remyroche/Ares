@@ -73,9 +73,9 @@ def test_clustering(...):
 
         # Test clustering
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             agg = AgglomerativeClustering(
                 n_clusters, n_clusters = metric="precomputed",
                 linkage="average",

@@ -7,9 +7,9 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
 
 class ModularAnalyst:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModularAnalyst:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModularAnalyst:
     pass"""
 Enhanced modular analyst with comprehensive error handling and type safety.
@@ -53,9 +53,9 @@ context="modular analyst initialization",
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("Initializing Modular Analyst...")
 
 # Load analyst configuration
@@ -84,9 +84,9 @@ context="analyst configuration loading",
 async def _load_analyst_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Set default analyst parameters
 self.analyst_config.setdefault("analysis_interval", 60)
 self.analyst_config.setdefault("max_analysis_history", 100)
@@ -150,9 +150,9 @@ context="analysis modules initialization",
 async def _initialize_analysis_modules(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize technical analysis module
 if self.enable_technical_analysis:
     passawait self._initialize_technical_analysis()
@@ -182,9 +182,9 @@ context="technical analysis initialization",
 async def _initialize_technical_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize technical analysis indicators
 self.technical_indicators = {
 "sma": True,
@@ -208,9 +208,9 @@ context="fundamental analysis initialization",
 async def _initialize_fundamental_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize fundamental analysis metrics
 self.fundamental_metrics = {
 "pe_ratio": True,
@@ -234,9 +234,9 @@ context="sentiment analysis initialization",
 async def _initialize_sentiment_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize sentiment analysis metrics
 self.sentiment_metrics = {
 "news_sentiment": True,
@@ -258,9 +258,9 @@ context="risk analysis initialization",
 async def _initialize_risk_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize risk analysis metrics
 self.risk_metrics = {
 "var": True,
@@ -288,9 +288,9 @@ context="market analysis",
 async def analyze_market_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not self._validate_market_data(market_data):
     passreturn False
 
@@ -337,9 +337,9 @@ context="market data validation",
 def _validate_market_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check required market data fields
 required_fields = ["symbol", "price", "volume", "timestamp"]
 for field in required_fields:
@@ -370,9 +370,9 @@ context="technical analysis",
 async def _perform_technical_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate SMA
@@ -414,9 +414,9 @@ context="fundamental analysis",
 async def _perform_fundamental_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate PE Ratio
@@ -458,9 +458,9 @@ context="sentiment analysis",
 async def _perform_sentiment_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate News Sentiment
@@ -494,9 +494,9 @@ context="risk analysis",
 async def _perform_risk_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate VaR
@@ -527,9 +527,9 @@ return {}
 def _calculate_sma(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate SMA calculation
 prices = [100, 101, 102, 103, 104]  # Sample prices
 return sum(prices) / len(prices)
@@ -540,9 +540,9 @@ return 0.0
 def _calculate_ema(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate EMA calculation
 return 102.5  # Sample EMA value
 except Exception as e:
@@ -552,9 +552,9 @@ return 0.0
 def _calculate_rsi(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate RSI calculation
 return 65.0  # Sample RSI value
 except Exception as e:
@@ -564,9 +564,9 @@ return 0.0
 def _calculate_macd(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate MACD calculation
 return {
 "macd_line": 0.5,
@@ -580,9 +580,9 @@ return {"macd_line": 0.0, "signal_line": 0.0, "histogram": 0.0}
 def _calculate_bollinger_bands(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Bollinger Bands calculation
 return {
 "upper_band": 105.0,
@@ -596,9 +596,9 @@ return {"upper_band": 0.0, "middle_band": 0.0, "lower_band": 0.0}
 def _calculate_stochastic(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Stochastic calculation
 return {
 "k_percent": 75.0,
@@ -613,9 +613,9 @@ return {"k_percent": 0.0, "d_percent": 0.0}
 def _calculate_pe_ratio(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate PE ratio calculation
 return 15.5
 except Exception as e:
@@ -625,9 +625,9 @@ return 0.0
 def _calculate_pb_ratio(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate PB ratio calculation
 return 2.1
 except Exception as e:
@@ -637,9 +637,9 @@ return 0.0
 def _calculate_debt_to_equity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate debt to equity calculation
 return 0.8
 except Exception as e:
@@ -649,9 +649,9 @@ return 0.0
 def _calculate_roe(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate ROE calculation
 return 0.12
 except Exception as e:
@@ -661,9 +661,9 @@ return 0.0
 def _calculate_revenue_growth(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate revenue growth calculation
 return 0.08
 except Exception as e:
@@ -673,9 +673,9 @@ return 0.0
 def _calculate_earnings_growth(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate earnings growth calculation
 return 0.10
 except Exception as e:
@@ -687,9 +687,9 @@ return 0.0
 def _calculate_news_sentiment(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate news sentiment calculation
 return 0.6
 except Exception as e:
@@ -699,9 +699,9 @@ return 0.0
 def _calculate_social_sentiment(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate social sentiment calculation
 return 0.7
 except Exception as e:
@@ -711,9 +711,9 @@ return 0.0
 def _calculate_market_sentiment(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate market sentiment calculation
 return 0.65
 except Exception as e:
@@ -723,9 +723,9 @@ return 0.0
 def _calculate_fear_greed_index(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate fear & greed index calculation
 return 55.0
 except Exception as e:
@@ -737,9 +737,9 @@ return 0.0
 def _calculate_var(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate VaR calculation
 return 0.025
 except Exception as e:
@@ -749,9 +749,9 @@ return 0.0
 def _calculate_max_drawdown(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate max drawdown calculation
 return 0.15
 except Exception as e:
@@ -761,9 +761,9 @@ return 0.0
 def _calculate_sharpe_ratio(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Sharpe ratio calculation
 return 1.2
 except Exception as e:
@@ -773,9 +773,9 @@ return 0.0
 def _calculate_risk_volatility(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate volatility calculation
 return 0.18
 except Exception as e:
@@ -790,9 +790,9 @@ context="analysis results storage",
 async def _store_analysis_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Add timestamp
 self.analysis_results["timestamp"] = datetime.now().isoformat()
 
@@ -816,9 +816,9 @@ context="analysis results getting",
 def get_analysis_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if analysis_type:
     passreturn self.analysis_results.get(analysis_type, {})
 return self.analysis_results.copy()
@@ -835,9 +835,9 @@ context="analysis history getting",
 def get_analysis_history(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 history = self.analysis_history.copy()
 
 if limit:
@@ -878,9 +878,9 @@ async def stop(...) -> ...:
     passself.logger.info("🛑 Stopping Modular Analyst...")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Stop analyzing
 self.is_analyzing = False
 
@@ -906,9 +906,9 @@ context="modular analyst setup",
 async def setup_modular_analyst(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 global modular_analyst
 
 if config is None:

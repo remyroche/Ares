@@ -62,9 +62,9 @@ class ModelTrainingQualityAnalyzer:
     def load_training_data(...):
     pass"""Load training data and model metrics."""
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try to load from various formats
             if data_path.endswith('.pkl'):
     passwith open(data_path, 'rb') as f:
@@ -700,9 +700,9 @@ except Exception as e:
         print("\n📈 GENERATING TRAINING VISUALIZATIONS...")
 
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Model Training Quality Analysis Report', fontsize=16, fontweight='bold')
 

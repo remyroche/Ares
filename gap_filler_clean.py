@@ -48,9 +48,9 @@ class CleanGapFiller:
     def detect_gaps_in_file(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             df = pd.read_parquet(file_path)
 
             if df.empty or "timestamp" not in df.columns:
@@ -93,9 +93,9 @@ except Exception as e:
         url = f"{base_url}/{path}"
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
             async with self.session.get(url, ssl=ssl_context) as resp:
@@ -175,9 +175,9 @@ except Exception as e:
     async def fill_gap_until_complete(...) -> ...:
     passpass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             gap_start = gap_info["gap_start"]
             gap_end = gap_info["gap_end"]
             file_name = gap_info["file"]
@@ -317,9 +317,9 @@ except Exception as e:
 async def main() -> None:
     gap_filler = CleanGapFiller()
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         await gap_filler.process_all_gaps()
     finally:
     passawait gap_filler.close_session()

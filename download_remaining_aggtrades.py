@@ -53,9 +53,9 @@ async def download_single_day_aggtrades(...) -> ...:
     print("-" * 60)
 
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -94,9 +94,9 @@ async def download_aggtrades_range(...) -> ...:
     print("=" * 80)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -149,9 +149,9 @@ async def main(...):
     print("=" * 80)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Step 1: Download remaining missing days
         print("\n📅 STEP 1: Downloading remaining missing aggtrades days")
         print("=" * 60)

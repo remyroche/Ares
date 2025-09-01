@@ -65,9 +65,9 @@ class BacktestingQualityAnalyzer:
     def load_backtest_data(...):
     pass"""Load backtest data and results."""
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try to load from various formats
             if data_path.endswith('.pkl'):
     passwith open(data_path, 'rb') as f:
@@ -361,9 +361,9 @@ except Exception as e:
         # Analyze trade timing
         if 'timestamp' in self.trades_data.columns:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         self.trades_data['timestamp'] = pd.to_datetime(self.trades_data['timestamp'])
                 time_diff, self.trades_data['timestamp'].diff().dropna()
 
@@ -439,9 +439,9 @@ except Exception as e:
         # Check for data consistency
         if 'timestamp' in self.backtest_data.columns:
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         self.backtest_data['timestamp'] = pd.to_datetime(self.backtest_data['timestamp'])
                 time_diff, self.backtest_data['timestamp'].diff().dropna()
 
@@ -634,9 +634,9 @@ except Exception as e:
         print("\n📈 GENERATING BACKTEST VISUALIZATIONS...")
 
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Backtesting Quality Analysis Report', fontsize=16, fontweight='bold')
 

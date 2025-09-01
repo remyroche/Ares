@@ -141,9 +141,9 @@ class Step17OptimizedTactician:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Step17 Optimized Tactician...")
 
             # Initialize scenario predictor
@@ -164,9 +164,9 @@ except Exception as e:
     def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate all decision thresholds
             for threshold_name, threshold_value in self.decision_thresholds.items():
     passif not isinstance(threshold_value, (int, float)):
@@ -194,9 +194,9 @@ except Exception as e:
     async def make_trading_decision(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get scenario predictions
             scenario_predictions = await self.scenario_predictor.predict_scenarios(market_data)
 
@@ -244,9 +244,9 @@ except Exception as e:
     def _calculate_tactician_confidence(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract scenario probabilities
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
@@ -273,9 +273,9 @@ except Exception as e:
     def _make_entry_decision(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
             neutral_prob = scenario_predictions.get("neutral_probability", 0.0)
@@ -314,9 +314,9 @@ except Exception as e:
     def _make_direction_decision(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
             neutral_prob = scenario_predictions.get("neutral_probability", 0.0)
@@ -351,9 +351,9 @@ except Exception as e:
     def _calculate_position_size(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base position size
             base_size = self.decision_thresholds["position_size_base"]
 
@@ -382,9 +382,9 @@ except Exception as e:
     def _calculate_leverage(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base leverage
             base_leverage = self.decision_thresholds["leverage_base"]
 
@@ -413,9 +413,9 @@ except Exception as e:
     def update_step17_parameters(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Update only trading-related parameters
             for param_name, param_value in new_parameters.items():
     passif param_name in self.decision_thresholds:

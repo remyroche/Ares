@@ -141,9 +141,9 @@ _logger.getChild("TradingMLPredictor")
 nfig or {}
         self.logger = system_logger.getChild("TradingDataProvider")
         self.is_initialized = False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TradingDataProvider(Protocol):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingDataProvider(...):
     """..."""
     pass@abstractmethod
@@ -169,9 +169,9 @@ def is_connected(self) -> bool:
 
 @runtime_checkable
 class TradingMLPredictor(Protocol):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingMLPredictor(Protocol):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingMLPredictor(...):
     """..."""
     pass@abstractmethod
@@ -197,9 +197,9 @@ def is_model_ready(self) -> bool:
 
 @runtime_checkable
 class TradingRiskManager(Protocol):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingRiskManager(Protocol):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingRiskManager(...):
     """..."""
     pass@abstractmethod

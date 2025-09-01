@@ -73,9 +73,9 @@ def test_class_definitions(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test advanced ML validation classes
             StatisticalDataValidator,
             TimeSeriesValidator,
@@ -123,9 +123,9 @@ def test_function_definitions(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test convenience functions
             validate_ml_data_quality,
             detect_data_drift,
@@ -163,9 +163,9 @@ def test_pipeline_integration(...):
     for file_path in pipeline_files:
     passif os.path.exists(file_path):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 with open(file_path, 'r') as f:
     passcontent = f.read()
 
@@ -198,9 +198,9 @@ def test_configuration_options(...):
     print("=" * 50)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         from src.utils.advanced_ml_validation import AdvancedMLValidator
 
         # Test default configuration

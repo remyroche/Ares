@@ -83,9 +83,9 @@ class LeverageSizer:
     def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             required_keys = [
                 "min_leverage",
                 "max_leverage",
@@ -123,9 +123,9 @@ except Exception as e:
     def refresh_step17_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if "leverage" in step17_results:
     passleverage_optimization = step17_results["leverage"]
 
@@ -165,9 +165,9 @@ except Exception as e:
             return {}
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
@@ -245,9 +245,9 @@ except Exception as e:
     def _calculate_ml_leverage(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence for target levels (0.5% to 2.0%)
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -299,9 +299,9 @@ except Exception as e:
     def _calculate_liquidation_safe_leverage(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base liquidation calculation
             # Assume worst-case scenario: 10% price move against position
             worst_case_move = 0.10
@@ -332,9 +332,9 @@ except Exception as e:
     def _calculate_weighted_leverage(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate weighted leverage
             weighted_leverage = (
                 ml_leverage * self.ml_weight
@@ -353,9 +353,9 @@ except Exception as e:
     def _apply_leverage_modifiers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             adjusted = base_leverage
 
             # Apply market health modifiers
@@ -387,9 +387,9 @@ except Exception as e:
     def _generate_leverage_reason(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence and risk
             key_levels = [0.5, 1.0, 1.5, 2.0]
             avg_confidence = 0.0

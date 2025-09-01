@@ -64,9 +64,9 @@ class DataCollectionQualityAnalyzer:
     def load_data(...):
     pass"""Load the collected data for analysis."""
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if data_path.endswith('.pkl'):
     passwith open(data_path, 'rb') as f:
     passself.data = pickle.load(f)
@@ -239,9 +239,9 @@ except Exception as e:
 
         if time_col:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
                     latest_time, df[time_col].max()
                     oldest_time, df[time_col].min()
@@ -421,9 +421,9 @@ except Exception as e:
 
         if time_col:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
                     time_diff, df[time_col].diff().dropna()
 
@@ -675,9 +675,9 @@ except Exception as e:
         print("\n📈 GENERATING VISUALIZATIONS...")
 
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Create figure with subplots
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Data Collection Quality Analysis Report', fontsize=16, fontweight='bold')

@@ -357,9 +357,9 @@ return {
 def validate_enhanced_reporting_config(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 required_sections , [
 "enhanced_trading_launcher",
 "paper_trading_integration",

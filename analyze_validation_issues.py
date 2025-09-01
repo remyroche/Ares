@@ -23,9 +23,9 @@ def extract_validation_details_from_logs(...) -> ...:
     with open(log_file_path, "r") as f:
     passfor line in f:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Parse JSON log entries
                 if line.strip().startswith("{"):
     passlog_entry = json.loads(line.strip())
@@ -269,7 +269,7 @@ def print_feature_analysis(...):
     passprint(f"  ✅ No major issues detected")
 
 # Usage example:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 # features_df = pd.read_parquet('path/to/features.parquet')
 # problematic_features = ['feature1', 'feature2', 'feature3']
 # results = analyze_specific_features(features_df, problematic_features)

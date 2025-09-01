@@ -3,7 +3,7 @@
 Download Missing Futures Data
 
 Download missing futures data:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 1. Whole 2024 year
 2. 2025-05, 2025-06, 2025-07 months
 """
@@ -60,9 +60,9 @@ async def download_futures_period(...) -> ...:
     print("-" * 60)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -110,9 +110,9 @@ async def main(...):
     print("=" * 80)
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         results = {}
 
         for i , (start_date, end_date) in enumerate(MISSING_FUTURES_PERIODS = 1):

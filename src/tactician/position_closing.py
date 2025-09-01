@@ -58,9 +58,9 @@ class PositionCloser:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Position Closer...")
 
             # Validate configuration
@@ -78,9 +78,9 @@ except Exception as e:
     def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if self.atr_multiplier <= 0:
     passself.logger.error("ATR multiplier must be positive")
                 return False
@@ -118,9 +118,9 @@ except Exception as e:
     def refresh_step17_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if "tpsl" in step17_results:
     passtpsl_optimization = step17_results["tpsl"]
 
@@ -149,9 +149,9 @@ except Exception as e:
     async def should_close_position(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
     passself.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
@@ -176,9 +176,9 @@ except Exception as e:
     def _should_close_by_atr(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             entry_price = position_data.get("entry_price", 0)
             if entry_price <= 0:
     passreturn False
@@ -205,9 +205,9 @@ except Exception as e:
     def _should_close_by_time(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             entry_time = position_data.get("entry_time")
             if not entry_time:
     passreturn False
@@ -230,9 +230,9 @@ except Exception as e:
     async def close_position(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"Closing position: {close_reason}")
 
             # Record closure
@@ -261,9 +261,9 @@ except Exception as e:
     def _calculate_pnl(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             entry_price = position_data.get("entry_price", 0)
             current_price = position_data.get("current_price", 0)
             quantity = position_data.get("quantity", 0)
@@ -294,9 +294,9 @@ except Exception as e:
     def get_performance_metrics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.closed_positions:
     passreturn {
                     "total_positions": 0,

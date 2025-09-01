@@ -32,9 +32,9 @@ logger = logging.getLogger("OptimizedDataDownloader")
 
 # Import dependencies
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from src.config import CONFIG
     from src.utils.logger import get_logger
@@ -152,9 +152,9 @@ class CleanDataDownloader:
         logger.info("🔧 STEP 1: Initializing clean downloader with CCXT...")
 
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create CCXT exchange instance
             exchange_class = getattr(ccxt, self.config.exchange.lower())
             self.exchange = exchange_class(
@@ -190,9 +190,9 @@ except Exception as e:
     def _find_latest_aggtrades_timestamp(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Find all aggtrades files for this symbol and exchange
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
@@ -206,9 +206,9 @@ except Exception as e:
 
             for file_path in files:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     # Read only the last few lines to find the latest trade timestamp efficiently
                     result = subprocess.run(
                         ["tail", "-100", file_path],
@@ -610,9 +610,9 @@ except Exception as e:
     """..."""
     passasync with self.download_semaphore:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Generate filename for this day
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -686,9 +686,9 @@ except Exception as e:
     """..."""
     passasync with self.download_semaphore:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Generate filename for this day
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -769,9 +769,9 @@ except Exception as e:
     """..."""
     passasync with self.download_semaphore:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Generate filename for this month
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -800,17 +800,17 @@ except Exception as e:
 
                 # Try different methods to get funding rates
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     print("📊 Downloading funding rates...")
 
                     # Method 1: Try fetch_funding_rate_history if available
                     if hasattr(self.exchange, "fetch_funding_rate_history"):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                             funding_rates = (
                                 await self.exchange.fetch_funding_rate_history(
                                     self.config.symbol, since=start_ms, limit=1000
@@ -846,9 +846,9 @@ except Exception as e:
                         self.exchange, "fetch_funding_rate"
                     ):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                             funding_rate = await self.exchange.fetch_funding_rate(
                                 self.config.symbol
                             )
@@ -886,9 +886,9 @@ except Exception as e:
                         self.exchange, "fapiPublicGetFundingRate"
                     ):
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                             # Direct API call to Binance futures funding rate endpoint
                             params = {
                                 "symbol": self.config.symbol.upper(),
@@ -961,9 +961,9 @@ except Exception as e:
         data = []
         for kline in klines:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 data.append(
                     {
                         "timestamp": datetime.fromtimestamp(kline[0] / 1000),
@@ -988,9 +988,9 @@ except Exception as e:
         data = []
         for trade in trades:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 data.append(
                     {
                         "timestamp": datetime.fromtimestamp(trade["timestamp"] / 1000),
@@ -1015,9 +1015,9 @@ except Exception as e:
         data = []
         for item in futures_data:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # The funding rate data is already properly structured
                 data.append(
                     {
@@ -1039,9 +1039,9 @@ except Exception as e:
     passstart_time = time.time()
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             print("=" * 80)
             print("🚀 CLEAN DATA DOWNLOAD PROCESS STARTED")
             print("=" * 80)

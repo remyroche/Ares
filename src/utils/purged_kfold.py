@@ -61,11 +61,11 @@ class PlaceholderDataClass:
         self.config = config or {}
         self.logger = system_logger.getChild("PlaceholderDataClass")
         self.is_initialized = False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PurgedKFoldTime:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PurgedKFoldTime:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class PurgedKFoldTime:
     pass"""Purged and Embargoed K - Fold for DatetimeIndex time series.
 

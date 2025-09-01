@@ -42,9 +42,9 @@ def load_test_data(...):
     passif source.endswith("*.csv"):
     pass# Handle CSV file pattern loading
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 csv_files = glob.glob(source)
                 if csv_files:
     passprint(
@@ -85,9 +85,9 @@ except Exception as e:
 
         elif os.path.exists(source):
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 if source.endswith(".parquet"):
     passdata = pd.read_parquet(source)
                     source_used = source
@@ -107,9 +107,9 @@ except Exception as e:
                 if os.path.isdir(source):
     pass# Try to load partitioned parquet files
                     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         print(f"📁 Loading partitioned parquet files from: {source}")
 
                         # Find all parquet files in the partitioned structure
@@ -189,9 +189,9 @@ def convert_to_ohlcv(...):
     print(f"🔄 Converting trade data to OHLCV format ({timeframe})...")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Make a copy to avoid modifying original data
         df = trade_data.copy()
 
@@ -294,9 +294,9 @@ def test_feature_calculation(...):
         return None
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 
@@ -344,9 +344,9 @@ def test_regime_classification(...):
         return None
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 

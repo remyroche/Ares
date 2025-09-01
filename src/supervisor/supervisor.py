@@ -61,9 +61,9 @@ else:
 raise Exception(msg)
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = await func(*args, **kwargs)
 if self.state == "HALF_OPEN":
     passself.state = "CLOSED"
@@ -94,9 +94,9 @@ default_return=None)
 async def update_model_performance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.model_performances[model_id].append(performance)
 
 # Keep only recent performances (last 100)
@@ -117,9 +117,9 @@ except Exception:
 async def _recalculate_weights(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.model_performances:
     passreturn
 
@@ -221,9 +221,9 @@ self.max_confidence_threshold: float = self.enhanced_prediction_service_config.g
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Supervisor...")
             await self._load_supervisor_configuration()
             await self._initialize_components()
@@ -247,9 +247,9 @@ except Exception as e:
 async def _load_supervisor_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.supervisor_config.setdefault("supervision_interval", 60)
             self.supervisor_config.setdefault("max_history", 100)
             self.supervisor_config.setdefault("max_recovery_attempts", 3)
@@ -273,9 +273,9 @@ except Exception as e:
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if self.supervision_interval <= 0:
     passself.logger.error("Invalid supervision interval")
                 return False
@@ -303,9 +303,9 @@ except Exception as e:
 async def _initialize_components(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing supervisor components...")
             
             # Initialize critical components with updated structure
@@ -363,9 +363,9 @@ except Exception as e:
 async def _setup_circuit_breakers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Setting up circuit breakers...")
             
             # Setup circuit breakers for external services
@@ -396,9 +396,9 @@ except Exception as e:
 async def _setup_online_learning(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Setting up online learning...")
             
             # Initialize online learning with default configuration
@@ -439,9 +439,9 @@ except Exception as e:
 async def _setup_component_monitors(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Setting up component monitors...")
             
             # Initialize component monitors with default states
@@ -498,9 +498,9 @@ except Exception as e:
 async def _initialize_enhanced_prediction_service(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Enhanced Prediction Service...")
             
             # Import and initialize the enhanced prediction service
@@ -528,9 +528,9 @@ except Exception as e:
 async def get_analyst_predictions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not self.is_initialized:
     passself.logger.error("❌ Supervisor not initialized")
                 return {}
@@ -577,9 +577,9 @@ except Exception as e:
 async def _analyst_decide_position_entry(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract confidence scores
             confidence_scores = calibrated_confidence.get("confidence_scores", {})
             overall_confidence = calibrated_confidence.get("overall_confidence", 0.0)
@@ -1482,9 +1482,9 @@ await self._check_recovery_needs()
 async def _monitor_system_health(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.debug("Monitoring system health...")
             
             # Check critical components health
@@ -1660,9 +1660,9 @@ except Exception:
 async def _check_component_health(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check circuit breaker status
             if component in self.circuit_breakers:
     passcircuit_breaker = self.circuit_breakers[component]
@@ -1728,9 +1728,9 @@ async def _check_database_health(...) -> ...:
 async def _check_analyst_health(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if analyst component is available and responsive
             if self.components.get("analyst") is None:
     passreturn False
@@ -1753,9 +1753,9 @@ except Exception as e:
 async def _check_strategist_health(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if strategist component is available and responsive
             if self.components.get("strategist") is None:
     passreturn False
@@ -1778,9 +1778,9 @@ except Exception as e:
 async def _check_tactician_health(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if tactician component is available and responsive
             if self.components.get("tactician") is None:
     passreturn False
@@ -1803,9 +1803,9 @@ except Exception as e:
 async def _coordinate_components(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.debug("Coordinating components...")
             
             # Coordinate Analyst-Strategist
@@ -1831,9 +1831,9 @@ except Exception as e:
 async def _coordinate_analyst_strategist(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if both components are healthy
             if not self.component_health.get("analyst", False) or not self.component_health.get("strategist", False):
     passself.logger.warning("Analyst or Strategist component not healthy, skipping coordination")
@@ -2029,9 +2029,9 @@ except Exception:
 async def _trigger_recovery(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             current_time = time.time()
             last_attempt = self.last_recovery_attempt.get(component, 0)
             
@@ -2070,9 +2070,9 @@ except Exception as e:
 async def _attempt_recovery(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"Attempting recovery for component: {component}")
             
             # Component-specific recovery strategies
@@ -2098,9 +2098,9 @@ except Exception as e:
 async def _recover_exchange(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check open positions on exchange
             if hasattr(self.components.get("exchange"), "get_open_positions"):
     passopen_positions = self.components["exchange"].get_open_positions()
@@ -2191,9 +2191,9 @@ async def _restart_component(...) -> ...:
 async def _export_performance_to_csv(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if filename is None:
     passtimestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"supervisor_performance_{timestamp}.csv"
@@ -2244,9 +2244,9 @@ except Exception as e:
 async def _send_to_dashboard(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Prepare dashboard data
             dashboard_data = {
                 "timestamp": datetime.now().isoformat(),
@@ -2284,9 +2284,9 @@ except Exception as e:
 async def _get_market_analysis(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             strategist = self.components.get("strategist")
             if not strategist:
     passreturn {}

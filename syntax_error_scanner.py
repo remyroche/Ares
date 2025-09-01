@@ -3,7 +3,7 @@
 Syntax Error Scanner for Ares Repository
 
 This script scans the entire repository and provides a detailed report of:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 1. Files with syntax errors
 2. Number of errors per file
 3. Types of errors found
@@ -49,9 +49,9 @@ class SyntaxErrorScanner:
     def scan_file(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             result = subprocess.run(
                 ['python3', '-m', 'py_compile', file_path],
                 capture_output=True,

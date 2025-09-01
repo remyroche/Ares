@@ -61,11 +61,11 @@ class PlaceholderDataClass:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class MTRFConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class MTRFConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class MTRFConfig:
     passenabled: bool
 n_estimators: int
@@ -76,9 +76,9 @@ max_train_samples: int
 enable_regression: bool
 
 class MultiTaskRandomForest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class MultiTaskRandomForest:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class MultiTaskRandomForest:
     pass"""
 Simple multi-head trainer built on RF:
@@ -134,9 +134,9 @@ best_thr, best_f1 = 0.5, -1.0
 for thr in candidates:
     passy_pred = (y_score >= thr).astype(int)
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 f1 = f1_score(y_true, y_pred)
 except Exception:
     passpassf1 = 0.0
@@ -183,9 +183,9 @@ output_dict=True, zero_division=0,
 }
 # Reliability + thresholds per class (one-vs-rest)
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 proba = pc_model.predict_proba(Xva)
 classes = list(pc_model.classes_)
 val_true = yva.values
@@ -232,9 +232,9 @@ output_dict=True, zero_division=0,
 ),
 }
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 p1 = clf.predict_proba(Xva)[:, 1]
 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
 mean_y = float(np.mean(yva.values))
@@ -249,9 +249,9 @@ except Exception:
 
 # 2b) Next regime head (multiclass): majority regime in Y_post_states
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 regimes = []
 for s in samples:
     passy_states = s.get("Y_post_states")
@@ -295,9 +295,9 @@ output_dict=True, zero_division=0,
 }
 # thresholds are not used for multiclass here; reliability scale
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 proba = nr_model.predict_proba(Xva)
 classes = list(nr_model.classes_)
 val_true = yva.values
@@ -344,9 +344,9 @@ output_dict=True, zero_division=0,
 ),
 }
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 p1 = clf.predict_proba(Xva)[:, 1]
 mean_p = float(np.clip(np.mean(p1), 1e-6, 1.0))
 mean_y = float(np.mean(yva.values))
@@ -394,9 +394,9 @@ saved: dict[str, str] = {}
 for name, model in self.models.items():
     passpath = os.path.join(models_dir, f"{prefix}_{name}.pkl")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(path, "wb") as f:
     passpickle.dump(model, f)
 saved[name] = path
@@ -408,9 +408,9 @@ meta = {
 "heads": list(self.models.keys()),
 }
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
 with open(meta_path, "w", encoding="utf-8") as f:
     passjson.dump(meta, f, indent=2)
@@ -419,18 +419,18 @@ except Exception as e:
 meta_path = os.path.join(models_dir, f"{prefix}_meta.json")
 # Save thresholds and reliability for inference
 try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 thr_path = os.path.join(models_dir, "thresholds.json")
 with open(thr_path, "w", encoding="utf-8") as f:
     passjson.dump(self.thresholds_, f, indent=2)
 except Exception as e:
     passpasspasspasspasspasspassself.logger.warning(f"Failed to save thresholds: {e}")
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 rel_path = os.path.join(models_dir, "reliability.json")
 with open(rel_path, "w", encoding="utf-8") as f:
     passjson.dump(self.reliability_, f, indent=2)
@@ -449,9 +449,9 @@ for fname in os.listdir(models_dir):
     passif fname.startswith(prefix + "_") and fname.endswith(".pkl"):
     passhead = fname[len(prefix) + 1 : -4]
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(os.path.join(models_dir, fname), "rb") as f:
     passmodels[head] = pickle.load(f)
 except Exception:
@@ -460,17 +460,17 @@ except Exception:
 thresholds: dict[str, Any] = {}
 reliability: dict[str, Any] = {}
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(os.path.join(models_dir, "thresholds.json"), encoding="utf-8") as f:
     passthresholds = json.load(f)
 except Exception:
     passpasspass
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(os.path.join(models_dir, "reliability.json"), encoding="utf-8") as f:
     passreliability = json.load(f)
 except Exception:
@@ -478,9 +478,9 @@ except Exception:
 # Load feature names
 feature_names: list[str] = []
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with open(os.path.join(models_dir, f"{prefix}_meta.json"), encoding="utf-8") as f:
     passmeta = json.load(f)
 feature_names = list(meta.get("feature_names", []))
@@ -492,9 +492,9 @@ def predict(self, X: pd.DataFrame) -> dict[str, Any]:
         out: dict[str, Any] = {}
 for name, model in self.models.items():
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(model, "predict_proba"):
     passproba = model.predict_proba(X)
 classes = getattr(model, "classes_", [])

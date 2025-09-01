@@ -30,7 +30,7 @@ except ImportError:
     passpasssystem_logger = logging.getLogger("EnhancedStep1_5")
 
 try:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 except ImportError:
     passpassdef handle_errors(...):
     passdef decorator(...):
@@ -273,9 +273,9 @@ def memory_efficient(...):
             logging.info(f"Memory before {func.__name__}: {initial_memory:.1f}MB")
 
             try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 result = await func(*args, **kwargs)
 
                 # Check memory after processing
@@ -564,9 +564,9 @@ class OptimizedUnifiedDataProcessor:
         chunk_count = 0
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
     passchunk_count += 1
                 self.logger.debug(f"Processing {source_name} chunk {chunk_count}")
@@ -715,9 +715,9 @@ class EnhancedStep1_5DataConverter:
         self.logger.info("🔄 Starting enhanced Step1_5 data conversion...")
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract parameters
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
@@ -770,9 +770,9 @@ except Exception as e:
     async def _check_unified_data_exists(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             unified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             if os.path.exists(unified_base):
     passparquet_files = []
@@ -818,9 +818,9 @@ except Exception as e:
     async def _perform_full_conversion(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Identify data sources
             data_sources = await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
 
@@ -887,9 +887,9 @@ except Exception as e:
     async def _save_unified_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create output directory
             output_dir = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             os.makedirs(output_dir, exist_ok=True)
@@ -906,9 +906,9 @@ except Exception as e:
 
             # Use pyarrow for efficient writing
             try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 import pyarrow as pa
                 import pyarrow.parquet as pq
 
@@ -990,9 +990,9 @@ async def main(...):
 
     # Execute enhanced data conversion
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         result = await step1_5.execute(training_input, pipeline_state)
 
         print("=" * 60)

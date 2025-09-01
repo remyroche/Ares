@@ -92,9 +92,9 @@ class SRWeightOptimizer:
     async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing SR Weight Optimizer...")
 
             # Initialize SR predictor
@@ -134,9 +134,9 @@ except Exception as e:
     def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate learning parameters
             if not 0 < self.learning_rate < 1:
     passself.logger.error(invalid("Learning rate must be between 0 and 1"))
@@ -165,9 +165,9 @@ except Exception as e:
     async def update_weights_online(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.update_count += 1
 
             # Calculate performance metrics for this trade
@@ -200,9 +200,9 @@ except Exception as e:
     def _calculate_trade_performance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             pnl = trade_result.get("pnl", 0.0)
             duration = trade_result.get("duration", 1.0)
             initial_capital = trade_result.get("initial_capital", 1.0)
@@ -225,9 +225,9 @@ except Exception as e:
     def _calculate_multi_objective_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Normalize metrics to [0, 1] range
             normalized_pnl = max(0, min(1, performance_metrics["total_pnl"] / 1000))  # Normalize to 1000 max
             normalized_sharpe = max(0, min(1, performance_metrics["sharpe_ratio"] / 2))  # Normalize to 2 max
@@ -249,9 +249,9 @@ except Exception as e:
     def _calculate_weight_gradients(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             gradients = {}
 
             # Calculate gradients for each weight
@@ -274,9 +274,9 @@ except Exception as e:
     def _update_weights_with_gradients(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             for weight_name, gradient in gradients.items():
     passif weight_name in self.current_weights:
     pass# Apply gradient update
@@ -318,9 +318,9 @@ except Exception as e:
     def _store_optimization_step(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             step_data = {
                 "update_count": self.update_count,
                 "timestamp": pd.Timestamp.now().isoformat(),
@@ -354,9 +354,9 @@ except Exception as e:
     async def run_batch_optimization(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Running batch optimization...")
 
             best_score = -np.inf
@@ -413,9 +413,9 @@ except Exception as e:
     def _generate_weight_combination(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Generate random weights
             weights = {}
             for weight_name in self.current_weights.keys():
@@ -436,9 +436,9 @@ except Exception as e:
     async def _test_weights_on_data(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Update SR predictor with test weights
             if self.sr_predictor:
     passpassoriginal_weights = self.sr_predictor.model_weights.copy()

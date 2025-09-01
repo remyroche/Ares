@@ -46,9 +46,9 @@ class DatabaseMigrationUtils:
         )
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create a clean copy for trading export
             shutil.copy2(self.db_manager.db_path, export_path)
 
@@ -93,9 +93,9 @@ except Exception as e:
     async def _clean_for_trading(...):
     pass"""Removes backtest-specific data from the export."""
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Remove backtest results (keep only the latest successful ones)
             backtest_results = await temp_db.get_collection("backtest_results")
             if len(backtest_results) > 1:

@@ -23,7 +23,7 @@ class DecoratorMetadata:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpasspasspass  # TODO: Add implementation
+    passpasspassself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorMetadata:
     passpass  #
     @handle_errors(
@@ -62,9 +62,9 @@ def __repr__(...):
     passreturn f"DecoratorMetadata(name='{self.name}', version='{self.version}', deprecated={self.deprecated})"
 
 class DecoratorRegistry:
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorRegistry:
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class DecoratorRegistry:
     passpass"""Central registry for all decorators with metadata and versioning."""
 

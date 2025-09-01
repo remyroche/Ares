@@ -49,9 +49,9 @@ async def main(...):
     }
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Execute from step03 onwards
         success = await orchestrator.execute_from_step(
             start_step=start_step,

@@ -21,9 +21,9 @@ def convert_csv_to_parquet(...):
         return True
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         print(f"📖 Reading CSV: {csv_path}")
         df = pd.read_csv(csv_path)
         print(f"   📊 Loaded {len(df)} rows")

@@ -190,11 +190,11 @@ RETRAINING = "retraining"
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelDriftAlert:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelDriftAlert:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelDriftAlert:
     pass"""Model drift alert."""
 
@@ -211,11 +211,11 @@ description: str
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelPerformance:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelPerformance:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModelPerformance:
     pass"""Model performance metrics."""
 

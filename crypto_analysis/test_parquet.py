@@ -44,9 +44,9 @@ def test_parquet_functionality(...):
     passparquet_path = tmp_file.name
     
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Write to Parquet
         print(f"\n📝 Writing to Parquet: {parquet_path}")
         df.to_parquet(parquet_path, compression='snappy', engine='pyarrow', index=True)

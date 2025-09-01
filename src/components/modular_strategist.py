@@ -8,9 +8,9 @@ from src.utils.warning_symbols import error, initialization_error, invalid, miss
 import numpy as np
 
 class ModularStrategist:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModularStrategist:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ModularStrategist:
     pass"""
 Enhanced modular strategist with comprehensive error handling and type safety.
@@ -140,9 +140,9 @@ context="strategy modules initialization",
 async def _initialize_strategy_modules(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize position sizing module
 if self.enable_position_sizing:
     passawait self._initialize_position_sizing()
@@ -172,9 +172,9 @@ context="position sizing initialization",
 async def _initialize_position_sizing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize position sizing strategies
 self.position_sizing_strategies = {
 "kelly_criterion": True,
@@ -196,9 +196,9 @@ context="risk management initialization",
 async def _initialize_risk_management(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize risk management strategies
 self.risk_management_strategies = {
 "stop_loss": True,
@@ -220,9 +220,9 @@ context="portfolio optimization initialization",
 async def _initialize_portfolio_optimization(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize portfolio optimization strategies
 self.portfolio_optimization_strategies = {
 "mean_variance": True,
@@ -246,9 +246,9 @@ context="dynamic rebalancing initialization",
 async def _initialize_dynamic_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize dynamic rebalancing strategies
 self.dynamic_rebalancing_strategies = {
 "threshold_rebalancing": True,
@@ -276,9 +276,9 @@ context="strategy execution",
 async def execute_strategy(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not self._validate_strategy_inputs(market_data, analysis_data):
     passreturn False
 
@@ -337,9 +337,9 @@ context="strategy inputs validation",
 def _validate_strategy_inputs(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check required market data fields
 required_market_fields = ["symbol", "price", "volume", "timestamp"]
 for field in required_market_fields:
@@ -377,9 +377,9 @@ context="position sizing",
 async def _perform_position_sizing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate Kelly Criterion
@@ -425,9 +425,9 @@ context="risk management",
 async def _perform_risk_management(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate Stop Loss
@@ -473,9 +473,9 @@ context="portfolio optimization",
 async def _perform_portfolio_optimization(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate Mean Variance
@@ -521,9 +521,9 @@ context="dynamic rebalancing",
 async def _perform_dynamic_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 results = {}
 
 # Calculate Threshold Rebalancing
@@ -564,9 +564,9 @@ return {}
 def _calculate_kelly_criterion(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Kelly Criterion calculation
 win_rate = analysis_data.get("confidence", 0.5)
 avg_win = 0.02  # 2% average win
@@ -581,9 +581,9 @@ return 0.0
 def _calculate_fixed_fraction(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Fixed Fraction calculation
 confidence = analysis_data.get("confidence", 0.5)
 base_fraction = 0.1  # 10% base position
@@ -596,9 +596,9 @@ return 0.0
 def _calculate_volatility_targeting(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Volatility Targeting calculation
 volatility = 0.02  # 2% volatility
 target_volatility = 0.01  # 1% target volatility
@@ -611,9 +611,9 @@ return 0.0
 def _calculate_risk_parity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Risk Parity calculation
 return 0.5  # Equal risk contribution
 
@@ -626,9 +626,9 @@ return 0.0
 def _calculate_stop_loss(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Stop Loss calculation
 current_price = market_data.get("price", 0)
 stop_loss_pct = 0.02  # 2% stop loss
@@ -641,9 +641,9 @@ return 0.0
 def _calculate_take_profit(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Take Profit calculation
 current_price = market_data.get("price", 0)
 take_profit_pct = 0.04  # 4% take profit
@@ -656,9 +656,9 @@ return 0.0
 def _calculate_trailing_stop(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Trailing Stop calculation
 current_price = market_data.get("price", 0)
 trailing_pct = 0.015  # 1.5% trailing stop
@@ -671,9 +671,9 @@ return 0.0
 def _calculate_position_limits(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Position Limits calculation
 return {
 "max_position_size": 0.25,  # 25% max position
@@ -689,9 +689,9 @@ return {"max_position_size": 0.0, "max_leverage": 0.0, "max_drawdown": 0.0}
 def _calculate_mean_variance(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Mean Variance calculation
 return {
 "optimal_weight": 0.6,
@@ -711,9 +711,9 @@ return {
 def _calculate_black_litterman(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Black Litterman calculation
 return {
 "optimal_weight": 0.55,
@@ -733,9 +733,9 @@ return {
 def _calculate_portfolio_risk_parity(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Portfolio Risk Parity calculation
 return {
 "risk_contribution": 0.5,
@@ -753,9 +753,9 @@ return {
 def _calculate_maximum_sharpe(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Maximum Sharpe calculation
 return {
 "optimal_weight": 0.65,
@@ -777,9 +777,9 @@ return {
 def _calculate_threshold_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Threshold Rebalancing calculation
 drift = np.random.random() * 0.1  # Random drift
 threshold = 0.05  # 5% threshold
@@ -792,9 +792,9 @@ return False
 def _calculate_calendar_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Calendar Rebalancing calculation
 current_time = datetime.now()
 last_rebalance = datetime.now() - timedelta(days=30)
@@ -808,9 +808,9 @@ return False
 def _calculate_drift_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Drift Rebalancing calculation
 drift = np.random.random() * 0.08  # Random drift
 max_drift = 0.03  # 3% max drift
@@ -823,9 +823,9 @@ return False
 def _calculate_volatility_rebalancing(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Simulate Volatility Rebalancing calculation
 current_volatility = np.random.random() * 0.05  # Random volatility
 target_volatility = 0.02  # 2% target volatility
@@ -844,9 +844,9 @@ context="strategy results storage",
 async def _store_strategy_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Add timestamp
 self.strategy_results["timestamp"] = datetime.now().isoformat()
 
@@ -870,9 +870,9 @@ context="strategy results getting",
 def get_strategy_results(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if strategy_type:
     passreturn self.strategy_results.get(strategy_type, {})
 return self.strategy_results.copy()
@@ -889,9 +889,9 @@ context="strategy history getting",
 def get_strategy_history(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 history = self.strategy_history.copy()
 
 if limit:
@@ -932,9 +932,9 @@ async def stop(...) -> ...:
     passself.logger.info("🛑 Stopping Modular Strategist...")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Stop strategizing
 self.is_strategizing = False
 
@@ -960,9 +960,9 @@ context="modular strategist setup",
 async def setup_modular_strategist(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 global modular_strategist
 
 if config is None:

@@ -21,7 +21,7 @@ PerformanceLevel,
 
 
 class EnhancedPredictionIntegrator:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 """
 Enhanced Prediction Integrator for Analyst that integrates price and confidence predictions
 from the enhanced training manager steps 6-14.

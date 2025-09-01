@@ -3,7 +3,7 @@
 Script to systematically update all remaining pipeline steps with enhanced MLflow integration.
 
 This script will:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 1. Add enhanced MLflow imports to all step files
 2. Add @with_enhanced_mlflow_logging decorator to execute methods
 3. Add detailed reporting and artifact logging methods
@@ -55,9 +55,9 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
     ) -> None:
         """Log step {step_num} artifacts and create detailed report."""
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -162,9 +162,9 @@ def extract_step_number(...) -> ...:
 def add_mlflow_imports(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 
@@ -212,9 +212,9 @@ except Exception as e:
 def add_mlflow_decorator(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 
@@ -269,9 +269,9 @@ except Exception as e:
 def add_artifact_logging_method(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

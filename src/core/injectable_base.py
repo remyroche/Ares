@@ -22,9 +22,9 @@ IStateManager,
 
 
 class InjectableBase:
-    passpasspass  # TODO: Add implementation
+    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class InjectableBase:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class InjectableBase:
     pass"""
 Base class for all injectable trading components.
@@ -43,9 +43,9 @@ self._initialized: bool = False
 if not hasattr(self, "print"):
     passdef _shim_print(message: str) -> None:
                 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.error(str(message))
 except Exception as e:  # noqa: BLE001 - fallback safety
 print(
@@ -85,9 +85,9 @@ def is_initialized(...) -> ...:
 
 
 class TradingComponentBase(InjectableBase):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingComponentBase(InjectableBase):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class TradingComponentBase(...):
     """..."""
     passdef __init__(...):

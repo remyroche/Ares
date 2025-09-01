@@ -43,8 +43,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
-    passpasspass  # TODO: Add implementation
-# TODO: Add implementation
+    passpassself.logger.info(...)  # TODO: Add specific parameters and implementation
 class RegimeTripleBarrierParams:
     pass"""Triple barrier parameters for a specific regime."""
 
@@ -72,8 +71,7 @@ class RegimeTripleBarrierParams:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class RegimeOptimizationResult:
     pass"""Result of regime - specific optimization."""
 
@@ -113,8 +111,7 @@ class RegimeOptimizationResult:
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class RegimeSpecificOptimizationConfig:
     pass"""Configuration for regime - specific optimization."""
 

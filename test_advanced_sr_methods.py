@@ -298,9 +298,9 @@ async def test_advanced_sr_methods(...):
     # Test 6: Basic S/R Context (should include advanced methods)
     print("\n🔍 Testing Enhanced S/R Context...")
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         current_price = market_data['close'].iloc[-1]
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         print(f"✅ Enhanced S/R Context: {len(sr_context)} context elements")

@@ -1032,9 +1032,9 @@ def _train_base_models(...):
             bool: True if training successful
         """
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Initialize base models if not already done
             if not self.models:
     passself._initialize_base_models()
@@ -1382,9 +1382,9 @@ context="meta features extraction",
 def _get_meta_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             meta_features = {}
             
             # Get predictions from all base models

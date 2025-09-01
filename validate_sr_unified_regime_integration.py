@@ -48,9 +48,9 @@ class SRUnifiedRegimeIntegrationValidator:
             }
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check syntax
             if not self.check_file_syntax(sr_file):
     passreturn {
@@ -161,9 +161,9 @@ except Exception as e:
             }
 
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check syntax
             if not self.check_file_syntax(sr_file):
     passreturn {

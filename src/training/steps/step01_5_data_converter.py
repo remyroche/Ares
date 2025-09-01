@@ -163,9 +163,9 @@ class ColumnVerifier:
             Dictionary with missing columns information
         """
         try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"🔍 Verifying missing columns for {data_type} data...")
 
             missing_info = {
@@ -258,9 +258,9 @@ except Exception as e:
     def calculate_missing_columns(...) -> ...:
     passpass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("🔄 Calculating missing columns...")
 
             # Create a copy to avoid modifying original

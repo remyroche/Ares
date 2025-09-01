@@ -12,11 +12,11 @@ import pandas as pd
 
 @dataclass
 class PlaceholderDataClass:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class WindowDatasetConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class WindowDatasetConfig:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class WindowDatasetConfig:
     passpre_window: int
 post_window: int
@@ -26,9 +26,9 @@ downsample_near_duplicates: bool
 
 
 class EventWindowDatasetBuilder:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EventWindowDatasetBuilder:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EventWindowDatasetBuilder:
     pass"""
 Creates a dataset of pre/post windows centered on event triggers.
@@ -119,9 +119,9 @@ def build(...) -> ...:
 
 # Try dataset cache
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.cache_dir:
     passos.makedirs(self.cache_dir, exist_ok=True)
 key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
@@ -220,9 +220,9 @@ else:
 # Macro context at t0 (static across pre-window for simplicity)
 if bool(self.ctx_cfg.get("enable_macro_context", True)):
     passpasstry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 macro_cols = []
 # 1h EMA50 and ATR pct if available
 if (
@@ -324,9 +324,9 @@ samples = kept
 
 # Save minimal meta cache
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.cache_dir:
     passwith open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
     passjson.dump(

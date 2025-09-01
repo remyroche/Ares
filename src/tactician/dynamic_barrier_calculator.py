@@ -52,9 +52,9 @@ class DynamicBarrierCalculator:
     def _load_analyst_config(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Try to load from Analyst triple barrier labeling component
             analyst_config_path = Path("src/training/steps/step04_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py")
 
@@ -77,9 +77,9 @@ except Exception as e:
             for config_path in config_paths:
     passif Path(config_path).exists():
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         with open(config_path, 'r') as f:
     passconfig_data = yaml.safe_load(f)
 
@@ -156,9 +156,9 @@ except Exception as e:
             - barrier_25_25: (25% upper, 25% lower)
         """
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate timeframe
             if timeframe not in self.timeframes:
     passself.logger.warning(f"⚠️ Invalid timeframe {timeframe}, using primary timeframe {self.primary_timeframe}")
@@ -207,9 +207,9 @@ except Exception as e:
     def calculate_multi_timeframe_barriers(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             barriers = {}
 
             # Calculate 1m barriers (2 combinations)
@@ -249,9 +249,9 @@ except Exception as e:
     def validate_barrier_calculation(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Calculate 2 barrier combinations
             barriers = self.calculate_dynamic_barriers(timeframe)
 

@@ -175,9 +175,9 @@ class SurrogateTrainingIntegration:
         async def training_objective(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 self.logger.info(f"🔬 Testing hyperparameters: {params}")
 
                 # Update training configuration with hyperparameters

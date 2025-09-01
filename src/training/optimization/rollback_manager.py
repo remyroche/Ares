@@ -140,9 +140,9 @@ class RollbackManager:
     def create_rollback_point(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get current configuration from the main config
             current_config = self.config.copy()
 
@@ -184,9 +184,9 @@ except Exception as e:
     def _save_rollback_point(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             rollback_dir = Path(self.storage_config["rollback_directory"])
             point_file = rollback_dir / f"{point_id}.json"
 
@@ -211,9 +211,9 @@ except Exception as e:
     def load_rollback_points(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             rollback_dir = Path(self.storage_config["rollback_directory"])
 
             if not rollback_dir.exists():
@@ -223,9 +223,9 @@ except Exception as e:
             # Load all rollback point files
             for point_file in rollback_dir.glob("*.json"):
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                     with open(point_file, "r") as f:
     passpoint_data = json.load(f)
 
@@ -263,9 +263,9 @@ except Exception as e:
     def _cleanup_old_rollback_points(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             max_points = self.storage_config["max_rollback_points"]
             auto_cleanup_days = self.storage_config["auto_cleanup_days"]
 
@@ -301,9 +301,9 @@ except Exception as e:
     def _remove_rollback_point(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Remove from memory
             if point_id in self.rollback_points:
     passdel self.rollback_points[point_id]
@@ -328,9 +328,9 @@ except Exception as e:
     def validate_rollback_point(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Check if rollback point exists
             if target_point_id not in self.rollback_points:
     passself.logger.warning(f"Rollback point not found: {target_point_id}")
@@ -363,9 +363,9 @@ except Exception as e:
     def execute_rollback(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate rollback point
             if not self.validate_rollback_point(target_point_id):
     passreturn False
@@ -405,9 +405,9 @@ except Exception as e:
     def list_rollback_points(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             points = {}
             for point_id, rollback_point in self.rollback_points.items():
     passpoints[point_id] = {

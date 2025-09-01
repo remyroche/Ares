@@ -26,9 +26,9 @@ from src.utils.state_manager import StateManager  # noqa: E402
 from src.utils.warning_symbols import error, missing  # noqa: E402
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 	import mlflow  # type: ignore
 except Exception as e:  # noqa: BLE001
 	mlflow = None  # type: ignore
@@ -41,9 +41,9 @@ def setup_challenger_model(...) -> ...:
 	logger = system_logger.getChild("SetupChallengerModel")
 
 	try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		# Initialize state manager (with default config)
 		state_manager = StateManager({})
 
@@ -54,9 +54,9 @@ except Exception as e:
 
 		client = mlflow.tracking.MlflowClient()
 		try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			run = client.get_run(run_id)
 		except Exception as e:  # noqa: BLE001
 			print(error(f"Could not find MLflow run {run_id}: {e}"))
@@ -82,9 +82,9 @@ def list_available_models(...) -> ...:
 	logger = system_logger.getChild("ListModels")
 
 	try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		if mlflow is None:
     passprint(error("MLflow is not installed or not available"))
 			return False
@@ -136,9 +136,9 @@ def clear_challenger_model(...) -> ...:
 	logger = system_logger.getChild("ClearChallengerModel")
 
 	try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		# Initialize state manager
 		state_manager = StateManager({})
 

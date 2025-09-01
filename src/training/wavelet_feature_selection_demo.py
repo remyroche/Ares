@@ -1,8 +1,7 @@
 """Wavelet Feature Selection Demo.
 
 This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:
-    pass  # TODO: Add implementation
-# TODO: Add implementation
+    self.logger.info(...)  # TODO: Add specific parameters and implementation
 1. Run full wavelet analysis
 2. Train Discovery Model on rich feature set
 3. Perform feature selection using permutation importance and SHAP

@@ -17,9 +17,9 @@ def extract_feature_issues_from_logs(...) -> ...:
     with open(log_file_path) as f:
     passfor line in f:
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 if line.strip().startswith("{"):
     passlog_entry = json.loads(line.strip())
                     message = log_entry.get("message", "")

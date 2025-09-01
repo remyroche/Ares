@@ -159,9 +159,9 @@ class SRBacktestingValidator:
     async def initialize_data_integration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if self.logger:
     passself.logger.info("🔧 Initializing data integration for S/R backtesting...")
 
@@ -199,9 +199,9 @@ except Exception as e:
     async def validate_sr_levels(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
 
             # Initialize results
@@ -235,9 +235,9 @@ except Exception as e:
     async def _test_single_level(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             level_price = level.get("price", 0.0)
             level_type = level.get("type", "support")
             level_strength = level.get("enhanced_strength", level.get("strength", 0.5))
@@ -289,9 +289,9 @@ except Exception as e:
     async def _analyze_level_interactions(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             touches = 0
             bounces = 0
             breakouts = 0
@@ -348,9 +348,9 @@ except Exception as e:
             "bounce", "breakout", "false_breakout", or "inconclusive"
         """
         try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Look ahead for confirmation
             end_index = min(touch_index + self.confirmation_periods, len(market_data))
             future_data = market_data.iloc[touch_index:end_index]
@@ -398,9 +398,9 @@ except Exception as e:
     async def _analyze_volume_patterns(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not touch_volumes or len(touch_volumes) == 0:
     passreturn
 
@@ -465,9 +465,9 @@ except Exception as e:
     async def _calculate_volume_cluster_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not touch_indices:
     passreturn 0.0
 
@@ -506,9 +506,9 @@ except Exception as e:
     def _calculate_level_confidence(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             confidence = 0.0
 
             # Base confidence from bounce rate (40% weight)
@@ -570,9 +570,9 @@ except Exception as e:
     async def _calculate_overall_metrics(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not result.level_tests:
     passreturn
 
@@ -641,9 +641,9 @@ except Exception as e:
     async def _calculate_sr_validation_score(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # S/R validation score components (0-1)
             bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
 
@@ -678,9 +678,9 @@ except Exception as e:
     async def _analyze_time_based_factors(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if not touch_indices:
     passreturn
 

@@ -220,9 +220,9 @@ def build_model(...) -> ...:
     """..."""
     passkey = model_key.lower()
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 mapping: dict[str, Any] = {
 "xgboost": xgb.XGBClassifier(
 n_estimators=int(params.get("n_estimators", 400)),
@@ -295,9 +295,9 @@ random_state=42,
 
 if key == "hmm_gaussian":
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 class HMMWrapper:
 
     @handle_errors(
@@ -315,9 +315,9 @@ class HMMWrapper:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class HMMWrapper:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class HMMWrapper:
     passdef __init__(...):
     passdef __init__(...):

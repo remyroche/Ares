@@ -11,9 +11,9 @@ logger, logging.getLogger(__name__)
 def _coerce_series_numeric(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 s, series.copy() if copy else series
 if not pd.api.types.is_numeric_dtype(s):
     passs, pd.to_numeric(s, errors="coerce")
@@ -24,9 +24,9 @@ except Exception:
 def safe_pct_change(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if fill_method:
     passseries, series.fillna(method = fill_method, limit = limit)
 s, _coerce_series_numeric(series)
@@ -46,9 +46,9 @@ return pd.Series(0, index = series.index, dtype="float64")
 def safe_log_returns(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if fill_method:
     passseries, series.fillna(method = fill_method, limit = limit)
 s, _coerce_series_numeric(series)
@@ -69,9 +69,9 @@ return pd.Series(0, index = series.index, dtype="float64")
 def validate_dataframe_for_ml(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 df_clean, df.copy()
 numeric_cols, df_clean.select_dtypes(include=[np.number]).columns
 if len(numeric_cols) == 0:
@@ -127,9 +127,9 @@ NumberLike, Union[pd.Series, np.ndarray, float, int]
 def safe_division(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Series / Series
 if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
     passwith np.errstate(divide="ignore", invalid="ignore"):

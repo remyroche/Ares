@@ -6,8 +6,7 @@ This step applies regime-aware triple barrier labeling for Tactician multi-outco
 with regime-specific barrier calculation, precision thresholds = and quality filters.
 
 Enhanced for high precision completion of Analyst signals with:
-    passpasspass  # TODO: Add implementation
-# TODO: Add implementation
+    passpassself.logger.info(...)  # TODO: Add specific parameters and implementation
 - Regime-specific barrier calculation
 - Per-regime precision thresholds
 - Regime-specific quality filters

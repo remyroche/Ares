@@ -27,7 +27,7 @@ with_tracing_span,
 
 
 class UnifiedRegimeClassifier:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 """
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 

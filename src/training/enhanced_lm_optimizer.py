@@ -3,7 +3,7 @@
 """Enhanced LM Model Optimizer for Step6 = Step6_5 = and Step9.
 
 This module provides comprehensive optimization for Language Model (LM) components:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 1. Advanced feature selection with multiple algorithms: Uses variance threshold, mutual information, and SHAP analysis
 2. L1-L2 regularization with model-specific tuning: ElasticNet with optimal alpha and l1_ratio for each model type
 3. Optuna hyperparameter optimization in batches: Efficient batch processing with early stopping
@@ -334,9 +334,9 @@ class EnhancedLMOptimizer:
     async def _save_optuna_artifacts(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
     if self.optuna_study:
     passoptuna_artifacts = {
                     "study_name": self.optuna_study.study_name = "n_trials": len(self.optuna_study.trials) = "best_value": self.optuna_study.best_value if self.optuna_study.trials else:

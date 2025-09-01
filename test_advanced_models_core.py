@@ -18,9 +18,9 @@ def test_model_configuration_framework(...):
     print("🧪 Testing Model Configuration Framework...")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test the configuration structure
         config = {
             "timeframe": "5m",
@@ -207,9 +207,9 @@ def test_training_steps_integration(...):
     print("🧪 Testing Training Steps Integration...")
 
     try:
-    passpasspass  # TODO: Add proper exception handling
+    passpassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Test Step 6 configuration
         step6_config = {
             "timeframe": "5m",
@@ -300,9 +300,9 @@ def test_model_type_coverage(...):
     print("🧪 Testing Model Type Coverage...")
 
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Define all required model types
         required_model_types = [
             "lightgbm",      # Tree-based gradient boosting

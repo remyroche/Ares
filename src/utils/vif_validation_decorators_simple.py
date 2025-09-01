@@ -15,9 +15,9 @@ from contextlib import contextmanager
 
 # Try to import system logger, fallback to basic logging if not available
 try:
-    passpasspasspass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
@@ -74,9 +74,9 @@ e:
         self.config = config or {}
         self.logger = system_logger.getChild("VIFValidationError")
         self.is_initialized = False
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class VIFValidationError(Exception):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class VIFValidationError(...):
     """..."""
     passpass
@@ -98,9 +98,9 @@ old_handler, signal.signal(signal.SIGALRM, timeout_handler)
 signal.alarm(seconds)
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 yield
 finally:
     pass# Restore original handler and cancel alarm
@@ -256,9 +256,9 @@ def wrapper(...):
     passlogger, system_logger.getChild("VIFValidation")
 
 try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 with timeout_context(timeout_seconds, "VIF calculation"):
     passresult, func(*args, **kwargs)
 logger.info(f"✅ VIF Validation: VIF calculation completed successfully in {timeout_seconds}s")
@@ -319,9 +319,9 @@ elif hasattr(result, 'vif'):
 def _validate_nan_values(...) -> ...:
     pass"""..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Try to use pandas methods if available
 if hasattr(data, 'isna'):
     passnan_count, data.isna().sum().sum()
@@ -347,9 +347,9 @@ except Exception:
 def _validate_infinite_values(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Try to use numpy methods if available
 if hasattr(data, 'select_dtypes'):
     passnumeric_data, data.select_dtypes(include=['number'])
@@ -383,9 +383,9 @@ except Exception:
 def _validate_zero_variance_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(data, 'var'):
     passvariances, data.var()
 zero_var_features = [col for col, var_val in variances.items() if var_val == 0]
@@ -407,9 +407,9 @@ except Exception:
 def _validate_duplicate_features(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(data, 'columns'):
     passduplicate_features = []
 for i, col1 in enumerate(data.columns):
@@ -434,9 +434,9 @@ except Exception:
 def _validate_nan_vif_values(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(vif_values, 'isna'):
     passnan_vif_features, vif_values[vif_values.isna()].index.tolist()
 else:
@@ -457,9 +457,9 @@ except Exception:
 def _validate_infinite_vif_values(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(vif_values, 'values'):
     passinfinite_vif_features = [idx for idx, val in zip(vif_values.index, vif_values.values) if val == float('inf') or val == float('-inf')]
 else:
@@ -480,9 +480,9 @@ except Exception:
 def _validate_zero_vif_values(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(vif_values, 'values'):
     passzero_vif_features = [idx for idx, val in zip(vif_values.index, vif_values.values) if val == 0]
 else:
@@ -503,9 +503,9 @@ except Exception:
 def _validate_high_vif_values(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if hasattr(vif_values, 'values'):
     passhigh_vif_features = [idx for idx, val in zip(vif_values.index, vif_values.values) if val > max_threshold]
 max_vif_value, max(vif_values.values) if vif_values.values else 0.0

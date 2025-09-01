@@ -31,7 +31,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    passpass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 # TODO: Add proper implementation
     @numba.jit(nopython = True, cache = True)
     def _numba_regime_aware_triple_barrier_labels(...) -> ...:
@@ -96,8 +96,7 @@ class PlaceholderDataClass:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpass  # TODO: Add implementation
-# TODO: Add implementation
+    passself.logger.info(...)  # TODO: Add specific parameters and implementation
 class RegimeTripleBarrierConfig:
     pass"""Configuration for regime - specific triple barrier parameters."""
 

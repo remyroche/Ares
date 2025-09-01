@@ -135,9 +135,9 @@ self.model_performance: Dict[str, float] = {}
 async def initialize(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Scenario-Based Predictor...")
 
             # Validate configuration
@@ -158,9 +158,9 @@ except Exception as e:
 def _validate_configuration(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate scenarios
             for scenario_id, scenario in self.scenarios.items():
     passif scenario["profit_target"] <= 0 and scenario_id != 5:  # Neutral can have 0
@@ -198,9 +198,9 @@ except Exception as e:
 def prepare_scenario_targets(...) -> ...:
     """..."""
     passtry:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         if len(X) != len(market_data):
     passraise ValueError("Feature array and market data must have same length")
 

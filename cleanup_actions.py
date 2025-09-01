@@ -10,9 +10,9 @@ import re
 def cleanup_file(...):
     passpass"""Clean up a single file."""
     try:
-    passpass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    passpasspasspasspasspasspasspass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, encoding, "utf-8") as f:
     passcontent = f.read()
 

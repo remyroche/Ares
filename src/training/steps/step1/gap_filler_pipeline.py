@@ -49,6 +49,9 @@ class GapFillerPipeline:
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -104,6 +107,9 @@ class GapFillerPipeline:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
         async with self.session.get(url, ssl = ssl_context) as resp:
@@ -288,6 +294,9 @@ class GapFillerPipeline:
 
         for file_path in all_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Detect gaps in this file
                 gaps = self.detect_gaps_in_file(file_path)
 
@@ -331,6 +340,9 @@ class GapFillerPipeline:
         logger.info(f"🚀 Starting gap filling pipeline for {exchange}_{symbol}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = await self.process_all_files(symbol, exchange)
             logger.info(f"🎉 Gap filling pipeline completed for {exchange}_{symbol}")
         return results

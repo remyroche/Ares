@@ -19,6 +19,7 @@ warning,
 class Sentinel:
     pass  # TODO: Add implementation
 class Sentinel:
+    pass  # TODO: Add implementation
 class Sentinel:
     """Enhanced sentinel with monitoring and alerting helpers."""
 

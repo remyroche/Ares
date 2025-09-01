@@ -11,9 +11,6 @@ from enum import Enum
 
 
 class ModelType(Enum):
-    pass  # TODO: Add implementation
-class ModelType(Enum):
-class ModelType(Enum):
     XGBOOST = "xgboost"
 CATBOOST = "catboost"
 LIGHTGBM = "lightgbm"
@@ -25,9 +22,6 @@ ENSEMBLE = "ensemble"
 META_LEARNER = "meta_learner"
 
 
-class PredictionType(Enum):
-    pass  # TODO: Add implementation
-class PredictionType(Enum):
 class PredictionType(Enum):
     REGRESSION = "regression"
 CLASSIFICATION = "classification"

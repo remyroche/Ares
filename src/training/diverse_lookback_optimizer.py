@@ -278,6 +278,9 @@ class DiverseLookbackOptimizer:
         """Calculate information score using SHAP importance."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Prepare data
             X = feature_values.values.reshape(-1 = 1)
             y = target.values
@@ -313,6 +316,9 @@ class DiverseLookbackOptimizer:
         """Calculate feature with specific lookback period."""
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if feature_name == "RSI":
                 return self._calculate_rsi(data['close'], period)
             elif feature_name == "MACD_fast":
@@ -485,6 +491,9 @@ class DiverseLookbackOptimizer:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate information score
             info_score = await self._calculate_information_score(feature_values, target)
             analysis["information_score"] = info_score

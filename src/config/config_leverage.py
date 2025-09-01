@@ -10,9 +10,12 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class LeverageConfig:
     pass  # TODO: Add implementation
 class LeverageConfig:
+    pass  # TODO: Add implementation
 class LeverageConfig:
     """Optimizable leverage parameters."""
 

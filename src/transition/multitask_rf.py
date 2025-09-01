@@ -12,9 +12,12 @@ import pandas as pd
 import pickle
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class MTRFConfig:
     pass  # TODO: Add implementation
 class MTRFConfig:
+    pass  # TODO: Add implementation
 class MTRFConfig:
     enabled: bool
 n_estimators: int
@@ -27,6 +30,7 @@ enable_regression: bool
 class MultiTaskRandomForest:
     pass  # TODO: Add implementation
 class MultiTaskRandomForest:
+    pass  # TODO: Add implementation
 class MultiTaskRandomForest:
     """
 Simple multi-head trainer built on RF:

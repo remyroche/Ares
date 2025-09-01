@@ -27,6 +27,7 @@ logger, logging.getLogger(__name__)
 class MacM1ParallelOptimizer:
     pass  # TODO: Add implementation
 class MacM1ParallelOptimizer:
+    pass  # TODO: Add implementation
 class MacM1ParallelOptimizer:
     """
 Parallel processing optimizer with Apple Silicon awareness.

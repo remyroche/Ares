@@ -12,9 +12,12 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class TimeframeConfig:
     pass  # TODO: Add implementation
 class TimeframeConfig:
+    pass  # TODO: Add implementation
 class TimeframeConfig:
     """Configuration for each timeframe in the ensemble."""
 
@@ -28,9 +31,12 @@ False  # Hazard models are for regime transitions only
 
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class EnsembleConfig:
     pass  # TODO: Add implementation
 class EnsembleConfig:
+    pass  # TODO: Add implementation
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
 

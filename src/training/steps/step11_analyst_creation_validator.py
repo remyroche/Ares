@@ -39,6 +39,9 @@ class Step11AnalystCreationValidator:
         self.logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Check if analyst models directory exists
             analyst_models_dir = Path(data_dir) / "analyst_models"
         if not analyst_models_dir.exists():
@@ -95,6 +98,9 @@ class Step11AnalystCreationValidator:
     def _validate_analyst_model(self = model_file: Path = regime_name: str) -> bool:
         """Validate an analyst model file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
         # Check file size (should be reasonable for a model)
@@ -125,6 +131,9 @@ class Step11AnalystCreationValidator:
     def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool:
         """Validate a metadata file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
         # Load and validate the metadata file
@@ -185,6 +194,9 @@ def step11_analyst_creation_validator(
     logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         validator = Step11AnalystCreationValidator(config)
         result = validator.validate_step11_analyst_creation(
             symbol, exchange = data_dir, training_input

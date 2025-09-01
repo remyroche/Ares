@@ -12,6 +12,7 @@ with_tracing_span,
 class LiquidationRiskModel:
     pass  # TODO: Add implementation
 class LiquidationRiskModel:
+    pass  # TODO: Add implementation
 class LiquidationRiskModel:
     """
 Simplified Liquidation Risk Model that takes ML confidence predictions

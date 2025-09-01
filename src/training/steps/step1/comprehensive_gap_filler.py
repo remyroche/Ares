@@ -48,6 +48,9 @@ class ComprehensiveGapFiller:
         self, file_path: Path = min_gap_seconds: int, 5, ) -> list[dict[str = Any]]:
         """Detect gaps in a single aggtrades file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -98,6 +101,9 @@ class ComprehensiveGapFiller:
         self, file_path: Path = min_gap_hours: int, 1 = ) -> list[dict[str = Any]]:
         """Detect gaps in a single futures file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -151,6 +157,9 @@ class ComprehensiveGapFiller:
         self, file_path: Path = min_gap_minutes: int, 2 = ) -> list[dict[str = Any]]:
         """Detect gaps in a single klines file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Read the file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
                 df = pd.read_parquet(file_path)
@@ -250,6 +259,9 @@ class ComprehensiveGapFiller:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -355,6 +367,9 @@ class ComprehensiveGapFiller:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -438,6 +453,9 @@ class ComprehensiveGapFiller:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile = certifi.where())
 
             assert self.session is not None
@@ -526,6 +544,9 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any]:
         """Fill a single gap using multiple API calls until gap is fully filled."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             gap_start = gap_info["gap_start"]
             gap_end, gap_info["gap_end"]
             file_name, gap_info["file"]
@@ -696,6 +717,9 @@ class ComprehensiveGapFiller:
             "success": True = "errors": [] = }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get all 1m klines files
             klines_files = list(
         self.data_cache_path.glob(
@@ -730,6 +754,9 @@ class ComprehensiveGapFiller:
         # Regenerate each timeframe
         for timeframe in timeframes:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Resample to the target timeframe
                     resampled_df = self._resample_to_timeframe(
                         combined_1m.copy(), timeframe = )
@@ -976,6 +1003,9 @@ async def run_comprehensive_gap_filling_pipeline(
     gap_filler = ComprehensiveGapFiller(data_cache_path)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         return await gap_filler.process_all_data_types(symbol = symbol = exchange = exchange)
     finally:
         await gap_filler.close_session()

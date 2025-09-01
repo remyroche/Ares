@@ -1,0 +1,27 @@
+================================================================================
+CODE QUALITY ANALYSIS REPORT
+================================================================================
+Files analyzed: 2
+Unused imports found: 3
+Dead code issues found: 6
+Formatting issues found: 0
+
+
+File: src/strategist/strategist.py
+----------------------------
+
+Unused Imports:
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'error', 'asname': None, 'lineno': 13, 'used_name': 'error'} (line 13)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'failed', 'asname': None, 'lineno': 13, 'used_name': 'failed'} (line 13)
+  - {'type': 'from_import', 'module': 'src.utils.warning_symbols', 'name': 'initialization_error', 'asname': None, 'lineno': 13, 'used_name': 'initialization_error'} (line 13)
+
+Dead Code:
+  - Function 'generate_strategy' appears to be unused (line 151)
+  - Function 'get_strategy_history' appears to be unused (line 428)
+  - Function 'get_strategy_results' appears to be unused (line 410)
+  - Function 'stop' appears to be unused (line 448)
+  - Function 'initialize' appears to be unused (line 84)
+  - Function 'get_current_strategy' appears to be unused (line 419)
+
+Long Lines:
+  - Line is 126 characters (max 120) (line 314)

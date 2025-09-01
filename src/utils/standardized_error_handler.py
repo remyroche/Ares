@@ -14,18 +14,12 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 from .logger import system_logger
 
 class ErrorSeverity(Enum):
-    pass  # TODO: Add implementation
-class ErrorSeverity(Enum):
-class ErrorSeverity(Enum):
     """Error severity levels."""
 CRITICAL = "critical"
 ERROR = "error"
 WARNING = "warning"
 INFO = "info"
 
-class ErrorCategory(Enum):
-    pass  # TODO: Add implementation
-class ErrorCategory(Enum):
 class ErrorCategory(Enum):
     """Error categories for classification."""
 DATA_QUALITY = "data_quality"
@@ -40,6 +34,7 @@ UNKNOWN = "unknown"
 class ErrorContext:
     pass  # TODO: Add implementation
 class ErrorContext:
+    pass  # TODO: Add implementation
 class ErrorContext:
     """Error context information."""
 
@@ -68,6 +63,7 @@ return {
 class ErrorRecord:
     pass  # TODO: Add implementation
 class ErrorRecord:
+    pass  # TODO: Add implementation
 class ErrorRecord:
     """Error record with full context."""
 
@@ -185,6 +181,7 @@ return {
 class StandardizedErrorHandler:
     pass  # TODO: Add implementation
 class StandardizedErrorHandler:
+    pass  # TODO: Add implementation
 class StandardizedErrorHandler:
     """Centralized error handling system."""
 

@@ -24,6 +24,9 @@ sys.path.insert(0 = str(project_root))
 
 # Import enhanced utilities
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     from src.utils.enhanced_error_handling import (
         retry_with_backoff, circuit_breaker, categorize_errors = RetryableError, NonRetryableError, DATA_OPERATION_ERRORS
     )
@@ -96,6 +99,9 @@ class EnhancedStep1DataCollection:
         self.logger.info("🚀 Starting enhanced data collection...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize directories
         await self._initialize_directories()
 
@@ -138,6 +144,9 @@ class EnhancedStep1DataCollection:
     async def _download_data_with_resilience(self, training_input: Dict[str, Any]) -> bool:
         """Download data with enhanced resilience."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol" = self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -191,6 +200,9 @@ class EnhancedStep1DataCollection:
     async def _process_and_validate_data(self, training_input: Dict[str = Any]) -> bool:
         """Process and validate downloaded data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -252,6 +264,9 @@ class EnhancedStep1DataCollection:
         chunk_count = 0
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         for chunk in pd.read_parquet(file_path = chunksize = self.config.chunk_size):
                 chunk_count += 1
         self.logger.debug(f"Processing chunk {chunk_count}")
@@ -321,6 +336,9 @@ class EnhancedStep1DataCollection:
     async def _log_detailed_data_extract(self = symbol: str, exchange: str, timeframe: str = data_dir: str):
         """Log detailed information about downloaded data."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             klines_file = os.path.join(data_dir = f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
             aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
 
@@ -329,6 +347,9 @@ class EnhancedStep1DataCollection:
         for file_path = file_type in [(klines_file, "klines"), (aggtrades_file = "aggtrades")]:
         if os.path.exists(file_path):
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get file size
                         file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
 
@@ -423,6 +444,9 @@ if __name__ == "__main__":
 
         # Execute enhanced data collection
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result = await step1.execute(training_input, pipeline_state)
 
             print("=" * 60)

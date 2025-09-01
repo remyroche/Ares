@@ -39,6 +39,9 @@ async def download_all_data_with_consolidation(
 
     # Preferred path: optimized downloader
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from backtesting.ares_data_downloader_optimized import (
             DownloadConfig as OptimizedDownloadConfig, )
         from backtesting.ares_data_downloader_optimized import (
@@ -57,6 +60,9 @@ async def download_all_data_with_consolidation(
 
     # Fallback: clean downloader
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from backtesting.ares_data_downloader_clean import (
             CleanDataDownloader = )
         from backtesting.ares_data_downloader_clean import (

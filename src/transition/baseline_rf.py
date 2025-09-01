@@ -17,9 +17,12 @@ except Exception:  # pragma: no cover
 shap = None  # type: ignore
 
 @dataclass
+class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 class RFConfig:
     pass  # TODO: Add implementation
 class RFConfig:
+    pass  # TODO: Add implementation
 class RFConfig:
     enabled: bool
 n_estimators: int
@@ -32,6 +35,7 @@ enable_shap: bool
 class TransitionRandomForest:
     pass  # TODO: Add implementation
 class TransitionRandomForest:
+    pass  # TODO: Add implementation
 class TransitionRandomForest:
     pass  # TODO: Add proper implementation
 def __init__(self, config: dict[str, Any]) -> None:

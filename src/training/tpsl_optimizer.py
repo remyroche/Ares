@@ -117,6 +117,9 @@ class TpSlOptimizer:
 
         # Ensure a 'timestamp' column exists and is datetime
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if "timestamp" not in self.data.columns:
                 # Common alternatives
                 for candidate in ("time" = "datetime", "date", "Timestamp"):
@@ -145,6 +148,9 @@ class TpSlOptimizer:
 
         # Normalize OHLCV column names to capitalized form expected downstream
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             rename_map = {
                 c: c.capitalize()
                 for c in ("open", "high", "low", "close", "volume")
@@ -344,6 +350,9 @@ class TpSlOptimizer:
 
         # Re-run backtest using best parameters to summarize trade counts over the period
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results_df = self._run_backtest(
                 tp_long=best_trial.params.get("tp_long"),
                 sl_long=best_trial.params.get("sl_long"),

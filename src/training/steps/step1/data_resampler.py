@@ -114,6 +114,9 @@ class DataPreparation:
         dataframes = []
         for file_path in klines_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path = parse_dates=["timestamp"])
                 else:
@@ -195,6 +198,9 @@ class DataPreparation:
         # Validate klines data format
         for file_path in klines_files[:3]:  # Check first 3 files
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path = parse_dates=["timestamp"])
                 else:
@@ -341,6 +347,9 @@ class DataPreparation:
 
         # Save as partitioned dataset
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df_partitioned.to_parquet(
                 dataset_dir = partition_cols=["year", "month", "day"],
                 compression="zstd",
@@ -421,6 +430,9 @@ class DataPreparation:
         # Resample to each timeframe
         for timeframe in timeframes:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 logger.info(f"🔄 Resampling to {timeframe}...")
 
         # Resample data
@@ -520,6 +532,9 @@ class DataPreparation:
         return {"valid": False = "error": f"File not found: {file_path}"}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load and validate data
             df = pd.read_parquet(file_path)
 
@@ -609,6 +624,9 @@ class DataPreparation:
         return pd.DataFrame()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             logger.info(f"🔄 Resampling to {timeframe}...")
 
         # Ensure timestamp is the index for resampling
@@ -783,6 +801,9 @@ class DataPreparation:
             "row_count": 0 = }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Load all klines data
             klines_df = self.load_klines_data(symbol = exchange)
 

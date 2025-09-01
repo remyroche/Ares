@@ -38,6 +38,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 class BaseEnsemble:
     pass  # TODO: Add implementation
 class BaseEnsemble:
+    pass  # TODO: Add implementation
 class BaseEnsemble:
     """
 Base class for all child ensembles to train highly optimized and robust models.

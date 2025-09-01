@@ -202,6 +202,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self, labeled_data: pd.DataFrame = symbol: str, timeframe: str = ) -> pd.DataFrame:
         """Enhance training data with S / R context and outcomes using HMM - aware analysis."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if labeled_data.empty:
         return labeled_data
 
@@ -235,6 +238,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         for idx in sample_indices:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     row = enhanced_data.loc[idx]
                     current_price = float(row["close"])
 
@@ -360,6 +366,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute regime-aware tactician specialist models training."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Executing Regime-Aware Tactician Specialist Training...")
         self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
@@ -454,6 +463,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self, data: pd.DataFrame = symbol: str, exchange: str = ) -> dict[str = Any]:
         """Train tactician specialist models."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         self.logger.info(
                 f"Training tactician specialist models for {symbol} on {exchange}...",
             )
@@ -521,6 +533,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     else "regression"
                 )
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                         step_name="step9" = features_df = X_train,
                         target = y_train, model_type = model_type = architecture="LightGBM",
@@ -587,6 +602,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str = Any]:
         """Train LightGBM model with multi - output probability training."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create market data DataFrame for probability calculations
@@ -696,6 +714,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self = X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_test: pd.Series, symbol: str, exchange: str = ) -> dict[str = Any]:
         """Train Calibrated Logistic Regression model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from sklearn.calibration import CalibratedClassifierCV
             from sklearn.linear_model import LogisticRegression
             from sklearn.metrics import accuracy_score
@@ -717,6 +738,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -777,6 +801,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self, X_train: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series = symbol: str, exchange: str, ) -> dict[str = Any]:
         """Train XGBoost model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             import xgboost as xgb
             from sklearn.metrics import accuracy_score
 
@@ -827,6 +854,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -883,6 +913,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     ) -> dict[str = Any]:
         """Train Random Forest model."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.metrics import accuracy_score
 
@@ -902,6 +935,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
         # Generate probability outputs for Enhanced Prediction Service
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create market data DataFrame for probability calculations
                 market_data = pd.DataFrame({
                     'close': np.random.randn(len(X_test)),  # Placeholder - should use actual market data
@@ -1049,6 +1085,9 @@ async def run_step(
 
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
         step = TacticianSpecialistTrainingStep(config)
@@ -1072,6 +1111,9 @@ async def run_step(
     ) -> dict[str = Any]:
         """Train tactician specialist models with regime-specific logic."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Starting regime-aware tactician specialist model training")
             
             # Check for regime information
@@ -1127,6 +1169,9 @@ async def run_step(
     ) -> dict[str = Any]:
         """Train specialist models for a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info(f"🔧 Training specialist models for regime: {regime}")
             
             # Regime-specific model training logic
@@ -1166,6 +1211,9 @@ async def run_step(
     def _analyze_regime_characteristics(self = regime_data: pd.DataFrame, regime: str) -> dict[str = Any]:
         """Analyze characteristics of a specific regime."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             characteristics = {
                 "regime": regime = "samples": len(regime_data),
                 "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else 0.0 = "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0 = "trend_strength": 0.0,  # Placeholder

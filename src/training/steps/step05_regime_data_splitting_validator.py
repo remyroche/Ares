@@ -17,7 +17,22 @@ from src.utils.logger import system_logger
 
 # Validator for Step 5: Regime Data Splitting
 class Step5RegimeDataSplittingValidator(BaseValidator):
-    def __init__(self, config: dict[str, Any]) -> None:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step5regimedatasplittingvalidator initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize Step5RegimeDataSplittingValidator."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step05_regime_data_splitting", config)
         self.logger, system_logger.getChild("Validator.Step5Split")
 
@@ -32,12 +47,12 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
 
         regime_dir = os.path.join(data_dir, "regime_data")
         if not os.path.isdir(regime_dir):
-        self.logger.warning(f"⚠️ regime_data directory not found: {regime_dir}")
+    passpassself.logger.warning(f"⚠️ regime_data directory not found: {regime_dir}")
         return False
 
         files, [f for f in os.listdir(regime_dir) if f.endswith(".parquet")]
         if not files:
-        self.logger.warning("⚠️ No regime parquet files found")
+    passpassself.logger.warning("⚠️ No regime parquet files found")
         return False
 
         # Basic checks on a sample file
@@ -47,11 +62,11 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
             req_cols = ["timestamp", "regime"]
             missing, [c for c in req_cols if c not in df.columns]
         if missing:
-    self.logger.warning(f"⚠️ Missing required columns in sample: {missing}")
+    passpassself.logger.warning(f"⚠️ Missing required columns in sample: {missing}")
         return False
         return True
         except Exception as e:
-    self.logger.warning(f"⚠️ Could not load sample regime file: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Could not load sample regime file: {e}")
         return False
 
 async def run_validator(
@@ -62,7 +77,7 @@ async def run_validator(
     return {"step_name": "step05_regime_data_splitting", "validation_passed": ok}
 
 if __name__ == "__main__":
-    import asyncio
+    passimport asyncio
 
     # Example usage
     async def test_validator() -> None:

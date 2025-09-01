@@ -27,23 +27,18 @@ with_tracing_span,
 
 
 class UnifiedRegimeClassifier:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 """
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
 Approach:
-    1. HMM-based labeling for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE)
+    pass1. HMM-based labeling for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE)
 2. Ensemble prediction with majority voting for basic regimes
 3. Location classification (SUPPORT, RESISTANCE, OPEN_RANGE)
 """
 
-def __init__(
-self,
-config: dict[str, Any],
-exchange: str = "UNKNOWN",
-symbol: str = "UNKNOWN",
-):
-        # Ensure NumPy RNG pickles created under different versions can be loaded
+def __init__(...):
+    passpasspass# Ensure NumPy RNG pickles created under different versions can be loaded
 self._enable_numpy_rng_unpickle_compat(system_logger)
 self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
 self.global_config = config
@@ -105,7 +100,7 @@ import os
 
 blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
 if blank_mode:
-            self.min_data_points = self.config.get(
+    passself.min_data_points = self.config.get(
 "min_data_points",
 50,
 )  # Reduced for BLANK mode
@@ -113,7 +108,7 @@ self.logger.info(
 "🔧 BLANK MODE DETECTED: Using reduced minimum data points (50)",
 )
 else:
-            self.min_data_points = self.config.get(
+    passself.min_data_points = self.config.get(
 "min_data_points",
 1000,
 )  # Default for full mode
@@ -195,7 +190,7 @@ os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 base_checkpoint_dir = CONFIG.get("CHECKPOINT_DIR", "checkpoints")
 if not os.path.isabs(base_checkpoint_dir):
-            base_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
+    passbase_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
 
 self.model_dir = os.path.join(base_checkpoint_dir, "analyst_models")
 # Optional hierarchical directory for compatibility
@@ -227,14 +222,14 @@ f"unified_location_model_{self.exchange}_{self.symbol}_{self.target_timeframe}.j
 # We normalize the argument before delegating to NumPy's constructor.
 _NUMPY_RNG_UNPICKLE_PATCHED = False
 
-async def initialize_sr_predictor(self) -> bool:
-        """Initialize the SRBreakoutPredictor for enhanced S/R analysis."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def initialize_sr_predictor(...) -> ...:
+    passpass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.enable_sr_integration:
-                self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
+    passself.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
 return True
 
 self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
@@ -244,37 +239,33 @@ self.sr_predictor = SRBreakoutPredictor(self.sr_config)
 init_success = await self.sr_predictor.initialize()
 
 if not init_success:
-                self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
+    passpasspassself.logger.error("❌ Failed to initialize SRBreakoutPredictor")
 return False
 
 self.logger.info("✅ SRBreakoutPredictor initialized successfully for enhanced regime analysis")
 return True
 
 except Exception as e:
-            self.logger.error(f"❌ Error initializing SRBreakoutPredictor: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error initializing SRBreakoutPredictor: {e}")
 return False
 
 @staticmethod
-def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
-        """Enable compatibility for unpickling NumPy RNG BitGenerators.
-
-Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
-accept class objects or repr strings by converting them to their class name.
-"""
-# Use an attribute on the function to avoid double patching within this class
+def _enable_numpy_rng_unpickle_compat(...) -> ...:
+    """..."""
+    pass# Use an attribute on the function to avoid double patching within this class
 if getattr(
 UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat, "_patched", False
 ):
-            return
+    passreturn
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
 original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
 if original_ctor is None:
-                UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = (
+    passUnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = (
 True
 )
 return
@@ -285,61 +276,61 @@ bit_generator_name, state=None, *args, **kwargs
 ):  # type: ignore[override]
 name_candidate = bit_generator_name
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if hasattr(name_candidate, "__name__"):
-                        name_candidate = name_candidate.__name__
+    passname_candidate = name_candidate.__name__
 elif isinstance(name_candidate, str) and name_candidate.startswith(
 "<class "
 ):
-                        name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+    passpassname_candidate = name_candidate.split(".")[-1].split("'>")[0]
 except Exception as e:
-                    self.logger.debug(f"Error parsing name candidate: {e}")
+    passpasspasspasspasspasspassself.logger.debug(f"Error parsing name candidate: {e}")
 effective_state = kwargs.get("state", state)
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 return original_ctor(name_candidate, effective_state)
 except (TypeError, ValueError):
-                    try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasstry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 return original_ctor(name_candidate)
 except Exception as ctor_exc:  # noqa: BLE001
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 import numpy as _np
 
 bitgen_cls = getattr(_np.random, name_candidate, None)
 if bitgen_cls is None and name_candidate == "MT19937":
-                                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 
 bitgen_cls = getattr(_mt, "MT19937", None)
 except Exception:
-                                    bitgen_cls = None
+    passpassbitgen_cls = None
 if bitgen_cls is not None:
-                                return bitgen_cls()
+    passreturn bitgen_cls()
 except Exception as e:
-                            self.logger.debug(f"Error creating bitgen class: {e}")
+    passpasspasspasspasspasspassself.logger.debug(f"Error creating bitgen class: {e}")
 raise ctor_exc
 
 np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
 UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
 if logger is not None:
-                logger.info("Applied NumPy RNG unpickle compatibility shim (URC)")
+    passlogger.info("Applied NumPy RNG unpickle compatibility shim (URC)")
 except Exception as _shim_exc:
-            UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
+    passpasspasspasspasspasspassUnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
 if logger is not None:
-                logger.warning(
+    passlogger.warning(
 warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
 )
 
@@ -348,14 +339,9 @@ exceptions=(Exception,),
 default_return=False,
 context="UnifiedRegimeClassifier.initialize",
 )
-async def initialize(self) -> bool:
-        """
-Initialize the UnifiedRegimeClassifier.
-
-Returns:
-            bool: True if initialization successful, False otherwise
-"""
-self.logger.info(
+async def initialize(...) -> ...:
+    """..."""
+    passself.logger.info(
 f"Initializing UnifiedRegimeClassifier for {self.exchange}_{self.symbol}",
 )
 
@@ -364,35 +350,22 @@ os.makedirs(self.model_dir, exist_ok=True)
 
 # Try to load existing models
 if self.load_models():
-            self.logger.info("✅ Loaded existing models successfully")
+    passpassself.logger.info("✅ Loaded existing models successfully")
 self.trained = True
 else:
-            self.logger.info("ℹ️  No existing models found, will train new models")
+    passself.logger.info("ℹ️  No existing models found, will train new models")
 self.trained = False
 
 self.logger.info("✅ UnifiedRegimeClassifier initialized successfully")
 return True
 
-async def _calculate_features(
-self,
-klines_df: pd.DataFrame,
-min_data_points: int = None,
-) -> pd.DataFrame:
-        """
-Calculate comprehensive features for regime and location classification.
-
-Args:
-            klines_df: DataFrame with OHLCV data
-min_data_points: Minimum data points required
-
-Returns:
-            DataFrame with calculated features
-"""
-if min_data_points is None:
-            min_data_points = self.min_data_points
+async def _calculate_features(...) -> ...:
+    """..."""
+    passif min_data_points is None:
+    passmin_data_points = self.min_data_points
 
 if len(klines_df) < min_data_points:
-            self.logger.warning(
+    passself.logger.warning(
 f"Insufficient data: {len(klines_df)} < {min_data_points}. Consider reducing min_data_points or collecting more data.",
 )
 # Try with a lower threshold if possible
@@ -402,7 +375,7 @@ f"Proceeding with {len(klines_df)} data points (reduced from {min_data_points})"
 )
 min_data_points = len(klines_df)
 else:
-                self.logger.error(
+    passpassself.logger.error(
 f"Data too small: {len(klines_df)} < 200 minimum required",
 )
 return pd.DataFrame()
@@ -462,17 +435,17 @@ features_df["volatility_momentum"] = features_df["volatility_20"] - features_df[
 
 # Enhanced S/R features for improved regime analysis
 if self.sr_predictor and self.enable_sr_integration:
-            # Handle async call for enhanced features
+    passpass# Handle async call for enhanced features
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 features_df = await self._add_enhanced_sr_features(features_df)
 except Exception as e:
-                self.logger.warning(f"Enhanced S/R features failed, falling back to basic: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Enhanced S/R features failed, falling back to basic: {e}")
 features_df = self._add_basic_sr_features(features_df)
 else:
-            # Basic S/R features as fallback
+    pass# Basic S/R features as fallback
 features_df = self._add_basic_sr_features(features_df)
 
 # Improved NaN handling: use forward fill for technical indicators
@@ -506,8 +479,8 @@ technical_columns = [
 ]
 
 for col in technical_columns:
-            if col in features_df.columns:
-                # Forward fill NaN values for technical indicators
+    passpassif col in features_df.columns:
+    pass# Forward fill NaN values for technical indicators
 features_df[col] = features_df[col].ffill()
 # Fill any remaining NaN values with 0
 features_df[col] = features_df[col].fillna(0)
@@ -521,8 +494,8 @@ price_features = [
 "volatility_momentum",
 ]
 for col in price_features:
-            if col in features_df.columns:
-                features_df[col] = features_df[col].fillna(0)
+    passpassif col in features_df.columns:
+    passfeatures_df[col] = features_df[col].fillna(0)
 
 # For ratio features, use 1 for NaN (neutral ratio)
 ratio_features = [
@@ -531,8 +504,8 @@ ratio_features = [
 "volume_ratio",
 ]
 for col in ratio_features:
-            if col in features_df.columns:
-                features_df[col] = features_df[col].fillna(1)
+    passif col in features_df.columns:
+    passfeatures_df[col] = features_df[col].fillna(1)
 
 # For volatility features, use 0 for NaN
 vol_features = [
@@ -542,8 +515,8 @@ vol_features = [
 "ewma_volatility_20",
 ]
 for col in vol_features:
-            if col in features_df.columns:
-                features_df[col] = features_df[col].fillna(0)
+    passif col in features_df.columns:
+    passfeatures_df[col] = features_df[col].fillna(0)
 
 # Only drop rows that still have NaN values after all the filling
 # This should be minimal now
@@ -557,11 +530,9 @@ f"✅ Calculated comprehensive features for {len(features_df)} periods (dropped 
 
 return features_df
 
-def _calculate_volatility_regime(self, features_df: pd.DataFrame) -> pd.Series:
-        """
-Calculate volatility regime for VOLATILE classification.
-"""
-# Calculate rolling volatility percentiles (prefer smoothed EWMA if present)
+def _calculate_volatility_regime(...) -> ...:
+    pass"""..."""
+    pass# Calculate rolling volatility percentiles (prefer smoothed EWMA if present)
 vol_baseline = (
 features_df["ewma_volatility_20"]
 if "ewma_volatility_20" in features_df.columns
@@ -597,14 +568,12 @@ volatile_regime = high_vol | atr_norm_high | bb_width_high | vol_accel
 
 return volatile_regime.astype(int)
 
-async def _add_enhanced_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """
-Add enhanced S/R features using SRBreakoutPredictor for improved regime analysis.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _add_enhanced_sr_features(...) -> ...:
+    passpass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🔧 Adding enhanced S/R features...")
 
 # Initialize enhanced S/R features
@@ -623,9 +592,9 @@ features_df["sr_isolation_score"] = 0.0
 # Calculate enhanced S/R features for each data point
 for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Get window of data for S/R analysis
 window_data = features_df.iloc[max(0, i-100):i+1]
 current_price = features_df["close"].iloc[i]
@@ -634,7 +603,7 @@ current_price = features_df["close"].iloc[i]
 sr_context = await self.sr_predictor.get_sr_context(window_data, current_price)
 
 if sr_context:
-                        # S/R proximity to nearest levels
+    pass# S/R proximity to nearest levels
 nearest_support = sr_context.get("nearest_support", current_price * 0.95)
 nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
 
@@ -668,30 +637,30 @@ features_df.loc[features_df.index[i], "sr_cluster_count"] = clustering_result.ge
 # Fibonacci levels proximity
 fibonacci_levels = sr_context.get("fibonacci_levels", {})
 if fibonacci_levels:
-                            fib_proximities = []
+    passfib_proximities = []
 for fib_price in fibonacci_levels.values():
-                                if isinstance(fib_price, (int, float)):
-                                    fib_proximities.append(abs(current_price - fib_price) / current_price)
+    passif isinstance(fib_price, (int, float)):
+    passfib_proximities.append(abs(current_price - fib_price) / current_price)
 if fib_proximities:
-                                features_df.loc[features_df.index[i], "sr_fibonacci_proximity"] = min(fib_proximities)
+    passfeatures_df.loc[features_df.index[i], "sr_fibonacci_proximity"] = min(fib_proximities)
 
 # Elliott Wave levels proximity
 elliott_levels = sr_context.get("elliott_wave_levels", {})
 if elliott_levels:
-                            wave_levels = elliott_levels.get("wave_levels", {})
+    passwave_levels = elliott_levels.get("wave_levels", {})
 if wave_levels:
-                                elliott_proximities = []
+    passelliott_proximities = []
 for wave_price in wave_levels.values():
-                                    if isinstance(wave_price, (int, float)):
-                                        elliott_proximities.append(abs(current_price - wave_price) / current_price)
+    passif isinstance(wave_price, (int, float)):
+    passelliott_proximities.append(abs(current_price - wave_price) / current_price)
 if elliott_proximities:
-                                    features_df.loc[features_df.index[i], "sr_elliott_proximity"] = min(elliott_proximities)
+    passfeatures_df.loc[features_df.index[i], "sr_elliott_proximity"] = min(elliott_proximities)
 
 # Order flow imbalances
 order_flow_analysis = sr_context.get("order_flow_analysis", {})
 imbalances = order_flow_analysis.get("imbalances", [])
 if imbalances:
-                            total_imbalance_volume = sum(imb.get("volume", 0.0) for imb in imbalances)
+    passtotal_imbalance_volume = sum(imb.get("volume", 0.0) for imb in imbalances)
 features_df.loc[features_df.index[i], "sr_order_flow_imbalance"] = total_imbalance_volume
 
 # Enhanced metrics from clustered levels
@@ -700,26 +669,26 @@ resistance_levels = sr_context.get("resistance_levels", [])
 all_levels = support_levels + resistance_levels
 
 if all_levels:
-                            # Calculate average touch count and bounce rate
+    passpass# Calculate average touch count and bounce rate
 touch_counts = []
 bounce_rates = []
 isolation_scores = []
 
 for level in all_levels:
-                                if isinstance(level, dict):
-                                    touch_counts.append(level.get("touches", 0))
+    passif isinstance(level, dict):
+    passtouch_counts.append(level.get("touches", 0))
 bounce_rates.append(level.get("bounce_rate", 0.0))
 isolation_scores.append(level.get("isolation_score", 0.5))
 
 if touch_counts:
-                                features_df.loc[features_df.index[i], "sr_touch_count"] = np.mean(touch_counts)
+    passfeatures_df.loc[features_df.index[i], "sr_touch_count"] = np.mean(touch_counts)
 if bounce_rates:
-                                features_df.loc[features_df.index[i], "sr_bounce_rate"] = np.mean(bounce_rates)
+    passfeatures_df.loc[features_df.index[i], "sr_bounce_rate"] = np.mean(bounce_rates)
 if isolation_scores:
-                                features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
+    passfeatures_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
 
 except Exception as e:
-                    # Continue with next data point if there's an error
+    passpasspasspasspasspasspass# Continue with next data point if there's an error
 self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
 continue
 
@@ -727,17 +696,15 @@ self.logger.info("✅ Enhanced S/R features added successfully")
 return features_df
 
 except Exception as e:
-            self.logger.error(f"Error adding enhanced S/R features: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error adding enhanced S/R features: {e}")
 return self._add_basic_sr_features(features_df)
 
-def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
-        """
-Add basic S/R features as fallback when enhanced analysis is not available.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _add_basic_sr_features(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🔧 Adding basic S/R features...")
 
 # Initialize basic S/R features
@@ -755,10 +722,10 @@ features_df["sr_isolation_score"] = 0.0
 
 # Calculate basic S/R features using rolling windows
 for i in range(20, len(features_df)):
-                try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Get window of data for basic S/R analysis
 window_data = features_df.iloc[max(0, i-20):i+1]
 current_price = features_df["close"].iloc[i]
@@ -799,7 +766,7 @@ features_df.loc[features_df.index[i], "sr_bounce_rate"] = 0.5
 features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
 
 except Exception as e:
-                    # Continue with next data point if there's an error
+    passpasspasspasspasspasspasspass# Continue with next data point if there's an error
 self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
 continue
 
@@ -807,7 +774,7 @@ self.logger.info("✅ Basic S/R features added successfully")
 return features_df
 
 except Exception as e:
-            self.logger.error(f"Error adding basic S/R features: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error adding basic S/R features: {e}")
 return features_df
 
 @handle_errors(
@@ -815,9 +782,9 @@ exceptions=(Exception,),
 default_return=None,
 context="UnifiedRegimeClassifier._calculate_rsi",
 )
-def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate RSI indicator using price differences."""
-# Use price differences instead of absolute prices
+def _calculate_rsi(...) -> ...:
+    """..."""
+    pass# Use price differences instead of absolute prices
 close_diff = df["close"].diff()
 gain = (close_diff.where(close_diff > 0, 0)).rolling(window=period).mean()
 loss = (-close_diff.where(close_diff < 0, 0)).rolling(window=period).mean()
@@ -830,15 +797,9 @@ exceptions=(Exception,),
 default_return=None,
 context="UnifiedRegimeClassifier._calculate_macd",
 )
-def _calculate_macd(
-self,
-df: pd.DataFrame,
-fast: int = 12,
-slow: int = 26,
-signal: int = 9,
-) -> pd.DataFrame:
-        """Calculate MACD indicator using price differences."""
-# Use price differences instead of absolute prices
+def _calculate_macd(...) -> ...:
+    """..."""
+    pass# Use price differences instead of absolute prices
 close_diff = df["close"].diff()
 exp1 = close_diff.ewm(span=fast).mean()
 exp2 = close_diff.ewm(span=slow).mean()
@@ -852,9 +813,9 @@ exceptions=(Exception,),
 default_return=None,
 context="UnifiedRegimeClassifier._calculate_adx",
 )
-def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate the Average Directional Index (ADX)."""
-high = df["high"]
+def _calculate_adx(...) -> ...:
+    """..."""
+    passhigh = df["high"]
 low = df["low"]
 close = df["close"]
 
@@ -890,14 +851,9 @@ exceptions=(Exception,),
 default_return=None,
 context="UnifiedRegimeClassifier._calculate_bollinger_bands",
 )
-def _calculate_bollinger_bands(
-self,
-df: pd.DataFrame,
-period: int = 20,
-std_dev: float = 2,
-) -> pd.DataFrame:
-        """Calculate Bollinger Bands using price differences."""
-# Use price differences instead of absolute prices
+def _calculate_bollinger_bands(...) -> ...:
+    pass"""..."""
+    pass# Use price differences instead of absolute prices
 close_diff = df["close"].diff()
 sma = close_diff.rolling(window=period).mean()
 std = close_diff.rolling(window=period).std()
@@ -914,9 +870,9 @@ exceptions=(Exception,),
 default_return=None,
 context="UnifiedRegimeClassifier._calculate_atr",
 )
-def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate Average True Range using price differences."""
-# Use price differences instead of absolute prices
+def _calculate_atr(...) -> ...:
+    """..."""
+    pass# Use price differences instead of absolute prices
 high_diff = df["high"].diff()
 low_diff = df["low"].diff()
 close_diff = df["close"].diff()
@@ -932,21 +888,9 @@ return df
 
 # --- Simple fallbacks are no longer required when using basic decorator without recovery strategies ---
 
-def _interpret_hmm_states(
-self,
-features_df: pd.DataFrame,
-state_sequence: np.ndarray,
-) -> dict:
-        """
-Interpret HMM states and map them to basic market regimes.
-Now uses simplified logic focusing on directional trends only.
-
-Classification logic:
-        1. BULL: Positive returns above noise threshold
-2. BEAR: Negative returns below noise threshold
-3. SIDEWAYS: Low ADX (indicating lack of directional strength) or very small returns
-"""
-analysis_df = features_df.copy()
+def _interpret_hmm_states(...) -> ...:
+    """..."""
+    passanalysis_df = features_df.copy()
 analysis_df["state"] = state_sequence
 state_analysis = {}
 
@@ -956,10 +900,10 @@ volatility_threshold = self.volatility_threshold
 atr_norm_threshold = self.atr_normalized_threshold
 
 for state in range(self.n_states):
-            state_data = analysis_df[analysis_df["state"] == state]
+    passstate_data = analysis_df[analysis_df["state"] == state]
 
 if len(state_data) == 0:
-                continue
+    passcontinue
 
 # Calculate state characteristics
 mean_return = state_data["log_returns"].mean()
@@ -981,17 +925,17 @@ elif mean_return < -0.0005 and mean_adx > adx_sideways_threshold:  # Reduced ret
 regime = "BEAR"
 # For borderline cases, use a more balanced approach
 elif is_sideways:
-                # If ADX is low but returns are significant, still classify as directional
+    passpass# If ADX is low but returns are significant, still classify as directional
 if abs(mean_return) > 0.0002:  # Small but meaningful returns
 regime = "BULL" if mean_return > 0 else "BEAR"
 else:
-                    regime = "SIDEWAYS"
+    passpassregime = "SIDEWAYS"
 else:
-                # Default to directional based on return sign
+    pass# Default to directional based on return sign
 if mean_return >= 0:
-                    regime = "BULL"
+    passregime = "BULL"
 else:
-                    regime = "BEAR"
+    passregime = "BEAR"
 
 state_analysis[state] = {
 "regime": regime,
@@ -1021,8 +965,8 @@ state_analysis["state_to_regime_map"] = state_to_regime_map
 # Log summary of how regimes are derived from HMM states
 mapped_counts: dict[str, int] = {}
 for state, data in state_analysis.items():
-            if state == "state_to_regime_map":
-                continue
+    passif state == "state_to_regime_map":
+    passcontinue
 mapped_counts[data["regime"]] = mapped_counts.get(data["regime"], 0) + int(
 data.get("count", 0)
 )
@@ -1045,26 +989,18 @@ list({r for r in state_to_regime_map.values()})
 
 return state_analysis
 
-async def _calculate_enhanced_sr_levels(self, df_window: pd.DataFrame) -> dict:
-        """
-Calculate enhanced S/R levels using centralized SRBreakoutPredictor.
-
-Args:
-            df_window: DataFrame window for S/R calculation
-
-Returns:
-            Dict containing enhanced S/R levels with comprehensive metrics
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _calculate_enhanced_sr_levels(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
-                # Fallback to basic pivot calculation if SRBreakoutPredictor not available
+    pass# Fallback to basic pivot calculation if SRBreakoutPredictor not available
 return await self._calculate_basic_pivots(df_window)
 
 if len(df_window) < 5:
-                return {
+    passreturn {
 "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
 "enhanced_strengths": {},
 "clustering_result": {},
@@ -1080,7 +1016,7 @@ current_price = df_window["close"].iloc[-1]
 sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
 if not sr_context:
-                self.logger.warning("Failed to get S/R context, falling back to basic calculation")
+    passpassself.logger.warning("Failed to get S/R context, falling back to basic calculation")
 return await self._calculate_basic_pivots(df_window)
 
 # Extract enhanced S/R levels and metrics
@@ -1128,25 +1064,17 @@ return {
 }
 
 except Exception as e:
-            self.logger.error(f"Error calculating enhanced S/R levels: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating enhanced S/R levels: {e}")
 return await self._calculate_basic_pivots(df_window)
 
-async def _calculate_basic_pivots(self, df_window: pd.DataFrame) -> dict:
-        """
-Calculate basic pivot points as fallback when SRBreakoutPredictor is not available.
-
-Args:
-            df_window: DataFrame window for pivot calculation
-
-Returns:
-            Dict containing basic pivot levels
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _calculate_basic_pivots(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if len(df_window) < 5:
-                return {
+    passreturn {
 "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
 "enhanced_strengths": {},
 "clustering_result": {},
@@ -1187,7 +1115,7 @@ return {
 }
 
 except Exception as e:
-            self.logger.error(f"Error calculating basic pivots: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating basic pivots: {e}")
 return {
 "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
 "enhanced_strengths": {},
@@ -1197,20 +1125,18 @@ return {
 "order_flow_analysis": {},
 }
 
-async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
-        """
-Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _analyze_enhanced_volume_levels(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
-                # Fallback to basic volume analysis
+    pass# Fallback to basic volume analysis
 return self._analyze_basic_volume_levels(df_window)
 
 if df_window.empty or len(df_window) < 20:
-                return None
+    passreturn None
 
 # Get current price for S/R context
 current_price = df_window["close"].iloc[-1]
@@ -1219,14 +1145,14 @@ current_price = df_window["close"].iloc[-1]
 sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
 if not sr_context:
-                self.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
+    passpassself.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
 return self._analyze_basic_volume_levels(df_window)
 
 # Extract order flow analysis
 order_flow_analysis = sr_context.get("order_flow_analysis", {})
 
 if not order_flow_analysis:
-                return self._analyze_basic_volume_levels(df_window)
+    passpassreturn self._analyze_basic_volume_levels(df_window)
 
 # Extract enhanced volume levels
 volume_profile = order_flow_analysis.get("volume_profile", {})
@@ -1238,7 +1164,7 @@ analyzed_levels = {}
 
 # Process POC (Point of Control)
 if poc_level:
-                analyzed_levels["poc"] = {
+    passanalyzed_levels["poc"] = {
 "price": poc_level.get("price", current_price),
 "volume": poc_level.get("volume", 0.0),
 "age": poc_level.get("age", 0),
@@ -1276,7 +1202,7 @@ analyzed_levels[level_name] = {
 # Add order flow imbalances if available
 imbalances = order_flow_analysis.get("imbalances", [])
 if imbalances:
-                analyzed_levels["order_imbalances"] = {
+    passanalyzed_levels["order_imbalances"] = {
 "count": len(imbalances),
 "total_volume": sum(imb.get("volume", 0.0) for imb in imbalances),
 "average_size": np.mean([imb.get("size", 0.0) for imb in imbalances]) if imbalances else 0.0,
@@ -1285,15 +1211,13 @@ if imbalances:
 return analyzed_levels if analyzed_levels else None
 
 except Exception as e:
-            self.logger.error(f"Error in enhanced volume analysis: {e}")
+    passpasspasspasspasspasspasspasspassself.logger.error(f"Error in enhanced volume analysis: {e}")
 return self._analyze_basic_volume_levels(df_window)
 
-def _analyze_basic_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
-        """
-Basic volume level analysis as fallback when SRBreakoutPredictor is not available.
-"""
-if df_window.empty or len(df_window) < 20:
-            return None
+def _analyze_basic_volume_levels(...) -> ...:
+    """..."""
+    passif df_window.empty or len(df_window) < 20:
+    passreturn None
 
 # --- 1. ATR-Dynamic Binning ---
 high_low = df_window["high"] - df_window["low"]
@@ -1310,24 +1234,24 @@ bins = np.arange(min_price, max_price, bin_size)
 price_bins = pd.cut(df_window["close"], bins=bins, right=False)
 volume_by_bin = df_window.groupby(price_bins, observed=False)["volume"].sum()
 if volume_by_bin.empty:
-            return None
+    passreturn None
 
 # Get the top 2 HVNs by volume
 top_hvns = volume_by_bin.nlargest(2)
 if top_hvns.empty:
-            return None
+    passreturn None
 
 # --- 3. Analyze Each HVN ---
 analyzed_levels = {}
 for i, (level_bin, level_volume) in enumerate(top_hvns.items()):
-            level_price = level_bin.mid
+    passlevel_price = level_bin.mid
 
 # Find first time price entered this bin to determine age
 level_indices = df_window.index[
 df_window["close"].between(level_bin.left, level_bin.right)
 ]
 if len(level_indices) == 0:
-                continue
+    passcontinue
 
 first_touch_index = level_indices[0]
 age = len(df_window) - df_window.index.get_loc(first_touch_index)
@@ -1336,7 +1260,7 @@ age = len(df_window) - df_window.index.get_loc(first_touch_index)
 touches = 0
 data_since_formation = df_window.loc[first_touch_index:]
 for k in range(1, len(data_since_formation)):
-                prev_high = data_since_formation["high"].iloc[k - 1]
+    passprev_high = data_since_formation["high"].iloc[k - 1]
 prev_low = data_since_formation["low"].iloc[k - 1]
 curr_high = data_since_formation["high"].iloc[k]
 curr_low = data_since_formation["low"].iloc[k]
@@ -1345,7 +1269,7 @@ curr_low = data_since_formation["low"].iloc[k]
 if (prev_low < level_price < curr_high) or (
 prev_high > level_price > curr_low
 ):
-                    touches += 1
+    passtouches += 1
 
 # Calculate additional strength metrics
 # Volume strength (normalized)
@@ -1382,11 +1306,9 @@ return analyzed_levels
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("enhanced_location_classification")
-async def _classify_enhanced_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
-Enhanced location classification using centralized SRBreakoutPredictor with advanced S/R analysis.
-"""
-self.logger.info(
+async def _classify_enhanced_location(...) -> ...:
+    """..."""
+    passself.logger.info(
 "Classifying location with enhanced S/R analysis using SRBreakoutPredictor...",
 )
 
@@ -1399,7 +1321,7 @@ min_strength_threshold = self.config.get("min_strength_threshold", 0.3)  # Minim
 
 # Check if we have enough data for location classification
 if len(features_df) < long_term_period:
-            self.logger.warning(
+    passpasspassself.logger.warning(
 f"Insufficient data for enhanced location classification. "
 f"Need at least {long_term_period} rows, but only have {len(features_df)}. "
 f"Returning all OPEN_RANGE labels."
@@ -1411,7 +1333,7 @@ locations = []
 # Start loop after the longest period to ensure enough data for all calculations
 start_index = long_term_period
 for i in range(start_index, len(features_df)):
-            current_price = features_df["close"].iloc[i]
+    passcurrent_price = features_df["close"].iloc[i]
 current_price_diff = features_df["close"].diff().iloc[i]
 
 # --- 1. Enhanced S/R Analysis (Short-Term) ---
@@ -1434,90 +1356,89 @@ resistance_levels = short_sr_levels.get("resistance_levels", [])
 
 # Check support levels
 for level in support_levels:
-                if isinstance(level, dict):
-                    level_price = level.get("price", level)
+    passpassif isinstance(level, dict):
+    passlevel_price = level.get("price", level)
 level_strength = level.get("enhanced_strength", 0.5)
 level_touches = level.get("touches", 0)
 else:
-                    level_price = level
+    passlevel_price = level
 level_strength = 0.5
 level_touches = 1
 
 if (level_touches >= min_level_touches and
 level_strength >= min_strength_threshold and
 abs(current_price - level_price) / current_price <= tolerance):
-                    loc_sr = "ENHANCED_SUPPORT"
+    passloc_sr = "ENHANCED_SUPPORT"
 break
 
 # Check resistance levels
 if not loc_sr:
-                for level in resistance_levels:
-                    if isinstance(level, dict):
-                        level_price = level.get("price", level)
+    passfor level in resistance_levels:
+    passif isinstance(level, dict):
+    passlevel_price = level.get("price", level)
 level_strength = level.get("enhanced_strength", 0.5)
 level_touches = level.get("touches", 0)
 else:
-                        level_price = level
+    passlevel_price = level
 level_strength = 0.5
 level_touches = 1
 
 if (level_touches >= min_level_touches and
 level_strength >= min_strength_threshold and
 abs(current_price - level_price) / current_price <= tolerance):
-                        loc_sr = "ENHANCED_RESISTANCE"
+    passloc_sr = "ENHANCED_RESISTANCE"
 break
 
 # Check volume levels (POC, HVNs)
 if volume_levels:
-                for level_name, level_data in volume_levels.items():
-                    if level_name in ["poc", "hvn_primary", "hvn_secondary"]:
-                        if (level_data.get("touches", 0) >= min_level_touches and
+    passfor level_name, level_data in volume_levels.items():
+    passif level_name in ["poc", "hvn_primary", "hvn_secondary"]:
+    passif (level_data.get("touches", 0) >= min_level_touches and
 level_data.get("strength", 0.5) >= min_strength_threshold and
 abs(current_price - level_data["price"]) / current_price <= tolerance):
-
-level_type = "SUPPORT" if current_price > level_data["price"] else "RESISTANCE"
+    passlevel_type = "SUPPORT" if current_price > level_data["price"] else "RESISTANCE"
 loc_volume = f"ENHANCED_{level_name.upper()}_{level_type}"
 break
 
 # Check Fibonacci levels
 fibonacci_levels = short_sr_levels.get("fibonacci_levels", {})
 if fibonacci_levels:
-                for fib_type, fib_price in fibonacci_levels.items():
-                    if abs(current_price - fib_price) / current_price <= tolerance:
-                        fib_direction = "SUPPORT" if current_price > fib_price else "RESISTANCE"
+    passfor fib_type, fib_price in fibonacci_levels.items():
+    passif abs(current_price - fib_price) / current_price <= tolerance:
+    passfib_direction = "SUPPORT" if current_price > fib_price else "RESISTANCE"
 loc_fibonacci = f"FIBONACCI_{fib_type}_{fib_direction}"
 break
 
 # Check Elliott Wave levels
 elliott_levels = short_sr_levels.get("elliott_wave_levels", {})
 if elliott_levels:
-                wave_levels = elliott_levels.get("wave_levels", {})
+    passwave_levels = elliott_levels.get("wave_levels", {})
 for wave_type, wave_price in wave_levels.items():
-                    if abs(current_price - wave_price) / current_price <= tolerance:
-                        wave_direction = "SUPPORT" if current_price > wave_price else "RESISTANCE"
+    passif abs(current_price - wave_price) / current_price <= tolerance:
+    passwave_direction = "SUPPORT" if current_price > wave_price else "RESISTANCE"
 loc_elliott = f"ELLIOTT_{wave_type}_{wave_direction}"
 break
 
 # --- 4. Enhanced Final Label Assignment with Priority ---
 # Priority: Elliott Wave > Fibonacci > Enhanced S/R > Volume Levels
 if loc_elliott:
-                locations.append(loc_elliott)
+    passlocations.append(loc_elliott)
 elif loc_fibonacci:
-                locations.append(loc_fibonacci)
+    passpasslocations.append(loc_fibonacci)
 elif loc_sr and loc_volume:
-                # High confluence: Enhanced S/R aligns with volume level
+    passpass# High confluence: Enhanced S/R aligns with volume level
 if "SUPPORT" in loc_sr and "SUPPORT" in loc_volume:
-                    locations.append("ENHANCED_CONFLUENCE_SUPPORT")
+    passpasslocations.append("ENHANCED_CONFLUENCE_SUPPORT")
 elif "RESISTANCE" in loc_sr and "RESISTANCE" in loc_volume:
-                    locations.append("ENHANCED_CONFLUENCE_RESISTANCE")
+    passpasslocations.append("ENHANCED_CONFLUENCE_RESISTANCE")
 else:
-                    locations.append(loc_sr)  # Prefer S/R over volume
+    passlocations.append(loc_sr)  # Prefer S/R over volume
 elif loc_sr:
-                locations.append(loc_sr)
+    passpasslocations.append(loc_sr)
 elif loc_volume:
-                locations.append(loc_volume)
+    passpasslocations.append(loc_volume)
 else:
-                locations.append("OPEN_RANGE")
+    passlocations.append("OPEN_RANGE")
 
 # Pad the beginning of the list for alignment
 padding = ["OPEN_RANGE"] * start_index
@@ -1530,39 +1451,35 @@ return final_locations
 
 @validate_data_quality(validation_level="WARNING")
 @with_tracing_span("location_classification")
-def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
-Legacy location classification method - now calls enhanced version if available.
-"""
-if self.sr_predictor and self.enable_sr_integration:
-            # Use enhanced classification if SRBreakoutPredictor is available
+def _classify_location(...) -> ...:
+    """..."""
+    passif self.sr_predictor and self.enable_sr_integration:
+    pass# Use enhanced classification if SRBreakoutPredictor is available
 import asyncio
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Create event loop if none exists
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 loop = asyncio.get_event_loop()
 except RuntimeError:
-                    loop = asyncio.new_event_loop()
+    passpassloop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 return loop.run_until_complete(self._classify_enhanced_location(features_df))
 except Exception as e:
-                self.logger.warning(f"Enhanced location classification failed, falling back to basic: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Enhanced location classification failed, falling back to basic: {e}")
 return self._classify_basic_location(features_df)
 else:
-            return self._classify_basic_location(features_df)
+    passreturn self._classify_basic_location(features_df)
 
-def _classify_basic_location(self, features_df: pd.DataFrame) -> list[str]:
-        """
-Basic location classification as fallback when enhanced analysis is not available.
-"""
-self.logger.info("Using basic location classification...")
+def _classify_basic_location(...) -> ...:
+    """..."""
+    passself.logger.info("Using basic location classification...")
 
 # --- Configuration for dual-timeframe analysis ---
 long_term_hvn_period = self.config.get("long_term_hvn_period", 720)  # 30 days on 1h chart
@@ -1572,7 +1489,7 @@ min_level_touches = self.config.get("min_level_touches", 1)  # Must have at leas
 
 # Check if we have enough data for location classification
 if len(features_df) < long_term_hvn_period:
-            self.logger.warning(
+    passpassself.logger.warning(
 f"Insufficient data for location classification. "
 f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
 f"Returning all OPEN_RANGE labels."
@@ -1584,7 +1501,7 @@ locations = []
 # Start loop after the longest period to ensure enough data for all calculations
 start_index = long_term_hvn_period
 for i in range(start_index, len(features_df)):
-            current_price_diff = features_df["close"].diff().iloc[i]
+    passcurrent_price_diff = features_df["close"].diff().iloc[i]
 
 # --- 1. Tactical Pivot Analysis (Short-Term) ---
 pivot_window = features_df.iloc[i - short_term_pivot_period : i]
@@ -1602,35 +1519,35 @@ loc_hvn = None
 
 # Check for Pivot proximity using price differences
 for p_sup in pivot_supports:
-                if (
+    passif (
 abs(current_price_diff - p_sup) / (abs(current_price_diff) + 1e-8)
 <= tolerance
 ):
-                    loc_pivot = "PIVOT_S"
+    passloc_pivot = "PIVOT_S"
 break
 if not loc_pivot:
-                for p_res in pivot_resistances:
-                    if (
+    passfor p_res in pivot_resistances:
+    passif (
 abs(current_price_diff - p_res)
 / (abs(current_price_diff) + 1e-8)
 <= tolerance
 ):
-                        loc_pivot = "PIVOT_R"
+    passloc_pivot = "PIVOT_R"
 break
 
 # Check for HVN proximity using price differences
 if volume_levels:
-                for level_data in volume_levels.values():
-                    # Intelligence Rule: Filter out untested levels
+    passpassfor level_data in volume_levels.values():
+    pass# Intelligence Rule: Filter out untested levels
 if level_data["touches"] < min_level_touches:
-                        continue
+    passcontinue
 
 if (
 abs(current_price_diff - level_data["price"])
 / (abs(current_price_diff) + 1e-8)
 <= tolerance
 ):
-                        hvn_type = (
+    passhvn_type = (
 "SUPPORT"
 if current_price_diff > level_data["price"]
 else "RESISTANCE"
@@ -1640,19 +1557,19 @@ break  # Stop at the first significant HVN found
 
 # --- 4. Final Label Assignment ---
 if loc_pivot and loc_hvn:
-                # A tactical pivot aligns with a strategic volume level - high confluence
+    pass# A tactical pivot aligns with a strategic volume level - high confluence
 if "S" in loc_pivot and "SUPPORT" in loc_hvn:
-                    locations.append("CONFLUENCE_S")
+    passpasslocations.append("CONFLUENCE_S")
 elif "R" in loc_pivot and "RESISTANCE" in loc_hvn:
-                    locations.append("CONFLUENCE_R")
+    passpasslocations.append("CONFLUENCE_R")
 else:
-                    locations.append(loc_pivot)
+    passlocations.append(loc_pivot)
 elif loc_pivot:
-                locations.append(loc_pivot)
+    passpasslocations.append(loc_pivot)
 elif loc_hvn:
-                locations.append(loc_hvn)
+    passpasslocations.append(loc_hvn)
 else:
-                locations.append("OPEN_RANGE")
+    passlocations.append("OPEN_RANGE")
 
 # Pad the beginning of the list for alignment
 padding = ["OPEN_RANGE"] * start_index
@@ -1663,27 +1580,25 @@ f"Finished basic location classification. Found: {pd.Series(final_locations).val
 )
 return final_locations
 
-async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
-        """
-Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE) with enhanced S/R integration.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def train_hmm_labeler(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
 
 # Initialize SRBreakoutPredictor for enhanced analysis
 if self.enable_sr_integration:
-                sr_init_success = await self.initialize_sr_predictor()
+    passpasspasssr_init_success = await self.initialize_sr_predictor()
 if not sr_init_success:
-                    self.logger.warning("Failed to initialize SRBreakoutPredictor, continuing with basic analysis")
+    passself.logger.warning("Failed to initialize SRBreakoutPredictor, continuing with basic analysis")
 self.enable_sr_integration = False
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
-                self.logger.error("No features available for HMM training")
+    passpassself.logger.error("No features available for HMM training")
 return False
 
 # Prepare features for HMM
@@ -1730,23 +1645,21 @@ self.logger.info("✅ HMM-based regime classifier trained successfully")
 return True
 
 except Exception as e:
-            self.logger.error(f"❌ Failed to train HMM regime classifier: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to train HMM regime classifier: {e}")
 return False
 
-async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bool:
-        """
-Train location classifier for OPEN_RANGE, PIVOT_S, PIVOT_R, HVN_SUPPORT, HVN_RESISTANCE, CONFLUENCE_S, CONFLUENCE_R.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def train_location_classifier(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Location Classifier...")
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
-                self.logger.error(
+    passself.logger.error(
 "No features available for location classifier training",
 )
 return False
@@ -1754,7 +1667,7 @@ return False
 # Check if we have enough data for location classification
 long_term_hvn_period = self.config.get("long_term_hvn_period", 720)
 if len(features_df) < long_term_hvn_period:
-                self.logger.warning(
+    passpassself.logger.warning(
 f"Insufficient data for location classification. "
 f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
 f"Skipping location classifier training."
@@ -1766,7 +1679,7 @@ location_labels = self._classify_location(features_df)
 
 # Verify that location labels match the features length
 if len(location_labels) != len(features_df):
-                self.logger.error(
+    passpassself.logger.error(
 f"Location labels length ({len(location_labels)}) does not match "
 f"features length ({len(features_df)}). Skipping location classifier training."
 )
@@ -1798,23 +1711,21 @@ self.logger.info("✅ Location classifier trained successfully")
 return True
 
 except Exception as e:
-            self.logger.error(f"❌ Failed to train location classifier: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to train location classifier: {e}")
 return False
 
-async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
-        """
-Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS, VOLATILE).
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def train_basic_ensemble(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Basic Regime Ensemble...")
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
-                self.logger.error("No features available for ensemble training")
+    passself.logger.error("No features available for ensemble training")
 return False
 
 # Get HMM-based labels
@@ -1882,17 +1793,15 @@ self.logger.info("✅ Basic regime ensemble trained successfully")
 return True
 
 except Exception as e:
-            self.logger.error(f"❌ Failed to train basic ensemble: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to train basic ensemble: {e}")
 return False
 
-async def train_complete_system(self, historical_klines: pd.DataFrame) -> bool:
-        """
-Train the complete regime and location classification system.
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def train_complete_system(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Complete Regime Classification System...")
 
 # Initialize SR analyzer
@@ -1900,15 +1809,15 @@ self.logger.info("🎓 Training Complete Regime Classification System...")
 
 # Train HMM labeler
 if not await self.train_hmm_labeler(historical_klines):
-                return False
+    passreturn False
 
 # Train basic ensemble
 if not await self.train_basic_ensemble(historical_klines):
-                return False
+    passreturn False
 
 # Train location classifier
 if not await self.train_location_classifier(historical_klines):
-                return False
+    passreturn False
 
 self.trained = True
 self.last_training_time = datetime.now()
@@ -1921,38 +1830,27 @@ self.save_models()
 return True
 
 except Exception as e:
-            self.logger.error(f"❌ Failed to train complete system: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to train complete system: {e}")
 return False
 
-async def predict_regime(
-self,
-current_klines: pd.DataFrame,
-) -> tuple[str, float, dict]:
-        """
-Predict only the regime (for backward compatibility).
-
-Args:
-            current_klines: Current market data
-
-Returns:
-            Tuple of (regime, confidence, additional_info)
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def predict_regime(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
-                self.logger.warning("Models not trained, returning default prediction")
+    passself.logger.warning("Models not trained, returning default prediction")
 return "SIDEWAYS", 0.5, {}
 
 # Calculate features
 features_df = await self._calculate_features(current_klines)
 if features_df.empty:
-                return "SIDEWAYS", 0.5, {}
+    passreturn "SIDEWAYS", 0.5, {}
 
 current_features = features_df.iloc[-1] if len(features_df) > 0 else None
 if current_features is None:
-                return "SIDEWAYS", 0.5, {}
+    passreturn "SIDEWAYS", 0.5, {}
 
 # Predict regime
 regime_features = features_df[
@@ -1973,14 +1871,14 @@ regime_features = features_df[
 ].fillna(0)
 
 if self.basic_ensemble:
-                regime_proba = self.basic_ensemble.predict_proba(
+    passregime_proba = self.basic_ensemble.predict_proba(
 regime_features.iloc[-1:],
 )
 regime_pred = self.basic_ensemble.predict(regime_features.iloc[-1:])[0]
 regime = self.basic_label_encoder.inverse_transform([regime_pred])[0]
 regime_confidence = np.max(regime_proba)
 else:
-                regime = "SIDEWAYS"
+    passregime = "SIDEWAYS"
 regime_confidence = 0.5
 
 additional_info = {
@@ -1992,38 +1890,27 @@ additional_info = {
 return regime, regime_confidence, additional_info
 
 except Exception as e:
-            self.logger.error(f"❌ Error in regime prediction: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in regime prediction: {e}")
 return "SIDEWAYS", 0.5, {"error": str(e)}
 
-async def predict_regime_and_location(
-self,
-current_klines: pd.DataFrame,
-) -> tuple[str, str, float, dict]:
-        """
-Predict both regime and location.
-
-Args:
-            current_klines: Current market data
-
-Returns:
-            Tuple of (regime, location, confidence, additional_info)
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def predict_regime_and_location(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
-                self.logger.warning("Models not trained, returning default predictions")
+    passself.logger.warning("Models not trained, returning default predictions")
 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
 # Calculate features
 features_df = await self._calculate_features(current_klines)
 if features_df.empty:
-                return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
+    passreturn "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
 current_features = features_df.iloc[-1] if len(features_df) > 0 else None
 if current_features is None:
-                return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
+    passreturn "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
 # Predict regime
 regime_features = features_df[
@@ -2044,14 +1931,14 @@ regime_features = features_df[
 ].fillna(0)
 
 if self.basic_ensemble:
-                regime_proba = self.basic_ensemble.predict_proba(
+    passregime_proba = self.basic_ensemble.predict_proba(
 regime_features.iloc[-1:],
 )
 regime_pred = self.basic_ensemble.predict(regime_features.iloc[-1:])[0]
 regime = self.basic_label_encoder.inverse_transform([regime_pred])[0]
 regime_confidence = np.max(regime_proba)
 else:
-                regime = "SIDEWAYS"
+    passregime = "SIDEWAYS"
 regime_confidence = 0.5
 
 # Predict location
@@ -2060,7 +1947,7 @@ location_features = features_df[
 ].fillna(0)
 
 if self.location_classifier:
-                location_proba = self.location_classifier.predict_proba(
+    passlocation_proba = self.location_classifier.predict_proba(
 location_features.iloc[-1:],
 )
 location_pred = self.location_classifier.predict(
@@ -2071,7 +1958,7 @@ location = self.location_label_encoder.inverse_transform(
 )[0]
 location_confidence = np.max(location_proba)
 else:
-                # Fallback to rule-based location classification
+    pass# Fallback to rule-based location classification
 location_labels = self._classify_location(features_df)
 location = location_labels[-1] if location_labels else "OPEN_RANGE"
 location_confidence = 0.7
@@ -2089,53 +1976,53 @@ additional_info = {
 return regime, location, overall_confidence, additional_info
 
 except Exception as e:
-            self.logger.error(f"❌ Error in regime/location prediction: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in regime/location prediction: {e}")
 return "SIDEWAYS", "OPEN_RANGE", 0.5, {"error": str(e)}
 
-def save_models(self) -> None:
-        """Save all trained models."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def save_models(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if self.hmm_model:
-                joblib.dump(self.hmm_model, self.hmm_model_path)
+    passjoblib.dump(self.hmm_model, self.hmm_model_path)
 self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
 
 if self.basic_ensemble:
-                joblib.dump(self.basic_ensemble, self.ensemble_model_path)
+    passjoblib.dump(self.basic_ensemble, self.ensemble_model_path)
 self.logger.info(
 f"✅ Basic ensemble saved to {self.ensemble_model_path}",
 )
 
 if self.location_classifier:
-                joblib.dump(self.location_classifier, self.location_model_path)
+    passjoblib.dump(self.location_classifier, self.location_model_path)
 self.logger.info(
 f"✅ Location classifier saved to {self.location_model_path}",
 )
 
 # Save label encoders
 if self.basic_label_encoder:
-                joblib.dump(
+    passjoblib.dump(
 self.basic_label_encoder,
 self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
 )
 
 if self.location_label_encoder:
-                joblib.dump(
+    passjoblib.dump(
 self.location_label_encoder,
 self.location_model_path.replace(".joblib", "_encoder.joblib"),
 )
 
 except Exception:
-            self.logger.error(f"❌ Error saving models: {e}")
+    passpassself.logger.error(f"❌ Error saving models: {e}")
 
-def load_models(self) -> bool:
-        """Load all trained models."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def load_models(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Log model directory and candidate paths
 self.logger.info(
 {
@@ -2177,28 +2064,28 @@ getattr(self, "_hierarchical_model_dir", self.model_dir),
 
 def _first_existing(paths: list[str]) -> str | None:
                 for p in paths:
-                    if os.path.exists(p):
-                        return p
+    passif os.path.exists(p):
+    passreturn p
 return None
 
 # Load HMM model
 hmm_path = _first_existing(hmm_candidates)
 if hmm_path is not None:
-                self.hmm_model = joblib.load(hmm_path)
+    passself.hmm_model = joblib.load(hmm_path)
 self.logger.info(f"✅ Loaded HMM model from {hmm_path}")
 loaded_any = True
 
 # Load basic ensemble
 ensemble_path = _first_existing(ensemble_candidates)
 if ensemble_path is not None:
-                self.basic_ensemble = joblib.load(ensemble_path)
+    passself.basic_ensemble = joblib.load(ensemble_path)
 self.logger.info(f"✅ Loaded basic ensemble from {ensemble_path}")
 loaded_any = True
 
 # Load location classifier
 location_path = _first_existing(location_candidates)
 if location_path is not None:
-                self.location_classifier = joblib.load(location_path)
+    passself.location_classifier = joblib.load(location_path)
 self.logger.info(f"✅ Loaded location classifier from {location_path}")
 loaded_any = True
 
@@ -2212,7 +2099,7 @@ getattr(self, "_hierarchical_model_dir", self.model_dir),
 ]
 enc_path = _first_existing(encoder_candidates)
 if enc_path is not None:
-                self.basic_label_encoder = joblib.load(enc_path)
+    passself.basic_label_encoder = joblib.load(enc_path)
 
 location_encoder_candidates = [
 self.location_model_path.replace(".joblib", "_encoder.joblib"),
@@ -2223,44 +2110,36 @@ getattr(self, "_hierarchical_model_dir", self.model_dir),
 ]
 loc_enc_path = _first_existing(location_encoder_candidates)
 if loc_enc_path is not None:
-                self.location_label_encoder = joblib.load(loc_enc_path)
+    passself.location_label_encoder = joblib.load(loc_enc_path)
 
 self.trained = loaded_any
 return loaded_any
 
 except Exception:
-            self.logger.error(f"❌ Error loading models: {e}")
+    passpassself.logger.error(f"❌ Error loading models: {e}")
 return False
 
 @comprehensive_data_validation
 @with_tracing_span("regime_classification")
-async def classify_regimes(self, historical_klines: pd.DataFrame) -> dict[str, Any]:
-        """
-Classify regimes for historical data (for training purposes).
-
-Args:
-            historical_klines: Historical market data
-
-Returns:
-            Dict containing regime classification results
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def classify_regimes(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
-                self.logger.info(
+    passself.logger.info(
 "🎓 Models not trained, training complete system now...",
 )
 training_success = await self.train_complete_system(historical_klines)
 if not training_success:
-                    self.logger.error("❌ Failed to train regime classification models")
+    passself.logger.error("❌ Failed to train regime classification models")
 return {"error": "Failed to train regime classification models"}
 
 # Calculate features
 features_df = await self._calculate_features(historical_klines)
 if features_df.empty:
-                self.logger.error("❌ No features available for classification")
+    passself.logger.error("❌ No features available for classification")
 return {"error": "No features available for classification"}
 
 # Get regime predictions
@@ -2285,7 +2164,7 @@ regime_features = features_df[
 regimes = []
 confidence_scores = []
 if self.basic_ensemble and self.basic_label_encoder:
-                self.logger.info(
+    passpassself.logger.info(
 "🔍 Using trained basic ensemble for regime classification",
 )
 regime_predictions = self.basic_ensemble.predict(regime_features)
@@ -2330,7 +2209,7 @@ None,
 }
 )
 if len(unique_regimes) < self.n_states:
-                    self.logger.warning(
+    passself.logger.warning(
 warning(
 f"Fewer regimes predicted ({len(unique_regimes)}) than expected ({self.n_states}). "
 "Consider increasing min_data_points or enhancing volatility features."
@@ -2338,7 +2217,7 @@ f"Fewer regimes predicted ({len(unique_regimes)}) than expected ({self.n_states}
 )
 # Fallback to HMM states
 elif self.hmm_model and self.scaler and self.state_to_regime_map:
-                self.logger.info("🔍 Using HMM model for regime classification")
+    passpassself.logger.info("🔍 Using HMM model for regime classification")
 hmm_features_scaled = self.scaler.transform(regime_features)
 state_sequence = self.hmm_model.predict(hmm_features_scaled)
 regimes = [
@@ -2379,20 +2258,20 @@ None,
 }
 )
 if len(unique_regimes) < self.n_states:
-                    self.logger.warning(
+    passself.logger.warning(
 warning(
 f"Fewer regimes predicted ({len(unique_regimes)}) than expected ({self.n_states}). "
 "Consider increasing min_data_points or enhancing volatility features."
 )
 )
 else:
-                self.logger.warning(
+    passself.logger.warning(
 "⚠️ No trained models available, attempting to train models now...",
 )
 # Try to train the complete system
 training_success = await self.train_complete_system(historical_klines)
 if not training_success:
-                    self.logger.error("❌ Failed to train regime classification models")
+    passself.logger.error("❌ Failed to train regime classification models")
 return {"error": "Failed to train regime classification models"}
 
 # Retry classification after training
@@ -2421,12 +2300,12 @@ pd.Series(location_labels).value_counts(),
 }
 
 except Exception as e:
-            self.logger.exception(f"❌ Error in regime classification: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error in regime classification: {e}")
 return {"error": str(e)}
 
-def get_system_status(self) -> dict[str, Any]:
-        """Get system status and statistics."""
-return {
+def get_system_status(...) -> ...:
+    """..."""
+    passreturn {
 "trained": self.trained,
 "last_training_time": self.last_training_time.isoformat()
 if self.last_training_time

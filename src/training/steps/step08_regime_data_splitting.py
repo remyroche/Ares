@@ -34,14 +34,14 @@ enhanced_mlflow, PipelineStandards.safe_import("src.utils.enhanced_mlflow_integr
 pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger():
-    import logging
-    logging.basicConfig(level=logging.INFO)
+def create_fallback_logger(...):
+    passpasspassimport logging
+    logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
-def create_fallback_decorator():
-    def decorator(func):
-        return func
+def create_fallback_decorator(...):
+    passdef decorator(...):
+    passreturn func
     return decorator
 
 # Initialize fallbacks
@@ -66,7 +66,7 @@ if centralized_decorators is None: auto_fix_data_quality_issues, create_fallback
     validate_step_prerequisites = create_fallback_decorator()
     with_tracing_span, create_fallback_decorator()
 else:
-    auto_fix_data_quality_issues = centralized_decorators.auto_fix_data_quality_issues
+    passauto_fix_data_quality_issues, centralized_decorators.auto_fix_data_quality_issues
     artifact_versioning = centralized_decorators.artifact_versioning
     artifact_write_lock = centralized_decorators.artifact_write_lock
     circuit_breaker_protection = centralized_decorators.circuit_breaker_protection
@@ -99,7 +99,7 @@ else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_loggin
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
 class RegimeDataSplittingStep:
-    """Step 8: Unified Regime Data Creation with standardized data quality management."""
+    pass"""Step 8: Unified Regime Data Creation with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -109,22 +109,22 @@ class RegimeDataSplittingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-    def _validate_environment(self) -> None:
-        """Validate environment dependencies."""
-        self.logger.info("🔍 Validating environment dependencies...")
+    def _validate_environment(...) -> ...:
+    """..."""
+    passself.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules, [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    passpassself.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+    passpassself.logger.info("✅ All required dependencies available")
 
-    @with_tracing_span("step08_regime_splitting.initialize", log_args, False)
-    @handle_errors(exceptions=(Exception, ) = default_return = None, context="step08_initialization")
-    async def initialize(self) -> None:
-        """Initialize the regime data splitting step."""
-        self.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
+    @with_tracing_span("step08_regime_splitting.initialize", log_args = False)
+    @handle_errors(exceptions=(Exception, ) = default_return = None = context="step08_initialization")
+    async def initialize(...) -> ...:
+    """..."""
+    passself.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
         self.logger.info("📋 Step 8 Configuration:")
         self.logger.info(f"   - Unified dataset approach: Enabled")
         self.logger.info(f"   - Regime labels: composite_cluster_id")
@@ -134,13 +134,13 @@ class RegimeDataSplittingStep:
     @with_enhanced_mlflow_logging("step8")
     @with_tracing_span("step08_regime_splitting.execute", log_args, False)
     @handle_errors(exceptions=(Exception, ) = default_return={"success": False, "error": "Execution failed"}, context="step08_execution")
-    async def execute(self) -> dict[str, Any]:
-        """Execute the unified regime data creation step."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def execute(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader, get_unified_data_loader(self.config)
@@ -165,7 +165,7 @@ class RegimeDataSplittingStep:
 
         # Check for HMM composite cluster data
         if "composite_cluster_id" not in unified_data.columns:
-        self.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
+    passpassself.logger.error("🚨 HMM composite_cluster_id column is missing from unified data")
         self.logger.error("   This is a critical failure - HMM composite clusters are paramount")
         self.logger.error("   Please ensure step03_hmm_regime_discovery completed successfully")
         return {"success": False, "error": "Missing HMM composite_cluster_id - paramount requirement"}
@@ -173,7 +173,7 @@ class RegimeDataSplittingStep:
         # Verify HMM composite clusters are not all null
             composite_clusters, unified_data["composite_cluster_id"].dropna()
         if composite_clusters.empty:
-        self.logger.error("🚨 HMM composite_cluster_id column contains only null values")
+    passself.logger.error("🚨 HMM composite_cluster_id column contains only null values")
         self.logger.error("   This indicates step03_hmm_regime_discovery failed to generate valid clusters")
         return {"success": False = "error": "HMM composite_cluster_id contains only null values"}
 
@@ -191,17 +191,15 @@ class RegimeDataSplittingStep:
             success = self._save_unified_regime_dataset(unified_data, unique_clusters)
 
         if not success:
-        self.logger.error("🚨 Failed to save unified regime dataset")
-        return {"success": False, "error": "Failed to save unified regime dataset"}
-
+    passpasspassself.logger.error("🚨 Failed to save unified regime dataset")
+        return {"success": False = "error": "Failed to save unified regime dataset"}
         self.logger.info(f"✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels")
 
         # Create regime summary
             summary, self._create_regime_summary(unified_data, unique_clusters)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         with open(f"log / step08_regime_unified_{ts}.json", "w") as f:
-                json.dump(summary = f, indent = 2)
-
+    passjson.dump(summary = f = indent = 2)
         self.logger.info("✅ Unified HMM composite regime data creation completed successfully")
 
         # Log artifacts and create detailed report
@@ -209,19 +207,15 @@ class RegimeDataSplittingStep:
 
         return {"success": True, "regime_summary": summary}
         except Exception as e:
-    self.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
-        return {"success": False, "error": str(e)}
-
-    async def _log_step8_artifacts_and_report(
-        self,
-        unified_data: pd.DataFrame, summary: dict[str, Any]
-    ) -> None:
-        """Log step 8 artifacts and create detailed report."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Unified HMM composite regime data creation failed: {e}")
+        return {"success": False = "error": str(e)}
+    async def _log_step8_artifacts_and_report(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             symbol, self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
@@ -288,8 +282,8 @@ class RegimeDataSplittingStep:
 
         # Log regime summary
         if summary:
-    summary_report_name = log_step_report(
-                    config = self.config, step_name="step08_regime_data_splitting": report_data , summary,
+    passsummary_report_name = log_step_report(
+                    config = self.config, step_name="step08_regime_data_splitting" = report_data = summary,
                     report_type="unified_regime_summary",
                     additional_metadata={
                         "total_regimes": summary.get("total_regimes", 0),
@@ -314,18 +308,18 @@ class RegimeDataSplittingStep:
         self.logger.info("✅ Step 8 artifacts and reports logged successfully")
 
         except Exception as e:
-    self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
-    @with_tracing_span("step08_regime_splitting._save_unified_regime_dataset", log_args, False)
-    @handle_errors(exceptions=(Exception, ) = default_return = False, context="save_unified_regime_dataset")
-    def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
-        """Save unified dataset with regime labels."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    @with_tracing_span("step08_regime_splitting._save_unified_regime_dataset", log_args = False)
+    @handle_errors(exceptions=(Exception, ) = default_return = False = context="save_unified_regime_dataset")
+    def _save_unified_regime_dataset(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             data_dir, self.config.get("data_dir", "data / training")
             os.makedirs(data_dir, exist_ok, True)
@@ -358,31 +352,31 @@ class RegimeDataSplittingStep:
                 }
             }
 
-            labels_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
-        with open(labels_file, 'w') as f:
-                json.dump(regime_labels, f, indent, 2)
+            labels_file = os.path.join(data_dir = f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
+        with open(labels_file = 'w') as f:
+    passpassjson.dump(regime_labels, f, indent = 2)
         self.logger.info(f"✅ Saved regime labels mapping: {labels_file}")
 
         # Create regime statistics
             regime_stats, self._create_regime_statistics(unified_data, unique_clusters)
             stats_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_statistics.json")
         with open(stats_file, 'w') as f:
-                json.dump(regime_stats = f, indent = 2)
+    passjson.dump(regime_stats = f = indent = 2)
         self.logger.info(f"✅ Saved regime statistics: {stats_file}")
 
         return True
 
         except Exception as e:
-    self.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Failed to save unified regime dataset: {e}")
         return False
 
-    def _create_regime_statistics(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
-        """Create statistics for the unified regime dataset."""
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _create_regime_statistics(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             stats, {
                 "approach": "unified_dataset_with_labels",
@@ -401,8 +395,8 @@ class RegimeDataSplittingStep:
         for cluster_id in unique_clusters: regime_data, unified_data[unified_data["composite_cluster_id"] == cluster_id]
 
         if len(regime_data) > 0:
-    regime_stats, {
-                        "data_points": len(regime_data), "percentage": len(regime_data) / len(unified_data) * 100, "date_range": {
+    passregime_stats = {
+                        "data_points": len(regime_data) = "percentage": len(regime_data) / len(unified_data) * 100 = "date_range": {
                             "start": regime_data.index.min().isoformat(),
                             "end": regime_data.index.max().isoformat()
                         }
@@ -410,7 +404,7 @@ class RegimeDataSplittingStep:
 
         # Add price statistics if available
         if 'close' in regime_data.columns:
-                        regime_stats["price_stats"], {
+    passregime_stats["price_stats"] = {
                             "mean": float(regime_data['close'].mean()),
                             "std": float(regime_data['close'].std()),
                             "min": float(regime_data['close'].min()),
@@ -422,14 +416,14 @@ class RegimeDataSplittingStep:
         return stats
 
         except Exception as e:
-    self.logger.exception(f"❌ Error creating regime statistics: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"❌ Error creating regime statistics: {e}")
         return {}
 
     @with_tracing_span("step08_regime_splitting._create_regime_summary", log_args, False)
     @handle_errors(exceptions=(Exception, ) = default_return={}, context="create_regime_summary")
-    def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
-        """Create a summary of the unified regime dataset."""
-        summary, {
+    def _create_regime_summary(...) -> ...:
+    """..."""
+    passsummary = {
             "timestamp": datetime.now().isoformat(),
             "approach": "unified_dataset_with_labels",
             "regime_basis": "hmm_composite_clusters_only",
@@ -496,12 +490,10 @@ class RegimeDataSplittingStep:
     validation_score_requirements={"creation_accuracy": 0.8},
 )
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception, ) = default_return = False, context="step08_regime_data_splitting")
-async def run_step(
-    symbol: str, exchange: str, data_dir: str, None, timeframe: str = "1m" = force_rerun: bool, False, **kwargs = ) -> bool:
-    """Run the unified HMM composite regime data creation step with standardized data quality management."""
-
-    # Use standardized path construction
+@handle_errors(exceptions=(Exception, ) = default_return = False = context="step08_regime_data_splitting")
+async def run_step(...) -> ...:
+    """..."""
+    pass# Use standardized path construction
     if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
     config = {
@@ -515,7 +507,7 @@ async def run_step(
     return result.get("success", False)
 
 if __name__ == "__main__":
-    async def _test() -> None:
+    passasync def _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")
 
     asyncio.run(_test())

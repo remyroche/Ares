@@ -25,36 +25,52 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CryptoPriceAnalyzer:
-    def __init__(self, data_file):
-        """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="cryptopriceanalyzer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize CryptoPriceAnalyzer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passdef __init__(...):
+    pass"""
         Initialize analyzer with data file
 
         Args:
-            data_file (str): Path to Parquet data file
+    passdata_file (str): Path to Parquet data file
         """
         self.data_file = data_file
         self.df = None
         self.results = {}
 
-    def load_data(self):
-        """Load data from Parquet file"""
+    def load_data(...):
+    pass"""Load data from Parquet file"""
         try:
-            self.df = pd.read_parquet(self.data_file)
+    passself.df = pd.read_parquet(self.data_file)
             logger.info(f"Loaded {len(self.df):,} records for {self.df['symbol'].nunique()} assets")
             return True
         except Exception as e:
-            logger.error(f"Error loading data: {e}")
+    passpasspasspasspasspasspasspasslogger.error(f"Error loading data: {e}")
             return False
 
-    def calculate_basic_metrics(self, symbol_data):
-        """
+    def calculate_basic_metrics(...):
+    pass"""
         Calculate basic price movement metrics for a single asset
 
         Args:
-            symbol_data (pd.DataFrame): Data for a single symbol
+    passsymbol_data (pd.DataFrame): Data for a single symbol
 
         Returns:
-            dict: Dictionary of basic metrics
+    passdict: Dictionary of basic metrics
         """
         # Price metrics
         price_change = (symbol_data['close'].iloc[-1] - symbol_data['close'].iloc[0]) / symbol_data['close'].iloc[0]
@@ -96,8 +112,8 @@ class CryptoPriceAnalyzer:
             'price_range': (symbol_data['high'].max() - symbol_data['low'].min()) / symbol_data['low'].min()
         }
 
-    def calculate_triple_barrier_profits(self, symbol_data, barrier_levels=None):
-        """
+    def calculate_triple_barrier_profits(...):
+    pass"""
         Calculate potential profits from triple barrier methods
 
         Args:
@@ -108,29 +124,29 @@ class CryptoPriceAnalyzer:
             dict: Dictionary of triple barrier profit calculations
         """
         if barrier_levels is None:
-            # Create barriers from 0.3% to 1.5% in 0.1% increments
+    pass# Create barriers from 0.3% to 1.5% in 0.1% increments
             barrier_levels = [round(0.003 + i * 0.001, 4) for i in range(13)]  # 0.3% to 1.5%
 
         results = {}
 
         for barrier in barrier_levels:
-            # Calculate potential profits for each barrier level
+    pass# Calculate potential profits for each barrier level
             barrier_results = self._calculate_single_barrier_profits(symbol_data, barrier)
             results[f'barrier_{int(barrier*1000)}bp'] = barrier_results
 
         return results
 
-    def _calculate_single_barrier_profits(self, symbol_data, barrier_pct):
-        """
+    def _calculate_single_barrier_profits(...):
+    passpass"""
         Calculate theoretical profits for a single barrier level
         Only captures successful movements at their peak (15-minute periods)
 
         Args:
-            symbol_data (pd.DataFrame): Data for a single symbol
+    passsymbol_data (pd.DataFrame): Data for a single symbol
             barrier_pct (float): Barrier percentage (e.g., 0.01 for 1%)
 
         Returns:
-            dict: Profit calculations for this barrier
+    passdict: Profit calculations for this barrier
         """
         # Calculate potential profits for each 15-minute period
         successful_trades = []
@@ -138,7 +154,7 @@ class CryptoPriceAnalyzer:
         short_trades = 0
 
         for i in range(len(symbol_data)):
-            current_data = symbol_data.iloc[i]
+    passcurrent_data = symbol_data.iloc[i]
             current_time = symbol_data.index[i]
             open_price = current_data['open']
             high_price = current_data['high']
@@ -154,7 +170,7 @@ class CryptoPriceAnalyzer:
 
             # Only count trades that exceed the barrier
             if long_profit >= barrier_pct:
-                successful_trades.append({
+    passsuccessful_trades.append({
                     'time': current_time,
                     'profit': long_profit,
                     'position': 'long',
@@ -164,7 +180,7 @@ class CryptoPriceAnalyzer:
                 long_trades += 1
 
             if short_profit >= barrier_pct:
-                successful_trades.append({
+    passsuccessful_trades.append({
                     'time': current_time,
                     'profit': short_profit,
                     'position': 'short',
@@ -174,7 +190,7 @@ class CryptoPriceAnalyzer:
                 short_trades += 1
 
         if not successful_trades:
-            return {
+    passreturn {
                 'total_trades': 0,
                 'avg_profit': 0,
                 'long_trades': 0,
@@ -201,15 +217,15 @@ class CryptoPriceAnalyzer:
             'profit_frequency': len(successful_trades) / len(symbol_data)  # Successful trades per 15-min period
         }
 
-    def calculate_intraday_patterns(self, symbol_data):
-        """
+    def calculate_intraday_patterns(...):
+    pass"""
         Calculate intraday price movement patterns
 
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
 
         Returns:
-            dict: Dictionary of intraday patterns
+    passdict: Dictionary of intraday patterns
         """
         # Add time components
         symbol_data = symbol_data.copy()
@@ -243,15 +259,15 @@ class CryptoPriceAnalyzer:
             'daily_price_changes': daily_price_changes.to_dict()
         }
 
-    def calculate_movement_statistics(self, symbol_data):
-        """
+    def calculate_movement_statistics(...):
+    pass"""
         Calculate detailed price movement statistics
 
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
 
         Returns:
-            dict: Movement statistics
+    passdict: Movement statistics
         """
         # Calculate returns
         returns = symbol_data['close'].pct_change().dropna()
@@ -263,7 +279,7 @@ class CryptoPriceAnalyzer:
         percentiles = [10, 25, 50, 75, 90, 95, 99]
         movement_percentiles = {}
         for p in percentiles:
-            movement_percentiles[f'p{p}'] = movement_sizes.quantile(p/100)
+    passmovement_percentiles[f'p{p}'] = movement_sizes.quantile(p/100)
 
         # Calculate movement frequency by size
         small_movements = (movement_sizes <= 0.001).sum() / len(movement_sizes)  # <= 0.1%
@@ -287,39 +303,39 @@ class CryptoPriceAnalyzer:
             'max_negative_run': negative_runs['max_length']
         }
 
-    def _calculate_consecutive_runs(self, condition_series):
-        """Calculate consecutive runs of True values"""
+    def _calculate_consecutive_runs(...):
+    pass"""Calculate consecutive runs of True values"""
         runs = []
         current_run = 0
 
         for value in condition_series:
-            if value:
-                current_run += 1
+    passif value:
+    passcurrent_run += 1
             else:
-                if current_run > 0:
-                    runs.append(current_run)
+    passif current_run > 0:
+    passruns.append(current_run)
                     current_run = 0
 
         if current_run > 0:
-            runs.append(current_run)
+    passruns.append(current_run)
 
         if not runs:
-            return {'avg_length': 0, 'max_length': 0}
+    passreturn {'avg_length': 0, 'max_length': 0}
 
         return {
             'avg_length': np.mean(runs),
             'max_length': np.max(runs)
         }
 
-    def calculate_volume_analysis(self, symbol_data):
-        """
+    def calculate_volume_analysis(...):
+    pass"""
         Calculate comprehensive volume analysis for a single asset
 
         Args:
-            symbol_data (pd.DataFrame): Data for a single symbol
+    passsymbol_data (pd.DataFrame): Data for a single symbol
 
         Returns:
-            dict: Dictionary of volume analysis metrics
+    passdict: Dictionary of volume analysis metrics
         """
         # Basic volume metrics
         total_volume = symbol_data['volume'].sum()
@@ -392,15 +408,15 @@ class CryptoPriceAnalyzer:
             'volume_range': symbol_data['volume'].max() - symbol_data['volume'].min()
         }
 
-    def calculate_volume_comparison(self):
-        """
+    def calculate_volume_comparison(...):
+    pass"""
         Compare volume metrics across all assets
 
         Returns:
             dict: Volume comparison metrics
         """
         if not self.results:
-            logger.error("No analysis results. Call analyze_all_assets() first.")
+    passlogger.error("No analysis results. Call analyze_all_assets() first.")
             return {}
 
         volume_comparison = {}
@@ -408,13 +424,13 @@ class CryptoPriceAnalyzer:
         # Collect volume metrics from all assets
         volume_metrics = []
         for symbol, result in self.results.items():
-            if 'volume_analysis' in result:
-                metrics = result['volume_analysis'].copy()
+    passif 'volume_analysis' in result:
+    passmetrics = result['volume_analysis'].copy()
                 metrics['symbol'] = symbol
                 volume_metrics.append(metrics)
 
         if not volume_metrics:
-            return {}
+    passreturn {}
 
         volume_df = pd.DataFrame(volume_metrics)
 
@@ -469,15 +485,15 @@ class CryptoPriceAnalyzer:
             'volume_dataframe': volume_df
         }
 
-    def calculate_volume_patterns(self, symbol_data):
-        """
+    def calculate_volume_patterns(...):
+    pass"""
         Calculate volume patterns over time
 
         Args:
             symbol_data (pd.DataFrame): Data for a single symbol
 
         Returns:
-            dict: Volume pattern analysis
+    passdict: Volume pattern analysis
         """
         # Add time components
         symbol_data = symbol_data.copy()
@@ -522,17 +538,17 @@ class CryptoPriceAnalyzer:
             'low_volume_clusters': low_volume_clusters
         }
 
-    def analyze_all_assets(self):
-        """Analyze all assets in the dataset"""
+    def analyze_all_assets(...):
+    pass"""Analyze all assets in the dataset"""
         if self.df is None:
-            logger.error("No data loaded. Call load_data() first.")
+    passlogger.error("No data loaded. Call load_data() first.")
             return
 
         symbols = self.df['symbol'].unique()
         logger.info(f"Analyzing {len(symbols)} assets")
 
         for symbol in symbols:
-            logger.info(f"Analyzing {symbol}")
+    passlogger.info(f"Analyzing {symbol}")
             symbol_data = self.df[self.df['symbol'] == symbol].copy()
 
             # Basic metrics
@@ -563,10 +579,10 @@ class CryptoPriceAnalyzer:
                 'volume_patterns': volume_patterns
             }
 
-    def generate_summary_report(self):
-        """Generate a comprehensive summary report"""
+    def generate_summary_report(...):
+    pass"""Generate a comprehensive summary report"""
         if not self.results:
-            logger.error("No analysis results. Call analyze_all_assets() first.")
+    passlogger.error("No analysis results. Call analyze_all_assets() first.")
             return
 
         print("\n" + "="*80)
@@ -578,7 +594,7 @@ class CryptoPriceAnalyzer:
         barrier_summary = []
 
         for symbol, result in self.results.items():
-            basic = result['basic_metrics']
+    passbasic = result['basic_metrics']
 
             basic_summary.append({
                 'Symbol': symbol,
@@ -592,7 +608,7 @@ class CryptoPriceAnalyzer:
 
             # Triple barrier results
             for barrier_name, barrier_data in result['triple_barrier_profits'].items():
-                barrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
+    passbarrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
                 barrier_summary.append({
                     'Symbol': symbol,
                     'Barrier_Level': f"{barrier_level:.1%}",
@@ -624,7 +640,7 @@ class CryptoPriceAnalyzer:
 
         barrier_levels = barrier_df['Barrier_Level'].unique()
         for barrier in sorted(barrier_levels):
-            barrier_data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+    passbarrier_data = barrier_df[barrier_df['Barrier_Level'] == barrier]
             top_performers = barrier_data.nlargest(5, 'Avg_Profit')[['Symbol', 'Barrier_Level', 'Avg_Profit', 'Total_Trades', 'Long_Trades', 'Short_Trades']]
             print(f"\nTop 5 for {barrier} barrier:")
             print(top_performers.round(4).to_string(index=False))
@@ -637,28 +653,28 @@ class CryptoPriceAnalyzer:
         avg_profits = barrier_df.groupby('Symbol')['Avg_Profit'].mean().sort_values(ascending=False)
         print("Average profit across all barriers:")
         for symbol, profit in avg_profits.head(10).items():
-            print(f"  {symbol}: {profit:.4f}")
+    passprint(f"  {symbol}: {profit:.4f}")
 
         # Most active assets
         total_trades = barrier_df.groupby('Symbol')['Total_Trades'].sum().sort_values(ascending=False)
         print(f"\nMost active assets (total trades across all barriers):")
         for symbol, trades in total_trades.head(10).items():
-            print(f"  {symbol}: {trades:.0f} trades")
+    passprint(f"  {symbol}: {trades:.0f} trades")
 
         # Long vs Short analysis
         total_longs = barrier_df.groupby('Symbol')['Long_Trades'].sum().sort_values(ascending=False)
         total_shorts = barrier_df.groupby('Symbol')['Short_Trades'].sum().sort_values(ascending=False)
         print(f"\nAssets with most long trades:")
         for symbol, trades in total_longs.head(5).items():
-            print(f"  {symbol}: {trades:.0f} long trades")
+    passprint(f"  {symbol}: {trades:.0f} long trades")
         print(f"\nAssets with most short trades:")
         for symbol, trades in total_shorts.head(5).items():
-            print(f"  {symbol}: {trades:.0f} short trades")
+    passprint(f"  {symbol}: {trades:.0f} short trades")
 
         # Volume comparison summary
         volume_comparison_summary = self.calculate_volume_comparison()
         if volume_comparison_summary:
-            print("\nVOLUME ANALYSIS SUMMARY:")
+    passprint("\nVOLUME ANALYSIS SUMMARY:")
             print("-" * 60)
             print(f"Total Volume Mean: {volume_comparison_summary['summary_stats']['total_volume_mean']:.2f}")
             print(f"Total Volume Median: {volume_comparison_summary['summary_stats']['total_volume_median']:.2f}")
@@ -677,19 +693,19 @@ class CryptoPriceAnalyzer:
             print("Top 10 Assets by Total Volume:")
             top_volume = volume_comparison_summary['volume_ranking'].head(10)
             for _, row in top_volume.iterrows():
-                print(f"  {row['symbol']}: {row['total_volume']:.2f}")
+    passprint(f"  {row['symbol']}: {row['total_volume']:.2f}")
 
             # Top 10 by volume consistency
             print("\nTop 10 Assets by Volume Consistency:")
             top_consistency = volume_comparison_summary['consistency_ranking'].head(10)
             for _, row in top_consistency.iterrows():
-                print(f"  {row['symbol']}: {row['volume_consistency']:.4f}")
+    passprint(f"  {row['symbol']}: {row['volume_consistency']:.4f}")
 
             # Top 10 by volume-price correlation
             print("\nTop 10 Assets by Volume-Price Correlation:")
             top_correlation = volume_comparison_summary['correlation_ranking'].head(10)
             for _, row in top_correlation.iterrows():
-                print(f"  {row['symbol']}: {row['volume_price_correlation']:.4f}")
+    passprint(f"  {row['symbol']}: {row['volume_price_correlation']:.4f}")
 
             # Volume categories
             print("\nVOLUME CATEGORIES:")
@@ -703,7 +719,7 @@ class CryptoPriceAnalyzer:
             print("-" * 60)
             for symbol in list(self.results.keys())[:5]:  # Show first 5 assets
                 if 'volume_patterns' in self.results[symbol]:
-                    patterns = self.results[symbol]['volume_patterns']
+    passpatterns = self.results[symbol]['volume_patterns']
                     print(f"\n{symbol}:")
                     print(f"  Peak Hours: {patterns['peak_hours']}")
                     print(f"  Peak Days: {patterns['peak_days']}")
@@ -716,10 +732,10 @@ class CryptoPriceAnalyzer:
             'volume_summary': volume_comparison_summary.get('volume_dataframe', pd.DataFrame()) if volume_comparison_summary else pd.DataFrame()
         }
 
-    def create_visualizations(self, output_dir="plots"):
-        """Create visualizations for the analysis"""
+    def create_visualizations(...):
+    passpass"""Create visualizations for the analysis"""
         if not self.results:
-            logger.error("No analysis results. Call analyze_all_assets() first.")
+    passpasslogger.error("No analysis results. Call analyze_all_assets() first.")
             return
 
         # Create output directory
@@ -736,8 +752,8 @@ class CryptoPriceAnalyzer:
         # Prepare data for plotting
         barrier_data = []
         for symbol, result in self.results.items():
-            for barrier_name, barrier_result in result['triple_barrier_profits'].items():
-                barrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
+    passfor barrier_name, barrier_result in result['triple_barrier_profits'].items():
+    passbarrier_level = int(barrier_name.split('_')[1].replace('bp', '')) / 1000
                 barrier_data.append({
                     'Symbol': symbol,
                     'Barrier_Level': barrier_level,
@@ -751,7 +767,7 @@ class CryptoPriceAnalyzer:
 
         # Plot 1: Average profit by barrier level
         for barrier in sorted(barrier_df['Barrier_Level'].unique()):
-            data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+    passdata = barrier_df[barrier_df['Barrier_Level'] == barrier]
             axes[0, 0].scatter(data['Symbol'], data['Avg_Profit'],
                              label=f'{barrier:.1%}', alpha=0.7, s=50)
 
@@ -764,7 +780,7 @@ class CryptoPriceAnalyzer:
 
         # Plot 2: Total trades by barrier level
         for barrier in sorted(barrier_df['Barrier_Level'].unique()):
-            data = barrier_df[barrier_df['Barrier_Level'] == barrier]
+    passdata = barrier_df[barrier_df['Barrier_Level'] == barrier]
             axes[0, 1].scatter(data['Symbol'], data['Total_Trades'],
                              label=f'{barrier:.1%}', alpha=0.7, s=50)
 
@@ -821,7 +837,7 @@ class CryptoPriceAnalyzer:
 
         # Hourly price changes
         for symbol in sample_symbols:
-            hourly_changes = self.results[symbol]['intraday_patterns']['hourly_price_changes']
+    passhourly_changes = self.results[symbol]['intraday_patterns']['hourly_price_changes']
             hours = list(hourly_changes.keys())
             changes = list(hourly_changes.values())
             axes[0, 0].plot(hours, changes, label=symbol, marker='o', alpha=0.7)
@@ -834,7 +850,7 @@ class CryptoPriceAnalyzer:
 
         # Daily price changes
         for symbol in sample_symbols:
-            daily_changes = self.results[symbol]['intraday_patterns']['daily_price_changes']
+    passdaily_changes = self.results[symbol]['intraday_patterns']['daily_price_changes']
             days = list(daily_changes.keys())
             changes = list(daily_changes.values())
             axes[0, 1].plot(days, changes, label=symbol, marker='s', alpha=0.7)
@@ -849,7 +865,7 @@ class CryptoPriceAnalyzer:
 
         # Movement size distribution
         for symbol in sample_symbols:
-            movement_stats = self.results[symbol]['movement_statistics']
+    passmovement_stats = self.results[symbol]['movement_statistics']
             percentiles = list(movement_stats['movement_percentiles'].keys())
             values = list(movement_stats['movement_percentiles'].values())
             axes[1, 0].plot(percentiles, values, label=symbol, marker='^', alpha=0.7)
@@ -872,7 +888,7 @@ class CryptoPriceAnalyzer:
 
         # Add labels
         for i, symbol in enumerate(sample_symbols):
-            axes[1, 1].annotate(symbol, (volatilities[i], daily_ranges[i]),
+    passaxes[1, 1].annotate(symbol, (volatilities[i], daily_ranges[i]),
                               xytext=(5, 5), textcoords='offset points', fontsize=8)
 
         plt.tight_layout()
@@ -886,7 +902,7 @@ class CryptoPriceAnalyzer:
         # Volume ranking
         volume_comparison = self.calculate_volume_comparison()
         if volume_comparison:
-            volume_ranking = volume_comparison['volume_ranking']
+    passvolume_ranking = volume_comparison['volume_ranking']
             symbols = volume_ranking['symbol'].values
             total_volumes = volume_ranking['total_volume'].values
 
@@ -944,8 +960,8 @@ class CryptoPriceAnalyzer:
 
         # Hourly volume patterns
         for symbol in sample_symbols:
-            if 'volume_patterns' in self.results[symbol]:
-                hourly_volume = self.results[symbol]['volume_patterns']['hourly_volume']
+    passif 'volume_patterns' in self.results[symbol]:
+    passhourly_volume = self.results[symbol]['volume_patterns']['hourly_volume']
                 hours = list(hourly_volume.keys())
                 means = [hourly_volume[h]['mean'] for h in hours]
                 axes[0, 0].plot(hours, means, label=symbol, marker='o', alpha=0.7)
@@ -958,8 +974,8 @@ class CryptoPriceAnalyzer:
 
         # Daily volume patterns
         for symbol in sample_symbols:
-            if 'volume_patterns' in self.results[symbol]:
-                daily_volume = self.results[symbol]['volume_patterns']['daily_volume']
+    passif 'volume_patterns' in self.results[symbol]:
+    passdaily_volume = self.results[symbol]['volume_patterns']['daily_volume']
                 days = list(daily_volume.keys())
                 means = [daily_volume[d]['mean'] for d in days]
                 axes[0, 1].plot(days, means, label=symbol, marker='s', alpha=0.7)
@@ -976,14 +992,14 @@ class CryptoPriceAnalyzer:
         autocorr_values = []
         autocorr_symbols = []
         for symbol in sample_symbols:
-            if 'volume_patterns' in self.results[symbol]:
-                autocorr = self.results[symbol]['volume_patterns']['volume_autocorrelation']
+    passif 'volume_patterns' in self.results[symbol]:
+    passautocorr = self.results[symbol]['volume_patterns']['volume_autocorrelation']
                 if not np.isnan(autocorr):
-                    autocorr_values.append(autocorr)
+    passautocorr_values.append(autocorr)
                     autocorr_symbols.append(symbol)
 
         if autocorr_values:
-            axes[1, 0].bar(range(len(autocorr_symbols)), autocorr_values, alpha=0.7, color='orange')
+    passaxes[1, 0].bar(range(len(autocorr_symbols)), autocorr_values, alpha=0.7, color='orange')
             axes[1, 0].set_xlabel('Assets')
             axes[1, 0].set_ylabel('Volume Autocorrelation')
             axes[1, 0].set_title('Volume Autocorrelation (Lag 1)')
@@ -995,12 +1011,12 @@ class CryptoPriceAnalyzer:
         spike_values = []
         spike_symbols = []
         for symbol in sample_symbols:
-            spike_freq = self.results[symbol]['volume_analysis']['volume_spike_frequency']
+    passspike_freq = self.results[symbol]['volume_analysis']['volume_spike_frequency']
             spike_values.append(spike_freq)
             spike_symbols.append(symbol)
 
         if spike_values:
-            axes[1, 1].bar(range(len(spike_symbols)), spike_values, alpha=0.7, color='brown')
+    passaxes[1, 1].bar(range(len(spike_symbols)), spike_values, alpha=0.7, color='brown')
             axes[1, 1].set_xlabel('Assets')
             axes[1, 1].set_ylabel('Volume Spike Frequency')
             axes[1, 1].set_title('Volume Spike Frequency (>2x Average)')
@@ -1014,18 +1030,18 @@ class CryptoPriceAnalyzer:
 
         logger.info(f"Visualizations saved to {output_dir}/")
 
-def main():
-    """Main function to run the analysis"""
+def main(...):
+    pass"""Main function to run the analysis"""
 
     # Find the most recent data file
     data_dir = Path("data")
     if not data_dir.exists():
-        logger.error("Data directory not found. Run data_downloader.py first.")
+    passlogger.error("Data directory not found. Run data_downloader.py first.")
         return
 
     parquet_files = list(data_dir.glob("*.parquet"))
     if not parquet_files:
-        logger.error("No Parquet files found in data directory.")
+    passlogger.error("No Parquet files found in data directory.")
         return
 
     # Use the most recent file
@@ -1036,7 +1052,7 @@ def main():
     analyzer = CryptoPriceAnalyzer(latest_file)
 
     if not analyzer.load_data():
-        return
+    passreturn
 
     analyzer.analyze_all_assets()
     summary = analyzer.generate_summary_report()
@@ -1051,10 +1067,10 @@ def main():
 
     # Save volume analysis results
     if not summary['volume_summary'].empty:
-        summary['volume_summary'].to_csv(output_dir / "volume_analysis.csv", index=False)
+    passsummary['volume_summary'].to_csv(output_dir / "volume_analysis.csv", index=False)
         logger.info("Volume analysis results saved to volume_analysis.csv")
 
     logger.info(f"Results saved to {output_dir}/")
 
 if __name__ == "__main__":
-    main()
+    passmain()

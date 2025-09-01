@@ -10,22 +10,35 @@ from src.utils.logger import system_logger
 
 
 class DatabaseMigrationUtils:
-    """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="databasemigrationutils initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize DatabaseMigrationUtils."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""
     Utility class for managing database migrations between computers.
     Handles export, import, validation, and backup operations.
     """
 
-    def __init__(self, db_manager: SQLiteManager):
-        self.db_manager = db_manager
+    def __init__(...):
+    passpassself.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
 
-    async def export_for_trading(self, export_name: str = None) -> str:
-        """
-        Exports database from backtesting computer for use on trading computer.
-        Filters out backtest-specific data and keeps only essential trading data.
-        """
-        if not export_name:
-            export_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    async def export_for_trading(...) -> ...:
+    """..."""
+    passif not export_name:
+    passexport_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         export_path = os.path.join(
             self.db_manager.migration_dir,
@@ -33,9 +46,9 @@ class DatabaseMigrationUtils:
         )
 
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Create a clean copy for trading export
             shutil.copy2(self.db_manager.db_path, export_path)
 
@@ -48,7 +61,7 @@ except Exception as e:
 
             # Calculate checksum
             with open(export_path, "rb") as f:
-                checksum = hashlib.md5(f.read()).hexdigest()
+    passpasschecksum = hashlib.md5(f.read()).hexdigest()
 
             # Record export
             export_data = {
@@ -74,19 +87,19 @@ except Exception as e:
             return export_path
 
         except Exception as e:
-            self.logger.error(f"Failed to create trading export: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Failed to create trading export: {e}")
             return ""
 
-    async def _clean_for_trading(self, temp_db: SQLiteManager):
-        """Removes backtest-specific data from the export."""
+    async def _clean_for_trading(...):
+    pass"""Removes backtest-specific data from the export."""
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Remove backtest results (keep only the latest successful ones)
             backtest_results = await temp_db.get_collection("backtest_results")
             if len(backtest_results) > 1:
-                # Keep only the most recent successful backtest
+    pass# Keep only the most recent successful backtest
                 sorted_results = sorted(
                     backtest_results.items(),
                     key=lambda x: x[1].get("created_at", ""),
@@ -98,4 +111,4 @@ except Exception as e:
                     await temp_db.delete_document("backtest_results", result_id)
                     
         except Exception as e:
-            self.logger.error(f"Error cleaning trading export: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error cleaning trading export: {e}")

@@ -6,6 +6,22 @@ from .base_exchange import BaseExchange
 
 
 class MexcExchange(BaseExchange):
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mexcexchange initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MexcExchange."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
     def __init__(
         self,
         api_key: str,

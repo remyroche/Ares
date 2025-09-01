@@ -20,7 +20,23 @@ from src.utils.warning_symbols import error, warning
 
 
 class BotMonitor:
-    def __init__(self) -> None:
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="botmonitor initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize BotMonitor."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passdef __init__(self) -> None:
         self.logger = system_logger.getChild("BotMonitor")
         self.project_root = project_root
         self.monitor_interval = 30  # Check every 30 seconds
@@ -28,40 +44,40 @@ class BotMonitor:
         self.status_file.parent.mkdir(parents=True, exist_ok=True)
         self.last_status = self._load_status()
 
-    def _load_status(self) -> Dict[str, Any]:
-        """Load the last known status of the bot"""
-        try:
-            if self.status_file.exists():
-                with open(self.status_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+    def _load_status(...) -> ...:
+    """..."""
+    passtry:
+    passif self.status_file.exists():
+    passwith open(self.status_file, "r", encoding="utf-8") as f:
+    passreturn json.load(f)
         except Exception as e:  # noqa: BLE001
             print(error(f"Error loading status file: {e}"))
         return {"running": False, "last_check": None, "issues": []}
 
-    def _save_status(self, status: Dict[str, Any]) -> None:
-        """Save the current status of the bot"""
-        try:
-            with open(self.status_file, "w", encoding="utf-8") as f:
-                json.dump(status, f, indent=2, default=str)
+    def _save_status(...) -> ...:
+    """..."""
+    passtry:
+    passwith open(self.status_file, "w", encoding="utf-8") as f:
+    passjson.dump(status, f, indent=2, default=str)
         except Exception as e:  # noqa: BLE001
             print(error(f"Error saving status file: {e}"))
 
-    def _check_python_processes(self) -> List[Dict[str, Any]]:
-        """Check if any ARES-related Python processes are running"""
-        ares_processes: List[Dict[str, Any]] = []
+    def _check_python_processes(...) -> ...:
+    """..."""
+    passares_processes: List[Dict[str, Any]] = []
 
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 cmdline = " ".join(proc.info.get("cmdline") or [])
                 if (
                     "ares_launcher.py" in cmdline
                     or ("python" in (proc.info.get("name") or ""))
                     and "ares" in cmdline.lower()
                 ):
-                    ares_processes.append(
+    passares_processes.append(
                         {
                             "pid": proc.info.get("pid"),
                             "cmdline": cmdline,
@@ -69,29 +85,29 @@ except Exception as e:
                         },
                     )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+    passpasscontinue
 
         return ares_processes
 
-    def _check_log_files(self) -> List[Dict[str, Any]]:
-        """Check recent log files for errors"""
-        log_dir = project_root / "logs"
+    def _check_log_files(...) -> ...:
+    """..."""
+    passlog_dir = project_root / "logs"
         if not log_dir.exists():
-            print(warning("Logs directory not found"))
+    passprint(warning("Logs directory not found"))
             return []
 
         issues: List[Dict[str, Any]] = []
         current_time = time.time()
 
         for log_file in log_dir.glob("*.log"):
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 # Check if log file was modified in the last 5 minutes
                 if current_time - log_file.stat().st_mtime < 300:
-                    with open(log_file, "r", encoding="utf-8") as f:
-                        lines = f.readlines()
+    passwith open(log_file, "r", encoding="utf-8") as f:
+    passlines = f.readlines()
                     # Check last 50 lines for errors
                     for line in lines[-50:]:
                         if any(
@@ -105,7 +121,7 @@ except Exception as e:
                                 "💥",
                             ]
                         ):
-                            issues.append(
+    passpassissues.append(
                                 {
                                     "file": log_file.name,
                                     "line": line.strip(),
@@ -119,9 +135,9 @@ except Exception as e:
 
         return issues
 
-    def _notify_ai_assistant(self, message: str, issues: List[Dict[str, Any]] | None = None) -> None:
-        """Notify the AI assistant about issues"""
-        notification = {
+    def _notify_ai_assistant(...) -> ...:
+    """..."""
+    passnotification = {
             "timestamp": datetime.now().isoformat(),
             "message": message,
             "issues": issues or [],
@@ -132,19 +148,19 @@ except Exception as e:
         # Save notification to a file that the AI assistant can read
         notification_file = project_root / "state/ai_notification.json"
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             notification_file.parent.mkdir(parents=True, exist_ok=True)
             with open(notification_file, "w", encoding="utf-8") as f:
-                json.dump(notification, f, indent=2, default=str)
+    passjson.dump(notification, f, indent=2, default=str)
 
             # Also print to console for immediate visibility
             print(f"\n🚨 ARES BOT ALERT: {message}")
             if issues:
-                print("📋 Issues detected:")
+    passprint("📋 Issues detected:")
                 for issue in issues:
-                    print(
+    passprint(
                         f"   - {issue.get('file', 'Unknown')}: {issue.get('line', 'Unknown error')}",
                     )
             print(f"📝 Full details saved to: {notification_file}")
@@ -154,15 +170,15 @@ except Exception as e:
         except Exception as e:  # noqa: BLE001
             print(error(f"Error saving notification: {e}"))
 
-    def monitor(self) -> None:
-        """Main monitoring loop"""
-        self.logger.info("🤖 Starting ARES Bot Monitor...")
+    def monitor(...) -> ...:
+    """..."""
+    passself.logger.info("🤖 Starting ARES Bot Monitor...")
 
         while True:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                 current_time = datetime.now()
 
                 # Check for running processes
@@ -186,16 +202,16 @@ except Exception as e:
                 ) > len(self.last_status.get("issues", []))
 
                 if status_changed:
-                    if not is_running and self.last_status.get("running"):
-                        message = "🚨 ARES Bot has stopped running!"
+    passif not is_running and self.last_status.get("running"):
+    passmessage = "🚨 ARES Bot has stopped running!"
                         self._notify_ai_assistant(message, recent_issues)
                     elif recent_issues and len(recent_issues) > len(
                         self.last_status.get("issues", [])
                     ):
-                        message = "⚠️ New issues detected in ARES Bot logs!"
+    passpassmessage = "⚠️ New issues detected in ARES Bot logs!"
                         self._notify_ai_assistant(message, recent_issues)
                     elif is_running and not self.last_status.get("running"):
-                        message = "✅ ARES Bot is now running again"
+    passpassmessage = "✅ ARES Bot is now running again"
                         self._notify_ai_assistant(message)
 
                 # Save current status
@@ -204,14 +220,14 @@ except Exception as e:
 
                 # Log status
                 if is_running:
-                    self.logger.info(
+    passself.logger.info(
                         f"✅ Bot is running ({len(ares_processes)} processes)",
                     )
                 else:
-                    print(warning("❌ Bot is not running"))
+    passprint(warning("❌ Bot is not running"))
 
                 if recent_issues:
-                    self.logger.warning(
+    passself.logger.warning(
                         f"⚠️ {len(recent_issues)} recent issues detected",
                     )
 
@@ -219,18 +235,18 @@ except Exception as e:
                 time.sleep(self.monitor_interval)
 
             except KeyboardInterrupt:
-                self.logger.info("🛑 Bot monitor stopped by user")
+    passpassself.logger.info("🛑 Bot monitor stopped by user")
                 break
             except Exception as e:  # noqa: BLE001
                 print(error(f"Error in monitoring loop: {e}"))
                 time.sleep(self.monitor_interval)
 
 
-def main() -> None:
-    """Main entry point"""
-    monitor = BotMonitor()
+def main(...) -> ...:
+    """..."""
+    passmonitor = BotMonitor()
     monitor.monitor()
 
 
 if __name__ == "__main__":
-    main()
+    passmain()

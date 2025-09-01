@@ -47,7 +47,7 @@ All essential files for training and trading operations were preserved:
 - All essential utility modules
 
 ## Excluded Files
-The following files were explicitly excluded from cleanup (not present in repository):
+The following files were explicitly excluded from cleanup and preserved:
 - `src/analyst/example_directional_analysis.py`
 - `src/supervisor/ab_tester.py`
 - `src/supervisor/exchange_ab_tester.py`

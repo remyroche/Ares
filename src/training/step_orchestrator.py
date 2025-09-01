@@ -32,18 +32,18 @@ class StepOrchestrator:
 
         # Define available steps in order (for reference)
         self.available_steps = [
-            "step1_data_collection",
-            "step1_5_data_converter",
-            "step2_feature_engineering",
-            "step2_5_sr_optimization",
-            "step3_hmm_regime_discovery",
-            "step4_processing_labeling",
-            "step5_regime_data_splitting",
-            "step6_hmm_based_training",
-            "step6_5_unified_regime_intelligence",
-            "step7_analyst_enhancement",
-            "step8_tactician_labeling",
-            "step9_tactician_specialist_training",
+            "step01_data_collection",
+            "step01_5_data_converter",
+            "step02_feature_engineering",
+            "step02_5_sr_optimization",
+            "step03_hmm_regime_discovery",
+            "step04_processing_labeling",
+            "step05_regime_data_splitting",
+            "step06_hmm_based_training",
+            "step06_5_unified_regime_intelligence",
+            "step07_analyst_enhancement",
+            "step08_tactician_labeling",
+            "step09_tactician_specialist_training",
             "step10_confidence_calibration",
             "step11_final_parameters_optimization",
             "step12_walk_forward_validation",
@@ -99,7 +99,7 @@ class StepOrchestrator:
         """Import and return a step module.
 
         Args:
-            step_name: Name of the step (e.g., 'step1_data_collection')
+            step_name: Name of the step (e.g., 'step01_data_collection')
 
         Returns:
             Step module if found, None otherwise

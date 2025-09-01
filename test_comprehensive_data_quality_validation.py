@@ -3,7 +3,7 @@
 Test script for comprehensive data quality validation.
 
 This script demonstrates the comprehensive data quality validation system
-for Step1, Step1_5, and Step2 with special attention to NaN, infinite, and constant values.
+for Step01, Step01_5, and Step02 with special attention to NaN, infinite, and constant values.
 """
 
 import asyncio
@@ -18,9 +18,9 @@ sys.path.insert(0, str(project_root))
 try:
     from src.utils.comprehensive_data_quality_validator import (
         ComprehensiveDataQualityValidator,
-        validate_step1_quality,
-        validate_step1_5_quality,
-        validate_step2_quality
+            validate_step01_quality,
+    validate_step01_5_quality,
+    validate_step02_quality
     )
     from src.utils.data_quality_decorators import (
         log_feature_quality_issues,
@@ -127,7 +127,7 @@ def create_test_feature_data():
     return df
 
 
-async def test_step1_validation():
+async def test_step01_validation():
     """Test Step1 data quality validation."""
     print("\n" + "="*80)
     print("🧪 TESTING STEP1 DATA QUALITY VALIDATION")
@@ -152,7 +152,7 @@ async def test_step1_validation():
     
     # Test Step1 validation
     print("\n🔍 Running Step1 data quality validation...")
-    result = validate_step1_quality(
+    result = validate_step01_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
@@ -172,7 +172,7 @@ async def test_step1_validation():
     return result
 
 
-async def test_step1_5_validation():
+async def test_step01_5_validation():
     """Test Step1.5 data quality validation."""
     print("\n" + "="*80)
     print("🧪 TESTING STEP1.5 DATA QUALITY VALIDATION")
@@ -192,7 +192,7 @@ async def test_step1_5_validation():
     
     # Test Step1.5 validation
     print("\n🔍 Running Step1.5 data quality validation...")
-    result = validate_step1_5_quality(
+    result = validate_step01_5_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
@@ -212,7 +212,7 @@ async def test_step1_5_validation():
     return result
 
 
-async def test_step2_validation():
+async def test_step02_validation():
     """Test Step2 data quality validation with special attention to features."""
     print("\n" + "="*80)
     print("🧪 TESTING STEP2 DATA QUALITY VALIDATION")
@@ -242,7 +242,7 @@ async def test_step2_validation():
     
     # Test Step2 validation
     print("\n🔍 Running Step2 data quality validation...")
-    result = validate_step2_quality(
+    result = validate_step02_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
@@ -318,24 +318,24 @@ async def test_comprehensive_validator():
     # Run all validations
     print("🔍 Running comprehensive validation for all steps...")
     
-    step1_result = validator.validate_step1_data_quality("ETHUSDT", "BINANCE", "test_data_cache")
-    step1_5_result = validator.validate_step1_5_data_quality("ETHUSDT", "BINANCE", "test_data_cache")
-    step2_result = validator.validate_step2_data_quality("ETHUSDT", "BINANCE", "test_data_training")
+    step01_result = validator.validate_step01_data_quality("ETHUSDT", "BINANCE", "test_data_cache")
+    step01_5_result = validator.validate_step01_5_data_quality("ETHUSDT", "BINANCE", "test_data_cache")
+    step02_result = validator.validate_step02_data_quality("ETHUSDT", "BINANCE", "test_data_training")
     
     # Save comprehensive report
     report_path = "comprehensive_validation_report.json"
     validator.save_validation_report(report_path)
     
     print(f"\n📊 Comprehensive Validation Summary:")
-    print(f"   - Step1 passed: {step1_result['validation_passed']}")
-    print(f"   - Step1.5 passed: {step1_5_result['validation_passed']}")
-    print(f"   - Step2 passed: {step2_result['validation_passed']}")
+    print(f"   - Step01 passed: {step01_result['validation_passed']}")
+    print(f"   - Step01.5 passed: {step01_5_result['validation_passed']}")
+    print(f"   - Step02 passed: {step02_result['validation_passed']}")
     print(f"   - Report saved to: {report_path}")
     
     return {
-        "step1": step1_result,
-        "step1_5": step1_5_result,
-        "step2": step2_result
+        "step01": step01_result,
+        "step01_5": step01_5_result,
+        "step02": step02_result
     }
 
 
@@ -344,7 +344,7 @@ async def main():
     print("🚀 COMPREHENSIVE DATA QUALITY VALIDATION TEST")
     print("="*80)
     print("This test demonstrates the comprehensive data quality validation system")
-    print("for Step1, Step1_5, and Step2 with special attention to:")
+    print("for Step01, Step01_5, and Step02 with special attention to:")
     print("  - NaN values")
     print("  - Infinite values")
     print("  - Constant features")
@@ -354,9 +354,9 @@ async def main():
     
     try:
         # Test individual step validations
-        await test_step1_validation()
-        await test_step1_5_validation()
-        await test_step2_validation()
+            await test_step01_validation()
+    await test_step01_5_validation()
+    await test_step02_validation()
         
         # Test feature quality logging
         test_feature_quality_logging()

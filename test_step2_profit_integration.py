@@ -54,7 +54,7 @@ def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
     
     return data
 
-async def test_step2_profit_integration():
+async def test_step02_profit_integration():
     """Test the integration of profit-based features in step2."""
     print("🧪 Testing Step2 Profit-Based Feature Engineering Integration")
     print("=" * 70)
@@ -99,14 +99,14 @@ async def test_step2_profit_integration():
         print(f"❌ Direct profit feature engineering failed: {e}")
         return False
     
-    # Test step2 vectorized feature engineering integration
-    print("\n🔧 Testing Step2 Vectorized Feature Engineering Integration...")
+    # Test step02 vectorized feature engineering integration
+    print("\n🔧 Testing Step02 Vectorized Feature Engineering Integration...")
     try:
         from src.training.steps.vectorized_advanced_feature_engineering import (
             VectorizedAdvancedFeatureEngineering
         )
         
-        # Create configuration for step2
+        # Create configuration for step02
         config = {
             "vectorized_advanced_features": {
                 "enable_volatility_modeling": True,
@@ -120,38 +120,38 @@ async def test_step2_profit_integration():
             }
         }
         
-        # Initialize step2 feature engineering
-        step2_feature_eng = VectorizedAdvancedFeatureEngineering(config)
-        init_success = await step2_feature_eng.initialize()
+            # Initialize step02 feature engineering
+    step02_feature_eng = VectorizedAdvancedFeatureEngineering(config)
+    init_success = await step02_feature_eng.initialize()
         
         if not init_success:
-            print("❌ Step2 feature engineering initialization failed")
+            print("❌ Step02 feature engineering initialization failed")
             return False
         
-        print("✅ Step2 feature engineering initialized successfully")
+        print("✅ Step02 feature engineering initialized successfully")
         
-        # Prepare data for step2 (separate price and volume data)
+        # Prepare data for step02 (separate price and volume data)
         price_data = test_data[['open', 'high', 'low', 'close', 'potential_profit_pct']].copy()
         volume_data = test_data[['volume']].copy()
         
         print(f"   - Price data shape: {price_data.shape}")
         print(f"   - Volume data shape: {volume_data.shape}")
         
-        # Apply step2 feature engineering
-        print("🚀 Applying step2 vectorized feature engineering...")
-        step2_features = await step2_feature_eng.engineer_features(
+            # Apply step02 feature engineering
+    print("🚀 Applying step02 vectorized feature engineering...")
+    step02_features = await step02_feature_eng.engineer_features(
             price_data=price_data,
             volume_data=volume_data,
             order_flow_data=None,
             sr_levels=None
         )
         
-        print(f"✅ Step2 feature engineering completed")
-        print(f"   - Total features generated: {len(step2_features)}")
+            print(f"✅ Step02 feature engineering completed")
+    print(f"   - Total features generated: {len(step02_features)}")
         
-        # Check for profit-based features in step2 output
-        profit_based_features = [name for name in step2_features.keys() if "potential_profit_pct" in name]
-        print(f"   - Profit-based features in step2: {len(profit_based_features)}")
+            # Check for profit-based features in step02 output
+    profit_based_features = [name for name in step02_features.keys() if "potential_profit_pct" in name]
+    print(f"   - Profit-based features in step02: {len(profit_based_features)}")
         
         if profit_based_features:
             print(f"   - Sample profit features: {profit_based_features[:10]}")
@@ -178,10 +178,10 @@ async def test_step2_profit_integration():
             
             print(f"   - Profit feature categories: {feature_categories}")
         else:
-            print("⚠️ No profit-based features found in step2 output")
+            print("⚠️ No profit-based features found in step02 output")
         
         # Show overall feature distribution
-        all_features = list(step2_features.keys())
+        all_features = list(step02_features.keys())
         print(f"\n📊 Overall Feature Distribution:")
         print(f"   - Total features: {len(all_features)}")
         
@@ -214,7 +214,7 @@ async def test_step2_profit_integration():
         
         # Check for missing values
         missing_features = []
-        for feature_name, feature_values in step2_features.items():
+        for feature_name, feature_values in step02_features.items():
             if hasattr(feature_values, 'isna'):
                 missing_count = feature_values.isna().sum()
                 if missing_count > 0:
@@ -228,7 +228,7 @@ async def test_step2_profit_integration():
         
         # Check for infinite values
         inf_features = []
-        for feature_name, feature_values in step2_features.items():
+        for feature_name, feature_values in step02_features.items():
             if hasattr(feature_values, 'values'):
                 if np.any(np.isinf(feature_values.values)):
                     inf_features.append(feature_name)
@@ -239,11 +239,11 @@ async def test_step2_profit_integration():
         else:
             print(f"   - No infinite values found")
         
-        print("\n✅ Step2 Profit Integration Test Completed Successfully!")
+        print("\n✅ Step02 Profit Integration Test Completed Successfully!")
         return True
         
     except Exception as e:
-        print(f"❌ Step2 integration test failed: {e}")
+        print(f"❌ Step02 integration test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -252,10 +252,10 @@ if __name__ == "__main__":
     import asyncio
     
     # Run the test
-    success = asyncio.run(test_step2_profit_integration())
+    success = asyncio.run(test_step02_profit_integration())
     
     if success:
-        print("\n🎉 All tests passed! Profit-based feature engineering is properly integrated into step2.")
+        print("\n🎉 All tests passed! Profit-based feature engineering is properly integrated into step02.")
     else:
         print("\n❌ Tests failed. Please check the implementation.")
         sys.exit(1)

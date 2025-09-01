@@ -12,6 +12,12 @@ from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
 
+import pandas as pd
+import numpy as np
+from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -201,6 +207,7 @@ class LabelingStep:
             data = pd.read_parquet(triple_barrier_path)
             self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
+
             # Generate comprehensive labels
             labeled_data = await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
 
@@ -211,7 +218,6 @@ class LabelingStep:
             # Save results
             output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
             labeled_data.to_parquet(output_path)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
@@ -242,6 +248,7 @@ class LabelingStep:
                 symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
             )
             
+
             return True
 
         except Exception as e:

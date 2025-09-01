@@ -51,6 +51,17 @@ except ImportError:
     RegimeSpecificTripleBarrierOptimizer = None
     create_regime_specific_triple_barrier_optimizer = None
 
+# Import HMM regime barrier optimizer (focused upper/lower barriers)
+try:
+    from .hmm_regime_barrier_optimizer import (
+        HMMRegimeBarrierOptimizer,
+        optimize_hmm_regime_barriers,
+    )
+    HMM_BARRIER_OPTIMIZER_AVAILABLE = True
+except Exception:
+    HMM_BARRIER_OPTIMIZER_AVAILABLE = False
+    HMMRegimeBarrierOptimizer = None
+
 
 class EarlyStageOptimizer:
     """
@@ -81,6 +92,19 @@ class EarlyStageOptimizer:
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
             self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
+        
+        # HMM regime barrier optimizer
+        self.hmm_barrier_optimizer = None
+        self.hmm_barrier_results = {}
+        self.hmm_barrier_map = {}
+        if HMM_BARRIER_OPTIMIZER_AVAILABLE:
+            try:
+                self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
+                    config.get("hmm_regime_barrier_optimizer", {})
+                )
+                self.logger.info("✅ HMM Regime Barrier Optimizer initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
     
     async def optimize_sr_parameters(
         self, 
@@ -307,10 +331,11 @@ class EarlyStageOptimizer:
         regime_data: Dict[str, pd.DataFrame],
         optimization_config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Optimize regime-specific triple barrier parameters."""
+        """Optimize regime-specific triple barrier parameters for multiple regimes."""
         
         self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
         self.logger.info(f"Regimes to optimize: {list(regime_data.keys())}")
+        self.logger.info(f"Total regimes: {len(regime_data)}")
         
         if not OPTUNA_AVAILABLE:
             return {"error": "Optuna is required for regime-specific optimization"}
@@ -318,8 +343,17 @@ class EarlyStageOptimizer:
         try:
             optimization_results = {}
             
+            # Analyze all regimes first to understand the regime landscape
+            regime_analysis = await self._analyze_all_regimes(regime_data)
+            self.logger.info(f"Regime analysis completed. Found {len(regime_analysis)} regime types")
+            
+            # Optimize each regime with regime-aware parameter ranges
             for regime_name, regime_df in regime_data.items():
                 self.logger.info(f"🔧 Optimizing triple barrier parameters for {regime_name} regime...")
+                
+                # Get regime characteristics for this specific regime
+                regime_characteristics = self._analyze_regime_characteristics(regime_name)
+                self.logger.info(f"Regime {regime_name} characteristics: {regime_characteristics}")
                 
                 # Create regime-specific study
                 study = await self._create_regime_barrier_study(regime_name, optimization_config)
@@ -332,6 +366,10 @@ class EarlyStageOptimizer:
                     optimization_config
                 )
                 
+                # Add regime characteristics to results
+                regime_result["regime_characteristics"] = regime_characteristics
+                regime_result["regime_analysis"] = regime_analysis.get(regime_name, {})
+                
                 optimization_results[regime_name] = regime_result
                 
                 self.logger.info(f"✅ {regime_name} regime optimization completed")
@@ -339,13 +377,22 @@ class EarlyStageOptimizer:
             # Store overall results
             self.regime_barrier_optimization_results = optimization_results
             
+            # Generate optimization insights
+            optimization_insights = self._generate_optimization_insights(optimization_results)
+            
             # Log to MLflow
             if MLFLOW_AVAILABLE:
                 await self._log_regime_optimization_to_mlflow(optimization_results)
             
             self.logger.info("✅ Regime-specific triple barrier optimization completed!")
+            self.logger.info(f"Optimized {len(optimization_results)} regimes with insights: {optimization_insights}")
             
-            return optimization_results
+            return {
+                "optimization_results": optimization_results,
+                "optimization_insights": optimization_insights,
+                "total_regimes": len(optimization_results),
+                "optimization_timestamp": datetime.now().isoformat()
+            }
             
         except Exception as e:
             error_msg = f"Regime-specific optimization failed: {e}"
@@ -431,12 +478,12 @@ class EarlyStageOptimizer:
         }
     
     def _get_regime_barrier_parameters(self, regime_name: str) -> Dict[str, Any]:
-        """Get regime-specific barrier parameter ranges."""
+        """Get regime-specific barrier parameter ranges based on regime characteristics."""
         
-        # Base parameter ranges
+        # Base parameter ranges - now regime-agnostic
         base_params = {
-            "upper_barrier_multiplier": (0.1, 5.0),
-            "lower_barrier_multiplier": (0.1, 5.0),
+            "upper_barrier_multiplier": (0.002, 0.015),  # 0.2% to 1.5%
+            "lower_barrier_multiplier": (0.002, 0.015),  # 0.2% to 1.5%
             "barrier_timeout": (1, 1440),  # minutes
             "barrier_adjustment": (0.1, 2.0),
             "dynamic_barriers": [True, False],
@@ -445,26 +492,126 @@ class EarlyStageOptimizer:
             "risk_per_trade": (0.001, 0.1)
         }
         
-        # Regime-specific adjustments
-        if regime_name == "bull_regime":
-            # Wider upper barrier, tighter lower barrier for bull markets
-            base_params["upper_barrier_multiplier"] = (0.3, 1.5)
-            base_params["lower_barrier_multiplier"] = (0.1, 0.8)
-            base_params["barrier_timeout"] = (5, 60)
-        elif regime_name == "bear_regime":
-            # Tighter upper barrier, wider lower barrier for bear markets
-            base_params["upper_barrier_multiplier"] = (0.1, 0.8)
-            base_params["lower_barrier_multiplier"] = (0.3, 1.5)
-            base_params["barrier_timeout"] = (10, 120)
-        elif regime_name == "volatile_regime":
-            # Much wider barriers for volatile markets
-            base_params["upper_barrier_multiplier"] = (0.5, 2.0)
-            base_params["lower_barrier_multiplier"] = (0.5, 2.0)
-            base_params["barrier_timeout"] = (3, 45)
-            base_params["position_size_multiplier"] = (0.05, 0.8)
-            base_params["risk_per_trade"] = (0.001, 0.05)
+        # Dynamic regime-specific adjustments based on regime characteristics
+        regime_characteristics = self._analyze_regime_characteristics(regime_name)
+        
+        if regime_characteristics:
+            # Adjust parameter ranges based on regime volatility
+            volatility_factor = regime_characteristics.get("volatility_factor", 1.0)
+            trend_strength = regime_characteristics.get("trend_strength", 0.0)
+            mean_reversion_strength = regime_characteristics.get("mean_reversion_strength", 0.0)
+            
+            # Adjust barrier ranges based on volatility
+            if volatility_factor > 1.5:  # High volatility regime
+                base_params["upper_barrier_multiplier"] = (0.005, 0.015)  # Wider barriers
+                base_params["lower_barrier_multiplier"] = (0.005, 0.015)
+                base_params["barrier_timeout"] = (1, 30)  # Shorter timeouts
+                base_params["position_size_multiplier"] = (0.05, 0.8)  # Smaller positions
+                base_params["risk_per_trade"] = (0.001, 0.03)  # Lower risk
+            elif volatility_factor < 0.7:  # Low volatility regime
+                base_params["upper_barrier_multiplier"] = (0.002, 0.008)  # Tighter barriers
+                base_params["lower_barrier_multiplier"] = (0.002, 0.008)
+                base_params["barrier_timeout"] = (30, 1440)  # Longer timeouts
+                base_params["position_size_multiplier"] = (0.8, 2.0)  # Larger positions
+                base_params["risk_per_trade"] = (0.02, 0.1)  # Higher risk
+            
+            # Adjust based on trend strength
+            if abs(trend_strength) > 0.7:  # Strong trend regime
+                if trend_strength > 0:  # Bullish trend
+                    base_params["upper_barrier_multiplier"] = (0.003, 0.012)  # Wider upper
+                    base_params["lower_barrier_multiplier"] = (0.002, 0.008)  # Tighter lower
+                else:  # Bearish trend
+                    base_params["upper_barrier_multiplier"] = (0.002, 0.008)  # Tighter upper
+                    base_params["lower_barrier_multiplier"] = (0.003, 0.012)  # Wider lower
+            
+            # Adjust based on mean reversion strength
+            if mean_reversion_strength > 0.7:  # Strong mean reversion
+                base_params["upper_barrier_multiplier"] = (0.002, 0.010)  # Balanced barriers
+                base_params["lower_barrier_multiplier"] = (0.002, 0.010)
+                base_params["barrier_timeout"] = (5, 120)  # Medium timeouts
         
         return base_params
+    
+    def _analyze_regime_characteristics(self, regime_name: str) -> Dict[str, float]:
+        """Analyze regime characteristics to inform parameter ranges."""
+        
+        try:
+            # This would integrate with your actual regime data analysis
+            # For now, providing a placeholder that can be extended
+            
+            # Get regime data if available
+            regime_data = self._get_regime_data(regime_name)
+            
+            if regime_data is None or regime_data.empty:
+                # Return default characteristics if no data available
+                return {
+                    "volatility_factor": 1.0,
+                    "trend_strength": 0.0,
+                    "mean_reversion_strength": 0.0,
+                    "regime_duration": 1.0,
+                    "price_momentum": 0.0
+                }
+            
+            # Calculate regime characteristics
+            characteristics = {}
+            
+            # Volatility factor (normalized)
+            returns = regime_data['close'].pct_change().dropna()
+            characteristics["volatility_factor"] = returns.std() / 0.02  # Normalize to 2% baseline
+            
+            # Trend strength (using linear regression slope)
+            if len(regime_data) > 10:
+                x = np.arange(len(regime_data))
+                y = regime_data['close'].values
+                slope = np.polyfit(x, y, 1)[0]
+                characteristics["trend_strength"] = np.tanh(slope / regime_data['close'].mean() * 1000)
+            else:
+                characteristics["trend_strength"] = 0.0
+            
+            # Mean reversion strength (using autocorrelation)
+            if len(returns) > 20:
+                autocorr = returns.autocorr(lag=1)
+                characteristics["mean_reversion_strength"] = abs(autocorr) if not np.isnan(autocorr) else 0.0
+            else:
+                characteristics["mean_reversion_strength"] = 0.0
+            
+            # Regime duration factor
+            characteristics["regime_duration"] = len(regime_data) / 1000  # Normalize to 1000 periods
+            
+            # Price momentum
+            if len(regime_data) > 20:
+                momentum = (regime_data['close'].iloc[-1] / regime_data['close'].iloc[-20] - 1)
+                characteristics["price_momentum"] = np.tanh(momentum * 10)
+            else:
+                characteristics["price_momentum"] = 0.0
+            
+            return characteristics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to analyze regime characteristics for {regime_name}: {e}")
+            return {
+                "volatility_factor": 1.0,
+                "trend_strength": 0.0,
+                "mean_reversion_strength": 0.0,
+                "regime_duration": 1.0,
+                "price_momentum": 0.0
+            }
+    
+    def _get_regime_data(self, regime_name: str) -> Optional[pd.DataFrame]:
+        """Get regime data for analysis."""
+        
+        # This would integrate with your actual regime data storage
+        # For now, return None - implement based on your data structure
+        try:
+            # Example implementation - replace with your actual data access
+            if hasattr(self, 'training_manager') and self.training_manager:
+                # Try to get regime data from training manager
+                return self.training_manager.get_regime_data(regime_name)
+            else:
+                return None
+        except Exception as e:
+            self.logger.warning(f"Failed to get regime data for {regime_name}: {e}")
+            return None
     
     def _create_regime_barrier_objective(
         self, 
@@ -562,38 +709,89 @@ class EarlyStageOptimizer:
         position_size: float, 
         risk_per_trade: float
     ) -> float:
-        """Calculate performance score for regime-specific barrier parameters."""
+        """Calculate performance score for regime-specific barrier parameters using data-driven approach."""
+        
+        # Get regime characteristics for scoring
+        regime_characteristics = self._analyze_regime_characteristics(regime_name)
         
         # Base score
         base_score = 0.0
         
-        # Barrier settings scoring
-        if regime_name == "bull_regime":
-            if upper_barrier > lower_barrier:  # Wider upper barrier
+        # Extract characteristics
+        volatility_factor = regime_characteristics.get("volatility_factor", 1.0)
+        trend_strength = regime_characteristics.get("trend_strength", 0.0)
+        mean_reversion_strength = regime_characteristics.get("mean_reversion_strength", 0.0)
+        regime_duration = regime_characteristics.get("regime_duration", 1.0)
+        price_momentum = regime_characteristics.get("price_momentum", 0.0)
+        
+        # Score barrier settings based on regime characteristics
+        
+        # 1. Volatility-based scoring
+        if volatility_factor > 1.5:  # High volatility
+            # Prefer wider barriers and shorter timeouts
+            if upper_barrier > 0.008 and lower_barrier > 0.008:
                 base_score += 0.3
-            if timeout < 60:  # Faster timeout
+            if timeout < 60:
                 base_score += 0.2
-            if position_size > 1.0:  # Larger positions
+            if position_size < 1.0:  # Smaller positions for high volatility
                 base_score += 0.2
-        elif regime_name == "bear_regime":
-            if lower_barrier > upper_barrier:  # Wider lower barrier
+        elif volatility_factor < 0.7:  # Low volatility
+            # Prefer tighter barriers and longer timeouts
+            if upper_barrier < 0.008 and lower_barrier < 0.008:
                 base_score += 0.3
-            if timeout > 60:  # Slower timeout
+            if timeout > 120:
                 base_score += 0.2
-            if position_size < 1.0:  # Smaller positions
+            if position_size > 1.0:  # Larger positions for low volatility
                 base_score += 0.2
-        elif regime_name == "volatile_regime":
-            if upper_barrier > 1.5 and lower_barrier > 1.5:  # Wide barriers
-                base_score += 0.3
-            if timeout < 45:  # Short timeout
+        
+        # 2. Trend-based scoring
+        if abs(trend_strength) > 0.7:  # Strong trend
+            if trend_strength > 0:  # Bullish trend
+                # Prefer wider upper barrier, tighter lower barrier
+                if upper_barrier > lower_barrier:
+                    base_score += 0.25
+                if upper_barrier > 0.006:
+                    base_score += 0.15
+            else:  # Bearish trend
+                # Prefer tighter upper barrier, wider lower barrier
+                if lower_barrier > upper_barrier:
+                    base_score += 0.25
+                if lower_barrier > 0.006:
+                    base_score += 0.15
+        
+        # 3. Mean reversion scoring
+        if mean_reversion_strength > 0.7:  # Strong mean reversion
+            # Prefer balanced barriers
+            if abs(upper_barrier - lower_barrier) < 0.002:
                 base_score += 0.2
-            if position_size < 0.8:  # Much smaller positions
-                base_score += 0.2
-            if risk_per_trade < 0.03:  # Lower risk
+            if 30 < timeout < 180:  # Medium timeouts
+                base_score += 0.15
+        
+        # 4. Risk management scoring
+        if risk_per_trade < 0.05:  # Conservative risk
+            base_score += 0.1
+        elif risk_per_trade > 0.08:  # Aggressive risk
+            if volatility_factor < 0.8:  # Only for low volatility
                 base_score += 0.1
         
+        # 5. Position sizing scoring
+        if volatility_factor > 1.2 and position_size < 0.8:  # Appropriate sizing for high vol
+            base_score += 0.15
+        elif volatility_factor < 0.8 and position_size > 1.2:  # Appropriate sizing for low vol
+            base_score += 0.15
+        
+        # 6. Barrier range validation (ensure within 0.2-1.5% range)
+        if 0.002 <= upper_barrier <= 0.015 and 0.002 <= lower_barrier <= 0.015:
+            base_score += 0.1  # Bonus for staying within specified range
+        else:
+            base_score -= 0.5  # Penalty for out-of-range barriers
+        
+        # 7. Timeout appropriateness
+        if timeout < 1 or timeout > 1440:  # Out of reasonable range
+            base_score -= 0.3
+        
         # Add some randomness to simulate real evaluation
-        random_factor = np.random.normal(0, 0.1)
+        random_factor = np.random.normal(0, 0.05)  # Reduced randomness for more stable scoring
         final_score = base_score + random_factor
         
         # Ensure score is positive
@@ -663,6 +861,42 @@ class EarlyStageOptimizer:
         except Exception as e:
             self.logger.error(f"Failed to log regime optimization to MLflow: {e}")
     
+    async def optimize_hmm_regime_barriers(
+        self,
+        data: pd.DataFrame,
+        regime_column: str = "hmm_regime"
+    ) -> Dict[str, Any]:
+        """Run HMM regime barrier optimization and persist a barriers map for downstream use."""
+        
+        if not self.hmm_barrier_optimizer:
+            return {"error": "HMM Regime Barrier Optimizer not available"}
+        
+        try:
+            self.logger.info("🚀 Starting HMM regime barrier optimization (upper/lower only)...")
+            results = await self.hmm_barrier_optimizer.optimize_regime_barriers(
+                data, regime_column=regime_column
+            )
+            self.hmm_barrier_results = results
+            
+            # Build and export barrier map for downstream steps
+            self.hmm_barrier_map = self.hmm_barrier_optimizer.build_barrier_map()
+            barriers_path = self.hmm_barrier_optimizer.export_barrier_map()
+            
+            self.logger.info(f"✅ HMM regime barrier optimization completed. Barriers saved to {barriers_path}")
+            return {
+                "results": results,
+                "barrier_map": self.hmm_barrier_map,
+                "barriers_path": str(barriers_path)
+            }
+        except Exception as e:
+            err = f"Failed to run HMM regime barrier optimization: {e}"
+            self.logger.exception(err)
+            return {"error": err}
+    
+    def get_hmm_barrier_map(self) -> Dict[str, Dict[str, float]]:
+        """Return the latest HMM barrier map (regime -> upper/lower in decimals and %)."""
+        return self.hmm_barrier_map or {}
+    
     async def get_optimization_status(self) -> Dict[str, Any]:
         """Get current status of early stage optimization."""
         
@@ -711,6 +945,132 @@ class EarlyStageOptimizer:
         
         return summary
 
+    async def get_regime_optimization_summary(self) -> Dict[str, Any]:
+        """Get a comprehensive summary of regime optimization results."""
+        
+        if not self.regime_barrier_optimization_results:
+            return {"status": "no_optimization_results"}
+        
+        summary = {
+            "total_regimes": len(self.regime_barrier_optimization_results),
+            "successful_optimizations": 0,
+            "failed_optimizations": 0,
+            "regime_types": {},
+            "parameter_ranges": {},
+            "performance_ranking": []
+        }
+        
+        for regime_name, result in self.regime_barrier_optimization_results.items():
+            if "error" not in result:
+                summary["successful_optimizations"] += 1
+                
+                # Track regime types
+                regime_type = result.get("regime_analysis", {}).get("regime_type", "unknown")
+                summary["regime_types"][regime_type] = summary["regime_types"].get(regime_type, 0) + 1
+                
+                # Track performance
+                best_value = result.get("best_value", 0)
+                summary["performance_ranking"].append({
+                    "regime_name": regime_name,
+                    "regime_type": regime_type,
+                    "best_value": best_value,
+                    "total_trials": result.get("total_trials", 0)
+                })
+                
+                # Track parameter ranges
+                best_params = result.get("best_params", {})
+                for param_name, param_value in best_params.items():
+                    if param_name not in summary["parameter_ranges"]:
+                        summary["parameter_ranges"][param_name] = []
+                    summary["parameter_ranges"][param_name].append(param_value)
+            else:
+                summary["failed_optimizations"] += 1
+        
+        # Sort performance ranking
+        summary["performance_ranking"].sort(key=lambda x: x["best_value"], reverse=True)
+        
+        # Calculate parameter statistics
+        for param_name, values in summary["parameter_ranges"].items():
+            if values:
+                summary["parameter_ranges"][param_name] = {
+                    "mean": np.mean(values),
+                    "std": np.std(values),
+                    "min": np.min(values),
+                    "max": np.max(values),
+                    "values": values
+                }
+        
+        return summary
+    
+    async def get_regime_parameter_recommendations(self) -> List[str]:
+        """Get recommendations based on regime optimization results."""
+        
+        recommendations = []
+        
+        if not self.regime_barrier_optimization_results:
+            recommendations.append("No optimization results available. Run optimization first.")
+            return recommendations
+        
+        summary = await self.get_regime_optimization_summary()
+        
+        # Performance-based recommendations
+        if summary["performance_ranking"]:
+            best_regime = summary["performance_ranking"][0]
+            worst_regime = summary["performance_ranking"][-1]
+            
+            recommendations.append(f"Best performing regime: {best_regime['regime_name']} ({best_regime['regime_type']}) with score {best_regime['best_value']:.4f}")
+            recommendations.append(f"Worst performing regime: {worst_regime['regime_name']} ({worst_regime['regime_type']}) with score {worst_regime['best_value']:.4f}")
+        
+        # Parameter-based recommendations
+        param_ranges = summary.get("parameter_ranges", {})
+        
+        if "upper_barrier_multiplier" in param_ranges:
+            upper_stats = param_ranges["upper_barrier_multiplier"]
+            recommendations.append(f"Upper barrier range: {upper_stats['min']:.4f} - {upper_stats['max']:.4f} (mean: {upper_stats['mean']:.4f})")
+        
+        if "lower_barrier_multiplier" in param_ranges:
+            lower_stats = param_ranges["lower_barrier_multiplier"]
+            recommendations.append(f"Lower barrier range: {lower_stats['min']:.4f} - {lower_stats['max']:.4f} (mean: {lower_stats['mean']:.4f})")
+        
+        if "barrier_timeout" in param_ranges:
+            timeout_stats = param_ranges["barrier_timeout"]
+            recommendations.append(f"Timeout range: {timeout_stats['min']:.0f} - {timeout_stats['max']:.0f} minutes (mean: {timeout_stats['mean']:.0f})")
+        
+        # Regime type recommendations
+        regime_types = summary.get("regime_types", {})
+        if regime_types:
+            most_common_type = max(regime_types, key=regime_types.get)
+            recommendations.append(f"Most common regime type: {most_common_type} ({regime_types[most_common_type]} regimes)")
+        
+        return recommendations
+    
+    async def export_optimization_results(self, filepath: str = None) -> str:
+        """Export optimization results to a JSON file."""
+        
+        if not filepath:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = f"regime_optimization_results_{timestamp}.json"
+        
+        try:
+            export_data = {
+                "optimization_results": self.regime_barrier_optimization_results,
+                "sr_optimization_results": self.sr_optimization_results,
+                "summary": await self.get_regime_optimization_summary(),
+                "recommendations": await self.get_regime_parameter_recommendations(),
+                "export_timestamp": datetime.now().isoformat()
+            }
+            
+            with open(filepath, 'w') as f:
+                json.dump(export_data, f, indent=2, default=str)
+            
+            self.logger.info(f"✅ Optimization results exported to {filepath}")
+            return filepath
+            
+        except Exception as e:
+            error_msg = f"Failed to export optimization results: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            return error_msg
+
 
 # Factory function for creating early stage optimizer
 def create_early_stage_optimizer(config: Dict[str, Any], training_manager=None):
@@ -720,7 +1080,7 @@ def create_early_stage_optimizer(config: Dict[str, Any], training_manager=None):
 
 
 if __name__ == "__main__":
-    # Example usage
+    # Example usage for dynamic regime optimization
     config = {
         "early_stage_optimization": {
             "sr_optimization": {
@@ -731,7 +1091,11 @@ if __name__ == "__main__":
             "regime_optimization": {
                 "n_trials": 100,
                 "timeout": 3600,
-                "early_stopping_patience": 20
+                "early_stopping_patience": 20,
+                "barrier_range": {
+                    "min": 0.002,  # 0.2%
+                    "max": 0.015   # 1.5%
+                }
             }
         }
     }
@@ -740,7 +1104,35 @@ if __name__ == "__main__":
     optimizer = create_early_stage_optimizer(config)
     
     print("✅ Early Stage Optimizer created successfully!")
-    print("This optimizer handles:")
-    print("  - SR parameter optimization (step02_5)")
-    print("  - Regime-specific triple barrier optimization (step4)")
-    print("  - Both happen BEFORE ML trading begins")
+    print("This optimizer now handles:")
+    print("  - SR parameter optimization (step2_5)")
+    print("  - Dynamic regime-specific triple barrier optimization (step4)")
+    print("  - Supports 15-20+ regimes with data-driven parameter ranges")
+    print("  - Triple barrier range: 0.2% - 1.5%")
+    print("  - Regime-agnostic scoring based on characteristics")
+    print("  - Automatic regime analysis and categorization")
+    print("  - Comprehensive optimization insights and recommendations")
+    
+    # Example of how to use with multiple regimes
+    print("\n📊 Example usage with multiple regimes:")
+    print("""
+    # Create sample regime data (replace with your actual data)
+    regime_data = {
+        "regime_1": df1,  # Your regime DataFrame
+        "regime_2": df2,  # Your regime DataFrame
+        # ... up to 15-20 regimes
+    }
+    
+    # Run optimization
+    results = await optimizer.optimize_regime_specific_triple_barrier(
+        regime_data, 
+        config["early_stage_optimization"]["regime_optimization"]
+    )
+    
+    # Get insights
+    summary = await optimizer.get_regime_optimization_summary()
+    recommendations = await optimizer.get_regime_parameter_recommendations()
+    
+    # Export results
+    await optimizer.export_optimization_results()
+    """)

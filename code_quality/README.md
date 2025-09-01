@@ -11,7 +11,7 @@ Available categories:
 - Dead Code Detection (Python: vulture)
 - Circular Import Detection (Python: pylint)
 - Dependency Mapping (Python: pydeps; tree via pipdeptree)
-
+- Placeholder Detection (Custom: finds TODO comments, pass statements, NotImplementedError raises)
 - Complexity Analysis (Python: radon)
 - Test Coverage (pytest + coverage if tests configured)
 - Dependency Audit (Python: pip-audit)

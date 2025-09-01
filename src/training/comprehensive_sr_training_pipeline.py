@@ -2,10 +2,9 @@
 """Comprehensive SR Training Pipeline.
 
 This module provides a complete training pipeline that integrates:
-    pass  # TODO: Add implementation
-1. Step7 enhanced matrix operations (comprehensive SR features)
-2. Step2_5 SR optimization (SR levels and parameters)
-3. Multi-output model training with full SR context
+1. Step7 enhanced matrix operations (comprehensive SR features): Loads and integrates advanced matrix-based features
+2. Step2_5 SR optimization (SR levels and parameters): Incorporates optimized support and resistance levels
+3. Multi-output model training with full SR context: Trains models using comprehensive SR-enhanced feature sets
 
 The pipeline ensures all ML models are trained on the complete feature set
 including extensive SR features and optimized SR levels.

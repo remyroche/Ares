@@ -4,12 +4,11 @@
 Feature Engineering Optimization Module
 
 This module optimizes feature engineering parameters using:
-    pass  # TODO: Add implementation
-1. Random Forest + SHAP for correlation analysis
-2. Mutual importance matrix for feature parameter selection
-3. Regime-specific optimization for each HMM regime
-4. Top 3 parameter selection based on correlation, multicollinearity = and mutual information
-5. Feature Interaction Engineering for capturing non-linear relationships
+1. Random Forest + SHAP for correlation analysis: Identifies feature importance and interactions
+2. Mutual importance matrix for feature parameter selection: Reduces parameter space efficiently
+3. Regime-specific optimization for each HMM regime: Tailors parameters to market conditions
+4. Top 3 parameter selection based on correlation, multicollinearity, and mutual information: Balances multiple criteria
+5. Feature Interaction Engineering for capturing non-linear relationships: Creates meaningful feature combinations
 """
 
 import json

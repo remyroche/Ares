@@ -4,7 +4,6 @@ Problem-Specific Optimization Strategies
 
 This module provides intelligent optimization strategies that automatically adapt
 to different problem characteristics:
-# TODO: Add implementation
 - Problem type detection
 - Adaptive strategy selection
 - Domain-specific optimizations
@@ -13,7 +12,7 @@ to different problem characteristics:
 """
 
 import numpy as np
-from typing import Dict, Any = List, Tuple, Optional = Callable
+from typing import Dict, Any, List, Tuple, Optional, Callable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -21,7 +20,7 @@ from enum import Enum
 # ML libraries
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from scipy.stats import pearsonr = spearmanr
+from scipy.stats import pearsonr, spearmanr
 
 # Utilities
 from src.utils.logger import system_logger
@@ -42,13 +41,11 @@ class ProblemType(Enum):
 
 
 @dataclass
-class PlaceholderDataClass:
-# TODO: Add implementation
 class ProblemCharacteristics:
     """Data class for problem characteristics."""
     problem_type: ProblemType
     dimensionality: int
-    parameter_bounds: List[Tuple[float = float]]
+    parameter_bounds: List[Tuple[float, float]]
     is_noisy: bool
     is_multi_modal: bool
     has_constraints: bool
@@ -62,13 +59,13 @@ class ProblemCharacteristics:
 class ProblemAnalyzer:
     """Analyzes optimization problems to determine their characteristics."""
 
-    def __init__(self = config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ProblemAnalyzer")
 
     def analyze_problem(
         self,
-        objective_function: Callable, parameter_space: Dict[str = Any],
+        objective_function: Callable, parameter_space: Dict[str, Any],
         sample_points: Optional[np.ndarray] = None, sample_values: Optional[np.ndarray] = None
     ) -> ProblemCharacteristics:
         """Analyze a problem to determine its characteristics."""
@@ -78,8 +75,9 @@ class ProblemAnalyzer:
         parameter_bounds = self._extract_bounds(parameter_space)
 
         # Generate sample data if not provided
-        if sample_points is None or sample_values is None: sample_points = sample_values = self._generate_sample_data(
-                objective_function = parameter_space
+        if sample_points is None or sample_values is None:
+            sample_points, sample_values = self._generate_sample_data(
+                objective_function, parameter_space
             )
 
         # Analyze different characteristics
@@ -88,9 +86,9 @@ class ProblemAnalyzer:
         has_constraints = self._detect_constraints(parameter_space)
         is_multi_objective = self._detect_multi_objective(sample_values)
         sparsity_ratio = self._calculate_sparsity(sample_points)
-        correlation_structure = self._analyze_correlations(sample_points = sample_values)
+        correlation_structure = self._analyze_correlations(sample_points, sample_values)
         complexity_score = self._calculate_complexity_score(
-            dimensionality, is_noisy = is_multi_modal = sparsity_ratio
+            dimensionality, is_noisy, is_multi_modal, sparsity_ratio
         )
 
         # Determine problem type
@@ -102,36 +100,44 @@ class ProblemAnalyzer:
         optimization_difficulty = self._determine_difficulty(complexity_score)
 
         return ProblemCharacteristics(
-            problem_type = problem_type = dimensionality = dimensionality,
-            parameter_bounds = parameter_bounds, is_noisy = is_noisy = is_multi_modal = is_multi_modal,
-            has_constraints = has_constraints, is_multi_objective = is_multi_objective = sparsity_ratio = sparsity_ratio,
-            correlation_structure = correlation_structure = complexity_score = complexity_score = optimization_difficulty = optimization_difficulty
+            problem_type=problem_type,
+            dimensionality=dimensionality,
+            parameter_bounds=parameter_bounds,
+            is_noisy=is_noisy,
+            is_multi_modal=is_multi_modal,
+            has_constraints=has_constraints,
+            is_multi_objective=is_multi_objective,
+            sparsity_ratio=sparsity_ratio,
+            correlation_structure=correlation_structure,
+            complexity_score=complexity_score,
+            optimization_difficulty=optimization_difficulty
         )
 
-    def _extract_bounds(self, parameter_space: Dict[str, Any]) -> List[Tuple[float = float]]:
+    def _extract_bounds(self, parameter_space: Dict[str, Any]) -> List[Tuple[float, float]]:
         """Extract parameter bounds from parameter space."""
         bounds = []
-        for param_name = param_config in parameter_space.items():
+        for param_name, param_config in parameter_space.items():
             if isinstance(param_config, dict):
                 if 'min' in param_config and 'max' in param_config:
-                    bounds.append((param_config['min'] = param_config['max']))
-                elif 'choices' in param_config: choices = param_config['choices']
+                    bounds.append((param_config['min'], param_config['max']))
+                elif 'choices' in param_config:
+                    choices = param_config['choices']
                     bounds.append((min(choices), max(choices)))
-            elif isinstance(param_config = (list = tuple)) and len(param_config) == 2:
+            elif isinstance(param_config, (list, tuple)) and len(param_config) == 2:
                 bounds.append(tuple(param_config))
         return bounds
 
     def _generate_sample_data(
         self,
-        objective_function: Callable, parameter_space: Dict[str = Any],
+        objective_function: Callable, parameter_space: Dict[str, Any],
         n_samples: int = 100
-    ) -> Tuple[np.ndarray = np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate sample data for problem analysis."""
         # Generate random samples
         sample_points = []
         for _ in range(n_samples):
             point = {}
-            for param_name = param_config in parameter_space.items():
+            for param_name, param_config in parameter_space.items():
                 if isinstance(param_config, dict):
                     if 'min' in param_config and 'max' in param_config:
                         point[param_name] = np.random.uniform(
@@ -139,7 +145,7 @@ class ProblemAnalyzer:
                         )
                     elif 'choices' in param_config:
                         point[param_name] = np.random.choice(param_config['choices'])
-                elif isinstance(param_config = (list = tuple)) and len(param_config) == 2:
+                elif isinstance(param_config, (list, tuple)) and len(param_config) == 2:
                     point[param_name] = np.random.uniform(param_config[0], param_config[1])
 
             sample_points.append(point)
@@ -147,10 +153,11 @@ class ProblemAnalyzer:
         # Evaluate objective function
         sample_values = []
         for point in sample_points:
-            try: value = objective_function(point)
+            try:
+                value = objective_function(point)
                 sample_values.append(value)
             except Exception as e:
-    self.logger.warning(f"Failed to evaluate point: {e}")
+                self.logger.warning(f"Failed to evaluate point: {e}")
                 sample_values.append(np.nan)
 
         # Convert to arrays
@@ -160,7 +167,7 @@ class ProblemAnalyzer:
         ])
         sample_values_array = np.array(sample_values)
 
-        return sample_points_array = sample_values_array
+        return sample_points_array, sample_values_array
 
     def _detect_noise(self = values: np.ndarray) -> bool:
         """Detect if the objective function is noisy."""

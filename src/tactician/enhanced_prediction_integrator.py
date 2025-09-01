@@ -17,15 +17,6 @@ from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
 
 class TacticianEnhancedPredictionIntegrator:
-    # Implementation placeholder - add actual implementation
-
-    # Implementation needed - add actual functionality
-
-
-    # TODO: Implement class methods
-class TacticianEnhancedPredictionIntegrator:
-    pass  # TODO: Add implementation
-class TacticianEnhancedPredictionIntegrator:
     """
 Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
 similar to the Analyst but with smaller price deviations and higher confidence.
@@ -126,12 +117,9 @@ timeframe: Target timeframe (1m or 5m)
 
 Returns:
             dict: Tactician's enhanced multi-outcome predictions
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Determine timeframe
+        """
+        try:
+            # Determine timeframe
 if timeframe is None:
                 timeframe = self._determine_optimal_timeframe(market_data)
 
@@ -187,12 +175,9 @@ timeframe: str,
 symbol: str,
 exchange: str
 ) -> dict[str, Any]:
-        """Generate enhanced prediction for a specific type."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Get base prediction from Analyst
+                """Generate enhanced prediction for a specific type."""
+        try:
+            # Get base prediction from Analyst
 base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
 
 if base_prediction is None:
@@ -223,12 +208,9 @@ self,
 analyst_predictions: dict[str, Any],
 prediction_type: str
 ) -> Optional[dict[str, Any]]:
-        """Extract base prediction from Analyst predictions."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Map Tactician prediction types to Analyst prediction types
+                """Extract base prediction from Analyst predictions."""
+        try:
+            # Map Tactician prediction types to Analyst prediction types
 analyst_type_mapping = {
 "price_deviation_prediction": "price_prediction",
 "price_direction_prediction": "direction_prediction",
@@ -256,12 +238,9 @@ self,
 prediction_type: str,
 analyst_predictions: dict[str, Any]
 ) -> dict[str, Any]:
-        """Create synthetic prediction when Analyst prediction is not available."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Extract any available confidence or prediction values
+                """Create synthetic prediction when Analyst prediction is not available."""
+        try:
+            # Extract any available confidence or prediction values
 base_confidence = 0.5
 base_prediction = 0.0
 
@@ -313,12 +292,9 @@ upper_barrier: float,
 lower_barrier: float,
 timeframe: str
 ) -> dict[str, Any]:
-        """Apply Tactician-specific enhancement to base prediction."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Get ML model confidence factor for this prediction type
+                """Apply Tactician-specific enhancement to base prediction."""
+        try:
+            # Get ML model confidence factor for this prediction type
 ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
 if ml_confidence_factor is None:
                 # Fallback to base confidence if ML model hasn't provided factor yet
@@ -380,11 +356,8 @@ barrier_combinations: Dict[str, Tuple[float, float]],
 timeframe: str
 ) -> Dict[str, float]:
         """Enhance prediction value for 2 barrier combinations."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if prediction_type == "price_deviation_prediction":
+        try:
+            if prediction_type == "price_deviation_prediction":
                 # Calculate price deviations for 2 barrier combinations
 current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
 
@@ -441,12 +414,9 @@ ml_confidence_factor: float,
 market_data: pd.DataFrame,
 timeframe: str
 ) -> float:
-        """Calculate enhanced confidence using ML model factor."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Base enhancement from ML model factor
+                """Calculate enhanced confidence using ML model factor."""
+        try:
+            # Base enhancement from ML model factor
 enhanced_confidence = min(1.0, base_confidence * ml_confidence_factor)
 
 # Additional enhancement based on market data quality
@@ -473,12 +443,9 @@ enhanced_confidence: float,
 market_data: pd.DataFrame,
 timeframe: str
 ) -> float:
-        """Calculate precision score for the enhanced prediction."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Base precision from confidence
+                """Calculate precision score for the enhanced prediction."""
+        try:
+            # Base precision from confidence
 precision_score = enhanced_confidence
 
 # Adjust based on timeframe (shorter timeframes get higher precision)
@@ -498,12 +465,9 @@ except Exception as e:
 return enhanced_confidence
 
 def _determine_optimal_timeframe(self, market_data: pd.DataFrame) -> str:
-        """Determine optimal timeframe based on market data."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if market_data.empty:
+                """Determine optimal timeframe based on market data."""
+        try:
+            if market_data.empty:
                 return self.primary_timeframe
 
 # Check data frequency
@@ -530,12 +494,9 @@ self,
 tactician_predictions: dict[str, Any],
 analyst_predictions: dict[str, Any]
 ) -> dict[str, Any]:
-        """Validate Tactician predictions against Analyst predictions."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-validation_results = {
+                """Validate Tactician predictions against Analyst predictions."""
+        try:
+            validation_results = {
 "is_valid": True,
 "validation_score": 0.0,
 "issues": [],
@@ -604,12 +565,9 @@ except Exception as e:
 return {"is_valid": False, "validation_score": 0.0, "issues": [str(e)], "enhancements": []}
 
 def update_ml_confidence_factors(self, new_factors: dict[str, float]) -> None:
-        """Update ML confidence factors dynamically (called by ML model)."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-for prediction_type, factor in new_factors.items():
+                """Update ML confidence factors dynamically (called by ML model)."""
+        try:
+            for prediction_type, factor in new_factors.items():
                 if prediction_type in self.ml_confidence_factors:
                     self.ml_confidence_factors[prediction_type] = factor
 self.logger.info(f"Updated ML confidence factor for {prediction_type}: {factor}")
@@ -629,11 +587,8 @@ Args:
 Returns:
             bool: True if factors loaded successfully
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Try to load from step12 results
+        try:
+            # Try to load from step12 results
 if step12_results_path and Path(step12_results_path).exists():
                 # Load from specific file
 with open(step12_results_path, 'r') as f:
@@ -688,15 +643,12 @@ except Exception as e:
 return False
 
 def auto_refresh_from_step12(self) -> bool:
+                """
+        Automatically refresh ML confidence factors from step12 results.
+        This method is called periodically to check for new step12 results.
         """
-Automatically refresh ML confidence factors from step12 results.
-This method is called periodically to check for new step12 results.
-"""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Check if step12 results have been updated
+        try:
+            # Check if step12 results have been updated
 step12_config = self.config.get("step12_confidence_optimization", {})
 auto_refresh = step12_config.get("auto_refresh", True)
 
@@ -711,12 +663,9 @@ except Exception as e:
 return False
 
 def get_prediction_summary(self, tactician_predictions: dict[str, Any]) -> dict[str, Any]:
-        """Get summary of Tactician predictions."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-summary = {
+                """Get summary of Tactician predictions."""
+        try:
+            summary = {
 "total_predictions": 0,
 "high_precision_predictions": 0,
 "average_confidence": 0.0,

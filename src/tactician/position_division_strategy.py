@@ -18,10 +18,6 @@ warning,
 )
 
 class PositionDivisionStrategy:
-    pass  # TODO: Add implementation
-class PositionDivisionStrategy:
-    pass  # TODO: Add implementation
-class PositionDivisionStrategy:
     """
 Position Division Strategy for managing multiple positions and their lifecycle.
 
@@ -66,11 +62,8 @@ Initialize the position division strategy.
 Returns:
             bool: True if initialization successful
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Position Division Strategy...")
+        try:
+            self.logger.info("Initializing Position Division Strategy...")
 
 # Validate configuration
 if not self._validate_configuration():
@@ -96,11 +89,8 @@ Validate position division strategy configuration.
 Returns:
             bool: True if configuration is valid
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.max_positions <= 0:
+        try:
+            if self.max_positions <= 0:
                 self.logger.error(invalid("Max positions must be positive"))
 return False
 
@@ -144,11 +134,8 @@ market_conditions: Current market conditions
 Returns:
             Dict: Position division strategy or None if failed
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Calculating position division strategy...")
+        try:
+            self.logger.info("Calculating position division strategy...")
 
 # Calculate number of positions based on confidence
 num_positions = self._calculate_num_positions(confidence_score)
@@ -187,11 +174,8 @@ Args:
 Returns:
             int: Number of positions
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Higher confidence = fewer positions (more concentrated)
+        try:
+            # Higher confidence = fewer positions (more concentrated)
 # Lower confidence = more positions (more diversified)
 
 if confidence_score >= 0.8:
@@ -226,11 +210,8 @@ confidence_score: Confidence score
 Returns:
             List[float]: Position sizes
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-position_sizes = []
+        try:
+            position_sizes = []
 
 if num_positions == 1:
                 # Single position - use full allocation
@@ -268,11 +249,8 @@ Args:
 Returns:
             Dict: Take profit and stop loss levels
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Get market volatility
+        try:
+            # Get market volatility
 volatility = market_conditions.get("volatility", 0.02)  # Default 2%
 
 # Adjust TP/SL based on volatility
@@ -323,11 +301,8 @@ position_data: Position data
 Returns:
             bool: True if position added successfully
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Check if we can add more positions
+        try:
+            # Check if we can add more positions
 if len(self.active_positions) >= self.max_positions:
                 self.logger.warning(warning(f"Cannot add position {position_id}: max positions reached"))
 return False
@@ -368,11 +343,8 @@ pnl: Profit/loss
 Returns:
             bool: True if position closed successfully
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if position_id not in self.active_positions:
+        try:
+            if position_id not in self.active_positions:
                 self.logger.warning(warning(f"Position {position_id} not found"))
 return False
 

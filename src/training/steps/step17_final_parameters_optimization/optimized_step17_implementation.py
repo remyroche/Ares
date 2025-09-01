@@ -50,6 +50,7 @@ class OptimizationPhase(Enum):
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class OptimizationResult:
     """Data class for optimization results."""

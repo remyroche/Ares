@@ -40,6 +40,7 @@ logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class TimeframeConfig:
     """Configuration for each timeframe in the ensemble."""
@@ -54,6 +55,7 @@ class TimeframeConfig:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class EnsembleConfig:
     """Configuration for the multi - timeframe ensemble."""

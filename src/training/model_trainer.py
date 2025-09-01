@@ -51,6 +51,7 @@ from src.utils.warning_symbols import (
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class ModelConfig:
     """Configuration for model training."""
@@ -67,6 +68,7 @@ class ModelConfig:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class TrainingData:
     """Container for training data."""

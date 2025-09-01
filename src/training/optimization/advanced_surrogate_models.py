@@ -3,7 +3,7 @@
 Advanced Surrogate Models for Optimization
 
 This module provides advanced surrogate models including:
-# TODO: Add implementation
+    pass  # TODO: Add implementation
 - Ensemble methods
 - Deep learning models
 - Specialized kernels
@@ -18,7 +18,7 @@ import time
 
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF = ConstantKernel, WhiteKernel, Matern = RationalQuadratic
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel, Matern, RationalQuadratic
 from sklearn.model_selection import cross_val_score
 
 # Advanced ML libraries
@@ -26,14 +26,18 @@ try:
     import torch
     import torch.nn as nn
     import torch.optim as optim
-    from torch.utils.data import DataLoader = TensorDataset
+    from torch.utils.data import DataLoader, TensorDataset
     TORCH_AVAILABLE = True
 except ImportError: TORCH_AVAILABLE = False
 
-try: XGBOOST_AVAILABLE = True
+try:
+    import xgboost
+    XGBOOST_AVAILABLE = True
 except ImportError: XGBOOST_AVAILABLE = False
 
-try: LIGHTGBM_AVAILABLE = True
+try:
+    import lightgbm
+    LIGHTGBM_AVAILABLE = True
 except ImportError: LIGHTGBM_AVAILABLE = False
 
 # Utilities
@@ -43,7 +47,7 @@ from src.utils.logger import system_logger
 class BaseSurrogateModel(ABC):
     """Base class for all surrogate models."""
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild(self.__class__.__name__)
         self.model = None
@@ -53,30 +57,30 @@ class BaseSurrogateModel(ABC):
         self.prediction_time = 0.0
 
     @abstractmethod
-    def fit(self, X: np.ndarray = y: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Fit the surrogate model."""
         pass
 
     @abstractmethod
-    def predict(self = X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Predict values and uncertainties."""
         pass
 
     @abstractmethod
-    def get_model_info(self) -> Dict[str = Any]:
+    def get_model_info(self) -> Dict[str, Any]:
         """Get model information."""
         pass
 
-    def save_model(self = filepath: str) -> None:
+    def save_model(self, filepath: str) -> None:
         """Save the model to disk."""
         if self.model is not None:
             joblib.dump({
                 'model': self.model,
-                'scaler': self.scaler, 'config': self.config = 'training_time': self.training_time
+                'scaler': self.scaler, 'config': self.config, 'training_time': self.training_time
             }, filepath)
             self.logger.info(f"Model saved to {filepath}")
 
-    def load_model(self = filepath: str) -> None:
+    def load_model(self, filepath: str) -> None:
         """Load the model from disk."""
         data = joblib.load(filepath)
         self.model = data['model']
@@ -90,35 +94,35 @@ class BaseSurrogateModel(ABC):
 class EnsembleSurrogateModel(BaseSurrogateModel):
     """Ensemble of multiple surrogate models for robust predictions."""
 
-    def __init__(self = config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.models = {}
         self.weights = {}
         self.ensemble_method = config.get('ensemble_method', 'weighted_average')
 
-    def add_model(self, name: str = model: BaseSurrogateModel = weight: float = 1.0) -> None:
+    def add_model(self, name: str, model: BaseSurrogateModel, weight: float = 1.0) -> None:
         """Add a model to the ensemble."""
         self.models[name] = model
         self.weights[name] = weight
         self.logger.info(f"Added model '{name}' to ensemble with weight {weight}")
 
-    def fit(self, X: np.ndarray = y: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Fit all models in the ensemble."""
         start_time = time.time()
 
-        for name = model in self.models.items():
+        for name, model in self.models.items():
             self.logger.info(f"Fitting ensemble model: {name}")
             model.fit(X, y)
 
         # Optionally optimize weights based on cross-validation
-        if self.config.get('optimize_weights' = False):
-            self._optimize_weights(X = y)
+        if self.config.get('optimize_weights', False):
+            self._optimize_weights(X, y)
 
         self.training_time = time.time() - start_time
         self.is_fitted = True
         self.logger.info(f"Ensemble training completed in {self.training_time:.2f}s")
 
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray = np.ndarray]:
+    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Predict using ensemble methods."""
         if not self.is_fitted:
             raise ValueError("Ensemble model must be fitted before prediction")
@@ -129,93 +133,97 @@ class EnsembleSurrogateModel(BaseSurrogateModel):
         uncertainties = {}
 
         # Get predictions from all models
-        for name = model in self.models.items():
-            pred = unc = model.predict(X)
+        for name, model in self.models.items():
+            pred, unc = model.predict(X)
             predictions[name] = pred
             uncertainties[name] = unc
 
         # Combine predictions based on ensemble method
         if self.ensemble_method == 'weighted_average':
-            final_pred = final_unc = self._weighted_average_ensemble(predictions, uncertainties)
+            final_pred, final_unc = self._weighted_average_ensemble(predictions, uncertainties)
         elif self.ensemble_method == 'stacking':
-            final_pred = final_unc = self._stacking_ensemble(predictions = uncertainties)
+            final_pred, final_unc = self._stacking_ensemble(predictions, uncertainties)
         elif self.ensemble_method == 'bagging':
-            final_pred = final_unc = self._bagging_ensemble(predictions, uncertainties)
+            final_pred, final_unc = self._bagging_ensemble(predictions, uncertainties)
         else:
             raise ValueError(f"Unknown ensemble method: {self.ensemble_method}")
 
         self.prediction_time = time.time() - start_time
-        return final_pred = final_unc
+        return final_pred, final_unc
 
     def _weighted_average_ensemble(
         self,
-        predictions: Dict[str, np.ndarray] = uncertainties: Dict[str, np.ndarray]
-    ) -> Tuple[np.ndarray = np.ndarray]:
+        predictions: Dict[str, np.ndarray], uncertainties: Dict[str, np.ndarray]
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Weighted average ensemble method."""
         total_weight = sum(self.weights.values())
 
         # Weighted average of predictions
         final_pred = np.zeros_like(list(predictions.values())[0])
-        for name = pred in predictions.items():
+        for name, pred in predictions.items():
             weight = self.weights[name] / total_weight
             final_pred += weight * pred
 
         # Weighted average of uncertainties
         final_unc = np.zeros_like(list(uncertainties.values())[0])
-        for name = unc in uncertainties.items():
+        for name, unc in uncertainties.items():
             weight = self.weights[name] / total_weight
             final_unc += weight * unc
 
-        return final_pred = final_unc
+        return final_pred, final_unc
 
     def _stacking_ensemble(
-        self = predictions: Dict[str, np.ndarray],
+        self, predictions: Dict[str, np.ndarray],
         uncertainties: Dict[str, np.ndarray]
-    ) -> Tuple[np.ndarray = np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Stacking ensemble method."""
-        # For now = use simple weighted average
+        # For now, use simple weighted average
         # Could be extended with meta-learner
         return self._weighted_average_ensemble(predictions, uncertainties)
 
     def _bagging_ensemble(
-        self = predictions: Dict[str, np.ndarray],
-        uncertainties: Dict[str = np.ndarray]
-    ) -> Tuple[np.ndarray = np.ndarray]:
+        self, predictions: Dict[str, np.ndarray],
+        uncertainties: Dict[str, np.ndarray]
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Bagging ensemble method."""
         # Use mean and std of predictions
         pred_array = np.array(list(predictions.values()))
         unc_array = np.array(list(uncertainties.values()))
 
-        final_pred = np.mean(pred_array, axis = 0)
-        final_unc = np.std(pred_array = axis = 0) + np.mean(unc_array = axis = 0)
+        final_pred = np.mean(pred_array, axis=0)
+        final_unc = np.std(pred_array, axis=0) + np.mean(unc_array, axis=0)
 
-        return final_pred = final_unc
+        return final_pred, final_unc
 
-    def _optimize_weights(self, X: np.ndarray = y: np.ndarray) -> None:
+    def _optimize_weights(self, X: np.ndarray, y: np.ndarray) -> None:
         """Optimize ensemble weights using cross-validation."""
         # Simple optimization: weight inversely proportional to CV error
         cv_scores = {}
 
-        for name = model in self.models.items():
-            try: cv_score = cross_val_score(model.model, X = y, cv = 5, scoring='neg_mean_squared_error')
+        for name, model in self.models.items():
+            try:
+                cv_score = cross_val_score(model.model, X, y, cv=5, scoring='neg_mean_squared_error')
                 cv_scores[name] = -np.mean(cv_score)
             except Exception as e:
-    self.logger.warning(f"CV failed for model {name}: {e}")
+                self.logger.warning(f"CV failed for model {name}: {e}")
                 cv_scores[name] = 1.0
 
         # Set weights inversely proportional to CV error
-        total_inv_error = sum(1.0 / max(score = 1e-6) for score in cv_scores.values())
-        for name = error in cv_scores.items():
+        total_inv_error = sum(1.0 / max(score, 1e-6) for score in cv_scores.values())
+        for name, error in cv_scores.items():
             self.weights[name] = (1.0 / max(error, 1e-6)) / total_inv_error
 
         self.logger.info(f"Optimized ensemble weights: {self.weights}")
 
-    def get_model_info(self) -> Dict[str = Any]:
+    def get_model_info(self) -> Dict[str, Any]:
         """Get ensemble model information."""
         return {
-            'ensemble_method': self.ensemble_method = 'num_models': len(self.models),
+            'ensemble_method': self.ensemble_method,
+            'num_models': len(self.models),
             'model_names': list(self.models.keys()),
-            'weights': self.weights = 'training_time': self.training_time = 'prediction_time': self.prediction_time
+            'weights': self.weights,
+            'training_time': self.training_time,
+            'prediction_time': self.prediction_time
         }
 
 

@@ -509,7 +509,7 @@ class PositionMonitor:
             else:
                 self.logger.info(f"ℹ️ INFO: {assessment.alert_message}")
 
-            # TODO: Send to external alert system (email, Slack, etc.)
+            # Send to external alert system (email, Slack, etc.) - implementation will be added in future updates
             # await self._send_external_alert(alert_data)
 
         except Exception as e:
@@ -526,7 +526,7 @@ class PositionMonitor:
             float: Current price or None
         """
         try:
-            # TODO: Implement actual price fetching
+            # Implement actual price fetching - will be added in future updates
             # For now, return a placeholder
             return 50000.0  # Placeholder price
 

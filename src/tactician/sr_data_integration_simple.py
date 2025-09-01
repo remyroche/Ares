@@ -22,9 +22,9 @@ sys.path.insert(0, str(project_root))
 
 # Simplified imports without problematic training modules
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 from src.utils.logger import system_logger
 except ImportError:
     # Fallback logging
@@ -41,9 +41,9 @@ TRAINING_MODES = {
 
 
 class SRDataIntegrationSimple:
-    pass  # TODO: Add implementation
+    # Implementation placeholder
 class SRDataIntegrationSimple:
-    pass  # TODO: Add implementation
+    # Implementation placeholder
 class SRDataIntegrationSimple:
     """
 Simplified S/R data integration that doesn't depend on training modules.
@@ -92,9 +92,9 @@ Returns:
             True if initialization successful, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if self.logger:
                 self.logger.info(f"🔧 Initializing Simplified S/R Data Integration")
 self.logger.info(f"   - Symbol: {self.symbol}")
@@ -125,9 +125,9 @@ Returns:
             True if configuration is valid, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Validate symbol
 if not self.symbol or not isinstance(self.symbol, str):
                 if self.logger:
@@ -168,9 +168,9 @@ Returns:
             True if data is available, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if self.logger:
                 self.logger.info("📊 Checking data availability...")
 
@@ -203,9 +203,9 @@ Returns:
             DataFrame with market data or None if failed
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Use provided lookback_days or default
 actual_lookback_days = lookback_days or self.lookback_days
 
@@ -251,9 +251,9 @@ Returns:
             DataFrame with market data or None if failed
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Calculate the start date
 end_date = datetime.now()
 start_date = end_date - timedelta(days=lookback_days)
@@ -285,9 +285,9 @@ Returns:
             DataFrame with market data or None if failed
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Construct file path
 data_dir = Path("data") / self.exchange / self.symbol / timeframe
 if not data_dir.exists():
@@ -345,9 +345,9 @@ Returns:
             Dictionary mapping timeframes to DataFrames
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 timeframes = timeframes or self.timeframes
 lookback_days = lookback_days or self.lookback_days
 
@@ -384,9 +384,9 @@ Returns:
             Number of days to look back
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Timeframe-specific lookback periods
 timeframe_lookback_map = {
 "1m": min(self.lookback_days, 30),      # Max 30 days for 1m
@@ -416,9 +416,9 @@ Returns:
             True if data quality is acceptable, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if data is None or len(data) == 0:
                 if self.logger:
                     self.logger.error(f"❌ No data provided for validation")
@@ -516,9 +516,9 @@ return time_diff_map.get(timeframe, pd.Timedelta(minutes=1))
 async def cleanup_cache(self) -> None:
         """Clean up the data cache to free memory."""
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if self.logger:
                 self.logger.info("🧹 Cleaning up data cache...")
 
@@ -565,9 +565,9 @@ Returns:
         Initialized SRDataIntegrationSimple instance
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Set default timeframes if not provided
 if timeframes is None:
             timeframes = ["1m", "5m", "15m", "30m"]

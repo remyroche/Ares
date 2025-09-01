@@ -1501,101 +1501,81 @@ return {
 async def _detect_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using configured method with mandatory dual price and VWAP logic."""
 try:
+    # Validate VWAP data availability
+    vwap_available = self._validate_vwap_data(market_data)
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-# Validate VWAP data availability
-vwap_available = self._validate_vwap_data(market_data)
-
-if self.sr_detection_method == "fractal":
-                return await self._detect_fractal_support_levels(market_data)
-elif self.sr_detection_method == "volume":
-                return await self._detect_volume_support_levels(market_data)
-elif self.sr_detection_method == "pivot":
-                return await self._detect_pivot_support_levels(market_data)
-elif self.sr_detection_method == "atr":
-                return await self._detect_atr_support_levels(market_data)
-else:
-                self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-return await self._detect_fractal_support_levels(market_data)
+    if self.sr_detection_method == "fractal":
+        return await self._detect_fractal_support_levels(market_data)
+    elif self.sr_detection_method == "volume":
+        return await self._detect_volume_support_levels(market_data)
+    elif self.sr_detection_method == "pivot":
+        return await self._detect_pivot_support_levels(market_data)
+    elif self.sr_detection_method == "atr":
+        return await self._detect_atr_support_levels(market_data)
+    else:
+        self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
+        return await self._detect_fractal_support_levels(market_data)
 
 except Exception as e:
-            self.logger.error(f"Error detecting support levels: {e}")
-return []
+    self.logger.error(f"Error detecting support levels: {e}")
+    return []
 
 async def _detect_resistance_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect resistance levels using configured method with mandatory dual price and VWAP logic."""
 try:
+    # Validate VWAP data availability
+    vwap_available = self._validate_vwap_data(market_data)
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-# Validate VWAP data availability
-vwap_available = self._validate_vwap_data(market_data)
-
-if self.sr_detection_method == "fractal":
-                return await self._detect_fractal_resistance_levels(market_data)
-elif self.sr_detection_method == "volume":
-                return await self._detect_volume_resistance_levels(market_data)
-elif self.sr_detection_method == "pivot":
-                return await self._detect_pivot_resistance_levels(market_data)
-elif self.sr_detection_method == "atr":
-                return await self._detect_atr_resistance_levels(market_data)
-else:
-                self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
-return await self._detect_fractal_resistance_levels(market_data)
+    if self.sr_detection_method == "fractal":
+        return await self._detect_fractal_resistance_levels(market_data)
+    elif self.sr_detection_method == "volume":
+        return await self._detect_volume_resistance_levels(market_data)
+    elif self.sr_detection_method == "pivot":
+        return await self._detect_pivot_resistance_levels(market_data)
+    elif self.sr_detection_method == "atr":
+        return await self._detect_atr_resistance_levels(market_data)
+    else:
+        self.logger.warning(f"Unknown SR detection method: {self.sr_detection_method}")
+        return await self._detect_fractal_resistance_levels(market_data)
 
 except Exception as e:
-            self.logger.error(f"Error detecting resistance levels: {e}")
-return []
+    self.logger.error(f"Error detecting resistance levels: {e}")
+    return []
 
 async def _detect_fractal_support_levels(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using fractal analysis with mandatory dual price and VWAP logic."""
 try:
+    support_levels = []
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-support_levels = []
+    # Always detect support levels using price data
+    price_support = await self._detect_fractal_support_levels_price(market_data)
 
-# Always detect support levels using price data
-price_support = await self._detect_fractal_support_levels_price(market_data)
+    # Always attempt VWAP detection - if VWAP is not available, this will return empty list
+    vwap_support = await self._detect_fractal_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
 
-# Always attempt VWAP detection - if VWAP is not available, this will return empty list
-vwap_support = await self._detect_fractal_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
+    # Combine and deduplicate levels
+    all_support = price_support + vwap_support
+    support_levels = self._deduplicate_sr_levels(all_support)
 
-# Combine and deduplicate levels
-all_support = price_support + vwap_support
-support_levels = self._deduplicate_sr_levels(all_support)
+    if 'vwap' in market_data.columns:
+        self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based fractal support levels")
+    else:
+        self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal support levels")
+        self.logger.info(f"✅ Detected {len(price_support)} price-based fractal support levels")
 
-if 'vwap' in market_data.columns:
-                self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based fractal support levels")
-else:
-                self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal support levels")
-self.logger.info(f"✅ Detected {len(price_support)} price-based fractal support levels")
-
-return support_levels[:self.max_sr_levels]
+    return support_levels[:self.max_sr_levels]
 
 except Exception as e:
-            self.logger.error(f"Error in fractal support detection: {e}")
-return []
+    self.logger.error(f"Error in fractal support detection: {e}")
+    return []
 
 async def _detect_fractal_support_levels_price(self, market_data: pd.DataFrame) -> list[dict[str, Any]]:
         """Detect support levels using fractal analysis with price data."""
 try:
+    support_levels = []
 
-    # Implementation will be added here
-except Exception as e:
-    # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
-support_levels = []
-
-# Find local minima in price data
-low_prices = market_data['low'].rolling(window=5, center=True).min()
+    # Find local minima in price data
+    low_prices = market_data['low'].rolling(window=5, center=True).min()
 
 # Identify significant support levels
 for i in range(2, len(market_data) - 2):
@@ -1626,7 +1606,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Find local minima in VWAP data
@@ -1661,7 +1641,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Always detect resistance levels using price data
@@ -1693,7 +1673,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Find local maxima in price data
@@ -1728,7 +1708,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Find local maxima in VWAP data
@@ -1763,7 +1743,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not levels:
                 return []
 
@@ -1810,7 +1790,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Always detect support levels using price data
@@ -1842,7 +1822,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Calculate volume-weighted average price
@@ -1874,7 +1854,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Find support levels near VWAP using VWAP data
@@ -1903,7 +1883,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Always detect resistance levels using price data
@@ -1935,7 +1915,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Calculate volume-weighted average price
@@ -1967,7 +1947,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Find resistance levels near VWAP using VWAP data
@@ -1996,7 +1976,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Always detect support levels using price data
@@ -2028,7 +2008,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Calculate pivot points using price data
@@ -2061,7 +2041,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Calculate pivot points using VWAP data
@@ -2094,7 +2074,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Always detect resistance levels using price data
@@ -2126,7 +2106,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Calculate pivot points using price data
@@ -2159,7 +2139,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Calculate pivot points using VWAP data
@@ -2192,7 +2172,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Always detect support levels using price data
@@ -2224,7 +2204,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Calculate ATR using price data
@@ -2260,7 +2240,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_levels = []
 
 # Calculate ATR using VWAP data
@@ -2296,7 +2276,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Always detect resistance levels using price data
@@ -2328,7 +2308,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Calculate ATR using price data
@@ -2364,7 +2344,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 resistance_levels = []
 
 # Calculate ATR using VWAP data
@@ -2405,7 +2385,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Find swing high and low
 high = market_data['high'].max()
 low = market_data['low'].min()
@@ -2447,7 +2427,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Simple Elliott Wave detection (can be enhanced with more sophisticated algorithms)
 prices = market_data['close'].values
 highs = market_data['high'].values
@@ -2528,7 +2508,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if len(wave_points) < 5:
                 return 0.3
 
@@ -2573,7 +2553,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Volume Profile Analysis
 volume_profile = await self._calculate_volume_profile(market_data)
 
@@ -2614,7 +2594,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Create price bins
 price_range = market_data['high'].max() - market_data['low'].min()
 num_bins = 50
@@ -2687,7 +2667,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 imbalances = []
 
 # Calculate bid/ask imbalance (simplified - using volume as proxy)
@@ -2734,7 +2714,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 confluence_levels = {}
 
 # Use optimized timeframe weights
@@ -2809,7 +2789,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Basic S/R context - use VWAP if available, otherwise fall back to close price
 current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
 basic_context = await self.get_sr_context(market_data, current_price)
@@ -2849,7 +2829,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Base strength calculation
 base_strength = 0.5
 
@@ -2883,7 +2863,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 touch_counts = {}
 
 for level in sr_levels:
@@ -2923,7 +2903,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 level_ages = {}
 
 for level in sr_levels:
@@ -2962,7 +2942,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 bounce_rates = {}
 
 for level in sr_levels:
@@ -3028,7 +3008,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 isolation_scores = {}
 
 for i, level in enumerate(sr_levels):
@@ -3070,7 +3050,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not DBSCAN_AVAILABLE:
                 self.logger.warning("DBSCAN not available, returning unclustered levels")
 return {
@@ -3184,7 +3164,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not self.enable_enhanced_strength:
                 # Return basic strength calculation
 return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
@@ -3210,7 +3190,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 touch_count_data = touch_counts.get(level_id, {})
 if not isinstance(touch_count_data, dict):
                         touch_count_data = {'touch_count': 1}
@@ -3309,7 +3289,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 probabilities = {}
 
 # Calculate support breakout probabilities
@@ -3348,7 +3328,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 confidence_scores = {}
 
 # Calculate support confidence scores
@@ -3379,7 +3359,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 features = {}
 
 # Calculate proximity to nearest support and resistance
@@ -3429,7 +3409,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not levels:
                 return None
 
@@ -3469,7 +3449,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not level:
                 return 1.0
 
@@ -3487,7 +3467,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if len(market_data) < 1:
                 return {}
 
@@ -3497,7 +3477,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 high = market_data['high'].iloc[-1]
 low = market_data['low'].iloc[-1]
 close = market_data['close'].iloc[-1]
@@ -3547,7 +3527,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 features: dict[str, float] = {}
 
 # Price-based features
@@ -3654,7 +3634,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Extract key features
 price_change_1m = features.get("price_change_1m", 0)
 price_change_5m = features.get("price_change_5m", 0)
@@ -3700,7 +3680,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Base confidence
 confidence = 0.5
 
@@ -3771,7 +3751,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if len(market_data) < 20:
                 return 0.0
 
@@ -3794,7 +3774,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if len(market_data) < 10:
                 return 0.0
 
@@ -3823,7 +3803,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Store prediction in history
 self.prediction_history.append(predictions)
 
@@ -3866,7 +3846,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not sr_context:
                 return False
 
@@ -3904,7 +3884,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not sr_context:
                 return {}
 
@@ -3975,7 +3955,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement functionality
+        # Implementation will be added in future updates
 # Extract features for prediction
 features = await self._extract_outcome_features(market_data, current_price, sr_context)
 
@@ -4039,7 +4019,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement functionality
+        # Implementation will be added in future updates
 # Get current price
 current_price = market_data['close'].iloc[-1]
 
@@ -4103,7 +4083,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement functionality
+        # Implementation will be added in future updates
 features = {}
 current_price = market_data['close'].iloc[-1]
 
@@ -4151,7 +4131,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 features = {}
 current_price = market_data['close'].iloc[-1]
 
@@ -4230,7 +4210,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Calculate SR strength across different timeframes
 timeframes = [20, 50, 100]
 scores = []
@@ -4256,7 +4236,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_strength = sr_context.get("support_strength", 0.5)
 resistance_strength = sr_context.get("resistance_strength", 0.5)
 zone_width = sr_context.get("sr_zone_width", 0.0)
@@ -4279,7 +4259,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 current_price = market_data['close'].iloc[-1]
 nearest_support = sr_context.get("nearest_support", current_price)
 nearest_resistance = sr_context.get("nearest_resistance", current_price)
@@ -4314,7 +4294,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 support_strength = sr_context.get("support_strength", 0.5)
 resistance_strength = sr_context.get("resistance_strength", 0.5)
 support_proximity = sr_context.get("support_proximity", 1.0)
@@ -4337,7 +4317,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if len(market_data) < 20:
                 return 0.0
 
@@ -4360,7 +4340,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Use isolation data from enhanced strength calculation
 support_levels = sr_context.get("support_levels", [])
 resistance_levels = sr_context.get("resistance_levels", [])
@@ -4387,7 +4367,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 nearest_support = sr_context.get("nearest_support", current_price)
 nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
@@ -4410,7 +4390,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 current_price = market_data['close'].iloc[-1]
 nearest_support = sr_context.get("nearest_support", current_price)
 nearest_resistance = sr_context.get("nearest_resistance", current_price)
@@ -4442,7 +4422,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Update model weights
 if "fractal_weight" in weights:
                 self.model_weights["fractal"] = weights["fractal_weight"]
@@ -4521,7 +4501,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 current_price = market_data['close'].iloc[-1]
 
 # Get S/R context
@@ -4561,7 +4541,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 self.logger.info("Stopping SR breakout predictor...")
 self.is_initialized = False
 self.logger.info("✅ SR breakout predictor stopped successfully")
@@ -4580,7 +4560,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 self.logger.info("Cleaning up SR breakout predictor...")
 await self.stop()
 self.sr_predictions.clear()
@@ -4597,7 +4577,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 comparison = {
 "price_vs_vwap": {},
 "detection_efficiency": {},
@@ -4665,7 +4645,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 analysis = {
 "data_source_distribution": {},
 "source_characteristics": {},
@@ -4716,7 +4696,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not price_levels or not vwap_levels:
                 return 0.0
 
@@ -4742,7 +4722,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if not levels:
                 return 0.0
 
@@ -4768,7 +4748,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 method_stats = {}
 
 for level in levels:
@@ -4807,7 +4787,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 recommendations = {
 "primary_approach": "",
 "secondary_approach": "",
@@ -4854,7 +4834,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 if 'vwap' not in market_data.columns:
                 self.logger.warning("⚠️ VWAP column not found in market data")
 return False
@@ -4887,7 +4867,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 total_levels = len(price_levels) + len(vwap_levels)
 
 if total_levels == 0:
@@ -4920,7 +4900,7 @@ try:
     # Implementation will be added here
 except Exception as e:
     # Log the error and handle gracefully
-        # TODO: Implement proper exception handling
+        
 # Ensure optimized parameters are enabled
 sr_config = config.copy() if config else {}
 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})

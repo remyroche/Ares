@@ -62,21 +62,21 @@ async def run_validator(
         data_dir, training_input.get("data_dir", "data_cache")
 
         # Check if triple barrier labels file exists
-        triple_barrier_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+        triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
 
         if not triple_barrier_path.exists():
             logger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
-        return {
+            return {
                 "step_name": "step04_triple_barrier_method",
                 "validation_passed": False,
                 "error": f"Triple barrier labels file not found: {triple_barrier_path}",
             }
 
         # Check file size
-        file_size, triple_barrier_path.stat().st_size
+        file_size = triple_barrier_path.stat().st_size
         if file_size == 0:
             logger.error(f"❌ Triple barrier labels file is empty: {triple_barrier_path}")
-        return {
+            return {
                 "step_name": "step04_triple_barrier_method",
                 "validation_passed": False,
                 "error": "Triple barrier labels file is empty",
@@ -85,44 +85,44 @@ async def run_validator(
         # Try to read the file to validate structure
         try:
             import pandas as pd
-            data, pd.read_parquet(triple_barrier_path)
+            data = pd.read_parquet(triple_barrier_path)
 
-        # Check required columns
+            # Check required columns
             required_columns = ["triple_barrier_label"]
             missing_columns = [col for col in required_columns if col not in data.columns]
 
-        if missing_columns:
+            if missing_columns:
                 logger.error(f"❌ Missing required columns: {missing_columns}")
-        return {
+                return {
                     "step_name": "step04_triple_barrier_method",
                     "validation_passed": False,
                     "error": f"Missing required columns: {missing_columns}",
                 }
 
-        # Check data quality
-        if len(data) == 0:
+            # Check data quality
+            if len(data) == 0:
                 logger.error("❌ No data rows found")
-        return {
+                return {
                     "step_name": "step04_triple_barrier_method",
                     "validation_passed": False,
                     "error": "No data rows found",
                 }
 
-        # Check label distribution
-            label_counts, data["triple_barrier_label"].value_counts()
+            # Check label distribution
+            label_counts = data["triple_barrier_label"].value_counts()
             logger.info(f"✅ Label distribution: {label_counts.to_dict()}")
 
-        # Check for reasonable label distribution (should have some non - zero labels)
-        if 0 in label_counts and label_counts[0] == len(data):
+            # Check for reasonable label distribution (should have some non-zero labels)
+            if 0 in label_counts and label_counts[0] == len(data):
                 logger.warning("⚠️ All labels are 0 (hold) - this might indicate an issue")
-        return {
+                return {
                     "step_name": "step04_triple_barrier_method",
                     "validation_passed": True,  # Still pass but warn
                     "warning": "All labels are 0 (hold) - this might indicate an issue",
                 }
 
             logger.info("✅ Step 4: Triple Barrier Method validation passed")
-        return {
+            return {
                 "step_name": "step04_triple_barrier_method",
                 "validation_passed": True,
                 "file_path": str(triple_barrier_path),
@@ -132,7 +132,7 @@ async def run_validator(
 
         except Exception as e:
             logger.error(f"❌ Error reading triple barrier labels file: {e}")
-        return {
+            return {
                 "step_name": "step04_triple_barrier_method",
                 "validation_passed": False,
                 "error": f"Error reading file: {e}",

@@ -95,10 +95,10 @@ class DataCollectionStep:
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
-        self.logger.info("📝 Pipeline will continue with fallback implementations")
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+            self.logger.info("✅ All required dependencies available")
 
     async def initialize(self) -> None:
         """Initialize the data collection step."""
@@ -123,15 +123,15 @@ class DataCollectionStep:
 
         try:
         # Validate input parameters
-            symbol, training_input.get("symbol")
-            exchange, training_input.get("exchange")
-            timeframe, training_input.get("timeframe", "1m")
+        symbol = training_input.get("symbol")
+        exchange = training_input.get("exchange")
+        timeframe = training_input.get("timeframe", "1m")
 
         if not symbol or not exchange:
-                raise ValueError("Symbol and exchange are required parameters")
+            raise ValueError("Symbol and exchange are required parameters")
 
         # Build standardized paths
-            data_dir, self.standards.build_path("raw_data", exchange, symbol)
+        data_dir = self.standards.build_path("raw_data", exchange, symbol)
         self.logger.info(f"📁 Using standardized data directory: {data_dir}")
 
         # Execute the data collection

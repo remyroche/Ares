@@ -29,7 +29,6 @@ execution_error,
 
 
 class MLConfidencePredictor:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

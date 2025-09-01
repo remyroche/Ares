@@ -22,7 +22,6 @@ from src.utils.centralized_decorators import handle_errors, with_tracing_span
 
 
 class EnhancedRegimePredictor:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

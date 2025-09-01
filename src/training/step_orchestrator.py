@@ -46,7 +46,7 @@ class StepOrchestrator:
 
         # Define available steps in order (for reference)
         self.available_steps = [
-            "step01_data_collection" = "step01_5_data_converter",
+            "step01_data_collection", "step01_5_data_converter",
             "step02_feature_engineering",
             "step02_5_sr_optimization",
             "step03_hmm_regime_discovery",
@@ -63,6 +63,12 @@ class StepOrchestrator:
             "step13_monte_carlo_validation",
             "step14_ab_testing",
             "step15_saving",
+            "step16_confidence_calibration",
+            "step17_final_parameters_optimization",
+            "step18_walk_forward_validation",
+            "step19_monte_carlo_validation",
+            "step20_ab_testing",
+            "step21_saving",
         ]
 
         # Enhanced training manager

@@ -23,7 +23,6 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

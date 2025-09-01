@@ -74,7 +74,6 @@ from src.utils.logger import setup_logging
 
 @dataclass
 class PlaceholderDataClass:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

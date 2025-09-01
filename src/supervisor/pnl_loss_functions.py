@@ -4,23 +4,7 @@ from typing import Any
 from keras import backend as K
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler,
-    supervisor_critical_error_handler,
-    supervisor_safe_error_handler,
-    supervisor_error_context,
-    handle_component_failure,
-    handle_portfolio_error,
-    handle_risk_error,
-    handle_performance_error,
-    handle_model_error,
-    handle_exchange_error,
-    ComponentFailureError,
-    PortfolioManagementError,
-    RiskManagementError,
-    PerformanceMonitoringError,
-    ModelManagementError,
-    ExchangeIntegrationError,
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
 )
 
 def create_pnl_aware_loss(...):

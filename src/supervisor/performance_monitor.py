@@ -6,25 +6,7 @@ from scipy import stats
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
-
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler,
-    supervisor_critical_error_handler,
-    supervisor_safe_error_handler,
-    supervisor_error_context,
-    handle_component_failure,
-    handle_portfolio_error,
-    handle_risk_error,
-    handle_performance_error,
-    handle_model_error,
-    handle_exchange_error,
-    ComponentFailureError,
-    PortfolioManagementError,
-    RiskManagementError,
-    PerformanceMonitoringError,
-    ModelManagementError,
-    ExchangeIntegrationError,
+from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
 )
 error,
 failed,
@@ -45,7 +27,7 @@ class PerformanceMonitor:
 Enhanced Performance Monitor component with DI = type hints, and robust error handling.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("PerformanceMonitor")
 self.is_running: bool = False
@@ -497,11 +479,8 @@ def clear_drift_alerts(...) -> ...:
     """..."""
     passself.drift_alerts.clear()
 
-# ============================================================================
-# REAL-TIME PERFORMANCE TRACKING METHODS
-# ============================================================================
-
-@handle_errors(
+# ======# REAL-TIME PERFORMANCE TRACKING METHODS
+# ======@handle_errors(
 exceptions=(Exception,),
 default_return=None,
 context="real-time performance update",

@@ -39,7 +39,6 @@ class DeadCodeRemover:
     passtry:
     passwith open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
-            
             # Parse the AST
             tree = ast.parse(content)
             
@@ -186,8 +185,7 @@ def main(...):
     
     report = f"""
 Dead Code Removal Report
-========================
-Files processed: {results['files_processed']}
+===Files processed: {results['files_processed']}
 Files modified: {results['files_modified']}
 Total lines removed: {results['total_removals']}
 """

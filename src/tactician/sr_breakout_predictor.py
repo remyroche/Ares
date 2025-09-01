@@ -2371,11 +2371,8 @@ except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error in VWAP-based ATR resistance detection: {e}")
 return []
 
-# ============================================================================
-# ADVANCED S/R DETECTION METHODS
-# ============================================================================
-
-@validate_data_quality(validation_level="WARNING")
+# ======# ADVANCED S/R DETECTION METHODS
+# ======@validate_data_quality(validation_level="WARNING")
 async def calculate_fibonacci_levels(...) -> ...:
     """..."""
     passtry:
@@ -2840,11 +2837,8 @@ except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error calculating level strength: {e}")
 return 0.5
 
-# ============================================================================
-# ENHANCED STRENGTH CALCULATION METHODS
-# ============================================================================
-
-@validate_data_quality(validation_level="WARNING")
+# ======# ENHANCED STRENGTH CALCULATION METHODS
+# ======@validate_data_quality(validation_level="WARNING")
 async def calculate_touch_count(...) -> ...:
     """..."""
     passtry:

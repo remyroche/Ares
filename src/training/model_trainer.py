@@ -51,7 +51,6 @@ from src.utils.warning_symbols import (
 
 @dataclass
 class PlaceholderDataClass:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

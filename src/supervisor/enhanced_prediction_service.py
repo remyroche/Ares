@@ -41,24 +41,23 @@ def __init__(...):
     pass"""Initialize the Enhanced Prediction Service."""
 self.config = config or get_enhanced_prediction_service_config()
 self.logger = get_logger(__name__)
+        # Service state
+        self.is_initialized = False
+        self.data_dir = self.config.get("data_directory", "data")
 
-# Service state
-self.is_initialized = False
-self.data_dir = self.config.get("data_directory", "data")
+        # ML model storage
+        self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
+        self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
 
-# ML model storage
-self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
-self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
+        # Calibration and optimization results
+        self.calibration_results: Dict[str, Any] = {}
+        self.optimization_results: Dict[str, Any] = {}
 
-# Calibration and optimization results
-self.calibration_results: Dict[str, Any] = {}
-self.optimization_results: Dict[str, Any] = {}
+        # Configuration parameters
+        self.entry_threshold = self.config.get("entry_threshold", 0.6)
+        self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
 
-# Configuration parameters
-self.entry_threshold = self.config.get("entry_threshold", 0.6)
-self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
-
-self.logger.info("Enhanced Prediction Service initialized")
+        self.logger.info("Enhanced Prediction Service initialized")
 
 @handle_errors(
 exceptions=(Exception,),
@@ -122,7 +121,6 @@ async def _load_analyst_ml_models(...) -> ...:
 analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
 if not analyst_models_path.exists():
     passraise ValueError(f"Analyst ML models directory not found: {analyst_models_path}")
-
 # Load different types of Analyst models
 analyst_model_types = [
 "hmm_profit", "analyst_profit", "calibrated", "optimized",
@@ -328,23 +326,7 @@ if optimization_path.exists():
             return None
 import json
 
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler,
-    supervisor_critical_error_handler,
-    supervisor_safe_error_handler,
-    supervisor_error_context,
-    handle_component_failure,
-    handle_portfolio_error,
-    handle_risk_error,
-    handle_performance_error,
-    handle_model_error,
-    handle_exchange_error,
-    ComponentFailureError,
-    PortfolioManagementError,
-    RiskManagementError,
-    PerformanceMonitoringError,
-    ModelManagementError,
-    ExchangeIntegrationError,
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
 )
 with open(optimization_file, "r") as f:
     passoptimization_data = json.load(f)

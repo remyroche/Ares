@@ -24,7 +24,6 @@ warning,
 
 
 class FeatureEngineeringOrchestrator:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

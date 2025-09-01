@@ -24,7 +24,6 @@ from src.utils.logger import system_logger
 
 @dataclass
 class PlaceholderDataClass:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

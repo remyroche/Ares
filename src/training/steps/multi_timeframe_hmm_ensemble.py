@@ -40,7 +40,6 @@ logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
 
 @dataclass
 class PlaceholderDataClass:
-
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,

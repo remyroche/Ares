@@ -32,7 +32,6 @@ def find_and_remove_unused_imports(...):
     try:
     passwith open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
-
         tree = ast.parse(content)
         lines = content.split('\n')
         imports_to_remove = []

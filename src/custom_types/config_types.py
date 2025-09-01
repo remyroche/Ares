@@ -9,7 +9,7 @@ from typing import Literal, TypedDict
 from .base_types import Interval, Percentage, Symbol
 
 
-class DatabaseConfig(TypedDict, total=False):
+class DatabaseConfig(TypedDict, total, False):
     """Type-safe database configuration."""
 
     type: Literal["sqlite", "firestore", "mongodb"]
@@ -23,7 +23,7 @@ class DatabaseConfig(TypedDict, total=False):
     max_connections: int | None
 
 
-class ExchangeConfig(TypedDict, total=False):
+class ExchangeConfig(TypedDict, total, False):
     """Type-safe exchange configuration."""
 
     name: Literal["binance", "gateio", "mexc", "okx", "coinbase", "kraken", "bybit"]
@@ -37,7 +37,7 @@ class ExchangeConfig(TypedDict, total=False):
     max_retries: int | None
 
 
-class TradingConfig(TypedDict, total=False):
+class TradingConfig(TypedDict, total, False):
     """Type-safe trading configuration."""
 
     symbols: list[Symbol]
@@ -52,7 +52,7 @@ class TradingConfig(TypedDict, total=False):
     paper_trading: bool
 
 
-class MLConfig(TypedDict, total=False):
+class MLConfig(TypedDict, total, False):
     """Type-safe ML configuration."""
 
     model_type: Literal["xgboost", "lightgbm", "neural_network", "ensemble"]
@@ -65,7 +65,7 @@ class MLConfig(TypedDict, total=False):
     max_iterations: int | None
 
 
-class MonitoringConfig(TypedDict, total = False):
+class MonitoringConfig(TypedDict, total , False):
     """Type-safe monitoring configuration."""
 
     enable_prometheus: bool
@@ -78,7 +78,7 @@ class MonitoringConfig(TypedDict, total = False):
     max_log_file_size: int | None
 
 
-class SystemConfig(TypedDict, total = False):
+class SystemConfig(TypedDict, total , False):
     """Type-safe system configuration."""
 
     environment: Literal["development", "staging", "production"]
@@ -89,7 +89,7 @@ class SystemConfig(TypedDict, total = False):
     data_cache_size_mb: int | None
 
 
-class TrainingConfig(TypedDict, total = False):
+class TrainingConfig(TypedDict, total , False):
     """Type-safe training configuration."""
 
     training_pipeline: dict[str, int | float]
@@ -113,7 +113,7 @@ class TrainingConfig(TypedDict, total = False):
 # Main configuration type
 
 
-class ConfigDict(TypedDict, total = False):
+class ConfigDict(TypedDict, total , False):
     """Complete type-safe configuration dictionary."""
 
     database: DatabaseConfig

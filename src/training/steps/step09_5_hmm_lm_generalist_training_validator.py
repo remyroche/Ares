@@ -97,7 +97,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
                     return False
-                
+
                 self.logger.info(f"✅ HMM LM model file validated: {model_file.name} ({file_size} bytes)")
                 return True
             except Exception as e:

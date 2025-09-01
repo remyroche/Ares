@@ -106,9 +106,9 @@ The system includes pre-configured constraints for different regime types:
 The optimizer maximizes a composite score:
 
 ```
-Score = w1 * normalized_sharpe_ratio + 
-        w2 * normalized_win_rate + 
-        w3 * normalized_profit_factor + 
+Score = w1 * normalized_sharpe_ratio +
+        w2 * normalized_win_rate +
+        w3 * normalized_profit_factor +
         w4 * normalized_regime_accuracy
 ```
 
@@ -207,7 +207,7 @@ labeled_data = apply_regime_aware_triple_barrier_labeling(
 ```python
 # Get performance summary by regime
 performance_summary = labeler.get_regime_performance_summary(
-    labeled_data, 
+    labeled_data,
     regime_column="composite_cluster_id"
 )
 ```

@@ -25,8 +25,8 @@ await manager.initialize()
 
 # Execute optimized training
 results = await manager.execute_optimized_training(
-    symbol="ETHUSDT", 
-    exchange="BINANCE", 
+    symbol="ETHUSDT",
+    exchange="BINANCE",
     timeframe="1h"
 )
 ```
@@ -149,7 +149,7 @@ if cache_key in cache:
 ```python
 evaluation_stages = [
     (0.1, 0.3),   # 10% data, 30% weight
-    (0.3, 0.5),   # 30% data, 50% weight  
+    (0.3, 0.5),   # 30% data, 50% weight
     (1.0, 1.0)    # 100% data, 100% weight
 ]
 
@@ -278,17 +278,17 @@ async def train_model():
             "caching": {"enabled": True, "max_cache_size": 1000}
         }
     }
-    
+
     # Create optimized system
     system = create_optimized_training_system(config)
-    
+
     # Execute training
     results = await system["training_manager"].execute_optimized_training(
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1h"
     )
-    
+
     return results
 
 # Run training
@@ -305,31 +305,31 @@ async def advanced_training():
     # Setup memory monitoring
     profiler = MemoryProfiler(enable_continuous_monitoring=True)
     leak_detector = MemoryLeakDetector(profiler)
-    
+
     # Take initial snapshot
     profiler.take_snapshot("training_start")
-    
+
     # Initialize training manager
     manager = EnhancedTrainingManagerOptimized(config)
     await manager.initialize()
-    
+
     # Execute training with monitoring
     results = await manager.execute_optimized_training("ETHUSDT", "BINANCE")
-    
+
     # Check for leaks
     leak_results = leak_detector.check_for_leaks()
     if leak_results["leak_detected"]:
         print("Memory leak detected!")
         for rec in leak_results["recommendations"]:
             print(f"  - {rec}")
-    
+
     # Generate memory report
     report = profiler.generate_memory_report()
-    
+
     # Cleanup
     await manager.cleanup()
     profiler.stop_continuous_monitoring()
-    
+
     return results, report
 ```
 

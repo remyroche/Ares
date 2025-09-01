@@ -16,7 +16,7 @@ PredictionArray = np.ndarray
 # Feature engineering types
 
 
-class FeatureDict(TypedDict, total=False):
+class FeatureDict(TypedDict, total, False):
     """Type-safe feature dictionary."""
 
     technical_indicators: dict[str, float]
@@ -91,7 +91,7 @@ class ValidationData(TypedDict):
     validation_timestamp: Timestamp
 
 
-class ModelConfig(TypedDict, total=False):
+class ModelConfig(TypedDict, total, False):
     """Type-safe model configuration."""
 
     model_type: Literal["classification", "regression", "time_series"]

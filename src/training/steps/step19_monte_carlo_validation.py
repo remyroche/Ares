@@ -13,7 +13,7 @@ from src.utils.logger import system_logger
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step07_monte_carlo_validation."""
 
-    
+
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""

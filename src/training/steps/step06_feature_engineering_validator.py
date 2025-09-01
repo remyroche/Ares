@@ -132,10 +132,10 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             if not numeric_features.empty:
                 infinite_count = numeric_features.isin([float('inf'), float('-inf')).sum().sum()
                 nan_count = numeric_features.isna().sum().sum()
-                
+
                 if infinite_count > 0:
                     self.logger.warning(f"⚠️ Found {infinite_count} infinite values in {feature_file.name}")
-                
+
                 if nan_count > 0:
                     self.logger.warning(f"⚠️ Found {nan_count} NaN values in {feature_file.name}")
 
@@ -165,7 +165,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             # Check if step05_labeling output exists using BaseValidator
             step05_output_dir = Path("data/training/labeled_data")
             step05_files = list(step05_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*labeled*.parquet"))
-            
+
             if not step05_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -177,7 +177,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step5 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
-                
+
                 validation_result["details"]["step05_files_found"] = len(step05_files)
                 validation_result["details"]["step05_files"] = [str(f) for f in step05_files]
 
@@ -219,7 +219,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             for regime_dir in regime_dirs:
                 feature_files = list(regime_dir.glob("*.parquet"))
                 total_feature_files += len(feature_files)
-                
+
                 if feature_files:
                     # Validate first feature file as sample
                     sample_file = feature_files[0]
@@ -258,36 +258,36 @@ async def run_validator(
         Dictionary containing validation results
     """
     logger.info("🔍 Validating Step 6: Feature Engineering")
-    
+
     try:
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
-        
+
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
         validator = Step6FeatureEngineeringValidator(config)
-        
+
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        
+
         # Validate step execution
         step_result = await validator.validate_step6_feature_engineering(
             symbol, exchange, data_dir, training_input
         )
-        
+
         # Validate outputs using BaseValidator methods
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
-        
+
         # Combine results
         validation_passed = (
-            prereq_result["validation_passed"] and 
-            step_result and 
+            prereq_result["validation_passed"] and
+            step_result and
             output_result["validation_passed"]
         )
-        
+
         return {
             "step_name": "step06_feature_engineering",
             "validation_passed": validation_passed,
@@ -297,7 +297,7 @@ async def run_validator(
             "warnings": prereq_result["warnings"] + output_result["warnings"],
             "errors": prereq_result["errors"] + output_result["errors"]
         }
-        
+
     except Exception as e:
         error_context = {
             "step": "step06_feature_engineering",
@@ -319,16 +319,16 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    
+
     test_input = {
         "symbol": "ETHUSDT",
-        "exchange": "BINANCE", 
+        "exchange": "BINANCE",
         "timeframe": "1m",
         "data_dir": "data_cache",
         "config": {}
     }
-    
+
     test_state = {}
-    
+
     result = asyncio.run(run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

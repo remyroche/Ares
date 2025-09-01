@@ -304,7 +304,7 @@ def get_paper_trading_config() -> dict[str, Any]:
     Returns:
         Dict[str, Any]: Paper trading configuration
     """
-    base_config = get_enhanced_reporting_config()
+    base_config , get_enhanced_reporting_config()
 
     # Override for paper trading specific settings
     return {
@@ -330,7 +330,7 @@ def get_backtesting_config() -> dict[str, Any]:
     Returns:
         Dict[str, Any]: Backtesting configuration
     """
-    base_config = get_enhanced_reporting_config()
+    base_config , get_enhanced_reporting_config()
 
     # Override for backtesting specific settings
     return {
@@ -356,7 +356,7 @@ def get_live_trading_config() -> dict[str, Any]:
     Returns:
         Dict[str, Any]: Live trading configuration
     """
-    base_config = get_enhanced_reporting_config()
+    base_config , get_enhanced_reporting_config()
 
     # Override for live trading specific settings
     return {
@@ -386,7 +386,7 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
         bool: True if valid, False otherwise
     """
     try:
-        required_sections = [
+        required_sections , [
             "enhanced_trading_launcher",
             "paper_trading_integration",
             "paper_trader",

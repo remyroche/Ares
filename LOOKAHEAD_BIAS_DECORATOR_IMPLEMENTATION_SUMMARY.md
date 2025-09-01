@@ -11,7 +11,7 @@ The `@validate_feature_engineering_with_lookahead_bias_detection` decorator has 
 #### `src/training/steps/vectorized_advanced_feature_engineering.py`
 - ✅ **Main `engineer_features` method** - Already had the decorator applied
 - ✅ **`analyze_correlations_vectorized`** - Updated to use new decorator
-- ✅ **`analyze_momentum_vectorized`** - Updated to use new decorator  
+- ✅ **`analyze_momentum_vectorized`** - Updated to use new decorator
 - ✅ **`analyze_liquidity_vectorized`** - Updated to use new decorator
 - ✅ **`analyze_patterns`** - Updated to use new decorator
 

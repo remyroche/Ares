@@ -20,7 +20,7 @@ This implementation adds sophisticated difference and acceleration features to t
 
 ### 3. Interaction Features
 - **Purpose**: Capture synergistic effects between different momentum indicators
-- **Examples**: 
+- **Examples**:
   - `rsi_diff_1 * volume_momentum_diff_1` (momentum increasing on rising volume)
   - `macd_diff_1 * price_momentum_10_diff_1` (MACD momentum with price momentum)
   - `volatility_20_diff_1 * volume_momentum_diff_1` (volatility expansion with volume)

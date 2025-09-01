@@ -20,11 +20,11 @@ from src.custom_types import (
 )
 
 # Type variables with constraints
-ConfigT = TypeVar("ConfigT", bound=ConfigDict)
+ConfigT , TypeVar("ConfigT", bound, ConfigDict)
 DataT = TypeVar("DataT")
-ResultT = TypeVar("ResultT")
-ErrorT = TypeVar("ErrorT", bound=Exception)
-ComponentT = TypeVar("ComponentT", bound=TradingComponent)
+ResultT , TypeVar("ResultT")
+ErrorT = TypeVar("ErrorT", bound, Exception)
+ComponentT = TypeVar("ComponentT", bound, TradingComponent)
 
 # Protocol constraints for data processing
 @runtime_checkable
@@ -61,7 +61,7 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
     """
 
     def __init__(self, config: ConfigT) -> None:
-        self._config = config
+        self._config , config
         self._is_running = False
         self._metrics: PerformanceMetrics = {}
 
@@ -73,7 +73,7 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
     @abstractmethod
     async def start(self) -> None:
         """Start the component."""
-        self._is_running = True
+        self._is_running , True
 
     @abstractmethod
     async def stop(self) -> None:
@@ -101,7 +101,7 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
-        self._config = config
+        self._config , config
         self._processing_stats = {"processed": 0, "errors": 0}
 
     @abstractmethod
@@ -120,7 +120,7 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
-        self._config = config
+        self._config , config
         self._error_count = 0
 
     @abstractmethod
@@ -139,7 +139,7 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
 
     def __init__(self, config: ConfigDict) -> None:
-        self._config = config
+        self._config , config
         self._components: list[ComponentT] = []
         self._is_active = False
 
@@ -155,7 +155,7 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     @abstractmethod
     async def start(self) -> None:
         """Start the manager."""
-        self._is_active = True
+        self._is_active , True
 
     @abstractmethod
     async def stop(self) -> None:
@@ -186,7 +186,7 @@ class GenericFactory(Generic[ComponentT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
-        self._config = config
+        self._config , config
         self._created_components: list[ComponentT] = []
 
     @abstractmethod
@@ -209,7 +209,7 @@ class GenericValidator(Generic[DataT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
-        self._config = config
+        self._config , config
         self._validation_rules: list[Callable[[DataT], bool]] = []
 
     @abstractmethod

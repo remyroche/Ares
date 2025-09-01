@@ -29,15 +29,15 @@ class UnifiedProbabilityGenerator:
     Single model for generating all 4 required probabilities.
     Replaces multiple ML models with one efficient multi-output model.
     """
-    
+
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.model = None
         self.is_trained = False
         self.probability_calibrator = None
-        
+
     async def generate_probabilities(
-        self, 
+        self,
         market_data: pd.DataFrame,
         features: np.ndarray,
         symbol: str,
@@ -45,7 +45,7 @@ class UnifiedProbabilityGenerator:
     ) -> dict[str, float]:
         """
         Generate all 4 probabilities in a single call.
-        
+
         Returns:
             dict: {
                 "triple_barrier_probability": float,
@@ -66,12 +66,12 @@ class MultiOutputProbabilityModel:
     Single model that outputs all 4 probabilities.
     Uses LightGBM with multi-output configuration.
     """
-    
+
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.models = {}  # One model per probability type
         self.feature_importance = {}
-        
+
     def train(
         self,
         X_train: np.ndarray,
@@ -82,9 +82,9 @@ class MultiOutputProbabilityModel:
         """
         Train separate models for each probability type.
         """
-        
+
     def predict_probabilities(
-        self, 
+        self,
         X: np.ndarray
     ) -> dict[str, float]:
         """
@@ -99,7 +99,7 @@ class ProbabilityCalibrator:
     """
     Calibrate raw model outputs to ensure proper probability distributions.
     """
-    
+
     def calibrate_probabilities(
         self,
         raw_probabilities: dict[str, float],
@@ -108,7 +108,7 @@ class ProbabilityCalibrator:
         """
         Apply calibration to ensure probabilities are well-calibrated.
         """
-        
+
     def validate_probabilities(
         self,
         probabilities: dict[str, float]
@@ -200,45 +200,45 @@ class UnifiedProbabilityGenerator:
     Unified probability generator that replaces multiple ML models.
     Generates all 4 required probabilities in a single, efficient call.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("UnifiedProbabilityGenerator")
-        
+
         # Model state
         self.model = None
         self.is_trained = False
         self.last_training_time = None
-        
+
         # Calibration
         self.calibrators = {}
         self.calibration_data = {}
-        
+
         # Configuration
         self.profit_target = config.get("profit_target", 0.02)
         self.stop_loss = config.get("stop_loss", 0.01)
         self.look_ahead_periods = config.get("look_ahead_periods", 20)
         self.magnitude_threshold_factor = config.get("magnitude_threshold_factor", 0.8)
         self.adverse_threshold = config.get("adverse_threshold", 0.01)
-        
+
     async def initialize(self) -> bool:
         """Initialize the unified probability generator."""
         try:
             self.logger.info("Initializing Unified Probability Generator...")
-            
+
             # Initialize multi-output model
             self.model = MultiOutputProbabilityModel(self.config)
-            
+
             # Load pre-trained models if available
             await self._load_pretrained_models()
-            
+
             self.logger.info("✅ Unified Probability Generator initialized")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize: {e}")
             return False
-    
+
     async def generate_probabilities(
         self,
         market_data: pd.DataFrame,
@@ -248,13 +248,13 @@ class UnifiedProbabilityGenerator:
     ) -> Dict[str, float]:
         """
         Generate all 4 required probabilities.
-        
+
         Args:
             market_data: Market data with OHLCV
             features: Feature array for prediction
             symbol: Trading symbol
             timeframe: Timeframe (1m, 5m, etc.)
-            
+
         Returns:
             Dict containing all 4 probabilities and metadata
         """
@@ -262,18 +262,18 @@ class UnifiedProbabilityGenerator:
             if not self.is_trained:
                 self.logger.warning("Model not trained, using fallback probabilities")
                 return self._generate_fallback_probabilities()
-            
+
             # Generate raw probabilities
             raw_probabilities = self.model.predict_probabilities(features)
-            
+
             # Apply calibration
             calibrated_probabilities = self._calibrate_probabilities(
                 raw_probabilities, market_data
             )
-            
+
             # Calculate confidence score
             confidence_score = self._calculate_confidence_score(calibrated_probabilities)
-            
+
             # Add metadata
             result = {
                 **calibrated_probabilities,
@@ -287,14 +287,14 @@ class UnifiedProbabilityGenerator:
                     "stop_loss": self.stop_loss
                 }
             }
-            
+
             self.logger.debug(f"Generated probabilities for {symbol}: {result}")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Error generating probabilities: {e}")
             return self._generate_fallback_probabilities()
-    
+
     def _calibrate_probabilities(
         self,
         raw_probabilities: Dict[str, float],
@@ -303,7 +303,7 @@ class UnifiedProbabilityGenerator:
         """Apply calibration to raw probabilities."""
         try:
             calibrated = {}
-            
+
             for prob_name, raw_prob in raw_probabilities.items():
                 if prob_name in self.calibrators:
                     calibrated[prob_name] = self.calibrators[prob_name].predict_proba(
@@ -311,17 +311,17 @@ class UnifiedProbabilityGenerator:
                     )[0][1]
                 else:
                     calibrated[prob_name] = raw_prob
-            
+
             # Validate probabilities
             for prob_name, prob_value in calibrated.items():
                 calibrated[prob_name] = np.clip(prob_value, 0.0, 1.0)
-            
+
             return calibrated
-            
+
         except Exception as e:
             self.logger.error(f"Calibration error: {e}")
             return raw_probabilities
-    
+
     def _calculate_confidence_score(
         self,
         probabilities: Dict[str, float]
@@ -335,18 +335,18 @@ class UnifiedProbabilityGenerator:
                 "magnitude_probability": 0.2,
                 "barrier_avoidance_probability": 0.1
             }
-            
+
             confidence = sum(
                 probabilities.get(prob_name, 0.5) * weight
                 for prob_name, weight in weights.items()
             )
-            
+
             return np.clip(confidence, 0.0, 1.0)
-            
+
         except Exception as e:
             self.logger.error(f"Confidence calculation error: {e}")
             return 0.5
-    
+
     def _generate_fallback_probabilities(self) -> Dict[str, float]:
         """Generate fallback probabilities when model is not available."""
         return {
@@ -369,13 +369,13 @@ class MultiOutputProbabilityModel:
     """
     Multi-output model for generating all 4 probabilities.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.models = {}
         self.feature_importance = {}
         self.is_trained = False
-        
+
     def train(
         self,
         X_train: np.ndarray,
@@ -388,18 +388,18 @@ class MultiOutputProbabilityModel:
         """
         try:
             results = {}
-            
+
             for prob_name, y_train in y_train_dict.items():
                 self.logger.info(f"Training model for {prob_name}")
-                
+
                 # Create LightGBM dataset
                 train_data = lgb.Dataset(X_train, label=y_train)
-                
+
                 if X_val is not None and y_val_dict is not None:
                     val_data = lgb.Dataset(X_val, label=y_val_dict[prob_name])
                 else:
                     val_data = None
-                
+
                 # Train model
                 model = lgb.train(
                     self._get_model_params(prob_name),
@@ -408,31 +408,31 @@ class MultiOutputProbabilityModel:
                     num_boost_round=100,
                     early_stopping_rounds=10 if val_data else None
                 )
-                
+
                 self.models[prob_name] = model
-                
+
                 # Store feature importance
                 self.feature_importance[prob_name] = model.feature_importance()
-                
+
                 results[prob_name] = {
                     "status": "trained",
                     "feature_importance": self.feature_importance[prob_name]
                 }
-            
+
             self.is_trained = True
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Training error: {e}")
             return {"error": str(e)}
-    
+
     def predict_probabilities(self, X: np.ndarray) -> Dict[str, float]:
         """
         Generate all 4 probabilities from trained models.
         """
         try:
             probabilities = {}
-            
+
             for prob_name, model in self.models.items():
                 if hasattr(model, 'predict_proba'):
                     # Classification model
@@ -442,9 +442,9 @@ class MultiOutputProbabilityModel:
                     # Regression model
                     pred = model.predict(X)
                     probabilities[prob_name] = np.clip(pred[0], 0.0, 1.0)
-            
+
             return probabilities
-            
+
         except Exception as e:
             self.logger.error(f"Prediction error: {e}")
             return {
@@ -453,7 +453,7 @@ class MultiOutputProbabilityModel:
                 "magnitude_probability": 0.5,
                 "barrier_avoidance_probability": 0.5
             }
-    
+
     def _get_model_params(self, prob_name: str) -> Dict[str, Any]:
         """Get model parameters for specific probability type."""
         base_params = {
@@ -467,7 +467,7 @@ class MultiOutputProbabilityModel:
             "bagging_freq": 5,
             "verbose": -1
         }
-        
+
         # Customize parameters based on probability type
         if prob_name == "triple_barrier_probability":
             base_params["num_leaves"] = 25  # More conservative
@@ -478,7 +478,7 @@ class MultiOutputProbabilityModel:
             base_params["metric"] = "rmse"
         elif prob_name == "barrier_avoidance_probability":
             base_params["num_leaves"] = 20  # Most conservative
-        
+
         return base_params
 ```
 
@@ -491,11 +491,11 @@ class ProbabilityEnhancer:
     """
     Enhances Analyst probabilities for Tactician decision making.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ProbabilityEnhancer")
-        
+
     def enhance_probabilities(
         self,
         analyst_probabilities: Dict[str, float],
@@ -507,38 +507,38 @@ class ProbabilityEnhancer:
         """
         try:
             enhanced = {}
-            
+
             # Enhance each probability based on tactical context
             enhanced["triple_barrier_probability"] = self._enhance_triple_barrier(
                 analyst_probabilities["triple_barrier_probability"],
                 market_data,
                 position_context
             )
-            
+
             enhanced["direction_probability"] = self._enhance_direction(
                 analyst_probabilities["direction_probability"],
                 market_data,
                 position_context
             )
-            
+
             enhanced["magnitude_probability"] = self._enhance_magnitude(
                 analyst_probabilities["magnitude_probability"],
                 market_data,
                 position_context
             )
-            
+
             enhanced["barrier_avoidance_probability"] = self._enhance_barrier_avoidance(
                 analyst_probabilities["barrier_avoidance_probability"],
                 market_data,
                 position_context
             )
-            
+
             return enhanced
-            
+
         except Exception as e:
             self.logger.error(f"Enhancement error: {e}")
             return analyst_probabilities
-    
+
     def calculate_leverage(
         self,
         probabilities: Dict[str, float],
@@ -551,26 +551,26 @@ class ProbabilityEnhancer:
         try:
             # Base leverage on triple_barrier_probability
             base_leverage = probabilities["triple_barrier_probability"]
-            
+
             # Adjust for confidence
             confidence_factor = probabilities["direction_probability"]
-            
+
             # Adjust for risk tolerance
             risk_factor = min(1.0, risk_tolerance / 0.02)  # Normalize to 2% risk
-            
+
             # Calculate final leverage
             leverage = base_leverage * confidence_factor * risk_factor
-            
+
             # Apply limits
             max_leverage = self.config.get("max_leverage", 10.0)
             leverage = min(leverage, max_leverage)
-            
+
             return leverage
-            
+
         except Exception as e:
             self.logger.error(f"Leverage calculation error: {e}")
             return 1.0
-    
+
     def calculate_position_size(
         self,
         probabilities: Dict[str, float],
@@ -583,15 +583,15 @@ class ProbabilityEnhancer:
         try:
             # Base size on magnitude probability
             base_size = probabilities["magnitude_probability"]
-            
+
             # Adjust for barrier avoidance
             risk_adjustment = probabilities["barrier_avoidance_probability"]
-            
+
             # Calculate position size
             position_size = account_balance * risk_per_trade * base_size * risk_adjustment
-            
+
             return position_size
-            
+
         except Exception as e:
             self.logger.error(f"Position size calculation error: {e}")
             return account_balance * risk_per_trade * 0.5

@@ -11,7 +11,7 @@
 
 ### ✅ **2. Objective Weights - 50/25/25 Implementation**
 - **Total Profit**: 50% weight (primary objective)
-- **Win Rate**: 25% weight (secondary objective)  
+- **Win Rate**: 25% weight (secondary objective)
 - **Sharpe Ratio**: 25% weight (secondary objective)
 - **Weights properly integrated** into optimization algorithms and MLflow logging
 
@@ -162,7 +162,7 @@
 
 ### **Non-Trading Parameters Removed**
 - **Data collection parameters**: Not used during live trading
-- **Training settings**: Not used during live trading  
+- **Training settings**: Not used during live trading
 - **Validation parameters**: Not used during live trading
 - **System configuration**: Not used during live trading
 - **Focus**: Pure live trading performance optimization

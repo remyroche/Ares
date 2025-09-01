@@ -92,15 +92,15 @@ class ProbabilityTargetGenerator:
     def generate_triple_barrier_targets(self, X, y, market_data):
         # Calculates actual triple barrier outcomes
         # Returns probability targets [0, 1]
-    
+
     def generate_direction_targets(self, X, y):
         # Calculates direction accuracy
         # Returns probability targets [0, 1]
-    
+
     def generate_magnitude_targets(self, X, y, market_data):
         # Calculates magnitude prediction accuracy
         # Returns probability targets [0, 1]
-    
+
     def generate_barrier_avoidance_targets(self, X, y, market_data):
         # Calculates barrier avoidance outcomes
         # Returns probability targets [0, 1]
@@ -114,7 +114,7 @@ class MultiOutputModel:
         # Initialize 4 individual models using existing architectures
         self.models = {
             'triple_barrier': LightGBMClassifier(
-                n_estimators=1000, learning_rate=0.01, max_depth=8, 
+                n_estimators=1000, learning_rate=0.01, max_depth=8,
                 num_leaves=31, random_state=42  # From step6
             ),
             'direction': RandomForestClassifier(
@@ -126,7 +126,7 @@ class MultiOutputModel:
         }
         self.calibrators = {}
         self.ensemble_weights = None
-    
+
     def fit(self, X_train, y_train_multi, X_val, y_val_multi):
         # Train each model on its specific target using existing configurations
         # Calibrate probabilities
@@ -141,13 +141,13 @@ class MultiOutputProbabilityTrainer:
         # Generate probability targets
         y_train_multi = self.generate_probability_targets(X_train, y_train, market_data)
         y_val_multi = self.generate_probability_targets(X_val, y_val, market_data)
-        
+
         # Train multi-output model
         trained_models = self.multi_output_model.fit(X_train, y_train_multi, X_val, y_val_multi)
-        
+
         # Generate probability outputs
         probabilities = self.predict_probabilities(X_val, market_data)
-        
+
         return {
             "trained_models": trained_models,
             "probability_outputs": probabilities,

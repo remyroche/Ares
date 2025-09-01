@@ -23,7 +23,7 @@ class PositionSizer:
     - Position sizing decisions based on ML confidence scores and Kelly criterion
     - Integration with Strategist for strategy input
     - Position size optimization for high leverage trading
-    
+
     This is the primary component responsible for position sizing across the system.
     """
 
@@ -40,23 +40,23 @@ class PositionSizer:
 
         # Load configuration from step17 optimization results
         self.sizing_config: dict[str, Any] = self.config.get("position_sizing", {})
-        
+
         # Load step17 optimized parameters
         step17_config = self.config.get("step17_optimization", {})
         position_sizing_optimization = step17_config.get("position_sizing", {})
-        
+
         # Load optimized position sizing parameters
         self.kelly_multiplier: float = position_sizing_optimization.get("kelly_multiplier", 0.25)
         self.max_position_size: float = position_sizing_optimization.get("max_position_size", 0.5)
         self.min_position_size: float = position_sizing_optimization.get("min_position_size", 0.01)
         self.confidence_threshold: float = position_sizing_optimization.get("confidence_threshold", 0.6)
-        
+
         # NEW: Combined confidence threshold for position sizing (optimizable in step17)
         self.positionsize_combined_threshold: float = position_sizing_optimization.get("positionsize_combined_threshold", 0.7)
-        
+
         # Load optimized component weights
         # Removed config-driven weights; internal weighting is handled without exposed params
-        
+
         # Load additional optimized parameters
         # Removed deprecated parameters: risk_adjustment_factor, confidence_boost_threshold,
         # volatility_adjustment, market_regime_multiplier
@@ -129,28 +129,28 @@ class PositionSizer:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "position_sizing" in step17_results:
                 position_sizing_optimization = step17_results["position_sizing"]
-                
+
                 # Update position sizing parameters
                 self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
                 self.max_position_size = position_sizing_optimization.get("max_position_size", self.max_position_size)
                 self.min_position_size = position_sizing_optimization.get("min_position_size", self.min_position_size)
                 self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
-                
+
                 # Update component weights
                 # Removed: no longer updating ml_weight/kelly_weight from config
-                
+
                 # Update additional parameters
                 # Removed: deprecated parameters no longer refreshed
-                
+
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
-                
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -202,7 +202,7 @@ class PositionSizer:
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-            
+
             # Extract ML confidence scores (for backward compatibility)
             price_target_confidences = ml_predictions.get(
                 "price_target_confidences",
@@ -416,11 +416,11 @@ class PositionSizer:
             # Calculate weighted position size
             # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
- 
+
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),
             )
- 
+
         except Exception as e:
             self.print(error(f"Error calculating weighted position size: {e}"))
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))

@@ -27,31 +27,31 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 @dataclass
 class ProbabilisticOptimizationConfig:
     """Configuration for probabilistic Bayesian optimization."""
-    
+
     # Optimization objectives
     objectives: List[str] = None  # ['calibration', 'sharpness', 'discrimination']
-    
+
     # Calibration metrics
     calibration_bins: int = 10
     reliability_threshold: float = 0.1
-    
+
     # Uncertainty quantification
     uncertainty_weight: float = 0.3
     confidence_calibration_weight: float = 0.4
     prediction_accuracy_weight: float = 0.3
-    
+
     # Optimization parameters
     n_trials: int = 100
     n_jobs: int = 1
     timeout: Optional[int] = None
-    
+
     # Early stopping
     early_stopping_patience: int = 10
     min_trials: int = 20
-    
+
     # Sampling strategy
     sampler_type: str = "tpe"  # 'tpe', 'cmaes', 'random'
-    
+
     def __post_init__(self):
         if self.objectives is None:
             self.objectives = ['calibration', 'sharpness', 'discrimination']
@@ -60,14 +60,14 @@ class ProbabilisticOptimizationConfig:
 class ProbabilisticBayesianOptimizer:
     """
     Bayesian optimizer specifically designed for probabilistic models.
-    
+
     This optimizer focuses on:
     1. Calibration: Ensuring predicted probabilities match observed frequencies
     2. Sharpness: Making predictions as precise as possible
     3. Discrimination: Maximizing the difference between positive and negative predictions
     4. Uncertainty quantification: Optimizing confidence intervals and uncertainty estimates
     """
-    
+
     def __init__(
         self,
         config: ProbabilisticOptimizationConfig,
@@ -78,16 +78,16 @@ class ProbabilisticBayesianOptimizer:
         self.model_type = model_type
         self.storage_url = storage_url
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize Optuna study
         self.study = self._create_study()
-        
+
         # Model-specific configurations
         self.model_configs = self._get_model_configurations()
-        
+
     def _create_study(self) -> optuna.Study:
         """Create Optuna study with appropriate sampler and pruner."""
-        
+
         # Choose sampler based on configuration
         if self.config.sampler_type == "tpe":
             sampler = optuna.samplers.TPESampler(seed=42)
@@ -95,7 +95,7 @@ class ProbabilisticBayesianOptimizer:
             sampler = optuna.samplers.CmaEsSampler(seed=42)
         else:
             sampler = optuna.samplers.RandomSampler(seed=42)
-        
+
         # Create study with multi-objective optimization
         study = optuna.create_study(
             study_name=f"probabilistic_{self.model_type}_optimization",
@@ -104,12 +104,12 @@ class ProbabilisticBayesianOptimizer:
             directions=["maximize"] * len(self.config.objectives),
             load_if_exists=True
         )
-        
+
         return study
-    
+
     def _get_model_configurations(self) -> Dict[str, Dict[str, Any]]:
         """Get model-specific hyperparameter search spaces with expanded ranges."""
-        
+
         if self.model_type == "tactician":
             return {
                 "base_model": {
@@ -192,12 +192,12 @@ class ProbabilisticBayesianOptimizer:
                     "correlation_threshold": (0.5, 0.99)  # New parameter
                 }
             }
-    
+
     def suggest_hyperparameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest hyperparameters for the current trial."""
-        
+
         params = {}
-        
+
         # Base model parameters
         base_config = self.model_configs["base_model"]
         for param, (low, high) in base_config.items():
@@ -205,21 +205,21 @@ class ProbabilisticBayesianOptimizer:
                 params[param] = trial.suggest_int(param, low, high)
             else:
                 params[param] = trial.suggest_float(param, low, high, log=True)
-        
+
         # Probabilistic calibration parameters
         calib_config = self.model_configs["probabilistic_calibration"]
         params["calibration_method"] = trial.suggest_categorical(
             "calibration_method", calib_config["calibration_method"]
         )
         params["calibration_cv_folds"] = trial.suggest_int(
-            "calibration_cv_folds", 
+            "calibration_cv_folds",
             calib_config["calibration_cv_folds"][0],
             calib_config["calibration_cv_folds"][1]
         )
         params["uncertainty_estimation"] = trial.suggest_categorical(
             "uncertainty_estimation", calib_config["uncertainty_estimation"]
         )
-        
+
         # Model-specific parameters
         if self.model_type == "tactician":
             barrier_config = self.model_configs["barrier_system"]
@@ -260,9 +260,9 @@ class ProbabilisticBayesianOptimizer:
                 regime_config["regime_transition_smoothing"][0],
                 regime_config["regime_transition_smoothing"][1]
             )
-        
+
         return params
-    
+
     def evaluate_probabilistic_metrics(
         self,
         y_true: np.ndarray,
@@ -270,32 +270,32 @@ class ProbabilisticBayesianOptimizer:
         confidence_intervals: Optional[np.ndarray] = None
     ) -> Dict[str, float]:
         """Evaluate probabilistic model performance metrics."""
-        
+
         metrics = {}
-        
+
         # Calibration metrics
         if "calibration" in self.config.objectives:
             metrics["calibration"] = self._calculate_calibration_score(y_true, y_pred_proba)
-        
+
         # Sharpness metrics
         if "sharpness" in self.config.objectives:
             metrics["sharpness"] = self._calculate_sharpness_score(y_pred_proba)
-        
+
         # Discrimination metrics
         if "discrimination" in self.config.objectives:
             metrics["discrimination"] = self._calculate_discrimination_score(y_true, y_pred_proba)
-        
+
         # Uncertainty quantification metrics
         if confidence_intervals is not None:
             metrics["uncertainty_quality"] = self._calculate_uncertainty_quality(
                 y_true, y_pred_proba, confidence_intervals
             )
-        
+
         return metrics
-    
+
     def _calculate_calibration_score(
-        self, 
-        y_true: np.ndarray, 
+        self,
+        y_true: np.ndarray,
         y_pred_proba: np.ndarray
     ) -> float:
         """Calculate calibration score (lower is better)."""
@@ -304,7 +304,7 @@ class ProbabilisticBayesianOptimizer:
             return brier_score_loss(y_true, y_pred_proba)
         except:
             return 1.0  # Worst possible score
-    
+
     def _calculate_sharpness_score(self, y_pred_proba: np.ndarray) -> float:
         """Calculate sharpness score (higher is better)."""
         try:
@@ -314,10 +314,10 @@ class ProbabilisticBayesianOptimizer:
             return -entropy  # Negative because we want to maximize
         except:
             return 0.0
-    
+
     def _calculate_discrimination_score(
-        self, 
-        y_true: np.ndarray, 
+        self,
+        y_true: np.ndarray,
         y_pred_proba: np.ndarray
     ) -> float:
         """Calculate discrimination score (higher is better)."""
@@ -326,7 +326,7 @@ class ProbabilisticBayesianOptimizer:
             return roc_auc_score(y_true, y_pred_proba)
         except:
             return 0.5  # Random performance
-    
+
     def _calculate_uncertainty_quality(
         self,
         y_true: np.ndarray,
@@ -337,13 +337,13 @@ class ProbabilisticBayesianOptimizer:
         try:
             # Check if true values fall within confidence intervals
             coverage = np.mean(
-                (y_true >= confidence_intervals[:, 0]) & 
+                (y_true >= confidence_intervals[:, 0]) &
                 (y_true <= confidence_intervals[:, 1])
             )
             return coverage
         except:
             return 0.0
-    
+
     def create_objective_function(
         self,
         X: np.ndarray,
@@ -352,36 +352,36 @@ class ProbabilisticBayesianOptimizer:
         validation_split: float = 0.2
     ) -> Callable:
         """Create the objective function for optimization."""
-        
+
         def objective(trial: optuna.Trial) -> Tuple[float, ...]:
             """Objective function for multi-objective optimization."""
-            
+
             try:
                 # Get hyperparameters for this trial
                 params = self.suggest_hyperparameters(trial)
-                
+
                 # Split data for validation
                 n_val = int(len(X) * validation_split)
                 X_train, X_val = X[:-n_val], X[-n_val:]
                 y_train, y_val = y[:-n_val], y[-n_val:]
-                
+
                 # Create and train model
                 model = model_factory(params)
                 model.fit(X_train, y_train)
-                
+
                 # Get probabilistic predictions
                 y_pred_proba = model.predict_proba(X_val)[:, 1]
-                
+
                 # Get confidence intervals if available
                 confidence_intervals = None
                 if hasattr(model, 'predict_proba_with_confidence'):
                     confidence_intervals = model.predict_proba_with_confidence(X_val)
-                
+
                 # Calculate metrics
                 metrics = self.evaluate_probabilistic_metrics(
                     y_val, y_pred_proba, confidence_intervals
                 )
-                
+
                 # Return objectives in the order specified
                 objectives = []
                 for obj_name in self.config.objectives:
@@ -389,16 +389,16 @@ class ProbabilisticBayesianOptimizer:
                         objectives.append(metrics[obj_name])
                     else:
                         objectives.append(0.0)  # Default value
-                
+
                 return tuple(objectives)
-                
+
             except Exception as e:
                 self.logger.warning(f"Trial {trial.number} failed: {e}")
                 # Return worst possible scores
                 return tuple([0.0] * len(self.config.objectives))
-        
+
         return objective
-    
+
     def optimize(
         self,
         X: np.ndarray,
@@ -407,15 +407,15 @@ class ProbabilisticBayesianOptimizer:
         validation_split: float = 0.2
     ) -> Dict[str, Any]:
         """Run the Bayesian optimization with MLflow integration."""
-        
+
         self.logger.info(f"Starting probabilistic Bayesian optimization for {self.model_type}")
         self.logger.info(f"Objectives: {self.config.objectives}")
         self.logger.info(f"Number of trials: {self.config.n_trials}")
         self.logger.info(f"Objective weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio")
-        
+
         # Create objective function
         objective = self.create_objective_function(X, y, model_factory, validation_split)
-        
+
         # Set up callbacks
         callbacks = []
         if self.config.early_stopping_patience > 0:
@@ -425,7 +425,7 @@ class ProbabilisticBayesianOptimizer:
                     directions=["maximize"] * len(self.config.objectives)
                 )
             )
-        
+
         # Run optimization
         self.study.optimize(
             objective,
@@ -434,10 +434,10 @@ class ProbabilisticBayesianOptimizer:
             timeout=self.config.timeout,
             callbacks=callbacks
         )
-        
+
         # Extract results
         results = self._extract_optimization_results()
-        
+
         # Log to MLflow
         if results.get("best_solutions"):
             best_trial = self.study.best_trials[0] if self.study.best_trials else None
@@ -449,17 +449,17 @@ class ProbabilisticBayesianOptimizer:
                     best_params=best_params,
                     best_values=best_values
                 )
-        
+
         self.logger.info("Probabilistic Bayesian optimization completed successfully!")
-        
+
         return results
-    
+
     def _extract_optimization_results(self) -> Dict[str, Any]:
         """Extract and format optimization results."""
-        
+
         # Get Pareto front solutions
         pareto_front = self.study.best_trials
-        
+
         # Get best solution for each objective
         best_solutions = {}
         for i, objective in enumerate(self.config.objectives):
@@ -469,13 +469,13 @@ class ProbabilisticBayesianOptimizer:
                 "value": best_trial.values[i],
                 "trial_number": best_trial.number
             }
-        
+
         # Get parameter importance
         try:
             param_importance = optuna.importance.get_param_importances(self.study)
         except:
             param_importance = {}
-        
+
         # Get optimization history
         optimization_history = []
         for trial in self.study.trials:
@@ -486,7 +486,7 @@ class ProbabilisticBayesianOptimizer:
                     "params": trial.params,
                     "duration": trial.duration.total_seconds()
                 })
-        
+
         return {
             "best_solutions": best_solutions,
             "pareto_front": pareto_front,
@@ -495,33 +495,33 @@ class ProbabilisticBayesianOptimizer:
             "study": self.study,
             "config": self.config
         }
-    
+
     def get_recommended_hyperparameters(self, objective_weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """Get recommended hyperparameters based on objective weights."""
-        
+
         if objective_weights is None:
             # Default weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio
             objective_weights = {
                 'total_profit': 0.5,
-                'win_rate': 0.25, 
+                'win_rate': 0.25,
                 'sharpe_ratio': 0.25
             }
-        
+
         # Calculate weighted score for each trial
         best_trial = None
         best_weighted_score = float('-inf')
-        
+
         for trial in self.study.best_trials:
             if trial.state == optuna.trial.TrialState.COMPLETE:
                 weighted_score = sum(
-                    objective_weights[obj] * trial.values[i] 
+                    objective_weights[obj] * trial.values[i]
                     for i, obj in enumerate(self.config.objectives)
                 )
-                
+
                 if weighted_score > best_weighted_score:
                     best_weighted_score = weighted_score
                     best_trial = trial
-        
+
         if best_trial:
             return {
                 "hyperparameters": best_trial.params,
@@ -531,69 +531,69 @@ class ProbabilisticBayesianOptimizer:
             }
         else:
             return {}
-    
+
     def _log_mlflow_experiment(self, study_name: str, best_params: Dict[str, Any], best_values: List[float]):
         """Log optimization results to MLflow."""
-        
+
         try:
             import mlflow
-            
+
             # Set experiment name
             mlflow.set_experiment(f"step17_optimization_{self.model_type}")
-            
+
             # Log parameters
             mlflow.log_params(best_params)
-            
+
             # Log metrics
             for i, objective in enumerate(self.config.objectives):
                 mlflow.log_metric(f"best_{objective}", best_values[i])
-            
+
             # Log optimization metadata
             mlflow.log_param("model_type", self.model_type)
             mlflow.log_param("n_trials", self.config.n_trials)
             mlflow.log_param("sampler_type", self.config.sampler_type)
             mlflow.log_param("study_name", study_name)
-            
+
             # Log study object
             mlflow.log_artifact(f"{study_name}.db", "study_database")
-            
+
             self.logger.info("✅ MLflow experiment logged successfully")
-            
+
         except ImportError:
             self.logger.warning("MLflow not available for experiment logging")
         except Exception as e:
             self.logger.error(f"Failed to log MLflow experiment: {e}")
-    
+
     def plot_optimization_results(self, save_path: Optional[str] = None):
         """Plot optimization results using Optuna's visualization tools."""
-        
+
         try:
             import matplotlib.pyplot as plt
-            
+
             # Create subplots for each objective
             fig, axes = plt.subplots(1, len(self.config.objectives), figsize=(5*len(self.config.objectives), 5))
             if len(self.config.objectives) == 1:
                 axes = [axes]
-            
+
             for i, objective in enumerate(self.config.objectives):
                 # Plot optimization history for this objective
                 values = [trial.values[i] for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
                 trial_numbers = [trial.number for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
-                
+
                 axes[i].plot(trial_numbers, values, 'b-', alpha=0.6)
                 axes[i].set_title(f'{objective.capitalize()} Optimization History')
                 axes[i].set_xlabel('Trial Number')
                 axes[i].set_ylabel(objective.capitalize())
                 axes[i].grid(True, alpha=0.3)
-            
+
             plt.tight_layout()
-            
+
             if save_path:
                 plt.savefig(save_path, dpi=300, bbox_inches='tight')
                 self.logger.info(f"Optimization plots saved to {save_path}")
-            
+
             plt.show()
-            
+
         except ImportError:
             self.logger.warning("Matplotlib not available for plotting")
         except Exception as e:
@@ -606,14 +606,14 @@ def create_tactician_model(params: Dict[str, Any]):
     # This would integrate with your existing Tactician model creation
     # For now, returning a placeholder
     from sklearn.ensemble import RandomForestClassifier
-    
+
     model = RandomForestClassifier(
         n_estimators=params.get('n_estimators', 100),
         max_depth=params.get('max_depth', 10),
         random_state=42,
         n_jobs=1
     )
-    
+
     return model
 
 
@@ -622,14 +622,14 @@ def create_analyst_model(params: Dict[str, Any]):
     # This would integrate with your existing Analyst model creation
     # For now, returning a placeholder
     from sklearn.ensemble import RandomForestClassifier
-    
+
     model = RandomForestClassifier(
         n_estimators=params.get('n_estimators', 200),
         max_depth=params.get('max_depth', 15),
         random_state=42,
         n_jobs=1
     )
-    
+
     return model
 
 
@@ -640,19 +640,19 @@ if __name__ == "__main__":
         n_trials=50,
         n_jobs=1
     )
-    
+
     # Create optimizer for Tactician
     tactician_optimizer = ProbabilisticBayesianOptimizer(
         config=config,
         model_type="tactician"
     )
-    
+
     # Create optimizer for Analyst
     analyst_optimizer = ProbabilisticBayesianOptimizer(
         config=config,
         model_type="analyst"
     )
-    
+
     print("✅ Probabilistic Bayesian Optimizer created successfully!")
     print(f"Tactician optimizer: {tactician_optimizer}")
     print(f"Analyst optimizer: {analyst_optimizer}")

@@ -49,7 +49,7 @@ This implementation addresses the redundant data loading issue in the training p
 # Before
 df = await loader.load_unified_data(...)
 
-# After  
+# After
 df = await data_sharing_manager.get_unified_data(...)
 ```
 
@@ -105,7 +105,7 @@ manager = get_data_sharing_manager(config)
 # Load data (will cache automatically)
 data = await manager.get_unified_data(
     symbol="ETHUSDT",
-    exchange="BINANCE", 
+    exchange="BINANCE",
     timeframe="1m",
     lookback_days=180
 )
@@ -127,7 +127,7 @@ print(f"Memory saved: {stats['memory_saved_gb']:.2f}GB")
 data = await manager.get_unified_data(
     symbol="ETHUSDT",
     exchange="BINANCE",
-    timeframe="1m", 
+    timeframe="1m",
     lookback_days=180,
     force_reload=True  # Bypass cache
 )

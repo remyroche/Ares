@@ -21,20 +21,20 @@ except ImportError:
 @dataclass
 class Step1Config:
     """Enhanced configuration for Step1 data collection."""
-    
+
     # Basic parameters
     symbol: str = "ETHUSDT"
     exchange: str = "BINANCE"
     timeframe: str = "1m"
     lookback_days: int = 1095
-    
+
     # Performance parameters
     max_retries: int = 3
     retry_backoff_factor: float = 2.0
     chunk_size: int = 10000
     max_memory_mb: int = 1024
     max_workers: int = 4
-    
+
     # Quality thresholds
     max_nan_ratio: float = 0.0  # Zero tolerance for NaN
     max_infinite_count: int = 0  # Zero tolerance for infinite values
@@ -42,21 +42,21 @@ class Step1Config:
     max_gap_hours: int = 48
     price_tolerance: float = 0.001
     volume_tolerance: float = 0.001
-    
+
     # Data directories
     data_dir: str = "data_cache"
     backup_dir: str = "data_cache/backup"
     temp_dir: str = "data_cache/temp"
-    
+
     # Error handling
     enable_circuit_breaker: bool = True
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: float = 60.0
-    
+
     def validate(self) -> List[str]:
         """Validate configuration and return any issues."""
         issues = []
-        
+
         if self.lookback_days <= 0:
             issues.append("lookback_days must be positive")
         if self.chunk_size <= 0:
@@ -73,13 +73,13 @@ class Step1Config:
             issues.append("price_tolerance must be non-negative")
         if self.volume_tolerance < 0:
             issues.append("volume_tolerance must be non-negative")
-            
+
         return issues
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'Step1Config':
         """Create configuration from dictionary."""
@@ -89,12 +89,12 @@ class Step1Config:
 @dataclass
 class Step1_5Config:
     """Enhanced configuration for Step1_5 data converter."""
-    
+
     # Basic parameters
     symbol: str = "ETHUSDT"
     exchange: str = "BINANCE"
     timeframe: str = "1m"
-    
+
     # Performance parameters
     max_retries: int = 3
     retry_backoff_factor: float = 2.0
@@ -102,7 +102,7 @@ class Step1_5Config:
     max_memory_mb: int = 1024
     max_workers: int = 4
     batch_size: int = 262144
-    
+
     # Quality thresholds
     max_nan_ratio: float = 0.0  # Zero tolerance for NaN
     max_infinite_count: int = 0  # Zero tolerance for infinite values
@@ -110,13 +110,13 @@ class Step1_5Config:
     max_gap_hours: int = 48
     price_tolerance: float = 0.001
     volume_tolerance: float = 0.001
-    
+
     # Data directories
     data_dir: str = "data_cache"
     unified_dir: str = "data_cache/unified"
     backup_dir: str = "data_cache/backup_pre_unified"
     temp_dir: str = "data_cache/temp"
-    
+
     # Processing options
     force_rerun: bool = False
     enable_incremental: bool = True
@@ -125,16 +125,16 @@ class Step1_5Config:
     use_dictionary: bool = True
     min_rows_per_group: int = 50000
     max_rows_per_file: int = 5_000_000
-    
+
     # Error handling
     enable_circuit_breaker: bool = True
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: float = 60.0
-    
+
     def validate(self) -> List[str]:
         """Validate configuration and return any issues."""
         issues = []
-        
+
         if self.chunk_size <= 0:
             issues.append("chunk_size must be positive")
         if self.max_memory_mb <= 0:
@@ -149,13 +149,13 @@ class Step1_5Config:
             issues.append("price_tolerance must be non-negative")
         if self.volume_tolerance < 0:
             issues.append("volume_tolerance must be non-negative")
-            
+
         return issues
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'Step1_5Config':
         """Create configuration from dictionary."""
@@ -165,42 +165,42 @@ class Step1_5Config:
 @dataclass
 class PipelineConfig:
     """Configuration for the entire pipeline."""
-    
+
     # Step configurations
     step1: Step1Config = field(default_factory=Step1Config)
     step01_5: Step1_5Config = field(default_factory=Step1_5Config)
-    
+
     # Global settings
     environment: str = "development"
     log_level: str = "INFO"
     enable_metrics: bool = True
     enable_profiling: bool = False
-    
+
     # Data settings
     default_symbol: str = "ETHUSDT"
     default_exchange: str = "BINANCE"
     default_timeframe: str = "1m"
-    
+
     def validate(self) -> List[str]:
         """Validate pipeline configuration."""
         issues = []
-        
+
         # Validate individual step configurations
         step01_issues = self.step1.validate()
         issues.extend([f"step1.{issue}" for issue in step01_issues])
-        
+
         step01_5_issues = self.step01_5.validate()
         issues.extend([f"step01_5.{issue}" for issue in step01_5_issues])
-        
+
         # Validate global settings
         if self.environment not in ["development", "staging", "production"]:
             issues.append("environment must be one of: development, staging, production")
-        
+
         if self.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             issues.append("log_level must be a valid logging level")
-        
+
         return issues
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
@@ -214,13 +214,13 @@ class PipelineConfig:
             "default_exchange": self.default_exchange,
             "default_timeframe": self.default_timeframe,
         }
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'PipelineConfig':
         """Create configuration from dictionary."""
         step01_config = Step1Config.from_dict(config_dict.get("step1", {}))
         step01_5_config = Step1_5Config.from_dict(config_dict.get("step01_5", {}))
-        
+
         return cls(
             step1=step01_config,
             step01_5=step01_5_config,
@@ -236,48 +236,48 @@ class PipelineConfig:
 
 class ConfigManager:
     """Manager for configuration loading, validation, and saving."""
-    
+
     def __init__(self, config_dir: str = "config"):
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True)
         self.logger = system_logger.getChild("ConfigManager")
-    
+
     def load_config(self, config_name: str = "pipeline_config.json") -> PipelineConfig:
         """Load configuration from file."""
         config_path = self.config_dir / config_name
-        
+
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
                     config_dict = json.load(f)
-                
+
                 config = PipelineConfig.from_dict(config_dict)
                 self.logger.info(f"Loaded configuration from {config_path}")
                 return config
             except Exception as e:
                 self.logger.warning(f"Error loading configuration from {config_path}: {e}")
                 self.logger.info("Using default configuration")
-        
+
         # Return default configuration
         return PipelineConfig()
-    
+
     def save_config(self, config: PipelineConfig, config_name: str = "pipeline_config.json"):
         """Save configuration to file."""
         config_path = self.config_dir / config_name
-        
+
         try:
             config_dict = config.to_dict()
             with open(config_path, 'w') as f:
                 json.dump(config_dict, f, indent=2)
-            
+
             self.logger.info(f"Saved configuration to {config_path}")
         except Exception as e:
             self.logger.error(f"Error saving configuration to {config_path}: {e}")
-    
+
     def validate_config(self, config: PipelineConfig) -> bool:
         """Validate configuration and log any issues."""
         issues = config.validate()
-        
+
         if issues:
             self.logger.error("Configuration validation failed:")
             for issue in issues:
@@ -286,11 +286,11 @@ class ConfigManager:
         else:
             self.logger.info("Configuration validation passed")
             return True
-    
+
     def create_environment_config(self, environment: str) -> PipelineConfig:
         """Create environment-specific configuration."""
         base_config = PipelineConfig()
-        
+
         if environment == "development":
             base_config.environment = "development"
             base_config.log_level = "DEBUG"
@@ -299,14 +299,14 @@ class ConfigManager:
             base_config.step01_5.max_memory_mb = 512
             base_config.step1.chunk_size = 5000
             base_config.step01_5.chunk_size = 5000
-        
+
         elif environment == "staging":
             base_config.environment = "staging"
             base_config.log_level = "INFO"
             base_config.enable_profiling = False
             base_config.step1.max_memory_mb = 2048
             base_config.step01_5.max_memory_mb = 2048
-        
+
         elif environment == "production":
             base_config.environment = "production"
             base_config.log_level = "WARNING"
@@ -315,19 +315,19 @@ class ConfigManager:
             base_config.step01_5.max_memory_mb = 4096
             base_config.step1.max_retries = 5
             base_config.step01_5.max_retries = 5
-        
+
         return base_config
-    
+
     def load_environment_config(self, environment: str) -> PipelineConfig:
         """Load environment-specific configuration."""
         config_name = f"pipeline_config_{environment}.json"
         config = self.load_config(config_name)
-        
+
         if config.environment != environment:
             # Create new environment-specific config
             config = self.create_environment_config(environment)
             self.save_config(config, config_name)
-        
+
         return config
 
 
@@ -356,7 +356,7 @@ def load_pipeline_config(environment: str = "development") -> PipelineConfig:
 def validate_and_save_config(config: PipelineConfig, config_name: str = "pipeline_config.json"):
     """Validate and save configuration."""
     config_manager = ConfigManager()
-    
+
     if config_manager.validate_config(config):
         config_manager.save_config(config, config_name)
         return True

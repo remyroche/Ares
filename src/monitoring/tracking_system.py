@@ -17,7 +17,7 @@ from src.utils.logger import system_logger
 
 
 class TrackingType(Enum):
-    ENSEMBLE_DECISION = "ensemble_decision"
+    ENSEMBLE_DECISION , "ensemble_decision"
     REGIME_ANALYSIS = "regime_analysis"
     FEATURE_IMPORTANCE = "feature_importance"
     DECISION_PATH = "decision_path"
@@ -28,15 +28,15 @@ class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
+        self.config , config
         self.logger = system_logger.getChild("TrackingSystem")
 
     @handle_specific_errors(
-        error_handlers={
+        error_handlers, {
             ValueError: (False, "Invalid tracking configuration"),
             AttributeError: (False, "Missing tracking parameters"),
         },
-        default_return=False,
+        default_return, False,
         context="tracking_system.initialize",
     )
     async def initialize(self) -> bool:

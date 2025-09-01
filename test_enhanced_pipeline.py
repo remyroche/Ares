@@ -31,7 +31,7 @@ logger = system_logger.getChild("EnhancedPipelineTest")
 
 async def test_enhanced_pipeline():
     """Test the enhanced training pipeline with the new step sequence."""
-    
+
     logger.info("🚀 Starting Enhanced Pipeline Test")
     logger.info("📋 New Pipeline Sequence:")
     logger.info("   1. Data Collection (download)")
@@ -53,7 +53,7 @@ async def test_enhanced_pipeline():
     logger.info("   17. Monte Carlo Validation")
     logger.info("   18. A/B Testing")
     logger.info("   19. Saving")
-    
+
     # Configuration for the enhanced pipeline
     config = {
         "SYMBOL": "ETHUSDT",
@@ -61,7 +61,7 @@ async def test_enhanced_pipeline():
         "TIMEFRAME": "1m",
         "DATA_DIR": "data_cache",
         "LOOKBACK_DAYS": 30,  # Reduced for testing
-        
+
         # Triple barrier configuration
         "triple_barrier": {
             "profit_take_multiplier": 0.002,
@@ -69,7 +69,7 @@ async def test_enhanced_pipeline():
             "time_barrier_minutes": 30,
             "max_lookahead": 100,
         },
-        
+
         # Labeling configuration
         "labeling": {
             "enable_meta_labeling": True,
@@ -77,7 +77,7 @@ async def test_enhanced_pipeline():
             "enable_volatility_labels": True,
             "composite_label_strategy": "weighted_combination",
         },
-        
+
         # Feature engineering configuration
         "vectorized_advanced_features": {
             "enable_difference_acceleration_features": True,
@@ -92,14 +92,14 @@ async def test_enhanced_pipeline():
             "enable_meta_labeling": False,
             "enable_explicit_meta_labels": False,
         },
-        
+
         # HMM configuration
         "hmm_regime_discovery": {
             "n_components": 4,
             "covariance_type": "full",
             "random_state": 42,
         },
-        
+
         # Training configuration
         "method_a_mixture_of_experts": {
             "enable_method_a": True,
@@ -107,7 +107,7 @@ async def test_enhanced_pipeline():
             "ensemble_method": "voting",
         },
     }
-    
+
     # Training input parameters
     training_input = {
         "symbol": "ETHUSDT",
@@ -118,53 +118,53 @@ async def test_enhanced_pipeline():
         "force_rerun": False,  # Don't force rerun for testing
         "lookback_days": 30,
     }
-    
+
     try:
         # Initialize the enhanced training manager
         logger.info("🔧 Initializing Enhanced Training Manager...")
         training_manager = EnhancedTrainingManager(config)
-        
+
         # Run the enhanced pipeline
         logger.info("🚀 Starting Enhanced Pipeline Execution...")
         success = await training_manager.run_enhanced_training_pipeline(training_input)
-        
+
         if success:
             logger.info("✅ Enhanced Pipeline completed successfully!")
-            
+
             # Print summary of results
             logger.info("📊 Pipeline Results Summary:")
             if hasattr(training_manager, 'enhanced_training_results'):
                 for step, result in training_manager.enhanced_training_results.items():
                     logger.info(f"   {step}: {result.get('status', 'UNKNOWN')}")
-            
+
             # Print step timings
             logger.info("⏱️ Step Timings:")
             if hasattr(training_manager, 'step_times'):
                 for step, timing in training_manager.step_times.items():
                     logger.info(f"   {step}: {timing:.2f}s")
-            
+
         else:
             logger.error("❌ Enhanced Pipeline failed!")
             return False
-            
+
     except Exception as e:
         logger.exception(f"❌ Error in enhanced pipeline test: {e}")
         return False
-    
+
     logger.info("🎉 Enhanced Pipeline Test completed!")
     return True
 
 
 async def test_specific_steps():
     """Test specific steps of the enhanced pipeline."""
-    
+
     logger.info("🧪 Testing Specific Steps of Enhanced Pipeline")
-    
+
     # Test Step 4: Triple Barrier Method
     logger.info("🔍 Testing Step 4: Triple Barrier Method")
     try:
         from src.training.steps.step4_triple_barrier_method import run_step as run_step4
-        
+
         step4_success = await run_step4(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -173,20 +173,20 @@ async def test_specific_steps():
             force_rerun=False,
             config={}
         )
-        
+
         if step4_success:
             logger.info("✅ Step 4: Triple Barrier Method test passed")
         else:
             logger.error("❌ Step 4: Triple Barrier Method test failed")
-            
+
     except Exception as e:
         logger.exception(f"❌ Error testing Step 4: {e}")
-    
+
     # Test Step 5: Labeling
     logger.info("🔍 Testing Step 5: Labeling")
     try:
         from src.training.steps.step5_labeling import run_step as run_step5
-        
+
         step5_success = await run_step5(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -195,30 +195,30 @@ async def test_specific_steps():
             force_rerun=False,
             config={}
         )
-        
+
         if step5_success:
             logger.info("✅ Step 5: Labeling test passed")
         else:
             logger.error("❌ Step 5: Labeling test failed")
-            
+
     except Exception as e:
         logger.exception(f"❌ Error testing Step 5: {e}")
 
 
 async def main():
     """Main function to run the enhanced pipeline tests."""
-    
+
     logger.info("🎯 Enhanced Pipeline Test Suite")
     logger.info("=" * 50)
-    
+
     # Test specific steps first
     await test_specific_steps()
-    
+
     logger.info("=" * 50)
-    
+
     # Test the full enhanced pipeline
     await test_enhanced_pipeline()
-    
+
     logger.info("=" * 50)
     logger.info("🏁 Enhanced Pipeline Test Suite completed!")
 

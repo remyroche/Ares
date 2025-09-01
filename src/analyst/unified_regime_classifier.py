@@ -133,7 +133,7 @@ class UnifiedRegimeClassifier:
         self.enable_sr_integration = self.config.get("enable_sr_integration", True)
         self.sr_predictor = None
         self.basic_label_encoder = None
-        
+
         # S/R Configuration for enhanced regime analysis with optimized parameters
         self.sr_config = {
             "sr_breakout_predictor": {
@@ -150,7 +150,7 @@ class UnifiedRegimeClassifier:
                 "breakout_confirmation_periods": 3,
                 "false_breakout_filter": True,
                 "use_optimized_params": True,  # Enable optimized parameters
-                
+
                 # Enhanced strength calculation configuration
                 "strength_calculation": {
                     "enable_enhanced_strength": True,
@@ -159,7 +159,7 @@ class UnifiedRegimeClassifier:
                     "isolation_distance_threshold": 0.05,
                     "age_decay_factor": 0.95
                 },
-                
+
                 # DBSCAN clustering configuration
                 "dbscan_clustering": {
                     "enable_dbscan_clustering": True,
@@ -167,7 +167,7 @@ class UnifiedRegimeClassifier:
                     "min_samples": 2,
                     "enable_noise_filtering": True
                 },
-                
+
                 # Feature calculation configuration
                 "feature_calculation": {
                     "enable_comprehensive_features": True,
@@ -232,20 +232,20 @@ class UnifiedRegimeClassifier:
             if not self.enable_sr_integration:
                 self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
                 return True
-            
+
             self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
-            
+
             # Initialize SRBreakoutPredictor with enhanced configuration
             self.sr_predictor = SRBreakoutPredictor(self.sr_config)
             init_success = await self.sr_predictor.initialize()
-            
+
             if not init_success:
                 self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
                 return False
-            
+
             self.logger.info("✅ SRBreakoutPredictor initialized successfully for enhanced regime analysis")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error initializing SRBreakoutPredictor: {e}")
             return False
@@ -578,7 +578,7 @@ class UnifiedRegimeClassifier:
         """
         try:
             self.logger.info("🔧 Adding enhanced S/R features...")
-            
+
             # Initialize enhanced S/R features
             features_df["sr_proximity"] = 0.0
             features_df["sr_strength"] = 0.0
@@ -591,32 +591,32 @@ class UnifiedRegimeClassifier:
             features_df["sr_touch_count"] = 0
             features_df["sr_bounce_rate"] = 0.0
             features_df["sr_isolation_score"] = 0.0
-            
+
             # Calculate enhanced S/R features for each data point
             for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
                 try:
                     # Get window of data for S/R analysis
                     window_data = features_df.iloc[max(0, i-100):i+1]
                     current_price = features_df["close"].iloc[i]
-                    
+
                     # Get enhanced S/R context
                     sr_context = await self.sr_predictor.get_sr_context(window_data, current_price)
-                    
+
                     if sr_context:
                         # S/R proximity to nearest levels
                         nearest_support = sr_context.get("nearest_support", current_price * 0.95)
                         nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
-                        
+
                         # Calculate proximity (0 = at level, 1 = far from level)
                         support_proximity = abs(current_price - nearest_support) / current_price
                         resistance_proximity = abs(current_price - nearest_resistance) / current_price
                         features_df.loc[features_df.index[i], "sr_proximity"] = min(support_proximity, resistance_proximity)
-                        
+
                         # S/R strength
                         support_strength = sr_context.get("support_strength", 0.5)
                         resistance_strength = sr_context.get("resistance_strength", 0.5)
                         features_df.loc[features_df.index[i], "sr_strength"] = max(support_strength, resistance_strength)
-                        
+
                         # Enhanced strength
                         enhanced_support = sr_context.get("enhanced_strength_support", {})
                         enhanced_resistance = sr_context.get("enhanced_strength_resistance", {})
@@ -625,15 +625,15 @@ class UnifiedRegimeClassifier:
                             enhanced_resistance.get("max_strength", 0.5)
                         )
                         features_df.loc[features_df.index[i], "sr_enhanced_strength"] = max_enhanced_strength
-                        
+
                         # S/R zone width
                         sr_zone_width = sr_context.get("sr_zone_width", 0.0)
                         features_df.loc[features_df.index[i], "sr_zone_width"] = sr_zone_width
-                        
+
                         # Clustering information
                         clustering_result = sr_context.get("clustering_result", {})
                         features_df.loc[features_df.index[i], "sr_cluster_count"] = clustering_result.get("n_clusters", 0)
-                        
+
                         # Fibonacci levels proximity
                         fibonacci_levels = sr_context.get("fibonacci_levels", {})
                         if fibonacci_levels:
@@ -643,7 +643,7 @@ class UnifiedRegimeClassifier:
                                     fib_proximities.append(abs(current_price - fib_price) / current_price)
                             if fib_proximities:
                                 features_df.loc[features_df.index[i], "sr_fibonacci_proximity"] = min(fib_proximities)
-                        
+
                         # Elliott Wave levels proximity
                         elliott_levels = sr_context.get("elliott_wave_levels", {})
                         if elliott_levels:
@@ -655,46 +655,46 @@ class UnifiedRegimeClassifier:
                                         elliott_proximities.append(abs(current_price - wave_price) / current_price)
                                 if elliott_proximities:
                                     features_df.loc[features_df.index[i], "sr_elliott_proximity"] = min(elliott_proximities)
-                        
+
                         # Order flow imbalances
                         order_flow_analysis = sr_context.get("order_flow_analysis", {})
                         imbalances = order_flow_analysis.get("imbalances", [])
                         if imbalances:
                             total_imbalance_volume = sum(imb.get("volume", 0.0) for imb in imbalances)
                             features_df.loc[features_df.index[i], "sr_order_flow_imbalance"] = total_imbalance_volume
-                        
+
                         # Enhanced metrics from clustered levels
                         support_levels = sr_context.get("support_levels", [])
                         resistance_levels = sr_context.get("resistance_levels", [])
                         all_levels = support_levels + resistance_levels
-                        
+
                         if all_levels:
                             # Calculate average touch count and bounce rate
                             touch_counts = []
                             bounce_rates = []
                             isolation_scores = []
-                            
+
                             for level in all_levels:
                                 if isinstance(level, dict):
                                     touch_counts.append(level.get("touches", 0))
                                     bounce_rates.append(level.get("bounce_rate", 0.0))
                                     isolation_scores.append(level.get("isolation_score", 0.5))
-                            
+
                             if touch_counts:
                                 features_df.loc[features_df.index[i], "sr_touch_count"] = np.mean(touch_counts)
                             if bounce_rates:
                                 features_df.loc[features_df.index[i], "sr_bounce_rate"] = np.mean(bounce_rates)
                             if isolation_scores:
                                 features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
-                
+
                 except Exception as e:
                     # Continue with next data point if there's an error
                     self.logger.debug(f"Error calculating enhanced S/R features for index {i}: {e}")
                     continue
-            
+
             self.logger.info("✅ Enhanced S/R features added successfully")
             return features_df
-            
+
         except Exception as e:
             self.logger.error(f"Error adding enhanced S/R features: {e}")
             return self._add_basic_sr_features(features_df)
@@ -705,7 +705,7 @@ class UnifiedRegimeClassifier:
         """
         try:
             self.logger.info("🔧 Adding basic S/R features...")
-            
+
             # Initialize basic S/R features
             features_df["sr_proximity"] = 0.0
             features_df["sr_strength"] = 0.0
@@ -718,57 +718,57 @@ class UnifiedRegimeClassifier:
             features_df["sr_touch_count"] = 0
             features_df["sr_bounce_rate"] = 0.0
             features_df["sr_isolation_score"] = 0.0
-            
+
             # Calculate basic S/R features using rolling windows
             for i in range(20, len(features_df)):
                 try:
                     # Get window of data for basic S/R analysis
                     window_data = features_df.iloc[max(0, i-20):i+1]
                     current_price = features_df["close"].iloc[i]
-                    
+
                     # Calculate basic pivot levels
                     high = window_data["high"].max()
                     low = window_data["low"].min()
                     close = window_data["close"].iloc[-1]
                     pivot = (high + low + close) / 3
-                    
+
                     # Basic support and resistance
                     r1 = 2 * pivot - low
                     s1 = 2 * pivot - high
-                    
+
                     # Calculate basic proximity
                     support_proximity = abs(current_price - s1) / current_price
                     resistance_proximity = abs(current_price - r1) / current_price
                     features_df.loc[features_df.index[i], "sr_proximity"] = min(support_proximity, resistance_proximity)
-                    
+
                     # Basic strength (based on volume near levels)
                     tolerance = window_data["close"].std() * 0.1
                     volume_near_support = window_data[abs(window_data["close"] - s1) <= tolerance]["volume"].sum()
                     volume_near_resistance = window_data[abs(window_data["close"] - r1) <= tolerance]["volume"].sum()
                     total_volume = window_data["volume"].sum()
-                    
+
                     support_strength = volume_near_support / total_volume if total_volume > 0 else 0.5
                     resistance_strength = volume_near_resistance / total_volume if total_volume > 0 else 0.5
                     features_df.loc[features_df.index[i], "sr_strength"] = max(support_strength, resistance_strength)
-                    
+
                     # Basic zone width
                     zone_width = (r1 - s1) / current_price
                     features_df.loc[features_df.index[i], "sr_zone_width"] = zone_width
-                    
+
                     # Set other features to neutral values
                     features_df.loc[features_df.index[i], "sr_enhanced_strength"] = 0.5
                     features_df.loc[features_df.index[i], "sr_touch_count"] = 1
                     features_df.loc[features_df.index[i], "sr_bounce_rate"] = 0.5
                     features_df.loc[features_df.index[i], "sr_isolation_score"] = 0.5
-                
+
                 except Exception as e:
                     # Continue with next data point if there's an error
                     self.logger.debug(f"Error calculating basic S/R features for index {i}: {e}")
                     continue
-            
+
             self.logger.info("✅ Basic S/R features added successfully")
             return features_df
-            
+
         except Exception as e:
             self.logger.error(f"Error adding basic S/R features: {e}")
             return features_df
@@ -1022,7 +1022,7 @@ class UnifiedRegimeClassifier:
             if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic pivot calculation if SRBreakoutPredictor not available
                 return await self._calculate_basic_pivots(df_window)
-            
+
             if len(df_window) < 5:
                 return {
                     "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
@@ -1035,34 +1035,34 @@ class UnifiedRegimeClassifier:
 
             # Get current price for S/R context
             current_price = df_window["close"].iloc[-1]
-            
+
             # Get comprehensive S/R context from SRBreakoutPredictor
             sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
-            
+
             if not sr_context:
                 self.logger.warning("Failed to get S/R context, falling back to basic calculation")
                 return await self._calculate_basic_pivots(df_window)
-            
+
             # Extract enhanced S/R levels and metrics
             support_levels = sr_context.get("support_levels", [])
             resistance_levels = sr_context.get("resistance_levels", [])
-            
+
             # Get nearest levels for traditional pivot format
             nearest_support = sr_context.get("nearest_support", current_price * 0.95)
             nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
-            
+
             # Calculate traditional pivot levels as fallback
             high = df_window["high"].max()
             low = df_window["low"].min()
             close = df_window["close"].iloc[-1]
             pivot = (high + low + close) / 3
-            
+
             # Use enhanced levels if available, otherwise use traditional calculations
             s1 = nearest_support if support_levels else (2 * pivot - high)
             r1 = nearest_resistance if resistance_levels else (2 * pivot - low)
             s2 = s1 * 0.95 if support_levels else (pivot - (high - low))
             r2 = r1 * 1.05 if resistance_levels else (pivot + (high - low))
-            
+
             # Enhanced strength metrics
             enhanced_strengths = {
                 "support_strength": sr_context.get("support_strength", 0.5),
@@ -1070,7 +1070,7 @@ class UnifiedRegimeClassifier:
                 "enhanced_strength_support": sr_context.get("enhanced_strength_support", {}),
                 "enhanced_strength_resistance": sr_context.get("enhanced_strength_resistance", {}),
             }
-            
+
             return {
                 "s1": s1,
                 "s2": s2,
@@ -1162,34 +1162,34 @@ class UnifiedRegimeClassifier:
             if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic volume analysis
                 return self._analyze_basic_volume_levels(df_window)
-            
+
             if df_window.empty or len(df_window) < 20:
                 return None
 
             # Get current price for S/R context
             current_price = df_window["close"].iloc[-1]
-            
+
             # Get comprehensive S/R context including order flow analysis
             sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
-            
+
             if not sr_context:
                 self.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
                 return self._analyze_basic_volume_levels(df_window)
-            
+
             # Extract order flow analysis
             order_flow_analysis = sr_context.get("order_flow_analysis", {})
-            
+
             if not order_flow_analysis:
                 return self._analyze_basic_volume_levels(df_window)
-            
+
             # Extract enhanced volume levels
             volume_profile = order_flow_analysis.get("volume_profile", {})
             poc_level = volume_profile.get("poc", {})
             value_area = volume_profile.get("value_area", {})
             hvns = volume_profile.get("high_volume_nodes", [])
-            
+
             analyzed_levels = {}
-            
+
             # Process POC (Point of Control)
             if poc_level:
                 analyzed_levels["poc"] = {
@@ -1207,7 +1207,7 @@ class UnifiedRegimeClassifier:
                         "value_area_volume": value_area.get("volume", 0.0),
                     }
                 }
-            
+
             # Process top HVNs
             for i, hvn in enumerate(hvns[:2]):  # Top 2 HVNs
                 level_name = "hvn_primary" if i == 0 else "hvn_secondary"
@@ -1226,7 +1226,7 @@ class UnifiedRegimeClassifier:
                         "bounce_rate": hvn.get("bounce_rate", 0.0),
                     }
                 }
-            
+
             # Add order flow imbalances if available
             imbalances = order_flow_analysis.get("imbalances", [])
             if imbalances:
@@ -1235,9 +1235,9 @@ class UnifiedRegimeClassifier:
                     "total_volume": sum(imb.get("volume", 0.0) for imb in imbalances),
                     "average_size": np.mean([imb.get("size", 0.0) for imb in imbalances]) if imbalances else 0.0,
                 }
-            
+
             return analyzed_levels if analyzed_levels else None
-            
+
         except Exception as e:
             self.logger.error(f"Error in enhanced volume analysis: {e}")
             return self._analyze_basic_volume_levels(df_window)
@@ -1371,7 +1371,7 @@ class UnifiedRegimeClassifier:
             # --- 1. Enhanced S/R Analysis (Short-Term) ---
             short_window = features_df.iloc[i - short_term_period : i]
             short_sr_levels = await self._calculate_enhanced_sr_levels(short_window)
-            
+
             # --- 2. Enhanced Volume Analysis (Long-Term) ---
             long_window = features_df.iloc[i - long_term_period : i]
             volume_levels = await self._analyze_enhanced_volume_levels(long_window)
@@ -1385,7 +1385,7 @@ class UnifiedRegimeClassifier:
             # Check S/R level proximity with enhanced strength filtering
             support_levels = short_sr_levels.get("support_levels", [])
             resistance_levels = short_sr_levels.get("resistance_levels", [])
-            
+
             # Check support levels
             for level in support_levels:
                 if isinstance(level, dict):
@@ -1396,13 +1396,13 @@ class UnifiedRegimeClassifier:
                     level_price = level
                     level_strength = 0.5
                     level_touches = 1
-                
-                if (level_touches >= min_level_touches and 
+
+                if (level_touches >= min_level_touches and
                     level_strength >= min_strength_threshold and
                     abs(current_price - level_price) / current_price <= tolerance):
                     loc_sr = "ENHANCED_SUPPORT"
                     break
-            
+
             # Check resistance levels
             if not loc_sr:
                 for level in resistance_levels:
@@ -1414,8 +1414,8 @@ class UnifiedRegimeClassifier:
                         level_price = level
                         level_strength = 0.5
                         level_touches = 1
-                    
-                    if (level_touches >= min_level_touches and 
+
+                    if (level_touches >= min_level_touches and
                         level_strength >= min_strength_threshold and
                         abs(current_price - level_price) / current_price <= tolerance):
                         loc_sr = "ENHANCED_RESISTANCE"
@@ -1428,7 +1428,7 @@ class UnifiedRegimeClassifier:
                         if (level_data.get("touches", 0) >= min_level_touches and
                             level_data.get("strength", 0.5) >= min_strength_threshold and
                             abs(current_price - level_data["price"]) / current_price <= tolerance):
-                            
+
                             level_type = "SUPPORT" if current_price > level_data["price"] else "RESISTANCE"
                             loc_volume = f"ENHANCED_{level_name.upper()}_{level_type}"
                             break
@@ -1498,7 +1498,7 @@ class UnifiedRegimeClassifier:
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                
+
                 return loop.run_until_complete(self._classify_enhanced_location(features_df))
             except Exception as e:
                 self.logger.warning(f"Enhanced location classification failed, falling back to basic: {e}")

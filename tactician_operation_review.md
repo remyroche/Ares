@@ -134,13 +134,13 @@ if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
 if green_light_signal.get("signal") == "GREEN_LIGHT":
     # Determine action from 50% barrier direction
     action = self._determine_action_from_predictions(tactician_predictions)
-    
+
     # Calculate position size using combined confidence
     position_size = await self._calculate_position_size(tactician_predictions)
-    
+
     # Calculate leverage using combined confidence
     leverage = await self._calculate_leverage(tactician_predictions)
-    
+
     # Create trade decision
     decision = TradeDecision(
         action=action,
@@ -363,13 +363,13 @@ if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
 
 The Tactician operates as a sophisticated, multi-layered decision-making system that:
 
-✅ **Integrates Analyst and Tactician predictions** with configurable weights  
-✅ **Uses multi-timeframe analysis** (1m + 5m) with unified thresholds  
-✅ **Implements comprehensive risk management** with multiple threshold levels  
-✅ **Provides flexible position sizing and leverage** based on combined confidence  
-✅ **Offers continuous exit monitoring** with MTF exit logic  
-✅ **Supports full step17 optimization** of all parameters  
-✅ **Maintains backward compatibility** with legacy ML prediction formats  
-✅ **Includes robust error handling** and fallback mechanisms  
+✅ **Integrates Analyst and Tactician predictions** with configurable weights
+✅ **Uses multi-timeframe analysis** (1m + 5m) with unified thresholds
+✅ **Implements comprehensive risk management** with multiple threshold levels
+✅ **Provides flexible position sizing and leverage** based on combined confidence
+✅ **Offers continuous exit monitoring** with MTF exit logic
+✅ **Supports full step17 optimization** of all parameters
+✅ **Maintains backward compatibility** with legacy ML prediction formats
+✅ **Includes robust error handling** and fallback mechanisms
 
 The system is designed to be both sophisticated and robust, providing intelligent trading decisions while maintaining risk controls and operational reliability.

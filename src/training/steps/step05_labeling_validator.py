@@ -126,7 +126,7 @@ class Step5LabelingValidator(BaseValidator):
                 if unique_labels < 2:
                     self.logger.warning(f"⚠️ Insufficient label diversity in {labeled_file.name}: {unique_labels} labels")
                     return False
-                
+
                 # Check label distribution
                 label_counts = df["label"].value_counts()
                 min_label_count = label_counts.min()
@@ -208,7 +208,7 @@ class Step5LabelingValidator(BaseValidator):
             # Check if step04_regime_data_splitting output exists using BaseValidator
             step04_output_dir = Path("data/training/regime_splits")
             step04_files = list(step04_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*regime*.parquet"))
-            
+
             if not step04_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -220,7 +220,7 @@ class Step5LabelingValidator(BaseValidator):
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step4 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
-                
+
                 validation_result["details"]["step04_files_found"] = len(step04_files)
                 validation_result["details"]["step04_files"] = [str(f) for f in step04_files]
 
@@ -250,11 +250,11 @@ class Step5LabelingValidator(BaseValidator):
             # Check if all expected files exist using BaseValidator
             missing_files = []
             existing_files = []
-            
+
             for filename in expected_files:
                 file_path = output_dir / filename
                 file_valid, file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
-                
+
                 if file_valid:
                     existing_files.append(str(file_path))
                 else:
@@ -306,36 +306,36 @@ async def run_validator(
         Dictionary containing validation results
     """
     logger.info("🔍 Validating Step 5: Labeling")
-    
+
     try:
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
-        
+
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
         validator = Step5LabelingValidator(config)
-        
+
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        
+
         # Validate step execution
         step_result = await validator.validate_step5_labeling(
             symbol, exchange, data_dir, training_input
         )
-        
+
         # Validate outputs using BaseValidator methods
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
-        
+
         # Combine results
         validation_passed = (
-            prereq_result["validation_passed"] and 
-            step_result and 
+            prereq_result["validation_passed"] and
+            step_result and
             output_result["validation_passed"]
         )
-        
+
         return {
             "step_name": "step05_labeling",
             "validation_passed": validation_passed,
@@ -345,7 +345,7 @@ async def run_validator(
             "warnings": prereq_result["warnings"] + output_result["warnings"],
             "errors": prereq_result["errors"] + output_result["errors"]
         }
-        
+
     except Exception as e:
         error_context = {
             "step": "step05_labeling",
@@ -367,16 +367,16 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    
+
     test_input = {
         "symbol": "ETHUSDT",
-        "exchange": "BINANCE", 
+        "exchange": "BINANCE",
         "timeframe": "1m",
         "data_dir": "data_cache",
         "config": {}
     }
-    
+
     test_state = {}
-    
+
     result = asyncio.run(run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

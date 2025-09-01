@@ -170,7 +170,7 @@ def safe_division(
     try:
         # Series / Series
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
-            with np.errstate(divide="ignore", invalid="ignore"): 
+            with np.errstate(divide="ignore", invalid="ignore"):
                 result = numerator / denominator
             zeros = (denominator == 0).sum()
             smalls = ((denominator != 0) & (np.abs(denominator) < 1e-12)).sum()

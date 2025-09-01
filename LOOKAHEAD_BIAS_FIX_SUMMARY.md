@@ -21,7 +21,7 @@ for j in range(i + 1, end_idx):  # ← LOOKING INTO THE FUTURE
         break
 ```
 
-**Target = 1** if price goes up by 0.2% in next 30 minutes  
+**Target = 1** if price goes up by 0.2% in next 30 minutes
 **Target = -1** if price goes down by 0.1% in next 30 minutes
 
 ### 2. **Volatility Features Use Same Price Data**
@@ -168,7 +168,7 @@ This fix is **CRITICAL** because:
 ### 🔧 **Temporal Alignment Fixes Applied**
 
 1. **Volatility Features**: Added `shift(1)` to all rolling volatility calculations
-2. **Momentum Features**: Added `shift(1)` to all momentum and RSI calculations  
+2. **Momentum Features**: Added `shift(1)` to all momentum and RSI calculations
 3. **Liquidity Features**: Added `shift(1)` to all volume and price-based features
 4. **Technical Indicators**: Added `shift(1)` to all moving averages and oscillators
 5. **Change Features**: Changed from `diff()` to `pct_change()` or multi-period `diff()`
@@ -196,7 +196,7 @@ This fix is **CRITICAL** because:
 
 The system detects:
 - **Perfect correlations** (>0.95) indicating lookahead bias
-- **High correlations** (>0.8) requiring investigation  
+- **High correlations** (>0.8) requiring investigation
 - **Feature dominance** patterns suggesting bias
 - **Temporal misalignment** in train/test splits
 - **Rolling window issues** requiring lagging

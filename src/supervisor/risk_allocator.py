@@ -15,7 +15,7 @@ class RiskAllocator:
     - Global portfolio guards and kill-switches
     - VaR and ES monitoring
     - Portfolio-level risk limits and allocations
-    
+
     Note: Position sizing is handled by the Tactician component
     """
 

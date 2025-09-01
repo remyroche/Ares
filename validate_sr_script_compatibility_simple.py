@@ -14,10 +14,10 @@ from typing import Any, Dict
 
 class SimpleSRCompatibilityValidator:
     """Simple validator for S/R script compatibility."""
-    
+
     def __init__(self):
         self.logger = None  # No logger dependency
-        
+
     def check_file_syntax(self, file_path: str) -> bool:
         """Check if a Python file has valid syntax."""
         try:
@@ -30,19 +30,19 @@ class SimpleSRCompatibilityValidator:
         except Exception as e:
             print(f"❌ Error reading {file_path}: {e}")
             return False
-    
+
     def test_script_compatibility(self) -> Dict[str, Any]:
         """Test script file compatibility."""
         print("🔍 Testing S/R script compatibility...")
-        
+
         scripts_to_test = [
             "scripts/analyze_sr_position.py",
             "scripts/analyze_sr_position_enhanced.py",
             "scripts/run_sr_optimization.py"
         ]
-        
+
         results = {}
-        
+
         for script_path in scripts_to_test:
             path = Path(script_path)
             if path.exists():
@@ -55,10 +55,10 @@ class SimpleSRCompatibilityValidator:
                             "compatible": False
                         }
                         continue
-                    
+
                     with open(path, 'r', encoding='utf-8') as f:
                         content = f.read()
-                    
+
                     # Check for imports
                     imports = {
                         "SRBreakoutPredictor": "from src.tactician.sr_breakout_predictor import SRBreakoutPredictor" in content,
@@ -67,7 +67,7 @@ class SimpleSRCompatibilityValidator:
                         "pandas": "import pandas" in content,
                         "numpy": "import numpy" in content,
                     }
-                    
+
                     # Check for method usage
                     method_usage = {
                         "get_sr_context": "get_sr_context" in content,
@@ -76,7 +76,7 @@ class SimpleSRCompatibilityValidator:
                         "cluster_sr_levels_dbscan": "cluster_sr_levels_dbscan" in content,
                         "calculate_comprehensive_strength": "calculate_comprehensive_strength" in content,
                     }
-                    
+
                     # Check for enhanced features
                     enhanced_features = {
                         "enhanced_strength": "enhanced_strength" in content,
@@ -85,7 +85,7 @@ class SimpleSRCompatibilityValidator:
                         "elliott_wave": "elliott_wave" in content,
                         "order_flow": "order_flow" in content,
                     }
-                    
+
                     # Check for configuration patterns
                     config_patterns = {
                         "strength_calculation": "strength_calculation" in content,
@@ -94,7 +94,7 @@ class SimpleSRCompatibilityValidator:
                         "touch_count_lookback": "touch_count_lookback" in content,
                         "bounce_rate_threshold": "bounce_rate_threshold" in content,
                     }
-                    
+
                     results[script_path] = {
                         "exists": True,
                         "syntax_valid": True,
@@ -106,7 +106,7 @@ class SimpleSRCompatibilityValidator:
                         "uses_basic_engineering": "VectorizedAdvancedFeatureEngineering" in content,
                         "compatible": True
                     }
-                    
+
                 except Exception as e:
                     results[script_path] = {
                         "exists": True,
@@ -118,23 +118,23 @@ class SimpleSRCompatibilityValidator:
                     "exists": False,
                     "compatible": False
                 }
-        
+
         return results
-    
+
     def test_sr_breakout_predictor_file(self) -> Dict[str, Any]:
         """Test SRBreakoutPredictor file compatibility."""
         print("🔍 Testing SRBreakoutPredictor file...")
-        
+
         sr_file = "src/tactician/sr_breakout_predictor.py"
         path = Path(sr_file)
-        
+
         if not path.exists():
             return {
                 "exists": False,
                 "compatible": False,
                 "error": "SRBreakoutPredictor file not found"
             }
-        
+
         try:
             # Check syntax
             if not self.check_file_syntax(sr_file):
@@ -144,10 +144,10 @@ class SimpleSRCompatibilityValidator:
                     "compatible": False,
                     "error": "Syntax error in SRBreakoutPredictor"
                 }
-            
+
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # Check for enhanced methods
             enhanced_methods = {
                 "calculate_touch_count": "async def calculate_touch_count" in content,
@@ -157,7 +157,7 @@ class SimpleSRCompatibilityValidator:
                 "cluster_sr_levels_dbscan": "async def cluster_sr_levels_dbscan" in content,
                 "calculate_comprehensive_strength": "async def calculate_comprehensive_strength" in content,
             }
-            
+
             # Check for enhanced features in get_sr_context
             enhanced_features = {
                 "enhanced_strength_support": "enhanced_strength_support" in content,
@@ -167,7 +167,7 @@ class SimpleSRCompatibilityValidator:
                 "elliott_wave_levels": "elliott_wave_levels" in content,
                 "order_flow_analysis": "order_flow_analysis" in content,
             }
-            
+
             # Check for configuration
             config_patterns = {
                 "strength_calculation": "strength_calculation" in content,
@@ -178,10 +178,10 @@ class SimpleSRCompatibilityValidator:
                 "isolation_distance_threshold": "isolation_distance_threshold" in content,
                 "age_decay_factor": "age_decay_factor" in content,
             }
-            
+
             # Check for DBSCAN import
             dbscan_import = "from sklearn.cluster import DBSCAN" in content
-            
+
             return {
                 "exists": True,
                 "syntax_valid": True,
@@ -191,66 +191,66 @@ class SimpleSRCompatibilityValidator:
                 "dbscan_import": dbscan_import,
                 "compatible": True
             }
-            
+
         except Exception as e:
             return {
                 "exists": True,
                 "error": str(e),
                 "compatible": False
             }
-    
+
     def print_compatibility_report(self, sr_results: Dict[str, Any], script_results: Dict[str, Any]) -> None:
         """Print comprehensive compatibility report."""
         print("\n" + "=" * 80)
         print("📊 S/R SCRIPT COMPATIBILITY REPORT")
         print("=" * 80)
-        
+
         # SRBreakoutPredictor compatibility
         print(f"\n🔧 SRBreakoutPredictor File Analysis:")
         if sr_results.get("compatible", False):
             print("   ✅ SRBreakoutPredictor file is compatible")
-            
+
             enhanced_methods = sr_results.get("enhanced_methods", {})
             print(f"   📊 Enhanced Methods Available:")
             for method, available in enhanced_methods.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {method}: {available}")
-            
+
             enhanced_features = sr_results.get("enhanced_features", {})
             print(f"   🚀 Enhanced Features Available:")
             for feature, available in enhanced_features.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {feature}: {available}")
-            
+
             config_patterns = sr_results.get("config_patterns", {})
             print(f"   ⚙️ Configuration Patterns Available:")
             for pattern, available in config_patterns.items():
                 status = "✅" if available else "❌"
                 print(f"      {status} {pattern}: {available}")
-            
+
             dbscan_import = sr_results.get("dbscan_import", False)
             print(f"   🔍 DBSCAN Import: {'✅ Available' if dbscan_import else '❌ Not Found'}")
-            
+
         else:
             print(f"   ❌ SRBreakoutPredictor compatibility issues: {sr_results.get('error', 'Unknown error')}")
-        
+
         # Script compatibility
         print(f"\n📜 Script Compatibility:")
         for script_path, result in script_results.items():
             print(f"\n   📄 {script_path}:")
-            
+
             if not result.get("exists", False):
                 print("      ❌ Script file not found")
                 continue
-            
+
             if not result.get("syntax_valid", True):
                 print("      ❌ Script has syntax errors")
                 continue
-            
+
             if "error" in result:
                 print(f"      ❌ Error reading script: {result['error']}")
                 continue
-            
+
             # Check if script uses enhanced predictor
             if result.get("uses_enhanced_predictor", False):
                 print("      ✅ Uses enhanced SRBreakoutPredictor")
@@ -258,12 +258,12 @@ class SimpleSRCompatibilityValidator:
                 print("      ⚠️ Uses basic VectorizedAdvancedFeatureEngineering")
             else:
                 print("      ❓ Unknown S/R implementation")
-            
+
             # Check enhanced features
             enhanced_features = result.get("enhanced_features", {})
             enhanced_count = sum(enhanced_features.values())
             total_enhanced = len(enhanced_features)
-            
+
             if enhanced_count > 0:
                 print(f"      🚀 Enhanced Features: {enhanced_count}/{total_enhanced}")
                 for feature, available in enhanced_features.items():
@@ -271,72 +271,72 @@ class SimpleSRCompatibilityValidator:
                         print(f"         ✅ {feature}")
             else:
                 print("      📊 No enhanced features detected")
-            
+
             # Check method usage
             method_usage = result.get("method_usage", {})
             method_count = sum(method_usage.values())
             total_methods = len(method_usage)
-            
+
             if method_count > 0:
                 print(f"      🔧 Enhanced Methods: {method_count}/{total_methods}")
                 for method, available in method_usage.items():
                     if available:
                         print(f"         ✅ {method}")
-            
+
             # Check configuration patterns
             config_patterns = result.get("config_patterns", {})
             config_count = sum(config_patterns.values())
             total_configs = len(config_patterns)
-            
+
             if config_count > 0:
                 print(f"      ⚙️ Configuration Patterns: {config_count}/{total_configs}")
                 for pattern, available in config_patterns.items():
                     if available:
                         print(f"         ✅ {pattern}")
-        
+
         # Recommendations
         print(f"\n💡 RECOMMENDATIONS:")
-        
+
         if sr_results.get("compatible", False):
             print("   ✅ SRBreakoutPredictor is fully functional with enhanced features")
-            
+
             # Check which scripts need updating
-            basic_scripts = [path for path, result in script_results.items() 
+            basic_scripts = [path for path, result in script_results.items()
                            if result.get("uses_basic_engineering", False)]
-            
+
             if basic_scripts:
                 print(f"   🔄 Scripts that should be updated to use enhanced SRBreakoutPredictor:")
                 for script in basic_scripts:
                     print(f"      - {script}")
                 print("   📝 Enhanced version available: scripts/analyze_sr_position_enhanced.py")
-            
+
             # Check for enhanced scripts
-            enhanced_scripts = [path for path, result in script_results.items() 
+            enhanced_scripts = [path for path, result in script_results.items()
                               if result.get("uses_enhanced_predictor", False)]
-            
+
             if enhanced_scripts:
                 print(f"   ✅ Scripts already using enhanced SRBreakoutPredictor:")
                 for script in enhanced_scripts:
                     print(f"      - {script}")
         else:
             print("   ❌ SRBreakoutPredictor has compatibility issues that need to be resolved")
-        
+
         print("=" * 80)
 
 
 def main():
     """Main validation function."""
     validator = SimpleSRCompatibilityValidator()
-    
+
     # Test SRBreakoutPredictor file
     sr_results = validator.test_sr_breakout_predictor_file()
-    
+
     # Test script compatibility
     script_results = validator.test_script_compatibility()
-    
+
     # Print comprehensive report
     validator.print_compatibility_report(sr_results, script_results)
-    
+
     # Return success/failure
     if sr_results.get("compatible", False):
         print("\n🎉 S/R Script Compatibility Validation PASSED!")

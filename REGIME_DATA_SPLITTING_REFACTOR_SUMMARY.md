@@ -142,11 +142,11 @@ unique_regimes = unified_data['composite_cluster_id'].unique()
 # Process each regime while maintaining temporal context
 for regime_id in unified_data['composite_cluster_id'].unique():
     regime_data = unified_data[unified_data['composite_cluster_id'] == regime_id]
-    
+
     # Trading indicators now have full lookback period
     regime_data['sma_20'] = regime_data['close'].rolling(20).mean()
     regime_data['rsi_14'] = calculate_rsi(regime_data['close'], 14)
-    
+
     # Process regime-specific features
     process_regime_features(regime_data)
 ```

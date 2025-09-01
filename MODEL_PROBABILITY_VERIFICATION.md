@@ -21,7 +21,7 @@ Every ML model in steps 6-14 of the enhanced training manager **MUST** generate 
 
 ### **Analyst Models (Higher Timeframe)**
 - ✅ `hmm_profit` models
-- ✅ `analyst_profit` models  
+- ✅ `analyst_profit` models
 - ✅ `calibrated` models
 - ✅ `optimized` models
 - ✅ `validated` models
@@ -206,7 +206,7 @@ Each model training step should generate probability outputs:
 def train_hmm_profit_model(training_data):
     # Train the model
     model = train_model(training_data)
-    
+
     # Generate probability outputs
     probabilities = {
         "triple_barrier_probability": calculate_triple_barrier_probability(model, training_data),
@@ -214,7 +214,7 @@ def train_hmm_profit_model(training_data):
         "magnitude_probability": calculate_magnitude_probability(model, training_data),
         "barrier_avoidance_probability": calculate_barrier_avoidance_probability(model, training_data)
     }
-    
+
     # Save model with probabilities
     model_data = {
         "model": model,
@@ -222,7 +222,7 @@ def train_hmm_profit_model(training_data):
         "price_action_probabilities": probabilities,
         "training_metadata": {...}
     }
-    
+
     return model_data
 ```
 

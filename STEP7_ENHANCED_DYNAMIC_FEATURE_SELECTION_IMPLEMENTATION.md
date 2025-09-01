@@ -24,7 +24,7 @@ def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame, targe
     variances = features_df.var()
     variance_percentiles = np.percentile(variances, [10, 25, 50, 75, 90])
     self.adaptive_variance_threshold = variance_percentiles[25]  # 25th percentile
-    
+
     # Compute adaptive correlation threshold based on feature count
     n_features = len(features_df.columns)
     if n_features > 1000:
@@ -35,7 +35,7 @@ def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame, targe
         self.adaptive_correlation_threshold = 0.90
     else:
         self.adaptive_correlation_threshold = 0.85
-    
+
     # Compute adaptive mutual information threshold
     mi_scores = mutual_info_classif(features_df, target, random_state=42)
     mi_percentiles = np.percentile(mi_scores, [10, 25, 50, 75, 90])
@@ -60,20 +60,20 @@ def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame, targe
 def _stage4_adaptive_correlation_filtering(self, features_df: pd.DataFrame):
     # Calculate correlation matrix
     corr_matrix = features_df.corr().abs()
-    
+
     # Convert correlation to distance (1 - |correlation|)
     distance_matrix = 1 - corr_matrix.values
-    
+
     # Use hierarchical clustering to find feature clusters
     from scipy.cluster.hierarchy import linkage, fcluster
     linkage_matrix = linkage(squareform(distance_matrix), method='ward')
-    
+
     # Determine optimal number of clusters
     optimal_clusters = self._find_optimal_clusters(linkage_matrix, max_clusters)
-    
+
     # Cluster features and select representative from each cluster
     clusters = fcluster(linkage_matrix, optimal_clusters, criterion='maxclust')
-    
+
     # Select the feature with highest variance from each cluster
     selected_features = []
     for cluster_id in range(1, optimal_clusters + 1):
@@ -103,24 +103,24 @@ def _stage7_interaction_feature_generation(self, features_df: pd.DataFrame, targ
     # Get top features for interaction generation
     ensemble_scores = self.feature_importance_cache["ensemble"]
     top_features = ensemble_scores.head(min(20, len(features_df.columns))).index.tolist()
-    
+
     # Also get top 3 features from each category
     category_top_features = []
     for category, features in self.feature_categories.items():
         if features:
             category_scores = ensemble_scores[features].sort_values(ascending=False)
             category_top_features.extend(category_scores.head(3).index.tolist())
-    
+
     # Generate different types of interactions
     for feat1, feat2 in combinations(interaction_candidates, 2):
         if "multiplication" in self.interaction_methods:
             interaction_name = f"{feat1}_x_{feat2}"
             interaction_features[interaction_name] = features_df[feat1] * features_df[feat2]
-        
+
         if "ratio" in self.interaction_methods:
             interaction_name = f"{feat1}_div_{feat2}"
             interaction_features[interaction_name] = features_df[feat1] / (features_df[feat2] + 1e-8)
-        
+
         if "difference" in self.interaction_methods:
             interaction_name = f"{feat1}_diff_{feat2}"
             interaction_features[interaction_name] = features_df[feat1] - features_df[feat2]

@@ -10,13 +10,13 @@ python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
 
 ## What It Does
 
-✅ **Validates existing data** from step1 and step1_5 using existing validators  
-✅ **Shows detailed report** of data completeness and validation status  
-✅ **Proceeds with existing data** - no new downloads  
-✅ **Uses existing validator orchestrator** - leverages step1 and step1_5 validators  
-✅ **Handles missing dependencies gracefully** - continues with basic validation if needed  
-✅ **Warns about validation issues** but continues if validation passes  
-❌ **Fails gracefully** if essential data is missing  
+✅ **Validates existing data** from step1 and step1_5 using existing validators
+✅ **Shows detailed report** of data completeness and validation status
+✅ **Proceeds with existing data** - no new downloads
+✅ **Uses existing validator orchestrator** - leverages step1 and step1_5 validators
+✅ **Handles missing dependencies gracefully** - continues with basic validation if needed
+✅ **Warns about validation issues** but continues if validation passes
+❌ **Fails gracefully** if essential data is missing
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ Before using the `step2` command, ensure you have:
 
 1. **Step1 data** in `data_cache/`:
    - `klines_BINANCE_ETHUSDT_1m_consolidated.parquet`
-   - `klines_BINANCE_ETHUSDT_5m_consolidated.parquet` 
+   - `klines_BINANCE_ETHUSDT_5m_consolidated.parquet`
    - `aggtrades_BINANCE_ETHUSDT_consolidated.parquet`
 
 2. **Step1_5 data** in `data_cache/`:

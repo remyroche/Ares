@@ -191,7 +191,7 @@ Edit the barrier levels in `data_analyzer.py`:
 
 ```python
 triple_barrier_profits = self.calculate_triple_barrier_profits(
-    symbol_data, 
+    symbol_data,
     barrier_levels=[0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015]  # 0.3% to 1.5%
 )
 ```

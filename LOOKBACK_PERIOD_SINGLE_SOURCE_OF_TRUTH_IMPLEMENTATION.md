@@ -19,7 +19,7 @@ BLANK_TRAINING_LOOKBACK_DAYS = 180  # 180 days for blank training
 ## Training Mode Mapping
 
 - **Full Training**: 730 days (2 years)
-- **Blank Training**: 180 days (6 months)  
+- **Blank Training**: 180 days (6 months)
 - **Short Blank Training**: 30 days (1 month)
 
 ## Implementation Flow
@@ -32,7 +32,7 @@ The launcher determines the training mode and sets the appropriate lookback peri
 # Full training
 lookback_days=FULL_TRAINING_LOOKBACK_DAYS,  # 2 years for full training
 
-# Blank training  
+# Blank training
 lookback_days=BLANK_TRAINING_LOOKBACK_DAYS,  # 180 days for blank training
 
 # Short blank training
@@ -83,7 +83,7 @@ step1_7_success = await _step1_7.run_step(
 The following training steps have been updated to properly handle lookback_days:
 
 1. **Step 1_7**: HMM Regime Discovery
-2. **Step 1_8**: Regime Forecasting  
+2. **Step 1_8**: Regime Forecasting
 3. **Step 2**: Processing, Labeling, Feature Engineering
 4. **Step 3**: Feature Engineering
 5. **Step 4**: Regime Data Splitting

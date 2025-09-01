@@ -30,7 +30,7 @@ This document outlines the comprehensive standardization plan for the data pipel
 
 #### **Steps to Standardize:**
 - [ ] `step11_*` (if exists)
-- [ ] `step12_*` (if exists) 
+- [ ] `step12_*` (if exists)
 - [ ] `step13_*` (if exists)
 - [ ] `step14_*` (if exists)
 - [ ] `step16_*` through `step20_*` (if exist)
@@ -290,7 +290,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 REQUIRED_MODULES = [
     "numpy",
-    "pandas", 
+    "pandas",
     "torch",
     "sklearn",
     "src.utils.logger",
@@ -343,7 +343,7 @@ config = get_standardized_config("step9", {
 
 ### **Phase 2: Remaining Steps**
 - [ ] **Step 11**: Apply standardization pattern
-- [ ] **Step 12**: Apply standardization pattern  
+- [ ] **Step 12**: Apply standardization pattern
 - [ ] **Step 13**: Apply standardization pattern
 - [ ] **Step 14**: Apply standardization pattern
 - [ ] **Step 16**: Apply standardization pattern

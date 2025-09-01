@@ -1010,17 +1010,17 @@ async def export_monitoring_data(request: Request):
         data = await request.json()
         data_type = data.get('dataType', 'performance')
         time_range = data.get('timeRange', '7d')
-        
+
         # Generate CSV data based on type and time range
         import csv
         import io
         from datetime import datetime, timedelta
         import random
-        
+
         # Create CSV data
         output = io.StringIO()
         writer = csv.writer(output)
-        
+
         if data_type == 'performance':
             writer.writerow(['timestamp', 'model_accuracy', 'trading_win_rate', 'profit_factor', 'sharpe_ratio', 'system_memory_usage', 'system_cpu_usage'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
@@ -1035,7 +1035,7 @@ async def export_monitoring_data(request: Request):
                     round(0.6 + random.uniform(-0.1, 0.1), 3),
                     round(0.4 + random.uniform(-0.1, 0.1), 3)
                 ])
-        
+
         elif data_type == 'anomalies':
             writer.writerow(['timestamp', 'anomaly_count', 'severity_level', 'detection_rate', 'metric', 'value', 'threshold'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
@@ -1050,7 +1050,7 @@ async def export_monitoring_data(request: Request):
                     round(random.uniform(0.5, 0.9), 3),
                     round(random.uniform(0.6, 0.8), 3)
                 ])
-        
+
         elif data_type == 'predictions':
             writer.writerow(['timestamp', 'predicted_accuracy', 'predicted_win_rate', 'confidence_score', 'trend', 'next_5_predictions'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
@@ -1064,7 +1064,7 @@ async def export_monitoring_data(request: Request):
                     random.choice(['increasing', 'decreasing', 'stable']),
                     ','.join([str(round(random.uniform(0.7, 0.8), 3)) for _ in range(5)])
                 ])
-        
+
         elif data_type == 'correlations':
             writer.writerow(['metric', 'correlation_value', 'significance', 'p_value', 'sample_size'])
             metrics = ['Model Accuracy', 'Win Rate', 'Profit Factor', 'Sharpe Ratio', 'System Health']
@@ -1076,7 +1076,7 @@ async def export_monitoring_data(request: Request):
                     round(random.uniform(0.001, 0.05), 4),
                     random.randint(100, 1000)
                 ])
-        
+
         elif data_type == 'riskMetrics':
             writer.writerow(['timestamp', 'portfolio_var', 'max_drawdown', 'correlation_risk', 'concentration_risk', 'leverage_ratio'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
@@ -1090,7 +1090,7 @@ async def export_monitoring_data(request: Request):
                     round(0.15 + random.uniform(-0.03, 0.03), 4),
                     round(1.0 + random.uniform(-0.1, 0.1), 2)
                 ])
-        
+
         elif data_type == 'systemHealth':
             writer.writerow(['timestamp', 'health_score', 'memory_usage', 'cpu_usage', 'response_time', 'error_rate', 'uptime'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
@@ -1105,17 +1105,17 @@ async def export_monitoring_data(request: Request):
                     round(random.uniform(0.001, 0.01), 4),
                     random.randint(3600, 86400)
                 ])
-        
+
         # Create response with CSV data
         output.seek(0)
         csv_data = output.getvalue()
-        
+
         from fastapi.responses import Response
         response = Response(content=csv_data, media_type="text/csv")
         response.headers["Content-Disposition"] = f"attachment; filename=monitoring_data_{data_type}_{time_range}.csv"
-        
+
         return response
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

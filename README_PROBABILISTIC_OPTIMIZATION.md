@@ -159,13 +159,13 @@ best_solution = optimizer.get_recommended_hyperparameters(
 def create_custom_tactician_model(params):
     """Create a custom Tactician model with given parameters."""
     from your_tactician_module import TacticianModel
-    
+
     model = TacticianModel(
         upper_barrier_multiplier=params['upper_barrier_multiplier'],
         confidence_threshold=params['confidence_threshold'],
         calibration_method=params['calibration_method']
     )
-    
+
     return model
 
 # Use custom factory
@@ -238,13 +238,13 @@ from src.tactician.enhanced_prediction_integrator import TacticianEnhancedPredic
 # Create factory function
 def tactician_factory(params):
     tactician = TacticianEnhancedPredictionIntegrator()
-    
+
     # Apply optimized parameters
     tactician.config['barrier_system'].update({
         'upper_barrier_multiplier': params['upper_barrier_multiplier'],
         'confidence_threshold': params['confidence_threshold']
     })
-    
+
     return tactician
 
 # Optimize
@@ -267,12 +267,12 @@ def analyst_factory(params):
         'confidence': MLConfidencePredictor(),
         'regime': RegimePredictor()
     }
-    
+
     # Apply optimized parameters
     for model in models.values():
         if hasattr(model, 'set_hyperparameters'):
             model.set_hyperparameters(params)
-    
+
     return models
 
 # Optimize
@@ -323,7 +323,7 @@ results = await integrator.optimize_analyst_model(
    ```python
    # Enable parallel processing
    config = ProbabilisticOptimizationConfig(n_jobs=4)
-   
+
    # Use early stopping
    config.early_stopping_patience = 10
    ```
@@ -333,7 +333,7 @@ results = await integrator.optimize_analyst_model(
    # Check data quality
    print(f"Data shape: {X.shape}")
    print(f"Target distribution: {np.bincount(y)}")
-   
+
    # Adjust objective weights
    config.objective_weights = {'calibration': 0.6, 'sharpness': 0.2, 'discrimination': 0.2}
    ```

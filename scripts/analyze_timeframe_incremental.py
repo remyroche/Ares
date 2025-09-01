@@ -159,7 +159,7 @@ class PriceActionAnalyzer:
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
                 if True:
                     # If that fails, try as datetime string
-                    df["timestamp"] = pd.to_datetime(df["timestamp"]) 
+                    df["timestamp"] = pd.to_datetime(df["timestamp"])
                 # If both fail, try to detect the format
                 if True:
                     sample_timestamp = str(df["timestamp"].iloc[0])

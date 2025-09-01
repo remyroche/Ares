@@ -15,9 +15,9 @@ Created `src/training/steps/step4_regime_data_splitting.py` with the following f
 - **Parallel processing**: Processes regimes in batches to manage memory
 - **Memory optimization**: Batch size adapts based on regime count
   - ≤5 regimes: batch size = 3
-  - ≤10 regimes: batch size = 2  
+  - ≤10 regimes: batch size = 2
   - >10 regimes: batch size = 1 (sequential processing)
-- **Organized storage structure**: 
+- **Organized storage structure**:
   ```
   data/training/regimes/{exchange}_{symbol}_{timeframe}/
   ├── regime_0/
@@ -44,10 +44,10 @@ else:
 ```python
 # Process batches in parallel
 for batch_idx, regime_batch in enumerate(regime_batches):
-    tasks = [self._process_single_regime(data, regime_id, base_dir) 
+    tasks = [self._process_single_regime(data, regime_id, base_dir)
              for regime_id in regime_batch]
     batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Clear memory after each batch
     del tasks
     del batch_results
@@ -122,7 +122,7 @@ LIGHT_MODE_PARAMS = {
 }
 
 BLANK_MODE_PARAMS = {
-    "validation_folds": 3,        # vs 5-10 in full  
+    "validation_folds": 3,        # vs 5-10 in full
     "optimization_iterations": 150, # vs 500+ in full
     "model_complexity": 0.30,     # 30% of full complexity
 }

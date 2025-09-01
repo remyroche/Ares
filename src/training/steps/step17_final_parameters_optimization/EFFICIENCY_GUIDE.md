@@ -47,7 +47,7 @@ def objective_with_subsampling(trial):
         subsample_fraction = 0.6  # Promising trials
     else:
         subsample_fraction = 1.0  # Final trials
-    
+
     # Use subsampled data for evaluation
     X_sample, y_sample = subsample_data(X, y, subsample_fraction)
     return evaluate_parameters(params, X_sample, y_sample)
@@ -105,10 +105,10 @@ config = EfficiencyConfig(
 ```python
 def evaluate_with_caching(params):
     cache_key = generate_cache_key(params)
-    
+
     if cache_key in cache:
         return cache[cache_key]  # Return cached result
-    
+
     result = expensive_evaluation(params)
     cache[cache_key] = result  # Cache result
     return result
@@ -140,10 +140,10 @@ def objective_with_pruning(trial):
     if trial.number > 10:
         current_score = evaluate_quick(params)
         best_score = get_best_score()
-        
+
         if current_score < best_score * 0.1:  # Below 10% threshold
             raise optuna.TrialPruned()  # Stop early
-    
+
     return full_evaluation(params)
 ```
 
@@ -199,16 +199,16 @@ config = EfficiencyConfig(
 ```python
 async def process_trials_in_batches(trials, batch_size=100):
     results = []
-    
+
     for i in range(0, len(trials), batch_size):
         batch = trials[i:i + batch_size]
         batch_results = await process_batch_parallel(batch)
         results.extend(batch_results)
-        
+
         # Clear cache periodically
         if i % (batch_size * 2) == 0:
             clear_old_cache()
-    
+
     return results
 ```
 
@@ -327,10 +327,10 @@ class FinalParametersOptimizationStep:
     def __init__(self, config):
         self.config = config
         self.efficiency_optimizer = create_efficiency_optimizer(EfficiencyConfig())
-    
+
     async def initialize(self):
         await self.efficiency_optimizer.initialize()
-    
+
     async def _optimize_with_efficiency(self, objective_function, search_space, n_trials):
         return await self.efficiency_optimizer.optimize_trial_efficiency(
             objective_function, search_space, n_trials
@@ -346,16 +346,16 @@ async def optimize_confidence_thresholds_efficient(self, calibration_results):
             "tactician_confidence_threshold": trial.suggest_float("tactician_confidence_threshold", 0.5, 0.95, step=0.02),
             "ensemble_confidence_threshold": trial.suggest_float("ensemble_confidence_threshold", 0.5, 0.95, step=0.02),
         }
-        
+
         # Use efficient evaluation
         return self.evaluate_parameters_efficient(params, calibration_results)
-    
+
     search_space = self.get_confidence_thresholds_search_space()
-    
+
     results = await self._optimize_with_efficiency(
         objective, search_space, n_trials=100
     )
-    
+
     return results
 ```
 

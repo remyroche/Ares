@@ -278,17 +278,17 @@ constraint: 0.4 <= leverage_combined_threshold <= 0.99
 
 The MTF unified Tactician multi-output prediction system now provides:
 
-✅ **Multi-timeframe predictions** (1m + 5m) with unified thresholds  
-✅ **Analyst confidence integration** with configurable weights  
-✅ **Simplified threshold management** (3 green light + 3 exit thresholds)  
-✅ **MTF logic**: MAX for green light, MIN for exit signals  
-✅ **Position sizer integration** with combined confidence threshold  
-✅ **Leverage sizer integration** with combined confidence threshold  
-✅ **All thresholds optimizable** in step17  
-✅ **Joint parameter optimization** for best performance  
-✅ **Comprehensive risk management** with granular control  
-✅ **Flexible confidence weighting** system  
-✅ **Enhanced decision making** with multiple signal sources  
-✅ **Backward compatibility** with legacy ML prediction formats  
+✅ **Multi-timeframe predictions** (1m + 5m) with unified thresholds
+✅ **Analyst confidence integration** with configurable weights
+✅ **Simplified threshold management** (3 green light + 3 exit thresholds)
+✅ **MTF logic**: MAX for green light, MIN for exit signals
+✅ **Position sizer integration** with combined confidence threshold
+✅ **Leverage sizer integration** with combined confidence threshold
+✅ **All thresholds optimizable** in step17
+✅ **Joint parameter optimization** for best performance
+✅ **Comprehensive risk management** with granular control
+✅ **Flexible confidence weighting** system
+✅ **Enhanced decision making** with multiple signal sources
+✅ **Backward compatibility** with legacy ML prediction formats
 
 The system is ready for step17 optimization with all parameters configurable and optimizable together for maximum performance.

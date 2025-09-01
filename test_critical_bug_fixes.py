@@ -28,31 +28,31 @@ logger = logging.getLogger(__name__)
 def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
     """Generate realistic test market data with clear S/R levels."""
     np.random.seed(42)
-    
+
     # Generate base price movement
     base_price = 100.0
     returns = np.random.normal(0, 0.02, n_periods)  # 2% daily volatility
     prices = [base_price]
-    
+
     # Create some clear support and resistance levels
     support_levels = [95.0, 98.0, 102.0]
     resistance_levels = [105.0, 108.0, 112.0]
-    
+
     for i in range(1, n_periods):
         current_price = prices[-1]
-        
+
         # Add some mean reversion to S/R levels
         for support in support_levels:
             if current_price < support:
                 returns[i] += 0.01  # Bounce up from support
-        
+
         for resistance in resistance_levels:
             if current_price > resistance:
                 returns[i] -= 0.01  # Bounce down from resistance
-        
+
         new_price = current_price * (1 + returns[i])
         prices.append(new_price)
-    
+
     # Generate OHLC data
     data = []
     for i, close in enumerate(prices):
@@ -60,7 +60,7 @@ def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
         low = close * (1 - abs(np.random.normal(0, 0.005)))
         open_price = close * (1 + np.random.normal(0, 0.002))
         volume = np.random.randint(1000, 10000)
-        
+
         data.append({
             'open': open_price,
             'high': high,
@@ -68,20 +68,20 @@ def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
             'close': close,
             'volume': volume
         })
-    
+
     df = pd.DataFrame(data)
     df.index = pd.date_range(start='2023-01-01', periods=len(df), freq='1min')
-    
+
     return df
 
 async def test_sr_level_detection():
     """Test that S/R levels are being detected properly."""
     logger.info("🧪 Testing S/R level detection...")
-    
+
     # Generate test data
     market_data = generate_test_market_data(500)
     current_price = market_data['close'].iloc[-1]
-    
+
     # Initialize SR predictor with default config
     config = {
         "sr_breakout_predictor": {
@@ -118,33 +118,33 @@ async def test_sr_level_detection():
             "bounce_rate_threshold": 0.005
         }
     }
-    
+
     sr_predictor = SRBreakoutPredictor(config)
     await sr_predictor.initialize()
-    
+
     # Test S/R context generation
     try:
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
-        
+
         if sr_context:
             support_levels = sr_context.get('support_levels', [])
             resistance_levels = sr_context.get('resistance_levels', [])
-            
+
             logger.info(f"✅ S/R context generated successfully")
             logger.info(f"   - Support levels detected: {len(support_levels)}")
             logger.info(f"   - Resistance levels detected: {len(resistance_levels)}")
             logger.info(f"   - Current price: {current_price:.2f}")
-            
+
             if support_levels:
                 logger.info(f"   - Nearest support: {sr_context.get('nearest_support', 'N/A')}")
             if resistance_levels:
                 logger.info(f"   - Nearest resistance: {sr_context.get('nearest_resistance', 'N/A')}")
-            
+
             return len(support_levels) > 0 or len(resistance_levels) > 0
         else:
             logger.error("❌ S/R context is empty")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ Error in S/R level detection: {e}")
         return False
@@ -152,17 +152,17 @@ async def test_sr_level_detection():
 async def test_comprehensive_strength_calculation():
     """Test that comprehensive strength calculation works without errors."""
     logger.info("🧪 Testing comprehensive strength calculation...")
-    
+
     # Generate test data
     market_data = generate_test_market_data(200)
-    
+
     # Create some test S/R levels
     test_levels = [
         {'price': 100.0, 'strength': 0.7, 'type': 'support'},
         {'price': 105.0, 'strength': 0.8, 'type': 'resistance'},
         {'price': 95.0, 'strength': 0.6, 'type': 'support'}
     ]
-    
+
     # Initialize SR predictor with default config
     config = {
         "sr_breakout_predictor": {
@@ -181,27 +181,27 @@ async def test_comprehensive_strength_calculation():
             "age_decay_factor": 0.95
         }
     }
-    
+
     sr_predictor = SRBreakoutPredictor(config)
     await sr_predictor.initialize()
-    
+
     try:
         # Test comprehensive strength calculation
         strength_results = await sr_predictor.calculate_comprehensive_strength(market_data, test_levels)
-        
+
         if strength_results:
             logger.info(f"✅ Comprehensive strength calculation successful")
             logger.info(f"   - Calculated strength for {len(strength_results)} levels")
-            
+
             for level_id, strength_data in strength_results.items():
                 comprehensive_strength = strength_data.get('comprehensive_strength', 0)
                 logger.info(f"   - Level {level_id}: strength = {comprehensive_strength:.3f}")
-            
+
             return True
         else:
             logger.error("❌ Comprehensive strength calculation returned empty result")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ Error in comprehensive strength calculation: {e}")
         return False
@@ -209,16 +209,16 @@ async def test_comprehensive_strength_calculation():
 async def test_backtesting_validation():
     """Test that backtesting validation works without errors."""
     logger.info("🧪 Testing backtesting validation...")
-    
+
     # Generate test data
     market_data = generate_test_market_data(300)
-    
+
     # Create test S/R levels
     test_levels = [
         {'price': 100.0, 'strength': 0.7, 'type': 'support'},
         {'price': 105.0, 'strength': 0.8, 'type': 'resistance'}
     ]
-    
+
     # Initialize validator with config
     config = {
         "sr_backtesting_validator": {
@@ -240,26 +240,26 @@ async def test_backtesting_validation():
             "min_volume_confirmation": 0.5
         }
     }
-    
+
     validator = SRBacktestingValidator(config)
-    
+
     try:
         # Test validation
         current_price = market_data['close'].iloc[-1]
         validation_result = await validator.validate_sr_levels(market_data, test_levels, current_price)
-        
+
         if validation_result:
             logger.info(f"✅ Backtesting validation successful")
             logger.info(f"   - Overall validation score: {validation_result.sr_validation_score:.3f}")
             logger.info(f"   - Bounce rate: {validation_result.bounce_rate:.3f}")
             logger.info(f"   - False breakout rate: {validation_result.false_breakout_rate:.3f}")
             logger.info(f"   - Volume confirmation rate: {validation_result.volume_confirmation_rate:.3f}")
-            
+
             return True
         else:
             logger.error("❌ Backtesting validation returned empty result")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ Error in backtesting validation: {e}")
         return False
@@ -267,10 +267,10 @@ async def test_backtesting_validation():
 async def test_optimization_framework():
     """Test that optimization framework works without asyncio errors."""
     logger.info("🧪 Testing optimization framework...")
-    
+
     # Generate test data
     market_data = generate_test_market_data(400)
-    
+
     # Initialize optimizer with config
     config = {
         "sr_detection_optimization": {
@@ -317,30 +317,30 @@ async def test_optimization_framework():
             }
         }
     }
-    
+
     optimizer = SRDetectionOptimizer(config)
-    
+
     try:
         # Initialize the optimizer first
         if not await optimizer.initialize():
             logger.error("❌ Failed to initialize optimizer")
             return False
-        
+
         # Test optimization for 15m timeframe
         result = await optimizer.optimize_sr_detection(market_data, target_timeframe="15m")
-        
+
         if result:
             logger.info(f"✅ Optimization successful")
             logger.info(f"   - Optimization score: {result.optimization_score:.3f}")
             logger.info(f"   - Method: {result.optimization_method}")
             logger.info(f"   - Timeframe: {result.timeframe_optimized}")
             logger.info(f"   - Trials: {result.n_trials}")
-            
+
             return True
         else:
             logger.error("❌ Optimization returned empty result")
             return False
-            
+
     except Exception as e:
         logger.error(f"❌ Error in optimization: {e}")
         return False
@@ -348,31 +348,31 @@ async def test_optimization_framework():
 async def main():
     """Run all critical bug fix tests."""
     logger.info("🚀 Starting critical bug fix verification tests...")
-    
+
     test_results = []
-    
+
     # Test 1: S/R Level Detection
     test_results.append(await test_sr_level_detection())
-    
+
     # Test 2: Comprehensive Strength Calculation
     test_results.append(await test_comprehensive_strength_calculation())
-    
+
     # Test 3: Backtesting Validation
     test_results.append(await test_backtesting_validation())
-    
+
     # Test 4: Optimization Framework
     test_results.append(await test_optimization_framework())
-    
+
     # Summary
     passed_tests = sum(test_results)
     total_tests = len(test_results)
-    
+
     logger.info("\n" + "="*60)
     logger.info("📊 CRITICAL BUG FIX VERIFICATION RESULTS")
     logger.info("="*60)
     logger.info(f"✅ Tests passed: {passed_tests}/{total_tests}")
     logger.info(f"❌ Tests failed: {total_tests - passed_tests}/{total_tests}")
-    
+
     if passed_tests == total_tests:
         logger.info("🎉 ALL CRITICAL BUGS HAVE BEEN FIXED!")
         logger.info("✅ S/R level detection is working")
@@ -382,7 +382,7 @@ async def main():
     else:
         logger.warning("⚠️  Some critical bugs may still exist")
         logger.warning("Please review the failed tests above")
-    
+
     return passed_tests == total_tests
 
 if __name__ == "__main__":

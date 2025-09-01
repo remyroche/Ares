@@ -60,21 +60,21 @@ tactician_triple_barrier:
     profit_take_fraction: 0.5    # 50% of Analyst's profit take barrier
     stop_loss_fraction: 0.25     # 25% of Analyst's stop loss barrier
     time_barrier_fraction: 0.5   # 50% of Analyst's time barrier
-  
+
   # Timeframe Configuration - Tactician operates at both 1m and 5m
   timeframes: ["1m", "5m"]
   primary_timeframe: "1m"      # Primary timeframe for execution
   secondary_timeframe: "5m"    # Secondary timeframe for confirmation
-  
+
   # Dynamic calculation settings
   enable_dynamic_barriers: true
   dynamic_calculation_method: "fraction_based"  # Only fraction-based, no adaptation
-  
+
   # Precision Settings
   enable_high_precision_mode: true
   precision_threshold: 0.85  # Minimum confidence for execution
   min_signal_strength: 0.8   # Minimum signal strength required
-  
+
   # Risk Management
   max_risk_per_trade: 0.001  # 0.1% max risk per trade
   position_size_multiplier: 0.5  # Reduce position size for precision

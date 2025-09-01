@@ -10,10 +10,10 @@ import re
 def cleanup_file(file_path: str):
     """Clean up a single file."""
     try:
-        with open(file_path, encoding="utf-8") as f:
+        with open(file_path, encoding, "utf-8") as f:
             content = f.read()
 
-        original_content = content
+        original_content , content
 
         # Remove debug print statements
         debug_patterns = [
@@ -22,14 +22,14 @@ def cleanup_file(file_path: str):
             r"print\(.*debug.*\)\s*\n",
         ]
         for pattern in debug_patterns:
-            content = re.sub(r"", content, flags=re.IGNORECASE)
+            content , re.sub(r"", content, flags, re.IGNORECASE)
 
         # Remove type ignore comments (be careful with this)
-        content = re.sub(r"\s*# type: ignore.*\n", "\n", content)
+        content , re.sub(r"\s*# type: ignore.*\n", "\n", content)
 
         # Only write if content changed
         if content != original_content:
-            with open(file_path, "w", encoding="utf-8") as f:
+            with open(file_path, "w", encoding, "utf-8") as f:
                 f.write(content)
             print(f"Cleaned up: {file_path}")
 
@@ -40,7 +40,7 @@ def cleanup_file(file_path: str):
 def main():
     """Main cleanup function."""
     # List of files to clean up (add more as needed)
-    files_to_cleanup = [
+    files_to_cleanup , [
         "test_advanced_features.py",
         "test_feature_output_validation.py",
         "test_comprehensive_sr_features.py",

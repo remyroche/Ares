@@ -43,10 +43,10 @@ class SRBreakoutPredictor:
         # SR predictor state
         self.is_initialized: bool = False
         self.sr_predictions: dict[str, Any] = {}
-        
+
         # Configuration
         self.sr_config: dict[str, Any] = self.config.get("sr_breakout_predictor", {})
-        
+
         # Reporting system
         self.reporting_enabled: bool = self.sr_config.get("enable_detailed_reporting", True)
         self.report_directory: str = self.sr_config.get("report_directory", "reports/sr_analysis")
@@ -236,18 +236,18 @@ class SRBreakoutPredictor:
         # Optimization integration
         self.optimized_params: Optional[dict[str, Any]] = None
         self.use_optimized_params: bool = self.sr_config.get("use_optimized_params", True)
-        
+
         # Advanced S/R method configuration
         self.advanced_config: dict[str, Any] = self.sr_config.get("advanced_sr_methods", {})
         self.enable_fibonacci_analysis: bool = self.advanced_config.get("enable_fibonacci_analysis", True)
         self.enable_elliott_wave_analysis: bool = self.advanced_config.get("enable_elliott_wave_analysis", True)
         self.enable_order_flow_analysis: bool = self.advanced_config.get("enable_order_flow_analysis", True)
-        
+
         # Advanced method parameters
         self.fibonacci_sensitivity: float = self.advanced_config.get("fibonacci_sensitivity", 0.7)
         self.elliott_confidence_threshold: float = self.advanced_config.get("elliott_confidence_threshold", 0.6)
         self.order_flow_hvn_threshold: float = self.advanced_config.get("order_flow_hvn_threshold", 1.5)
-        
+
         # Multi-timeframe configuration
         self.timeframe_config: dict[str, Any] = self.sr_config.get("multi_timeframe", {})
         self.enable_multi_timeframe: bool = self.timeframe_config.get("enable_multi_timeframe", True)
@@ -279,11 +279,11 @@ class SRBreakoutPredictor:
 
             self.is_initialized = True
             self.logger.info("✅ SR breakout predictor initialized successfully")
-            
+
             # Initialize reporting system
             if self.reporting_enabled:
                 self._initialize_reporting_system()
-            
+
             return True
 
         except Exception as e:
@@ -351,14 +351,14 @@ class SRBreakoutPredictor:
         try:
             # Try to load from optimization results file
             optimization_file = self.sr_config.get("optimization_results_file", "optimization_results.json")
-            
+
             if os.path.exists(optimization_file):
                 with open(optimization_file, 'r') as f:
                     data = json.load(f)
-                
+
                 if data.get("best_result"):
                     best_result = data["best_result"]
-                    
+
                     # Apply optimized parameters
                     self.optimized_params = {
                         "method_weights": best_result.get("method_weights", {}),
@@ -367,16 +367,16 @@ class SRBreakoutPredictor:
                         "timeframe_weights": best_result.get("timeframe_weights", {}),
                         "advanced_params": best_result.get("advanced_params", {}),
                     }
-                    
+
                     # Update current parameters with optimized values
                     await self._apply_optimized_parameters()
-                    
+
                     self.logger.info("✅ Loaded and applied optimized parameters")
                 else:
                     self.logger.warning("No best result found in optimization file")
             else:
                 self.logger.info("No optimization results file found, using default parameters")
-                
+
         except Exception as e:
             self.logger.error(f"Failed to load optimized parameters: {e}")
 
@@ -385,19 +385,19 @@ class SRBreakoutPredictor:
         try:
             if not self.optimized_params:
                 return
-            
+
             # Apply method weights
             method_weights = self.optimized_params.get("method_weights", {})
             if method_weights:
                 self.model_weights.update(method_weights)
                 self.logger.info(f"Applied optimized method weights: {method_weights}")
-            
+
             # Apply strength weights
             strength_weights = self.optimized_params.get("strength_weights", {})
             if strength_weights:
                 self.strength_score_weights.update(strength_weights)
                 self.logger.info(f"Applied optimized strength weights: {strength_weights}")
-            
+
             # Apply DBSCAN parameters
             dbscan_params = self.optimized_params.get("dbscan_params", {})
             if dbscan_params:
@@ -406,7 +406,7 @@ class SRBreakoutPredictor:
                 if "min_samples" in dbscan_params:
                     self.dbscan_min_samples = dbscan_params["min_samples"]
                 self.logger.info(f"Applied optimized DBSCAN parameters: {dbscan_params}")
-            
+
             # Apply advanced parameters
             advanced_params = self.optimized_params.get("advanced_params", {})
             if advanced_params:
@@ -414,25 +414,25 @@ class SRBreakoutPredictor:
                 if "fibonacci_sensitivity" in advanced_params:
                     self.fibonacci_sensitivity = advanced_params["fibonacci_sensitivity"]
                     self.logger.info(f"Applied optimized Fibonacci sensitivity: {self.fibonacci_sensitivity}")
-                
+
                 # Apply Elliott Wave parameters
                 if "elliott_confidence_threshold" in advanced_params:
                     self.elliott_confidence_threshold = advanced_params["elliott_confidence_threshold"]
                     self.logger.info(f"Applied optimized Elliott confidence threshold: {self.elliott_confidence_threshold}")
-                
+
                 # Apply Order Flow parameters
                 if "order_flow_hvn_threshold" in advanced_params:
                     self.order_flow_hvn_threshold = advanced_params["order_flow_hvn_threshold"]
                     self.logger.info(f"Applied optimized Order Flow HVN threshold: {self.order_flow_hvn_threshold}")
-                
+
                 self.logger.info(f"Applied optimized advanced parameters: {advanced_params}")
-            
+
             # Apply timeframe weights
             timeframe_weights = self.optimized_params.get("timeframe_weights", {})
             if timeframe_weights:
                 self.timeframe_weights = timeframe_weights
                 self.logger.info(f"Applied optimized timeframe weights: {timeframe_weights}")
-                
+
         except Exception as e:
             self.logger.error(f"Failed to apply optimized parameters: {e}")
 
@@ -467,19 +467,19 @@ class SRBreakoutPredictor:
         try:
             import os
             from pathlib import Path
-            
+
             # Create report directory if it doesn't exist
             report_path = Path(self.report_directory)
             report_path.mkdir(parents=True, exist_ok=True)
-            
+
             # Create subdirectories for different report types
             (report_path / "json").mkdir(exist_ok=True)
             (report_path / "csv").mkdir(exist_ok=True)
             (report_path / "html").mkdir(exist_ok=True)
             (report_path / "metrics").mkdir(exist_ok=True)
-            
+
             self.logger.info(f"📊 Reporting system initialized: {report_path}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize reporting system: {e}")
 
@@ -487,7 +487,7 @@ class SRBreakoutPredictor:
         """Generate a unique report ID."""
         from datetime import datetime
         import uuid
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = str(uuid.uuid4())[:8]
         return f"sr_report_{timestamp}_{unique_id}"
@@ -496,7 +496,7 @@ class SRBreakoutPredictor:
         """Calculate comprehensive metrics for reporting."""
         try:
             current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
-            
+
             # Basic market metrics
             market_metrics = {
                 "data_points": len(market_data),
@@ -518,11 +518,11 @@ class SRBreakoutPredictor:
                     "price_trend": float(market_data["close"].iloc[-10:].mean() / market_data["close"].iloc[-20:-10].mean() if len(market_data) >= 20 else 1.0),
                 }
             }
-            
+
             # S/R level metrics
             support_levels = sr_context.get("support_levels", [])
             resistance_levels = sr_context.get("resistance_levels", [])
-            
+
             sr_metrics = {
                 "total_levels": len(support_levels) + len(resistance_levels),
                 "support_levels": {
@@ -553,7 +553,7 @@ class SRBreakoutPredictor:
                     "resistance_strength": sr_context.get("resistance_strength", 0.5),
                 }
             }
-            
+
             # Clustering metrics
             clustering_result = sr_context.get("clustering_result", {})
             clustering_metrics = {
@@ -563,12 +563,12 @@ class SRBreakoutPredictor:
                 "clustering_quality": clustering_result.get("clustering_quality", "unknown"),
                 "cluster_statistics": clustering_result.get("cluster_statistics", {})
             }
-            
+
             # Advanced analysis metrics
             fibonacci_levels = sr_context.get("fibonacci_levels", {})
             elliott_wave_levels = sr_context.get("elliott_wave_levels", {})
             order_flow_analysis = sr_context.get("order_flow_analysis", {})
-            
+
             advanced_metrics = {
                 "fibonacci_analysis": {
                     "levels_detected": len(fibonacci_levels),
@@ -586,7 +586,7 @@ class SRBreakoutPredictor:
                     "value_area": order_flow_analysis.get("volume_profile", {}).get("value_area", {})
                 }
             }
-            
+
             # Performance metrics
             performance_metrics = {
                 "analysis_timestamp": pd.Timestamp.now().isoformat(),
@@ -594,7 +594,7 @@ class SRBreakoutPredictor:
                 "sr_confidence_score": self._calculate_sr_confidence_score(sr_context),
                 "overall_analysis_quality": self._calculate_overall_quality_score(market_metrics, sr_metrics, clustering_metrics, advanced_metrics)
             }
-            
+
             return {
                 "market_metrics": market_metrics,
                 "sr_metrics": sr_metrics,
@@ -602,7 +602,7 @@ class SRBreakoutPredictor:
                 "advanced_metrics": advanced_metrics,
                 "performance_metrics": performance_metrics
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating comprehensive metrics: {e}")
             return {}
@@ -611,24 +611,24 @@ class SRBreakoutPredictor:
         """Calculate data quality score (0-1)."""
         try:
             score = 1.0
-            
+
             # Check for missing data
             missing_ratio = market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns))
             score -= missing_ratio * 0.3
-            
+
             # Check for sufficient data points
             if len(market_data) < 50:
                 score -= 0.2
             elif len(market_data) < 100:
                 score -= 0.1
-            
+
             # Check for price anomalies
             price_changes = market_data["close"].pct_change().abs()
             anomaly_ratio = (price_changes > 0.1).sum() / len(price_changes)
             score -= anomaly_ratio * 0.2
-            
+
             return max(0.0, min(1.0, score))
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating data quality score: {e}")
             return 0.5
@@ -637,25 +637,25 @@ class SRBreakoutPredictor:
         """Calculate S/R confidence score (0-1)."""
         try:
             score = 0.5  # Base score
-            
+
             # Factor in number of levels
             total_levels = len(sr_context.get("support_levels", [])) + len(sr_context.get("resistance_levels", []))
             if total_levels >= 5:
                 score += 0.2
             elif total_levels >= 3:
                 score += 0.1
-            
+
             # Factor in strength
             avg_strength = (sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2
             score += avg_strength * 0.2
-            
+
             # Factor in clustering quality
             clustering_result = sr_context.get("clustering_result", {})
             if clustering_result.get("n_clusters", 0) > 0:
                 score += 0.1
-            
+
             return min(1.0, score)
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating SR confidence score: {e}")
             return 0.5
@@ -664,27 +664,27 @@ class SRBreakoutPredictor:
         """Calculate overall analysis quality score (0-1)."""
         try:
             score = 0.5  # Base score
-            
+
             # Market data quality
             if market_metrics.get("data_points", 0) >= 100:
                 score += 0.1
-            
+
             # S/R analysis quality
             if sr_metrics.get("total_levels", 0) >= 3:
                 score += 0.1
-            
+
             # Clustering quality
             if clustering_metrics.get("total_clusters", 0) > 0:
                 score += 0.1
-            
+
             # Advanced analysis quality
             if advanced_metrics.get("fibonacci_analysis", {}).get("levels_detected", 0) > 0:
                 score += 0.1
             if advanced_metrics.get("elliott_wave_analysis", {}).get("waves_detected", 0) > 0:
                 score += 0.1
-            
+
             return min(1.0, score)
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating overall quality score: {e}")
             return 0.5
@@ -694,13 +694,13 @@ class SRBreakoutPredictor:
         try:
             if not self.reporting_enabled:
                 return {}
-            
+
             # Generate report ID
             self.current_report_id = self._generate_report_id()
-            
+
             # Calculate comprehensive metrics
             metrics = self._calculate_comprehensive_metrics(market_data, sr_context)
-            
+
             # Create detailed report
             report = {
                 "report_id": self.current_report_id,
@@ -732,20 +732,20 @@ class SRBreakoutPredictor:
                     "order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
                 }
             }
-            
+
             # Store in history
             self.metrics_history.append(report)
-            
+
             # Limit history size
             if len(self.metrics_history) > 100:
                 self.metrics_history = self.metrics_history[-100:]
-            
+
             # Save report to file
             await self._save_report_to_file(report)
-            
+
             self.logger.info(f"📊 Detailed metrics report generated: {self.current_report_id}")
             return report
-            
+
         except Exception as e:
             self.logger.error(f"Error generating detailed report: {e}")
             return {}
@@ -756,22 +756,22 @@ class SRBreakoutPredictor:
             import os
             from pathlib import Path
             import json
-            
+
             report_path = Path(self.report_directory)
-            
+
             # Save JSON report
             json_file = report_path / "json" / f"{self.current_report_id}.json"
             with open(json_file, 'w') as f:
                 json.dump(report, f, indent=2, default=str)
-            
+
             # Save CSV metrics
             csv_file = report_path / "csv" / f"{self.current_report_id}_metrics.csv"
             self._save_metrics_to_csv(report["metrics"], csv_file)
-            
+
             # Save HTML report
             html_file = report_path / "html" / f"{self.current_report_id}.html"
             self._save_html_report(report, html_file)
-            
+
             # Save latest metrics summary
             summary_file = report_path / "metrics" / "latest_metrics.json"
             with open(summary_file, 'w') as f:
@@ -785,9 +785,9 @@ class SRBreakoutPredictor:
                         "overall_quality": report["metrics"]["performance_metrics"]["overall_analysis_quality"]
                     }
                 }, f, indent=2, default=str)
-            
+
             self.logger.info(f"📁 Report saved: {self.current_report_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Error saving report to file: {e}")
 
@@ -795,10 +795,10 @@ class SRBreakoutPredictor:
         """Save metrics to CSV format."""
         try:
             import csv
-            
+
             # Flatten metrics for CSV
             csv_data = []
-            
+
             # Market metrics
             market_metrics = metrics.get("market_metrics", {})
             csv_data.append(["Category", "Metric", "Value"])
@@ -806,29 +806,29 @@ class SRBreakoutPredictor:
             csv_data.append(["Market", "Current Price", market_metrics.get("price_range", {}).get("current", 0)])
             csv_data.append(["Market", "Volatility", market_metrics.get("price_range", {}).get("volatility", 0)])
             csv_data.append(["Market", "Total Volume", market_metrics.get("volume_metrics", {}).get("total_volume", 0)])
-            
+
             # S/R metrics
             sr_metrics = metrics.get("sr_metrics", {})
             csv_data.append(["S/R", "Total Levels", sr_metrics.get("total_levels", 0)])
             csv_data.append(["S/R", "Support Levels", sr_metrics.get("support_levels", {}).get("count", 0)])
             csv_data.append(["S/R", "Resistance Levels", sr_metrics.get("resistance_levels", {}).get("count", 0)])
             csv_data.append(["S/R", "SR Zone Width", sr_metrics.get("proximity_metrics", {}).get("sr_zone_width", 0)])
-            
+
             # Clustering metrics
             clustering_metrics = metrics.get("clustering_metrics", {})
             csv_data.append(["Clustering", "Total Clusters", clustering_metrics.get("total_clusters", 0)])
             csv_data.append(["Clustering", "Noise Points", clustering_metrics.get("noise_points", 0)])
-            
+
             # Performance metrics
             performance_metrics = metrics.get("performance_metrics", {})
             csv_data.append(["Performance", "Data Quality Score", performance_metrics.get("data_quality_score", 0)])
             csv_data.append(["Performance", "SR Confidence Score", performance_metrics.get("sr_confidence_score", 0)])
             csv_data.append(["Performance", "Overall Quality Score", performance_metrics.get("overall_analysis_quality", 0)])
-            
+
             with open(file_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerows(csv_data)
-                
+
         except Exception as e:
             self.logger.error(f"Error saving metrics to CSV: {e}")
 
@@ -857,7 +857,7 @@ class SRBreakoutPredictor:
         <p><strong>Report ID:</strong> {report['report_id']}</p>
         <p><strong>Timestamp:</strong> {report['report_timestamp']}</p>
     </div>
-    
+
     <div class="section">
         <h2>Analysis Summary</h2>
         <div class="metric"><strong>Support Levels:</strong> {report['analysis_summary']['total_support_levels']}</div>
@@ -866,29 +866,29 @@ class SRBreakoutPredictor:
         <div class="metric"><strong>Fibonacci Levels:</strong> {report['analysis_summary']['fibonacci_levels']}</div>
         <div class="metric"><strong>Elliott Waves:</strong> {report['analysis_summary']['elliott_waves']}</div>
     </div>
-    
+
     <div class="section">
         <h2>Quality Scores</h2>
         <div class="metric">
-            <strong>Data Quality:</strong> 
+            <strong>Data Quality:</strong>
             <span class="score quality-{'high' if report['metrics']['performance_metrics']['data_quality_score'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['data_quality_score'] > 0.4 else 'low'}">
                 {report['metrics']['performance_metrics']['data_quality_score']:.3f}
             </span>
         </div>
         <div class="metric">
-            <strong>SR Confidence:</strong> 
+            <strong>SR Confidence:</strong>
             <span class="score quality-{'high' if report['metrics']['performance_metrics']['sr_confidence_score'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['sr_confidence_score'] > 0.4 else 'low'}">
                 {report['metrics']['performance_metrics']['sr_confidence_score']:.3f}
             </span>
         </div>
         <div class="metric">
-            <strong>Overall Quality:</strong> 
+            <strong>Overall Quality:</strong>
             <span class="score quality-{'high' if report['metrics']['performance_metrics']['overall_analysis_quality'] > 0.7 else 'medium' if report['metrics']['performance_metrics']['overall_analysis_quality'] > 0.4 else 'low'}">
                 {report['metrics']['performance_metrics']['overall_analysis_quality']:.3f}
             </span>
         </div>
     </div>
-    
+
     <div class="section">
         <h2>Market Metrics</h2>
         <div class="metric"><strong>Data Points:</strong> {report['metrics']['market_metrics']['data_points']}</div>
@@ -896,7 +896,7 @@ class SRBreakoutPredictor:
         <div class="metric"><strong>Volatility:</strong> {report['metrics']['market_metrics']['price_range']['volatility']:.4f}</div>
         <div class="metric"><strong>Total Volume:</strong> {report['metrics']['market_metrics']['volume_metrics']['total_volume']:.0f}</div>
     </div>
-    
+
     <div class="section">
         <h2>S/R Context</h2>
         <div class="metric"><strong>Current Price:</strong> {report['sr_context_summary']['current_price']:.4f}</div>
@@ -907,10 +907,10 @@ class SRBreakoutPredictor:
 </body>
 </html>
             """
-            
+
             with open(file_path, 'w') as f:
                 f.write(html_content)
-                
+
         except Exception as e:
             self.logger.error(f"Error saving HTML report: {e}")
 
@@ -930,13 +930,13 @@ class SRBreakoutPredictor:
             import os
             from pathlib import Path
             from datetime import datetime, timedelta
-            
+
             if not self.reporting_enabled:
                 return
-            
+
             report_path = Path(self.report_directory)
             cutoff_date = datetime.now() - timedelta(days=self.report_retention_days)
-            
+
             for subdir in ["json", "csv", "html"]:
                 subdir_path = report_path / subdir
                 if subdir_path.exists():
@@ -946,9 +946,9 @@ class SRBreakoutPredictor:
                             if file_time < cutoff_date:
                                 file_path.unlink()
                                 self.logger.info(f"Cleaned up old report: {file_path}")
-            
+
             self.logger.info("🧹 Old reports cleanup completed")
-            
+
         except Exception as e:
             self.logger.error(f"Error cleaning up old reports: {e}")
 
@@ -958,16 +958,16 @@ class SRBreakoutPredictor:
             if not self.reporting_enabled:
                 self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
                 return {}
-            
+
             if sr_context is None:
                 # Generate SR context if not provided
                 current_price = market_data["close"].iloc[-1]
                 sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             report = await self._generate_detailed_report(market_data, sr_context)
             self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
             return report
-            
+
         except Exception as e:
             self.logger.error(f"Error generating manual report: {e}")
             return {}
@@ -1051,7 +1051,7 @@ class SRBreakoutPredictor:
                 "current_price": current_price,
                 "timestamp": pd.Timestamp.now(),
             }
-            
+
             # Generate detailed report for predictions
             if self.reporting_enabled:
                 await self._generate_detailed_report(market_data, predictions)
@@ -1113,7 +1113,7 @@ class SRBreakoutPredictor:
             all_levels = support_levels + resistance_levels
             clustering_result = await self.cluster_sr_levels_dbscan(all_levels)
             clustered_levels = clustering_result.get('clustered_levels', all_levels)
-            
+
             # Separate clustered levels back into support and resistance
             clustered_support = [level for level in clustered_levels if level.get('type', 'support') == 'support']
             clustered_resistance = [level for level in clustered_levels if level.get('type', 'resistance') == 'resistance']
@@ -1167,28 +1167,28 @@ class SRBreakoutPredictor:
                 "support_proximity": support_proximity,
                 "resistance_proximity": resistance_proximity,
                 "pivot_levels": pivot_levels,
-                
+
                 # Support and resistance level collections
                 "support_levels": clustered_support,
                 "resistance_levels": clustered_resistance,
-                
+
                 # Advanced analysis
                 "fibonacci_levels": fibonacci_levels,
                 "elliott_wave_levels": elliott_wave_levels,
                 "order_flow_analysis": order_flow_analysis,
-                
+
                 # Clustering results
                 "clustering_result": clustering_result,
-                
+
                 # Comparison metrics between price and VWAP approaches
                 "comparison_metrics": self._calculate_comparison_metrics(clustered_support, clustered_resistance, current_price),
-                
+
                 # Data source analysis
                 "data_source_analysis": self._analyze_data_sources(clustered_support, clustered_resistance),
-                
+
                 "timestamp": pd.Timestamp.now(),
             }
-            
+
             # Generate detailed report after context is fully defined
             try:
                 context["report_id"] = await self._generate_detailed_report(market_data, context)
@@ -1201,27 +1201,27 @@ class SRBreakoutPredictor:
     def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         Extract comprehensive SR features for ML model training.
-        
+
         This method provides a standardized interface for extracting all SR features
         that should be used in ML model training, ensuring consistency across
         all components (Analyst, Tactician, etc.).
-        
+
         Args:
             market_data: Market data DataFrame
             current_price: Current market price
-            
+
         Returns:
             dict[str, float]: Comprehensive SR features for ML training
         """
         try:
             self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
-            
+
             # Get comprehensive SR context
             sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             # Extract features from SR context
             features = {}
-            
+
             # Basic proximity features
             features.update({
                 "sr_proximity": sr_context.get("support_proximity", 1.0),
@@ -1230,7 +1230,7 @@ class SRBreakoutPredictor:
                 "sr_nearest_support": sr_context.get("nearest_support", current_price),
                 "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
             })
-            
+
             # Strength features
             features.update({
                 "sr_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
@@ -1238,7 +1238,7 @@ class SRBreakoutPredictor:
                 "resistance_strength": sr_context.get("resistance_strength", 0.5),
                 "sr_enhanced_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
             })
-            
+
             # Level count features
             support_levels = sr_context.get("support_levels", [])
             resistance_levels = sr_context.get("resistance_levels", [])
@@ -1247,31 +1247,31 @@ class SRBreakoutPredictor:
                 "sr_total_resistance_levels": len(resistance_levels),
                 "sr_total_levels": len(support_levels) + len(resistance_levels),
             })
-            
+
             # Distance features
             if support_levels:
                 support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
                 features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
             else:
                 features["sr_nearest_support_distance"] = 1.0
-                
+
             if resistance_levels:
                 resistance_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in resistance_levels]
                 features["sr_nearest_resistance_distance"] = min(resistance_distances) if resistance_distances else 1.0
             else:
                 features["sr_nearest_resistance_distance"] = 1.0
-            
+
             # Zone features
             if support_levels and resistance_levels:
                 support_prices = [level.get("price", current_price) for level in support_levels]
                 resistance_prices = [level.get("price", current_price) for level in resistance_levels]
-                
+
                 min_support = min(support_prices) if support_prices else current_price
                 max_resistance = max(resistance_prices) if resistance_prices else current_price
-                
+
                 zone_width = (max_resistance - min_support) / current_price
                 zone_position = (current_price - min_support) / (max_resistance - min_support) if (max_resistance - min_support) > 0 else 0.5
-                
+
                 features.update({
                     "sr_zone_width": zone_width,
                     "sr_zone_position_pct": zone_position,
@@ -1281,7 +1281,7 @@ class SRBreakoutPredictor:
                     "sr_zone_width": 0.1,  # Default zone width
                     "sr_zone_position_pct": 0.5,  # Default position
                 })
-            
+
             # Enhanced strength features
             if support_levels:
                 support_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in support_levels]
@@ -1294,7 +1294,7 @@ class SRBreakoutPredictor:
                     "sr_enhanced_support_strength": 0.5,
                     "sr_support_strength_variance": 0.0,
                 })
-                
+
             if resistance_levels:
                 resistance_strengths = [level.get("enhanced_strength", level.get("strength", 0.5)) for level in resistance_levels]
                 features.update({
@@ -1306,7 +1306,7 @@ class SRBreakoutPredictor:
                     "sr_enhanced_resistance_strength": 0.5,
                     "sr_resistance_strength_variance": 0.0,
                 })
-            
+
             # Clustering features
             clustering_result = sr_context.get("clustering_result", {})
             features.update({
@@ -1314,21 +1314,21 @@ class SRBreakoutPredictor:
                 "sr_noise_points": clustering_result.get("n_noise", 0),
                 "sr_clustering_quality": clustering_result.get("silhouette_score", 0.0),
             })
-            
+
             # Fibonacci features
             fibonacci_levels = sr_context.get("fibonacci_levels", {})
             features.update({
                 "sr_fibonacci_levels": len(fibonacci_levels.get("levels", [])),
                 "sr_fibonacci_proximity": fibonacci_levels.get("nearest_level_proximity", 1.0),
             })
-            
+
             # Elliott Wave features
             elliott_wave_levels = sr_context.get("elliott_wave_levels", {})
             features.update({
                 "sr_elliott_waves": len(elliott_wave_levels.get("wave_levels", [])),
                 "sr_elliott_wave_confidence": elliott_wave_levels.get("confidence", 0.5),
             })
-            
+
             # Order Flow features
             order_flow_analysis = sr_context.get("order_flow_analysis", {})
             features.update({
@@ -1336,7 +1336,7 @@ class SRBreakoutPredictor:
                 "sr_order_flow_hvns": len(order_flow_analysis.get("high_volume_nodes", [])),
                 "sr_order_flow_imbalances": len(order_flow_analysis.get("imbalances", [])),
             })
-            
+
             # Pivot level features
             pivot_levels = sr_context.get("pivot_levels", {})
             features.update({
@@ -1346,14 +1346,14 @@ class SRBreakoutPredictor:
                 "sr_resistance_1_pct": pivot_levels.get("resistance_1", current_price) / current_price,
                 "sr_resistance_2_pct": pivot_levels.get("resistance_2", current_price) / current_price,
             })
-            
+
             # Historical features (if available)
             features.update({
                 "sr_touch_count": np.mean([level.get("touches", 1) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 1,
                 "sr_bounce_rate": np.mean([level.get("bounce_rate", 0.5) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 0.5,
                 "sr_isolation_score": np.mean([level.get("isolation_score", 0.5) for level in support_levels + resistance_levels]) if (support_levels or resistance_levels) else 0.5,
             })
-            
+
             # Momentum and trend features (calculated from market data)
             if len(market_data) >= 20:
                 returns = market_data['close'].pct_change().dropna()
@@ -1368,14 +1368,14 @@ class SRBreakoutPredictor:
                     "sr_volatility_pct": 1.0,
                     "sr_trend_pct": 0.0,
                 })
-            
+
             # Normalized features
             features.update({
                 "sr_distance": min(features.get("sr_nearest_support_distance", 1.0), features.get("sr_nearest_resistance_distance", 1.0)),
                 "normalized_distance": features.get("sr_distance", 1.0) / (features.get("sr_zone_width", 0.1) + 1e-8),
                 "sr_proximity_score": 1.0 - min(features.get("sr_proximity", 1.0), 1.0),
             })
-            
+
             # Strength score features
             features.update({
                 "strength_score": features.get("sr_strength", 0.5),
@@ -1384,13 +1384,13 @@ class SRBreakoutPredictor:
                 "sr_score": features.get("sr_strength", 0.5) * features.get("sr_proximity_score", 0.0),
                 "delta_sr_score": features.get("sr_score", 0.0) - 0.5,  # Deviation from neutral
             })
-            
+
             # Level features
             features.update({
                 "sr_level": features.get("sr_total_levels", 0),
                 "sr_multi_timeframe": features.get("sr_clusters_detected", 0),  # Proxy for multi-timeframe analysis
             })
-            
+
             # Optimization features (default values, will be updated by step02_5)
             features.update({
                 "sr_optimized_method_weights": 0.5,
@@ -1402,10 +1402,10 @@ class SRBreakoutPredictor:
                 "sr_optimized_order_flow_threshold": 0.5,
                 "sr_optimization_score": 0.5,
             })
-            
+
             self.logger.info(f"✅ Extracted {len(features)} SR features for ML training")
             return features
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error extracting SR features for ML training: {e}")
             return self._get_default_sr_features()
@@ -1417,42 +1417,42 @@ class SRBreakoutPredictor:
             "sr_proximity": 1.0, "support_proximity": 1.0, "resistance_proximity": 1.0,
             "sr_nearest_support": 0.0, "sr_nearest_resistance": 0.0, "sr_distance": 1.0,
             "normalized_distance": 1.0, "sr_proximity_score": 0.0,
-            
+
             # Strength features
             "sr_strength": 0.5, "support_strength": 0.5, "resistance_strength": 0.5,
             "sr_enhanced_strength": 0.5, "sr_enhanced_support_strength": 0.5, "sr_enhanced_resistance_strength": 0.5,
             "sr_support_strength_variance": 0.0, "sr_resistance_strength_variance": 0.0,
-            
+
             # Level features
             "sr_total_support_levels": 0, "sr_total_resistance_levels": 0, "sr_total_levels": 0,
             "sr_nearest_support_distance": 1.0, "sr_nearest_resistance_distance": 1.0,
             "sr_level": 0, "sr_multi_timeframe": 0,
-            
+
             # Zone features
             "sr_zone_width": 0.1, "sr_zone_position_pct": 0.5,
-            
+
             # Clustering features
             "sr_clusters_detected": 0, "sr_noise_points": 0, "sr_clustering_quality": 0.0,
-            
+
             # Advanced features
             "sr_fibonacci_levels": 0, "sr_fibonacci_proximity": 1.0,
             "sr_elliott_waves": 0, "sr_elliott_wave_confidence": 0.5,
             "sr_order_flow_poc": 0.0, "sr_order_flow_hvns": 0, "sr_order_flow_imbalances": 0,
-            
+
             # Pivot features
             "sr_pivot_level_pct": 1.0, "sr_support_1_pct": 1.0, "sr_support_2_pct": 1.0,
             "sr_resistance_1_pct": 1.0, "sr_resistance_2_pct": 1.0,
-            
+
             # Historical features
             "sr_touch_count": 1, "sr_bounce_rate": 0.5, "sr_isolation_score": 0.5,
-            
+
             # Momentum features
             "sr_momentum_pct": 0.0, "sr_volatility_pct": 1.0, "sr_trend_pct": 0.0,
-            
+
             # Score features
             "strength_score": 0.5, "clarity_factor": 0.0, "directional_pressure": 0.0,
             "sr_score": 0.0, "delta_sr_score": 0.0,
-            
+
             # Optimization features
             "sr_optimized_method_weights": 0.5, "sr_optimized_strength_weights": 0.5,
             "sr_optimized_dbscan_eps": 0.02, "sr_optimized_dbscan_min_samples": 3,
@@ -1469,7 +1469,7 @@ class SRBreakoutPredictor:
         try:
             # Validate VWAP data availability
             vwap_available = self._validate_vwap_data(market_data)
-            
+
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_support_levels(market_data)
             elif self.sr_detection_method == "volume":
@@ -1491,7 +1491,7 @@ class SRBreakoutPredictor:
         try:
             # Validate VWAP data availability
             vwap_available = self._validate_vwap_data(market_data)
-            
+
             if self.sr_detection_method == "fractal":
                 return await self._detect_fractal_resistance_levels(market_data)
             elif self.sr_detection_method == "volume":
@@ -1512,23 +1512,23 @@ class SRBreakoutPredictor:
         """Detect support levels using fractal analysis with mandatory dual price and VWAP logic."""
         try:
             support_levels = []
-            
+
             # Always detect support levels using price data
             price_support = await self._detect_fractal_support_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_support = await self._detect_fractal_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_support = price_support + vwap_support
             support_levels = self._deduplicate_sr_levels(all_support)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based fractal support levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal support levels")
                 self.logger.info(f"✅ Detected {len(price_support)} price-based fractal support levels")
-            
+
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -1539,7 +1539,7 @@ class SRBreakoutPredictor:
         """Detect support levels using fractal analysis with price data."""
         try:
             support_levels = []
-            
+
             # Find local minima in price data
             low_prices = market_data['low'].rolling(window=5, center=True).min()
 
@@ -1569,7 +1569,7 @@ class SRBreakoutPredictor:
         """Detect support levels using fractal analysis with VWAP data."""
         try:
             support_levels = []
-            
+
             # Find local minima in VWAP data
             vwap_low_prices = market_data['vwap'].rolling(window=5, center=True).min()
 
@@ -1599,23 +1599,23 @@ class SRBreakoutPredictor:
         """Detect resistance levels using fractal analysis with mandatory dual price and VWAP logic."""
         try:
             resistance_levels = []
-            
+
             # Always detect resistance levels using price data
             price_resistance = await self._detect_fractal_resistance_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_resistance = await self._detect_fractal_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_resistance = price_resistance + vwap_resistance
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based fractal resistance levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for fractal resistance levels")
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based fractal resistance levels")
-            
+
             return resistance_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -1626,7 +1626,7 @@ class SRBreakoutPredictor:
         """Detect resistance levels using fractal analysis with price data."""
         try:
             resistance_levels = []
-            
+
             # Find local maxima in price data
             high_prices = market_data['high'].rolling(window=5, center=True).max()
 
@@ -1656,7 +1656,7 @@ class SRBreakoutPredictor:
         """Detect resistance levels using fractal analysis with VWAP data."""
         try:
             resistance_levels = []
-            
+
             # Find local maxima in VWAP data
             vwap_high_prices = market_data['vwap'].rolling(window=5, center=True).max()
 
@@ -1687,18 +1687,18 @@ class SRBreakoutPredictor:
         try:
             if not levels:
                 return []
-            
+
             # Sort levels by price
             sorted_levels = sorted(levels, key=lambda x: x["price"])
             deduplicated = []
-            
+
             for i, level in enumerate(sorted_levels):
                 is_duplicate = False
-                
+
                 # Check if this level is too close to any previously added level
                 for existing_level in deduplicated:
                     price_diff = abs(level["price"] - existing_level["price"]) / existing_level["price"]
-                    
+
                     # If levels are within 0.5% of each other, consider them duplicates
                     if price_diff < 0.005:
                         # Keep the one with higher strength or better data source
@@ -1713,13 +1713,13 @@ class SRBreakoutPredictor:
                                 deduplicated.append(level)
                         is_duplicate = True
                         break
-                
+
                 if not is_duplicate:
                     deduplicated.append(level)
-            
+
             self.logger.info(f"✅ Deduplicated {len(levels)} levels to {len(deduplicated)} unique levels")
             return deduplicated
-            
+
         except Exception as e:
             self.logger.error(f"Error deduplicating SR levels: {e}")
             return levels
@@ -1728,23 +1728,23 @@ class SRBreakoutPredictor:
         """Detect support levels using volume-weighted analysis with mandatory dual price and VWAP logic."""
         try:
             support_levels = []
-            
+
             # Always detect support levels using price data
             price_support = await self._detect_volume_support_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_support = await self._detect_volume_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_support = price_support + vwap_support
             support_levels = self._deduplicate_sr_levels(all_support)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based volume support levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for volume support levels")
                 self.logger.info(f"✅ Detected {len(price_support)} price-based volume support levels")
-            
+
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -1806,23 +1806,23 @@ class SRBreakoutPredictor:
         """Detect resistance levels using volume-weighted analysis with mandatory dual price and VWAP logic."""
         try:
             resistance_levels = []
-            
+
             # Always detect resistance levels using price data
             price_resistance = await self._detect_volume_resistance_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_resistance = await self._detect_volume_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_resistance = price_resistance + vwap_resistance
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based volume resistance levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for volume resistance levels")
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based volume resistance levels")
-            
+
             return resistance_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -1884,23 +1884,23 @@ class SRBreakoutPredictor:
         """Detect support levels using pivot point analysis with mandatory dual price and VWAP logic."""
         try:
             support_levels = []
-            
+
             # Always detect support levels using price data
             price_support = await self._detect_pivot_support_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_support = await self._detect_pivot_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_support = price_support + vwap_support
             support_levels = self._deduplicate_sr_levels(all_support)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based pivot support levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for pivot support levels")
                 self.logger.info(f"✅ Detected {len(price_support)} price-based pivot support levels")
-            
+
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -1967,23 +1967,23 @@ class SRBreakoutPredictor:
         """Detect resistance levels using pivot point analysis with mandatory dual price and VWAP logic."""
         try:
             resistance_levels = []
-            
+
             # Always detect resistance levels using price data
             price_resistance = await self._detect_pivot_resistance_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_resistance = await self._detect_pivot_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_resistance = price_resistance + vwap_resistance
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based pivot resistance levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for pivot resistance levels")
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based pivot resistance levels")
-            
+
             return resistance_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -2050,23 +2050,23 @@ class SRBreakoutPredictor:
         """Detect support levels using ATR-based analysis with mandatory dual price and VWAP logic."""
         try:
             support_levels = []
-            
+
             # Always detect support levels using price data
             price_support = await self._detect_atr_support_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_support = await self._detect_atr_support_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_support = price_support + vwap_support
             support_levels = self._deduplicate_sr_levels(all_support)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_support)} price-based and {len(vwap_support)} VWAP-based ATR support levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for ATR support levels")
                 self.logger.info(f"✅ Detected {len(price_support)} price-based ATR support levels")
-            
+
             return support_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -2139,23 +2139,23 @@ class SRBreakoutPredictor:
         """Detect resistance levels using ATR-based analysis with mandatory dual price and VWAP logic."""
         try:
             resistance_levels = []
-            
+
             # Always detect resistance levels using price data
             price_resistance = await self._detect_atr_resistance_levels_price(market_data)
-            
+
             # Always attempt VWAP detection - if VWAP is not available, this will return empty list
             vwap_resistance = await self._detect_atr_resistance_levels_vwap(market_data) if 'vwap' in market_data.columns else []
-            
+
             # Combine and deduplicate levels
             all_resistance = price_resistance + vwap_resistance
             resistance_levels = self._deduplicate_sr_levels(all_resistance)
-            
+
             if 'vwap' in market_data.columns:
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based and {len(vwap_resistance)} VWAP-based ATR resistance levels")
             else:
                 self.logger.warning("⚠️ VWAP data not available - using price-only detection for ATR resistance levels")
                 self.logger.info(f"✅ Detected {len(price_resistance)} price-based ATR resistance levels")
-            
+
             return resistance_levels[:self.max_sr_levels]
 
         except Exception as e:
@@ -2236,13 +2236,13 @@ class SRBreakoutPredictor:
             high = market_data['high'].max()
             low = market_data['low'].min()
             swing_range = high - low
-            
+
             # Apply optimized sensitivity to filter levels
             sensitivity_threshold = swing_range * (1 - self.fibonacci_sensitivity)
-            
+
             # Calculate Fibonacci levels with sensitivity filtering
             fib_levels = {}
-            
+
             # Standard retracement levels
             retracement_levels = [0, 0.236, 0.382, 0.500, 0.618, 0.786, 1.0]
             for level in retracement_levels:
@@ -2250,17 +2250,17 @@ class SRBreakoutPredictor:
                 # Only include levels that meet sensitivity threshold
                 if abs(fib_price - low) >= sensitivity_threshold or abs(fib_price - high) >= sensitivity_threshold:
                     fib_levels[f'fib_{int(level * 1000)}'] = fib_price
-            
+
             # Extension levels (only if sensitivity allows)
             if self.fibonacci_sensitivity > 0.6:  # Only include extensions for higher sensitivity
                 extension_levels = [1.272, 1.618, 2.618]
                 for level in extension_levels:
                     fib_price = high + (level - 1) * swing_range
                     fib_levels[f'fib_{int(level * 1000)}'] = fib_price
-            
+
             self.logger.info(f"✅ Calculated Fibonacci levels with sensitivity {self.fibonacci_sensitivity}: {len(fib_levels)} levels")
             return fib_levels
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating Fibonacci levels: {e}")
             return {}
@@ -2273,10 +2273,10 @@ class SRBreakoutPredictor:
             prices = market_data['close'].values
             highs = market_data['high'].values
             lows = market_data['low'].values
-            
+
             # Find potential wave points
             wave_points = self._find_elliott_wave_points(prices, highs, lows)
-            
+
             if len(wave_points) >= 5:
                 # Calculate wave levels
                 wave1_high = wave_points[1]['high']
@@ -2285,10 +2285,10 @@ class SRBreakoutPredictor:
                 wave3_target = wave2_retracement + 1.618 * (wave1_high - wave1_low)
                 wave4_retracement = wave_points[4]['low']
                 wave5_target = wave4_retracement + 0.618 * (wave1_high - wave1_low)
-                
+
                 # Calculate confidence based on pattern quality and optimized threshold
                 pattern_confidence = self._calculate_elliott_pattern_confidence(wave_points)
-                
+
                 elliott_levels = {
                     'wave1': {'high': wave1_high, 'low': wave1_low},
                     'wave2_retracement': wave2_retracement,
@@ -2298,7 +2298,7 @@ class SRBreakoutPredictor:
                     'pattern_type': 'impulse',
                     'confidence': pattern_confidence
                 }
-                
+
                 # Only return high-confidence patterns based on optimized threshold
                 if pattern_confidence >= self.elliott_confidence_threshold:
                     self.logger.info(f"✅ Detected Elliott Wave pattern with confidence {pattern_confidence:.3f} (threshold: {self.elliott_confidence_threshold})")
@@ -2309,10 +2309,10 @@ class SRBreakoutPredictor:
                     'pattern_type': 'incomplete',
                     'confidence': 0.3
                 }
-            
+
             self.logger.info(f"✅ Detected Elliott Wave pattern: {elliott_levels.get('pattern_type', 'unknown')}")
             return elliott_levels
-            
+
         except Exception as e:
             self.logger.error(f"Error detecting Elliott Wave levels: {e}")
             return {'pattern_type': 'error', 'confidence': 0.0}
@@ -2320,7 +2320,7 @@ class SRBreakoutPredictor:
     def _find_elliott_wave_points(self, prices: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> list[dict[str, Any]]:
         """Find potential Elliott Wave points in price data."""
         wave_points = []
-        
+
         # Simple peak and trough detection
         for i in range(2, len(prices) - 2):
             # Peak detection
@@ -2339,7 +2339,7 @@ class SRBreakoutPredictor:
                     'high': highs[i],
                     'low': lows[i]
                 })
-        
+
         return wave_points[:10]  # Limit to first 10 points
 
     def _calculate_elliott_pattern_confidence(self, wave_points: list[dict[str, Any]]) -> float:
@@ -2347,10 +2347,10 @@ class SRBreakoutPredictor:
         try:
             if len(wave_points) < 5:
                 return 0.3
-            
+
             # Calculate confidence based on wave relationships
             confidence_factors = []
-            
+
             # Wave 2 should retrace 50-78.6% of wave 1
             wave1_range = wave_points[1]['high'] - wave_points[0]['low']
             wave2_retracement = (wave_points[1]['high'] - wave_points[2]['low']) / wave1_range
@@ -2358,7 +2358,7 @@ class SRBreakoutPredictor:
                 confidence_factors.append(1.0)
             else:
                 confidence_factors.append(0.5)
-            
+
             # Wave 3 should be the longest (1.618x wave 1)
             wave3_range = wave_points[3]['high'] - wave_points[2]['low']
             wave3_ratio = wave3_range / wave1_range
@@ -2366,17 +2366,17 @@ class SRBreakoutPredictor:
                 confidence_factors.append(1.0)
             else:
                 confidence_factors.append(0.7)
-            
+
             # Wave 4 should retrace 23.6-38.2% of wave 3
             wave4_retracement = (wave_points[3]['high'] - wave_points[4]['low']) / wave3_range
             if 0.236 <= wave4_retracement <= 0.382:
                 confidence_factors.append(1.0)
             else:
                 confidence_factors.append(0.6)
-            
+
             # Calculate average confidence
             return np.mean(confidence_factors) if confidence_factors else 0.3
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating Elliott pattern confidence: {e}")
             return 0.3
@@ -2387,20 +2387,20 @@ class SRBreakoutPredictor:
         try:
             # Volume Profile Analysis
             volume_profile = await self._calculate_volume_profile(market_data)
-            
+
             # Point of Control (POC) - price level with highest volume
             poc_level = volume_profile['poc']
-            
+
             # Value Area (70% of volume)
             value_area_high = volume_profile['value_area_high']
             value_area_low = volume_profile['value_area_low']
-            
+
             # High Volume Nodes (HVN) - significant volume levels
             hvn_levels = volume_profile['hvn_levels']
-            
+
             # Order Flow Imbalance
             imbalance_levels = await self._detect_order_imbalances(market_data)
-            
+
             order_flow_analysis = {
                 'poc': poc_level,
                 'value_area': {'high': value_area_high, 'low': value_area_low},
@@ -2410,10 +2410,10 @@ class SRBreakoutPredictor:
                 'total_volume': market_data['volume'].sum(),
                 'avg_volume': market_data['volume'].mean()
             }
-            
+
             self.logger.info(f"✅ Order flow analysis complete: POC at {poc_level:.2f}, {len(hvn_levels)} HVN levels")
             return order_flow_analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing order flow levels: {e}")
             return {}
@@ -2425,33 +2425,33 @@ class SRBreakoutPredictor:
             price_range = market_data['high'].max() - market_data['low'].min()
             num_bins = 50
             bin_size = price_range / num_bins
-            
+
             # Initialize volume profile
             volume_profile = {}
             for i in range(num_bins):
                 price_level = market_data['low'].min() + i * bin_size
                 volume_profile[price_level] = 0
-            
+
             # Calculate volume at each price level
             for idx, row in market_data.iterrows():
                 price = row['close']
                 volume = row['volume']
-                
+
                 # Find the appropriate bin
                 bin_index = int((price - market_data['low'].min()) / bin_size)
                 bin_index = max(0, min(bin_index, num_bins - 1))
                 price_level = market_data['low'].min() + bin_index * bin_size
-                
+
                 volume_profile[price_level] += volume
-            
+
             # Find POC (Point of Control)
             poc_level = max(volume_profile, key=volume_profile.get)
-            
+
             # Calculate Value Area (70% of volume)
             total_volume = sum(volume_profile.values())
             target_volume = total_volume * 0.7
             sorted_levels = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
-            
+
             cumulative_volume = 0
             value_area_levels = []
             for level, volume in sorted_levels:
@@ -2459,10 +2459,10 @@ class SRBreakoutPredictor:
                 value_area_levels.append(level)
                 if cumulative_volume >= target_volume:
                     break
-            
+
             value_area_high = max(value_area_levels)
             value_area_low = min(value_area_levels)
-            
+
             # Find HVN (High Volume Nodes) using optimized threshold
             avg_volume = total_volume / len(volume_profile)
             hvn_levels = [
@@ -2470,10 +2470,10 @@ class SRBreakoutPredictor:
                 for level, volume in volume_profile.items()
                 if volume > avg_volume * self.order_flow_hvn_threshold  # Use optimized threshold
             ]
-            
+
             # Sort HVN by strength
             hvn_levels.sort(key=lambda x: x['strength'], reverse=True)
-            
+
             return {
                 'poc': poc_level,
                 'value_area_high': value_area_high,
@@ -2481,7 +2481,7 @@ class SRBreakoutPredictor:
                 'hvn_levels': hvn_levels[:10],  # Top 10 HVN
                 'volume_nodes': volume_profile
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating volume profile: {e}")
             return {}
@@ -2490,14 +2490,14 @@ class SRBreakoutPredictor:
         """Detect order flow imbalances."""
         try:
             imbalances = []
-            
+
             # Calculate bid/ask imbalance (simplified - using volume as proxy)
             for i in range(1, len(market_data)):
                 current_volume = market_data['volume'].iloc[i]
                 prev_volume = market_data['volume'].iloc[i-1]
                 current_price = market_data['close'].iloc[i]
                 prev_price = market_data['close'].iloc[i-1]
-                
+
                 # Volume spike
                 if current_volume > prev_volume * 2:
                     imbalance = {
@@ -2508,7 +2508,7 @@ class SRBreakoutPredictor:
                         'strength': min(current_volume / prev_volume, 5.0)
                     }
                     imbalances.append(imbalance)
-                
+
                 # Price gap
                 price_change = abs(current_price - prev_price) / prev_price
                 if price_change > 0.01:  # 1% gap
@@ -2520,9 +2520,9 @@ class SRBreakoutPredictor:
                         'strength': min(price_change * 100, 5.0)
                     }
                     imbalances.append(imbalance)
-            
+
             return imbalances
-            
+
         except Exception as e:
             self.logger.error(f"Error detecting order imbalances: {e}")
             return []
@@ -2532,16 +2532,16 @@ class SRBreakoutPredictor:
         """Detect S/R levels that appear across multiple timeframes using optimized weights."""
         try:
             confluence_levels = {}
-            
+
             # Use optimized timeframe weights
             timeframes = list(self.timeframe_weights.keys())
-            
+
             for tf in timeframes:
                 if tf in market_data:
                     # Detect S/R levels for this timeframe
                     tf_support = await self._detect_support_levels(market_data[tf])
                     tf_resistance = await self._detect_resistance_levels(market_data[tf])
-                    
+
                     # Add to confluence analysis
                     for level in tf_support:
                         level_key = f"{level['price']:.2f}"
@@ -2553,7 +2553,7 @@ class SRBreakoutPredictor:
                                 'strength': 0,
                                 'methods': []
                             }
-                        
+
                         confluence_levels[level_key]['timeframes'].append(tf)
                         # Apply timeframe weight to strength calculation
                         tf_weight = self.timeframe_weights.get(tf, 0.1)
@@ -2561,7 +2561,7 @@ class SRBreakoutPredictor:
                         confluence_levels[level_key]['strength'] += weighted_strength
                         if level.get('method') not in confluence_levels[level_key]['methods']:
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
-                    
+
                     for level in tf_resistance:
                         level_key = f"{level['price']:.2f}"
                         if level_key not in confluence_levels:
@@ -2572,7 +2572,7 @@ class SRBreakoutPredictor:
                                 'strength': 0,
                                 'methods': []
                             }
-                        
+
                         confluence_levels[level_key]['timeframes'].append(tf)
                         # Apply timeframe weight to strength calculation
                         tf_weight = self.timeframe_weights.get(tf, 0.1)
@@ -2580,19 +2580,19 @@ class SRBreakoutPredictor:
                         confluence_levels[level_key]['strength'] += weighted_strength
                         if level.get('method') not in confluence_levels[level_key]['methods']:
                             confluence_levels[level_key]['methods'].append(level.get('method', 'unknown'))
-            
+
             # Filter for strong confluence (appears in 3+ timeframes)
             strong_confluence = {
-                k: v for k, v in confluence_levels.items() 
+                k: v for k, v in confluence_levels.items()
                 if len(v['timeframes']) >= 3
             }
-            
+
             # Sort by strength
             strong_confluence = dict(sorted(strong_confluence.items(), key=lambda x: x[1]['strength'], reverse=True))
-            
+
             self.logger.info(f"✅ Multi-timeframe confluence analysis: {len(strong_confluence)} strong confluence levels")
             return strong_confluence
-            
+
         except Exception as e:
             self.logger.error(f"Error detecting multi-timeframe confluence: {e}")
             return {}
@@ -2604,19 +2604,19 @@ class SRBreakoutPredictor:
             # Basic S/R context - use VWAP if available, otherwise fall back to close price
             current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
             basic_context = await self.get_sr_context(market_data, current_price)
-            
+
             # Multi-timeframe confluence (if data provided)
             mtf_confluence = {}
             if multi_timeframe_data:
                 mtf_confluence = await self.detect_multi_timeframe_confluence(multi_timeframe_data)
-            
+
             comprehensive_analysis = {
                 **basic_context,
                 "multi_timeframe_confluence": mtf_confluence,
                 "analysis_timestamp": pd.Timestamp.now(),
                 "analysis_methods": [
                     "fractal_analysis",
-                    "volume_analysis", 
+                    "volume_analysis",
                     "pivot_points",
                     "atr_analysis",
                     "fibonacci_levels",
@@ -2625,10 +2625,10 @@ class SRBreakoutPredictor:
                     "multi_timeframe_confluence"
                 ]
             }
-            
+
             self.logger.info(f"✅ Comprehensive S/R analysis complete with {len(comprehensive_analysis['analysis_methods'])} methods")
             return comprehensive_analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error in comprehensive S/R analysis: {e}")
             return {}
@@ -2666,32 +2666,32 @@ class SRBreakoutPredictor:
         """Calculate touch count for each S/R level."""
         try:
             touch_counts = {}
-            
+
             for level in sr_levels:
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
                 touch_count = 0
-                
+
                 # Look back through market data to count touches
                 lookback_data = market_data.tail(self.touch_count_lookback)
-                
+
                 for i in range(1, len(lookback_data)):
                     high = lookback_data['high'].iloc[i]
                     low = lookback_data['low'].iloc[i]
                     prev_high = lookback_data['high'].iloc[i-1]
                     prev_low = lookback_data['low'].iloc[i-1]
-                    
+
                     # Check if price touched the level (candlestick crossed the level)
                     if (low <= level_price <= high) or (prev_low <= level_price <= prev_high):
                         # Additional check: price actually approached the level
                         if abs(high - level_price) / level_price < 0.01 or abs(low - level_price) / level_price < 0.01:
                             touch_count += 1
-                
+
                 touch_counts[level_id] = touch_count
-            
+
             self.logger.info(f"✅ Calculated touch counts for {len(touch_counts)} S/R levels")
             return touch_counts
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating touch counts: {e}")
             return {}
@@ -2701,31 +2701,31 @@ class SRBreakoutPredictor:
         """Calculate age of each S/R level."""
         try:
             level_ages = {}
-            
+
             for level in sr_levels:
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
                 level_timestamp = level.get('timestamp', market_data.index[-1])
-                
+
                 # Calculate age in periods
                 if isinstance(level_timestamp, pd.Timestamp):
                     age_periods = len(market_data) - market_data.index.get_loc(level_timestamp)
                 else:
                     # If no timestamp, estimate age based on level strength
                     age_periods = int(level.get('strength', 0.5) * 50)  # Estimate 0-50 periods
-                
+
                 # Apply age decay factor
                 age_score = self.age_decay_factor ** age_periods
-                
+
                 level_ages[level_id] = {
                     'age_periods': age_periods,
                     'age_score': age_score,
                     'is_recent': age_periods <= 10
                 }
-            
+
             self.logger.info(f"✅ Calculated age scores for {len(level_ages)} S/R levels")
             return level_ages
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating level ages: {e}")
             return {}
@@ -2735,26 +2735,26 @@ class SRBreakoutPredictor:
         """Calculate bounce rate for each S/R level."""
         try:
             bounce_rates = {}
-            
+
             for level in sr_levels:
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
                 touches = 0
                 bounces = 0
-                
+
                 # Look back through market data to analyze bounces
                 lookback_data = market_data.tail(self.touch_count_lookback)
-                
+
                 for i in range(1, len(lookback_data)):
                     high = lookback_data['high'].iloc[i]
                     low = lookback_data['low'].iloc[i]
                     close = lookback_data['close'].iloc[i]
                     prev_close = lookback_data['close'].iloc[i-1]
-                    
+
                     # Check if price touched the level
                     if low <= level_price <= high:
                         touches += 1
-                        
+
                         # Check if it was a bounce (price moved away from level)
                         if level_price > prev_close:  # Support level
                             # Price bounced up from support
@@ -2764,7 +2764,7 @@ class SRBreakoutPredictor:
                             # Price bounced down from resistance
                             if close < level_price - (level_price * self.bounce_rate_threshold):
                                 bounces += 1
-                
+
                 # Calculate bounce rate - handle untested levels properly
                 if touches == 0:
                     # Level hasn't been tested yet - give neutral score
@@ -2775,7 +2775,7 @@ class SRBreakoutPredictor:
                     bounce_rate = bounces / touches
                     bounce_strength = bounce_rate * 2  # Scale to 0-2 range
                     is_untested = False
-                
+
                 bounce_rates[level_id] = {
                     'bounce_rate': bounce_rate,
                     'touches': touches,
@@ -2783,10 +2783,10 @@ class SRBreakoutPredictor:
                     'bounce_strength': bounce_strength,
                     'is_untested': is_untested
                 }
-            
+
             self.logger.info(f"✅ Calculated bounce rates for {len(bounce_rates)} S/R levels")
             return bounce_rates
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating bounce rates: {e}")
             return {}
@@ -2796,34 +2796,34 @@ class SRBreakoutPredictor:
         """Calculate isolation score for each S/R level."""
         try:
             isolation_scores = {}
-            
+
             for i, level in enumerate(sr_levels):
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
-                
+
                 # Calculate distance to nearest other level
                 min_distance = float('inf')
                 for j, other_level in enumerate(sr_levels):
                     if i != j:
                         distance = abs(level_price - other_level['price']) / level_price
                         min_distance = min(min_distance, distance)
-                
+
                 # Calculate isolation score (higher = more isolated)
                 if min_distance == float('inf'):
                     isolation_score = 1.0  # Only level
                 else:
                     # Normalize to 0-1 range, higher distance = higher isolation
                     isolation_score = min(1.0, min_distance / self.isolation_distance_threshold)
-                
+
                 isolation_scores[level_id] = {
                     'isolation_score': isolation_score,
                     'nearest_distance': min_distance if min_distance != float('inf') else 0.0,
                     'is_isolated': isolation_score > 0.7
                 }
-            
+
             self.logger.info(f"✅ Calculated isolation scores for {len(isolation_scores)} S/R levels")
             return isolation_scores
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating isolation scores: {e}")
             return {}
@@ -2841,7 +2841,7 @@ class SRBreakoutPredictor:
                     'total_points': len(sr_levels),
                     'clustered_levels': sr_levels
                 }
-            
+
             if not self.enable_dbscan_clustering or len(sr_levels) < 3:
                 return {
                     'clusters': {},
@@ -2850,38 +2850,38 @@ class SRBreakoutPredictor:
                     'total_points': len(sr_levels),
                     'clustered_levels': sr_levels
                 }
-            
+
             # Extract prices for clustering
             prices = np.array([level['price'] for level in sr_levels])
-            
+
             # Normalize prices for clustering (use percentage of price)
             price_mean = np.mean(prices)
             normalized_prices = (prices - price_mean) / price_mean
-            
+
             # Apply DBSCAN clustering
             clustering = DBSCAN(
-                eps=self.dbscan_eps, 
+                eps=self.dbscan_eps,
                 min_samples=self.dbscan_min_samples
             ).fit(normalized_prices.reshape(-1, 1))
-            
+
             # Process clustering results
             cluster_labels = clustering.labels_
             n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
             noise_points = np.sum(cluster_labels == -1)
-            
+
             # Group levels by cluster
             clustered_levels = {}
             significant_levels = []
-            
+
             for i, level in enumerate(sr_levels):
                 cluster_id = cluster_labels[i]
-                
+
                 if cluster_id == -1:
                     # Noise points (weak levels) - filter out if enabled
                     if not self.dbscan_enable_noise_filtering:
                         significant_levels.append(level)
                     continue
-                    
+
                 if cluster_id not in clustered_levels:
                     clustered_levels[cluster_id] = {
                         'levels': [],
@@ -2890,26 +2890,26 @@ class SRBreakoutPredictor:
                         'cluster_volume': 0.0,
                         'touch_count': 0
                     }
-                
+
                 clustered_levels[cluster_id]['levels'].append(level)
                 significant_levels.append(level)
-            
+
             # Calculate cluster statistics
             for cluster_id, cluster_data in clustered_levels.items():
                 levels = cluster_data['levels']
-                
+
                 # Calculate cluster center (weighted average by strength)
                 total_strength = sum(level.get('strength', 0.5) for level in levels)
                 if total_strength > 0:
                     cluster_price = sum(level['price'] * level.get('strength', 0.5) for level in levels) / total_strength
                 else:
                     cluster_price = np.mean([level['price'] for level in levels])
-                
+
                 # Aggregate cluster metrics
                 cluster_strength = sum(level.get('strength', 0.5) for level in levels) / len(levels)
                 cluster_volume = sum(level.get('volume', 0) for level in levels)
                 touch_count = sum(level.get('touch_count', 1) for level in levels)
-                
+
                 clustered_levels[cluster_id].update({
                     'cluster_price': cluster_price,
                     'cluster_strength': cluster_strength,
@@ -2917,7 +2917,7 @@ class SRBreakoutPredictor:
                     'touch_count': touch_count,
                     'level_count': len(levels)
                 })
-            
+
             self.logger.info(f"✅ DBSCAN clustering: {n_clusters} clusters, {noise_points} noise points filtered")
             return {
                 'clusters': clustered_levels,
@@ -2926,7 +2926,7 @@ class SRBreakoutPredictor:
                 'total_points': len(sr_levels),
                 'clustered_levels': significant_levels
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error in DBSCAN clustering: {e}")
             return {
@@ -2944,53 +2944,53 @@ class SRBreakoutPredictor:
             if not self.enable_enhanced_strength:
                 # Return basic strength calculation
                 return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
-            
+
             # Calculate all strength factors
             touch_counts = await self.calculate_touch_count(market_data, sr_levels)
             level_ages = await self.calculate_level_age(market_data, sr_levels)
             bounce_rates = await self.calculate_bounce_rate(market_data, sr_levels)
             isolation_scores = await self.calculate_isolation_score(sr_levels)
-            
+
             comprehensive_strengths = {}
-            
+
             for level in sr_levels:
                 level_price = level['price']
                 level_id = f"{level_price:.4f}"
-                
+
                 # Get base strength
                 base_strength = level.get('strength', 0.5)
-                
+
                 # Get factor scores with proper error handling
                 try:
                     touch_count_data = touch_counts.get(level_id, {})
                     if not isinstance(touch_count_data, dict):
                         touch_count_data = {'touch_count': 1}
-                    
+
                     age_data = level_ages.get(level_id, {})
                     if not isinstance(age_data, dict):
                         age_data = {'age_score': 0.5}
-                    
+
                     bounce_data = bounce_rates.get(level_id, {})
                     if not isinstance(bounce_data, dict):
                         bounce_data = {'bounce_strength': 0.5, 'is_untested': False}
-                    
+
                     isolation_data = isolation_scores.get(level_id, {})
                     if not isinstance(isolation_data, dict):
                         isolation_data = {'isolation_score': 0.5}
-                    
+
                     # Calculate factor scores (normalize to 0-1 range)
                     touch_factor = min(1.0, touch_count_data.get('touch_count', 1) / 10.0)  # Max 10 touches
                     age_factor = age_data.get('age_score', 0.5)
-                    
+
                     # Handle untested levels properly for bounce factor
                     if bounce_data.get('is_untested', False):
                         bounce_factor = 0.5  # Neutral score for untested levels
                     else:
                         bounce_factor = min(1.0, bounce_data.get('bounce_strength', 0.5) / 2.0)  # Max 2.0 strength
-                    
+
                     isolation_factor = isolation_data.get('isolation_score', 0.5)
                     volume_factor = min(1.0, level.get('volume', 0) / market_data['volume'].mean() if market_data['volume'].mean() > 0 else 0.5)
-                    
+
                     # Apply weights from configuration
                     weights = self.strength_score_weights
                     comprehensive_strength = (
@@ -3001,10 +3001,10 @@ class SRBreakoutPredictor:
                         bounce_factor * weights.get('bounce_rate', 0.2) +
                         isolation_factor * weights.get('isolation_score', 0.1)
                     )
-                    
+
                     # Ensure strength is in 0-1 range
                     comprehensive_strength = min(1.0, max(0.0, comprehensive_strength))
-                    
+
                     comprehensive_strengths[level_id] = {
                         'comprehensive_strength': comprehensive_strength,
                         'base_strength': base_strength,
@@ -3040,10 +3040,10 @@ class SRBreakoutPredictor:
                             'is_untested': True
                         }
                     }
-            
+
             self.logger.info(f"✅ Calculated comprehensive strength for {len(comprehensive_strengths)} S/R levels")
             return comprehensive_strengths
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating comprehensive strength: {e}")
             return {f"{level['price']:.4f}": level.get('strength', 0.5) for level in sr_levels}
@@ -3121,7 +3121,7 @@ class SRBreakoutPredictor:
             # Calculate proximity to nearest support and resistance
             # Use VWAP if available, otherwise fall back to close price
             current_price = market_data['vwap'].iloc[-1] if 'vwap' in market_data.columns else market_data['close'].iloc[-1]
-            
+
             if support_levels:
                 nearest_support = min(support_levels, key=lambda x: abs(x["price"] - current_price))
                 features["support_proximity"] = abs(nearest_support["price"] - current_price) / current_price
@@ -3171,14 +3171,14 @@ class SRBreakoutPredictor:
                 # Calculate distance score (closer is better)
                 distance = abs(current_price - level["price"]) / current_price
                 distance_score = 1.0 / (1.0 + distance)  # Convert to 0-1 score, higher is better
-                
+
                 # Get strength score (use enhanced strength if available)
                 strength = level.get("enhanced_strength", level.get("strength", 0.5))
-                
+
                 # Combine distance and strength (weighted average)
                 # Distance gets 60% weight, strength gets 40% weight
                 combined_score = (distance_score * 0.6) + (strength * 0.4)
-                
+
                 if combined_score > best_score:
                     best_score = combined_score
                     nearest_level = level
@@ -3224,12 +3224,12 @@ class SRBreakoutPredictor:
                     high = market_data['high'].iloc[0]
                 else:
                     high = 100.0
-                
+
                 if 'low' in market_data.columns and len(market_data) > 0:
                     low = market_data['low'].iloc[0]
                 else:
                     low = 100.0
-                
+
                 if 'close' in market_data.columns and len(market_data) > 0:
                     close = market_data['close'].iloc[0]
                 else:
@@ -3764,28 +3764,28 @@ class SRBreakoutPredictor:
         try:
             features = {}
             current_price = market_data['close'].iloc[-1]
-            
+
             # Get comprehensive S/R context
             sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             # Extract base outcome features
             base_features = await self._extract_outcome_features(market_data, current_price, sr_context)
-            
+
             # Generate all required SR features based on sr_base_tokens
             features.update(await self._generate_comprehensive_sr_features(market_data, sr_context, base_features))
-            
+
             # Calculate features for different lookback periods
             for lookback in [20, 50, 100]:
                 if len(market_data) >= lookback:
                     lookback_data = market_data.tail(lookback)
                     lookback_price = lookback_data['close'].iloc[-1]
-                    
+
                     # Get S/R context for this lookback
                     lookback_sr_context = await self.get_sr_context(lookback_data, lookback_price)
-                    
+
                     # Extract features with lookback suffix
                     lookback_features = await self._extract_outcome_features(lookback_data, lookback_price, lookback_sr_context)
-                    
+
                     # Add to features with lookback suffix
                     for feature_name, feature_value in lookback_features.items():
                         features[f"{feature_name}_{lookback}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
@@ -3807,28 +3807,28 @@ class SRBreakoutPredictor:
         try:
             features = {}
             current_price = market_data['close'].iloc[-1]
-            
+
             # 1. Distance-based features
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
-            
+
             # Calculate distances as percentages/returns
             support_distance_pct = (current_price - nearest_support) / current_price if current_price > 0 else 0.0
             resistance_distance_pct = (nearest_resistance - current_price) / current_price if current_price > 0 else 0.0
-            
+
             features["sr_distance"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
             features["support_level"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
             features["resistance_level"] = pd.Series([resistance_distance_pct] * len(market_data), index=market_data.index)  # Distance as percentage
-            
+
             # 2. Proximity features (as percentages)
             features["proximity"] = pd.Series([min(support_distance_pct, resistance_distance_pct)] * len(market_data), index=market_data.index)
             features["sr_proximity"] = pd.Series([support_distance_pct] * len(market_data), index=market_data.index)
             features["sr_proximity_score"] = pd.Series([1.0 / (1.0 + support_distance_pct)] * len(market_data), index=market_data.index)
-            
+
             # 3. Multi-timeframe SR score
             features["multi_timeframe_sr_score"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
             features["sr_multi_timeframe"] = pd.Series([self._calculate_multi_timeframe_sr_score(market_data)] * len(market_data), index=market_data.index)
-            
+
             # 4. Normalized distance (as percentage)
             if nearest_resistance > nearest_support and current_price > 0:
                 zone_width_pct = (nearest_resistance - nearest_support) / current_price
@@ -3836,42 +3836,42 @@ class SRBreakoutPredictor:
             else:
                 normalized_distance_pct = 0.5
             features["normalized_distance"] = pd.Series([normalized_distance_pct] * len(market_data), index=market_data.index)
-            
+
             # 5. Strength features
             features["strength_score"] = pd.Series([(sr_context.get("support_strength", 0.5) + sr_context.get("resistance_strength", 0.5)) / 2] * len(market_data), index=market_data.index)
             features["support_strength"] = pd.Series([sr_context.get("support_strength", 0.5)] * len(market_data), index=market_data.index)
             features["resistance_strength"] = pd.Series([sr_context.get("resistance_strength", 0.5)] * len(market_data), index=market_data.index)
-            
+
             # 6. Clarity factor
             features["clarity_factor"] = pd.Series([self._calculate_clarity_factor(sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 7. Directional pressure
             features["directional_pressure"] = pd.Series([self._calculate_directional_pressure(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 8. SR score
             features["sr_score"] = pd.Series([self._calculate_sr_score(sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 9. Delta SR score
             features["delta_sr_score"] = pd.Series([self._calculate_delta_sr_score(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 10. Isolation score
             features["isolation_score"] = pd.Series([self._calculate_isolation_score(sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 11. SR level
             features["sr_level"] = pd.Series([self._determine_sr_level(current_price, sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 12. SR outcome
             features["sr_outcome"] = pd.Series([self._predict_sr_outcome(market_data, sr_context)] * len(market_data), index=market_data.index)
-            
+
             # 13. Zone width
             features["sr_zone_width"] = pd.Series([sr_context.get("sr_zone_width", 0.0)] * len(market_data), index=market_data.index)
-            
+
             # 14. Add base features
             for feature_name, feature_value in base_features.items():
                 features[f"sr_{feature_name}"] = pd.Series([feature_value] * len(market_data), index=market_data.index)
-            
+
             return features
-            
+
         except Exception as e:
             self.logger.error(f"Error generating comprehensive SR features: {e}")
             return {}
@@ -3882,7 +3882,7 @@ class SRBreakoutPredictor:
             # Calculate SR strength across different timeframes
             timeframes = [20, 50, 100]
             scores = []
-            
+
             for tf in timeframes:
                 if len(market_data) >= tf:
                     tf_data = market_data.tail(tf)
@@ -3890,9 +3890,9 @@ class SRBreakoutPredictor:
                     high_low_ratio = tf_data['high'].max() / tf_data['low'].min()
                     volume_weight = tf_data['volume'].mean() / market_data['volume'].mean()
                     scores.append(high_low_ratio * volume_weight)
-            
+
             return np.mean(scores) if scores else 1.0
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating multi-timeframe SR score: {e}")
             return 1.0
@@ -3903,14 +3903,14 @@ class SRBreakoutPredictor:
             support_strength = sr_context.get("support_strength", 0.5)
             resistance_strength = sr_context.get("resistance_strength", 0.5)
             zone_width = sr_context.get("sr_zone_width", 0.0)
-            
+
             # Clarity increases with strength and decreases with zone width
             clarity = (support_strength + resistance_strength) / 2
             if zone_width > 0:
                 clarity *= (1.0 - min(zone_width, 0.5))
-            
+
             return max(0.0, min(1.0, clarity))
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating clarity factor: {e}")
             return 0.5
@@ -3921,7 +3921,7 @@ class SRBreakoutPredictor:
             current_price = market_data['close'].iloc[-1]
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
-            
+
             # Calculate pressure based on distance and momentum (using percentages)
             if current_price > 0:
                 support_distance_pct = (current_price - nearest_support) / current_price
@@ -3929,18 +3929,18 @@ class SRBreakoutPredictor:
             else:
                 support_distance_pct = 1.0
                 resistance_distance_pct = 1.0
-            
+
             # Add momentum component (as percentage)
             momentum = market_data['close'].pct_change().iloc[-5:].mean()
-            
+
             # Pressure towards support if price is falling, towards resistance if rising
             if momentum < 0:
                 pressure = 1.0 / (1.0 + support_distance_pct)
             else:
                 pressure = 1.0 / (1.0 + resistance_distance_pct)
-            
+
             return max(0.0, min(1.0, pressure))
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating directional pressure: {e}")
             return 0.5
@@ -3952,13 +3952,13 @@ class SRBreakoutPredictor:
             resistance_strength = sr_context.get("resistance_strength", 0.5)
             support_proximity = sr_context.get("support_proximity", 1.0)
             resistance_proximity = sr_context.get("resistance_proximity", 1.0)
-            
+
             # Combine strength and proximity (proximity is already in percentage form)
             support_score = support_strength * (1.0 / (1.0 + support_proximity))
             resistance_score = resistance_strength * (1.0 / (1.0 + resistance_proximity))
-            
+
             return (support_score + resistance_score) / 2
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating SR score: {e}")
             return 0.5
@@ -3968,15 +3968,15 @@ class SRBreakoutPredictor:
         try:
             if len(market_data) < 20:
                 return 0.0
-            
+
             # Calculate SR score for current and previous periods
             current_price = market_data['close'].iloc[-1]
             prev_price = market_data['close'].iloc[-20]
-            
+
             # Simplified delta calculation
             price_change = (current_price - prev_price) / prev_price
             return price_change
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating delta SR score: {e}")
             return 0.0
@@ -3987,18 +3987,18 @@ class SRBreakoutPredictor:
             # Use isolation data from enhanced strength calculation
             support_levels = sr_context.get("support_levels", [])
             resistance_levels = sr_context.get("resistance_levels", [])
-            
+
             if not support_levels and not resistance_levels:
                 return 0.5
-            
+
             # Calculate average isolation score
             isolation_scores = []
             for level in support_levels + resistance_levels:
                 if "strength_factors" in level and "isolation_score" in level["strength_factors"]:
                     isolation_scores.append(level["strength_factors"]["isolation_score"])
-            
+
             return np.mean(isolation_scores) if isolation_scores else 0.5
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating isolation score: {e}")
             return 0.5
@@ -4008,7 +4008,7 @@ class SRBreakoutPredictor:
         try:
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
-            
+
             if nearest_resistance > nearest_support and current_price > 0:
                 # Calculate position as percentage within the SR zone
                 support_distance_pct = (current_price - nearest_support) / current_price
@@ -4016,7 +4016,7 @@ class SRBreakoutPredictor:
                 return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
             else:
                 return 0.5
-                
+
         except Exception as e:
             self.logger.error(f"Error determining SR level: {e}")
             return 0.5
@@ -4027,7 +4027,7 @@ class SRBreakoutPredictor:
             current_price = market_data['close'].iloc[-1]
             nearest_support = sr_context.get("nearest_support", current_price)
             nearest_resistance = sr_context.get("nearest_resistance", current_price)
-            
+
             # Calculate outcome as percentage position within SR zone
             if nearest_resistance > nearest_support and current_price > 0:
                 support_distance_pct = (current_price - nearest_support) / current_price
@@ -4035,7 +4035,7 @@ class SRBreakoutPredictor:
                 return support_distance_pct / zone_width_pct if zone_width_pct > 0 else 0.5
             else:
                 return 0.5
-                
+
         except Exception as e:
             self.logger.error(f"Error predicting SR outcome: {e}")
             return 0.5
@@ -4087,7 +4087,7 @@ class SRBreakoutPredictor:
                 weight_key = f"tf_{tf}_weight"
                 if weight_key in weights:
                     timeframe_weights[tf] = weights[weight_key]
-            
+
             if timeframe_weights:
                 self.timeframe_weights.update(timeframe_weights)
 
@@ -4126,16 +4126,16 @@ class SRBreakoutPredictor:
         """
         try:
             current_price = market_data['close'].iloc[-1]
-            
+
             # Get S/R context
             sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             # Predict outcome
             outcome = await self.predict_sr_outcome(market_data, current_price, sr_context)
-            
+
             if not outcome:
                 return None
-            
+
             # Determine direction based on outcome
             direction = "none"
             if outcome.get("outcome") == "breakout":
@@ -4144,7 +4144,7 @@ class SRBreakoutPredictor:
                     direction = "up"  # Breaking resistance
                 else:
                     direction = "down"  # Breaking support
-            
+
             return {
                 "direction": direction,
                 "confidence": outcome.get("confidence", 0.5),
@@ -4192,15 +4192,15 @@ class SRBreakoutPredictor:
                 "level_quality": {},
                 "recommendations": {}
             }
-            
+
             # Analyze support levels by data source
             price_support = [level for level in support_levels if level.get("data_source") == "price"]
             vwap_support = [level for level in support_levels if level.get("data_source") == "vwap"]
-            
+
             # Analyze resistance levels by data source
             price_resistance = [level for level in resistance_levels if level.get("data_source") == "price"]
             vwap_resistance = [level for level in resistance_levels if level.get("data_source") == "vwap"]
-            
+
             # Price vs VWAP comparison
             comparison["price_vs_vwap"] = {
                 "support_levels": {
@@ -4220,7 +4220,7 @@ class SRBreakoutPredictor:
                     "vwap_avg_confidence": np.mean([level.get("confidence", 0) for level in price_resistance]) if price_resistance else 0,
                 }
             }
-            
+
             # Detection efficiency
             total_levels = len(support_levels) + len(resistance_levels)
             comparison["detection_efficiency"] = {
@@ -4229,19 +4229,19 @@ class SRBreakoutPredictor:
                 "vwap_detection_rate": (len(vwap_support) + len(vwap_resistance)) / total_levels if total_levels > 0 else 0,
                 "overlap_rate": self._calculate_overlap_rate(price_support + price_resistance, vwap_support + vwap_resistance)
             }
-            
+
             # Level quality analysis
             comparison["level_quality"] = {
                 "price_quality_score": self._calculate_quality_score(price_support + price_resistance),
                 "vwap_quality_score": self._calculate_quality_score(vwap_support + vwap_resistance),
                 "best_approach": "vwap" if comparison["level_quality"]["vwap_quality_score"] > comparison["level_quality"]["price_quality_score"] else "price"
             }
-            
+
             # Recommendations
             comparison["recommendations"] = self._generate_comparison_recommendations(comparison)
-            
+
             return comparison
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating comparison metrics: {e}")
             return {}
@@ -4254,13 +4254,13 @@ class SRBreakoutPredictor:
                 "source_characteristics": {},
                 "method_effectiveness": {}
             }
-            
+
             all_levels = support_levels + resistance_levels
-            
+
             # Data source distribution
             price_levels = [level for level in all_levels if level.get("data_source") == "price"]
             vwap_levels = [level for level in all_levels if level.get("data_source") == "vwap"]
-            
+
             analysis["data_source_distribution"] = {
                 "total_levels": len(all_levels),
                 "price_levels": len(price_levels),
@@ -4268,7 +4268,7 @@ class SRBreakoutPredictor:
                 "price_percentage": len(price_levels) / len(all_levels) if all_levels else 0,
                 "vwap_percentage": len(vwap_levels) / len(all_levels) if all_levels else 0
             }
-            
+
             # Source characteristics
             analysis["source_characteristics"] = {
                 "price": {
@@ -4282,12 +4282,12 @@ class SRBreakoutPredictor:
                     "methods": list(set([level.get("method", "") for level in vwap_levels]))
                 }
             }
-            
+
             # Method effectiveness
             analysis["method_effectiveness"] = self._analyze_method_effectiveness(all_levels)
-            
+
             return analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing data sources: {e}")
             return {}
@@ -4297,18 +4297,18 @@ class SRBreakoutPredictor:
         try:
             if not price_levels or not vwap_levels:
                 return 0.0
-            
+
             overlap_count = 0
             total_comparisons = len(price_levels) * len(vwap_levels)
-            
+
             for price_level in price_levels:
                 for vwap_level in vwap_levels:
                     price_diff = abs(price_level["price"] - vwap_level["price"]) / price_level["price"]
                     if price_diff < 0.01:  # Within 1%
                         overlap_count += 1
-            
+
             return overlap_count / total_comparisons if total_comparisons > 0 else 0.0
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating overlap rate: {e}")
             return 0.0
@@ -4318,7 +4318,7 @@ class SRBreakoutPredictor:
         try:
             if not levels:
                 return 0.0
-            
+
             # Weighted average of strength and confidence
             total_score = 0.0
             for level in levels:
@@ -4327,9 +4327,9 @@ class SRBreakoutPredictor:
                 # Weight: 70% strength, 30% confidence
                 level_score = (strength * 0.7) + (confidence * 0.3)
                 total_score += level_score
-            
+
             return total_score / len(levels)
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating quality score: {e}")
             return 0.0
@@ -4338,11 +4338,11 @@ class SRBreakoutPredictor:
         """Analyze the effectiveness of different detection methods."""
         try:
             method_stats = {}
-            
+
             for level in levels:
                 method = level.get("method", "unknown")
                 data_source = level.get("data_source", "unknown")
-                
+
                 if method not in method_stats:
                     method_stats[method] = {
                         "count": 0,
@@ -4350,20 +4350,20 @@ class SRBreakoutPredictor:
                         "total_confidence": 0.0,
                         "data_sources": {"price": 0, "vwap": 0}
                     }
-                
+
                 method_stats[method]["count"] += 1
                 method_stats[method]["total_strength"] += level.get("strength", 0)
                 method_stats[method]["total_confidence"] += level.get("confidence", 0)
                 method_stats[method]["data_sources"][data_source] += 1
-            
+
             # Calculate averages
             for method in method_stats:
                 count = method_stats[method]["count"]
                 method_stats[method]["avg_strength"] = method_stats[method]["total_strength"] / count
                 method_stats[method]["avg_confidence"] = method_stats[method]["total_confidence"] / count
-            
+
             return method_stats
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing method effectiveness: {e}")
             return {}
@@ -4377,11 +4377,11 @@ class SRBreakoutPredictor:
                 "rationale": "",
                 "optimization_suggestions": []
             }
-            
+
             # Determine primary approach
             vwap_quality = comparison["level_quality"]["vwap_quality_score"]
             price_quality = comparison["level_quality"]["price_quality_score"]
-            
+
             if vwap_quality > price_quality:
                 recommendations["primary_approach"] = "vwap"
                 recommendations["secondary_approach"] = "price"
@@ -4390,22 +4390,22 @@ class SRBreakoutPredictor:
                 recommendations["primary_approach"] = "price"
                 recommendations["secondary_approach"] = "vwap"
                 recommendations["rationale"] = f"Price approach shows better quality (score: {price_quality:.3f} vs VWAP: {vwap_quality:.3f})"
-            
+
             # Optimization suggestions
             if comparison["detection_efficiency"]["overlap_rate"] < 0.3:
                 recommendations["optimization_suggestions"].append("Low overlap between approaches - consider adjusting detection parameters")
-            
+
             if abs(vwap_quality - price_quality) < 0.1:
                 recommendations["optimization_suggestions"].append("Similar performance - both approaches are viable")
-            
+
             if comparison["detection_efficiency"]["vwap_detection_rate"] < 0.2:
                 recommendations["optimization_suggestions"].append("Low VWAP detection rate - check VWAP calculation and parameters")
-            
+
             if comparison["detection_efficiency"]["price_detection_rate"] < 0.2:
                 recommendations["optimization_suggestions"].append("Low price detection rate - check price-based detection parameters")
-            
+
             return recommendations
-            
+
         except Exception as e:
             self.logger.error(f"Error generating comparison recommendations: {e}")
             return {}
@@ -4416,24 +4416,24 @@ class SRBreakoutPredictor:
             if 'vwap' not in market_data.columns:
                 self.logger.warning("⚠️ VWAP column not found in market data")
                 return False
-            
+
             if market_data['vwap'].isnull().all():
                 self.logger.warning("⚠️ VWAP column contains only null values")
                 return False
-            
+
             if len(market_data['vwap'].dropna()) < 20:
                 self.logger.warning("⚠️ Insufficient VWAP data (less than 20 non-null values)")
                 return False
-            
+
             # Check for reasonable VWAP values
             vwap_values = market_data['vwap'].dropna()
             if vwap_values.min() <= 0:
                 self.logger.warning("⚠️ VWAP contains non-positive values")
                 return False
-            
+
             self.logger.info(f"✅ VWAP data validated: {len(vwap_values)} valid values")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error validating VWAP data: {e}")
             return False
@@ -4442,15 +4442,15 @@ class SRBreakoutPredictor:
         """Generate a summary of detection results for both price and VWAP approaches."""
         try:
             total_levels = len(price_levels) + len(vwap_levels)
-            
+
             if total_levels == 0:
                 return f"❌ No {level_type} levels detected using {method_name} method"
-            
+
             if len(vwap_levels) == 0:
                 return f"⚠️ {method_name} {level_type}: {len(price_levels)} price-based levels (VWAP not available)"
-            
+
             return f"✅ {method_name} {level_type}: {len(price_levels)} price-based + {len(vwap_levels)} VWAP-based = {total_levels} total levels"
-            
+
         except Exception as e:
             self.logger.error(f"Error generating detection summary: {e}")
             return f"Error generating {method_name} {level_type} summary"
@@ -4473,7 +4473,7 @@ async def setup_sr_breakout_predictor(
         sr_config = config.copy() if config else {}
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        
+
         predictor = SRBreakoutPredictor(sr_config)
         if await predictor.initialize():
             return predictor
@@ -4486,10 +4486,10 @@ async def setup_sr_breakout_predictor(
 def ensure_optimized_sr_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     Ensure that the configuration has optimized S/R parameters enabled.
-    
+
     Args:
         config: Original configuration dictionary
-        
+
     Returns:
         dict: Configuration with optimized S/R parameters enabled
     """

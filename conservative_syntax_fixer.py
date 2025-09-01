@@ -22,31 +22,31 @@ logger = logging.getLogger(__name__)
 
 class ConservativeSyntaxFixer:
     """Conservative syntax fixer that only applies safe fixes."""
-    
+
     def __init__(self):
         self.fixes_applied = 0
         self.files_processed = 0
         self.files_fixed = 0
-        
+
     def fix_file(self, file_path: str) -> bool:
         """Fix syntax errors in a single file using conservative approach."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             original_content = content
             fixes_in_file = 0
-            
+
             # Apply only the safest fixes
             content, fixes = self._fix_simple_import_errors(content)
             fixes_in_file += fixes
-            
+
             content, fixes = self._fix_simple_function_calls(content)
             fixes_in_file += fixes
-            
+
             content, fixes = self._fix_simple_indentation(content)
             fixes_in_file += fixes
-            
+
             # Write back if changes were made
             if content != original_content:
                 with open(file_path, 'w', encoding='utf-8') as f:
@@ -57,28 +57,28 @@ class ConservativeSyntaxFixer:
                 return True
             else:
                 return False
-                
+
         except Exception as e:
             logger.error(f"❌ Error processing {file_path}: {e}")
             return False
-    
+
     def _fix_simple_import_errors(self, content: str) -> Tuple[str, int]:
         """Fix only the most obvious import statement errors."""
         fixes = 0
-        
+
         # Fix the specific import error we found
         if 'from pathlib import Path
 import glob' in content:
             content = content.replace('from pathlib import Path
 import glob', 'from pathlib import Path\nimport glob')
             fixes += 1
-        
+
         return content, fixes
-    
+
     def _fix_simple_function_calls(self, content: str) -> Tuple[str, int]:
         """Fix only the most obvious function call syntax errors."""
         fixes = 0
-        
+
         # Fix logging.basicConfig calls with syntax errors
         content = re.sub(
             r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"([^"]*)"\s*\)',
@@ -86,7 +86,7 @@ import glob', 'from pathlib import Path\nimport glob')
             content
         )
         fixes += len(re.findall(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"', content))
-        
+
         # Fix max() function calls with syntax errors
         content = re.sub(
             r'max\(([^,]+),\s*key\s*=\s*([^)]+)\)',
@@ -94,7 +94,7 @@ import glob', 'from pathlib import Path\nimport glob')
             content
         )
         fixes += len(re.findall(r'max\([^,]+,\s*key\s*=\s*[^)]+\)', content))
-        
+
         # Fix to_parquet calls with syntax errors
         content = re.sub(
             r'\.to_parquet\(([^,]+),\s*index\s*=\s*False\)',
@@ -102,46 +102,46 @@ import glob', 'from pathlib import Path\nimport glob')
             content
         )
         fixes += len(re.findall(r'\.to_parquet\([^,]+,\s*index\s*=\s*False\)', content))
-        
+
         return content, fixes
-    
+
     def _fix_simple_indentation(self, content: str) -> Tuple[str, int]:
         """Fix only the most obvious indentation issues."""
         fixes = 0
         lines = content.split('\n')
         fixed_lines = []
-        
+
         for line in lines:
             # Only fix obvious tab-to-space conversions
             if line.startswith('\t') and not line.startswith('    '):
                 line = '    ' + line[1:]
                 fixes += 1
-            
+
             fixed_lines.append(line)
-        
+
         return '\n'.join(fixed_lines), fixes
-    
+
     def scan_and_fix_directory(self, directory: str) -> dict:
         """Scan and fix all Python files in a directory."""
         logger.info(f"🔍 Scanning directory: {directory}")
-        
+
         # Find all Python files
         python_files = []
         for root, dirs, files in os.walk(directory):
             # Skip certain directories
             dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', 'venv', 'env', 'backup_']]
-            
+
             for file in files:
                 if file.endswith('.py'):
                     python_files.append(os.path.join(root, file))
-        
+
         logger.info(f"📁 Found {len(python_files)} Python files")
-        
+
         # Process each file
         for file_path in python_files:
             self.files_processed += 1
             self.fix_file(file_path)
-        
+
         return {
             'files_processed': self.files_processed,
             'files_fixed': self.files_fixed,
@@ -152,18 +152,18 @@ import glob', 'from pathlib import Path\nimport glob')
 def main():
     """Main function to run the conservative syntax fixer."""
     logger.info("🚀 Starting conservative syntax fixer")
-    
+
     fixer = ConservativeSyntaxFixer()
-    
+
     # Fix files in the current directory and subdirectories
     results = fixer.scan_and_fix_directory('.')
-    
+
     # Print summary
     logger.info("📊 Fix Summary:")
     logger.info(f"   Files processed: {results['files_processed']}")
     logger.info(f"   Files fixed: {results['files_fixed']}")
     logger.info(f"   Total fixes applied: {results['total_fixes']}")
-    
+
     # Run a verification scan
     logger.info("🔍 Running verification scan...")
     import subprocess
@@ -174,16 +174,16 @@ def main():
         )
         remaining_errors = int(result.stdout.strip())
         logger.info(f"   Remaining errors: {remaining_errors}")
-        
+
         if remaining_errors < 466:  # Original error count
             improvement = 466 - remaining_errors
             logger.info(f"✅ Improved by {improvement} errors!")
         else:
             logger.warning("⚠️ No improvement detected")
-            
+
     except Exception as e:
         logger.error(f"❌ Error during verification: {e}")
-    
+
     logger.info("✅ Conservative syntax fixing completed!")
 
 

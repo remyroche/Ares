@@ -228,12 +228,12 @@ The optimization generates several output files:
 def custom_market_condition_identifier(data: pd.DataFrame) -> List[str]:
     """Custom function to identify market condition columns."""
     market_columns = []
-    
+
     # Your custom logic here
     for col in data.columns:
         if any(keyword in col.lower() for keyword in ['volatility', 'momentum', 'volume']):
             market_columns.append(col)
-    
+
     return market_columns
 
 # Use custom identifier
@@ -244,7 +244,7 @@ market_condition_columns = custom_market_condition_identifier(data)
 
 ```python
 class CustomHMMOptimizer(HMMRegimeOptimizer):
-    def _evaluate_market_condition_capture(self, cluster_data: pd.DataFrame, 
+    def _evaluate_market_condition_capture(self, cluster_data: pd.DataFrame,
                                          market_condition_columns: List[str]) -> float:
         """Custom evaluation function."""
         # Your custom evaluation logic here

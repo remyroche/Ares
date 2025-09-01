@@ -70,7 +70,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # Required modules for this step
 REQUIRED_MODULES = [
     "numpy",
-    "pandas", 
+    "pandas",
     "torch",
     "sklearn",
     "lightgbm",
@@ -103,7 +103,7 @@ class AnalystCreationStep:
         self.standards = pipeline_standards
         self.logger = system_logger
         self._validate_environment()
-        
+
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
@@ -209,7 +209,7 @@ class AnalystCreationStep:
             "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
         )
         self.logger.info("🔄 Executing Analyst Creation...")
-        
+
         start_time = datetime.now()
 
         try:
@@ -227,7 +227,7 @@ class AnalystCreationStep:
             # Load regime splits from previous step
             self.logger.info("🔄 Loading regime splits from previous step...")
             regime_splits = await self._load_regime_splits(regime_data_dir)
-            
+
             if not regime_splits:
                 msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
                 raise ValueError(msg)
@@ -286,7 +286,7 @@ class AnalystCreationStep:
                     if isinstance(result, Exception):
                         self.logger.error(f"❌ Error in regime {regime_idx}: {result}")
                         continue
-                    
+
                     regime_name, regime_models = result
                     created_models_summary[regime_name] = regime_models
                     self.logger.info(f"✅ Completed analyst creation for regime: {regime_name}")
@@ -316,44 +316,44 @@ class AnalystCreationStep:
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
-            
+
             # Try to load unified regime dataset first (new approach)
             unified_regime_file = os.path.join(
-                data_dir, "training", 
+                data_dir, "training",
                 f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             )
-            
+
             if os.path.exists(unified_regime_file):
                 self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
                 unified_data = pd.read_parquet(unified_regime_file)
-                
+
                 # Load regime labels mapping
                 labels_file = os.path.join(
-                    data_dir, "training", 
+                    data_dir, "training",
                     f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
                 )
-                
+
                 if os.path.exists(labels_file):
                     with open(labels_file) as f:
                         regime_labels = json.load(f)
-                    
+
                     regime_ids = regime_labels.get("regime_ids", [])
                     self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
-                    
+
                     # Create regime splits from unified dataset
                     regime_splits = {}
                     for regime_id in regime_ids:
                         regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
-                        
+
                         if len(regime_data) > 0:
                             regime_splits[f"regime_{regime_id}"] = regime_data
                             self.logger.info(f"📊 Created regime {regime_id}: {len(regime_data)} rows")
-                    
+
                     self.logger.info(f"✅ Created {len(regime_splits)} regime splits from unified dataset")
                     return regime_splits
                 else:
                     self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
-            
+
             # Fallback to legacy approach for backward compatibility
             self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_splits_dir = os.path.join(data_dir, "training", "regime_splits")
@@ -380,9 +380,9 @@ class AnalystCreationStep:
         """Prepare data for analyst model creation."""
         try:
             # Separate features and labels
-            feature_columns = [col for col in regime_data.columns 
+            feature_columns = [col for col in regime_data.columns
                              if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
-            
+
             X = regime_data[feature_columns]
             y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
 
@@ -398,11 +398,11 @@ class AnalystCreationStep:
             raise
 
     async def _create_regime_analysts(
-        self, 
-        regime_name: str, 
-        X_train: pd.DataFrame, 
-        y_train: pd.Series, 
-        X_val: pd.DataFrame, 
+        self,
+        regime_name: str,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
         y_val: pd.Series
     ) -> dict[str, Any]:
         """Create base analyst models for a specific regime."""
@@ -623,10 +623,10 @@ class AnalystCreationStep:
                 for model_name, model_data in regime_models.items():
                     if model_data.get("model") is not None:
                         model_file = os.path.join(regime_dir, f"{model_name}.joblib")
-                        
+
                         # Save model
                         joblib.dump(model_data["model"], model_file)
-                        
+
                         # Save metadata
                         metadata_file = os.path.join(regime_dir, f"{model_name}_metadata.json")
                         metadata = {
@@ -636,7 +636,7 @@ class AnalystCreationStep:
                             "feature_importance": model_data.get("feature_importance", {}),
                             "device": model_data.get("device", "cpu")
                         }
-                        
+
                         with open(metadata_file, "w") as f:
                             json.dump(metadata, f, indent=2)
 
@@ -673,7 +673,7 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     logger = system_logger.getChild("Step11AnalystCreation")
-    
+
     logger.info("=" * 80)
     logger.info("🚀 STEP 11: Analyst Creation")
     logger.info("=" * 80)
@@ -683,7 +683,7 @@ async def run_step(
     logger.info(f"📁 Data directory: {data_dir}")
     logger.info(f"🔄 Force rerun: {force_rerun}")
     logger.info("=" * 80)
-    
+
     try:
         # Initialize analyst creation step
         config = {
@@ -692,7 +692,7 @@ async def run_step(
             "TIMEFRAME": timeframe,
             "DATA_DIR": data_dir,
         }
-        
+
         logger.info("🔧 Initializing analyst creation step...")
         step = AnalystCreationStep(config)
         await step.initialize()
@@ -713,27 +713,27 @@ async def run_step(
 
         if result.get("analyst_creation_completed", False):
             logger.info("✅ Step 11: Analyst Creation completed successfully")
-            
+
             # Log creation results
             if result.get("created_analyst_models"):
                 models = result["created_analyst_models"]
                 logger.info(f"📊 Created analyst models for {len(models)} regimes")
-                
+
                 for regime_name, regime_models in models.items():
                     model_count = len(regime_models)
                     logger.info(f"   - {regime_name}: {model_count} models")
-                    
+
                     for model_name, model_data in regime_models.items():
                         accuracy = model_data.get("accuracy", 0.0)
                         logger.info(f"     - {model_name}: {accuracy:.4f} accuracy")
-            
+
             return True
         else:
             logger.error("❌ Step 11: Analyst Creation failed")
             error = result.get("analyst_creation_error", "Unknown error")
             logger.error(f"   Error details: {error}")
             return False
-            
+
     except Exception as e:
         logger.exception(f"❌ Unexpected error in Step 11: {e}")
         return False

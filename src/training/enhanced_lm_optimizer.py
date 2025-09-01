@@ -823,14 +823,14 @@ class EnhancedLMOptimizer:
                 try:
                     import mlflow
                     from src.utils.mlflow_utils import log_params_with_metadata, log_metrics_with_metadata
-                    
+
                     # Extract metadata from config
                     config = getattr(self, 'config', {})
                     symbol = config.get('trading_symbol', 'ETHUSDT')
                     exchange = config.get('exchange_name', 'BINANCE')
                     lookback_years = config.get('lookback_years', 2)
                     lookback_period = f"{lookback_years}_years"
-                    
+
                     with mlflow.start_run(nested=True) as run:
                         # Log hyperparameters with metadata
                         all_params = {
@@ -840,7 +840,7 @@ class EnhancedLMOptimizer:
                             "model_type": model_type,
                             "trial_number": trial.number,
                         }
-                        
+
                         log_params_with_metadata(
                             params=all_params,
                             asset=symbol,
@@ -862,7 +862,7 @@ class EnhancedLMOptimizer:
                             "cv_max": cv_scores.max(),
                             "cv_scores": cv_scores.tolist(),
                         }
-                        
+
                         log_metrics_with_metadata(
                             metrics=metrics,
                             asset=symbol,

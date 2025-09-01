@@ -8,7 +8,7 @@ The comprehensive file format validation has been successfully implemented for s
 
 ### 1. Type of File ✅
 - **Implementation**: `_validate_file_type()` method
-- **Features**: 
+- **Features**:
   - Validates file existence and size
   - Checks supported file extensions (.parquet, .csv, .json)
   - Determines file type automatically

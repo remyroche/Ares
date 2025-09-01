@@ -12,7 +12,7 @@ feature_selection:
   vif_threshold: 5.0                    # VIF threshold for feature removal (default: 5.0)
   enable_vif_removal: true              # Enable VIF-based feature removal
   enable_redundant_price_filtering: true # Enable redundant price feature filtering
-  
+
   # Emergency override settings
   emergency_override_infinite_vif: true  # Automatically remove features with infinite VIF
   emergency_override_perfect_correlation: true # Remove perfectly correlated features
@@ -105,4 +105,4 @@ If you still see infinite VIF errors:
 1. **Check feature names**: Ensure problematic features are in the `redundant_price_features` list
 2. **Enable perfect correlation detection**: Set `emergency_override_perfect_correlation: true`
 3. **Lower VIF threshold**: Reduce `vif_threshold` to catch more multicollinearity issues
-4. **Review logs**: Check the detailed logging output to understand what's being removed 
+4. **Review logs**: Check the detailed logging output to understand what's being removed

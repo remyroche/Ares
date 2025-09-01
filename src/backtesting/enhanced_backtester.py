@@ -680,7 +680,7 @@ class EnhancedBacktester:
 		for position in self.current_position.values():
 			if position["quantity"] > 0:
 				# Simplified: assume current price equals avg_price for unrealized
-				current_value += float(position["quantity"]) * float(position["avg_price"]) 
+				current_value += float(position["quantity"]) * float(position["avg_price"])
 
 		self.equity_curve.append(current_value)
 

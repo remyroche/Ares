@@ -299,7 +299,7 @@ async def main() -> None:
 	Main function to run integration tests.
 	"""
 	logging.basicConfig(level=logging.INFO)
-	
+
 	tester = OptimizationIntegrationTest()
 	results = await tester.run_all_tests()
 

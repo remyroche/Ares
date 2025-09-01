@@ -222,7 +222,7 @@ success = await manager.execute_enhanced_training(training_input)
 # Execute specific step with quality metrics
 success = await manager._execute_step1_enhanced(
     symbol="BTCUSDT",
-    exchange="binance", 
+    exchange="binance",
     timeframe="1m",
     data_dir="data_cache",
     force_rerun=False
@@ -309,19 +309,19 @@ enhanced_reporting:
   auto_cleanup_reports: true
   reports_retention_days: 30
   reports_directory: "reports/enhanced_training_pipeline"
-  
+
   performance_monitoring:
     enable_memory_tracking: true
     enable_cpu_tracking: true
     memory_threshold_gb: 16.0
     cpu_threshold_percent: 90.0
-    
+
   data_quality_monitoring:
     null_threshold_percent: 10.0
     correlation_threshold: 0.95
     vif_threshold: 10.0
     variance_threshold: 0.01
-    
+
   error_handling:
     max_retries: 3
     retry_delay_seconds: 5

@@ -69,7 +69,7 @@ simple_confidence = (
 **All risk adjustments have been removed** as requested:
 
 - ❌ **Sharpe ratio adjustment** - REMOVED
-- ❌ **Drawdown adjustment** - REMOVED  
+- ❌ **Drawdown adjustment** - REMOVED
 - ❌ **Volatility adjustment** - REMOVED
 - ❌ **Market regime adjustment** - REMOVED
 - ❌ **Risk-free rate adjustment** - REMOVED

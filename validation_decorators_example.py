@@ -33,12 +33,12 @@ except ImportError as e:
         def decorator(func):
             return func
         return decorator
-    
+
     def validate_dataframe_operation(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
-    
+
     def validate_step_operation(*args, **kwargs):
         def decorator(func):
             return func
@@ -80,14 +80,14 @@ def process_features(df, feature_config: Dict[str, Any]) -> Dict[str, Any]:
 async def run_labeling_step(symbol: str, exchange: str, data_dir: str) -> Dict[str, Any]:
     """Run labeling step with comprehensive validation."""
     print(f"Running labeling step for {symbol} on {exchange}")
-    
+
     # Simulate step execution
     result = {
         "labeled_train": f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
         "labeled_validation": f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
         "labeled_test": f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet"
     }
-    
+
     return result
 
 
@@ -148,21 +148,21 @@ def debug_dataframe_operation(df, operation_name: str) -> Any:
 async def demonstrate_file_validation():
     """Demonstrate file validation decorators."""
     print("\n=== File Validation Examples ===")
-    
+
     # Create a test file
     test_file = "test_klines.parquet"
     with open(test_file, 'w') as f:
         f.write("test data")
-    
+
     try:
         # Test file operation validation
         result = await load_klines_data(test_file)
         print(f"File operation result: {result}")
-        
+
         # Test file saving validation
         save_result = save_unified_data({"data": "test"}, "test_unified.parquet")
         print(f"Save operation result: {save_result}")
-        
+
     finally:
         # Clean up test files
         for file in [test_file, "test_unified.parquet"]:
@@ -173,35 +173,35 @@ async def demonstrate_file_validation():
 async def demonstrate_dataframe_validation():
     """Demonstrate DataFrame validation decorators."""
     print("\n=== DataFrame Validation Examples ===")
-    
+
     # Create a mock DataFrame-like object
     class MockDataFrame:
         def __init__(self, shape):
             self.shape = shape
             self.empty = False
-        
+
         def isnull(self):
             return MockSeries([False] * self.shape[0])
-        
+
         def duplicated(self):
             return MockSeries([False] * self.shape[0])
-        
+
         def select_dtypes(self, include=None):
             return MockDataFrame(self.shape)
-    
+
     class MockSeries:
         def __init__(self, data):
             self.data = data
-        
+
         def sum(self):
             return sum(self.data)
-        
+
         def __getitem__(self, key):
             return MockSeries(self.data)
-        
+
         def empty(self):
             return len(self.data) == 0
-    
+
     # Test DataFrame validation
     mock_df = MockDataFrame((100, 5))
     result = process_features(mock_df, {"feature_type": "technical"})
@@ -211,17 +211,17 @@ async def demonstrate_dataframe_validation():
 async def demonstrate_step_validation():
     """Demonstrate step validation decorators."""
     print("\n=== Step Validation Examples ===")
-    
+
     # Test step-specific decorators
     step1_result = await step1_data_collection("ETHUSDT", "BINANCE", "1m")
     print(f"Step 1 result: {step1_result}")
-    
+
     step1_5_result = await step1_5_data_conversion("ETHUSDT", "BINANCE", "1m")
     print(f"Step 1.5 result: {step1_5_result}")
-    
+
     step2_result = await step2_feature_engineering("ETHUSDT", "BINANCE", "data/training")
     print(f"Step 2 result: {step2_result}")
-    
+
     step4_result = await step4_labeling("ETHUSDT", "BINANCE", "data/training")
     print(f"Step 4 result: {step4_result}")
 
@@ -230,12 +230,12 @@ async def main():
     """Run all validation decorator examples."""
     print("🚀 Validation Decorators Examples")
     print("=" * 50)
-    
+
     try:
         await demonstrate_file_validation()
         await demonstrate_dataframe_validation()
         await demonstrate_step_validation()
-        
+
         print("\n✅ All examples completed successfully!")
         print("\n📋 Key Benefits of Validation Decorators:")
         print("   - Continuous validation at every operation")
@@ -244,7 +244,7 @@ async def main():
         print("   - Configurable validation levels")
         print("   - Non-blocking validation (logs issues but continues)")
         print("   - Step-specific validation rules")
-        
+
     except Exception as e:
         print(f"\n❌ Example failed: {e}")
         import traceback

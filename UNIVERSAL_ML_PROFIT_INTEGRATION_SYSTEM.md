@@ -285,12 +285,12 @@ config = {
         # Service settings
         "data_dir": "data/training",
         "models_dir": "models",
-        
+
         # Thresholds
         "confidence_threshold": 0.7,
         "profit_threshold": 0.02,
         "barrier_threshold": 0.01,
-        
+
         # Risk management
         "risk_management": {
             "max_position_size": 100.0,

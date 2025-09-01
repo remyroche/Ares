@@ -200,14 +200,14 @@ class BaseValidator(ABC):
                             negative_count = (df[col] <= 0).sum()
                             metrics["value_range_issues"][col] = f"Negative values: {negative_count}"
                             metrics["critical_issues"].append(f"Negative values in {col}: {negative_count}")
-                        
+
                         # Check OHLC consistency
                         if all(c in df.columns for c in ['open', 'high', 'low', 'close']):
                             invalid_ohlc = (
-                                (df['high'] < df['low']) | 
-                                (df['high'] < df['open']) | 
+                                (df['high'] < df['low']) |
+                                (df['high'] < df['open']) |
                                 (df['high'] < df['close']) |
-                                (df['low'] > df['open']) | 
+                                (df['low'] > df['open']) |
                                 (df['low'] > df['close'])
                             ).sum()
                             if invalid_ohlc > 0:
@@ -232,13 +232,13 @@ class BaseValidator(ABC):
                         max_gap = time_diff.max()
                         min_gap = time_diff.min()
                         expected_gap = time_diff.mode().iloc[0] if len(time_diff.mode()) > 0 else None
-                        
+
                         metrics["temporal_issues"] = {
                             "max_gap": str(max_gap),
                             "min_gap": str(min_gap),
                             "expected_gap": str(expected_gap) if expected_gap else None,
                         }
-                        
+
                         # Check for unusually large gaps
                         if expected_gap and max_gap > expected_gap * 10:
                             metrics["critical_issues"].append(f"Large temporal gap detected: {max_gap}")
@@ -301,23 +301,23 @@ class BaseValidator(ABC):
                     import pickle
                     with open(model_path, 'rb') as f:
                         model = pickle.load(f)
-                    
+
                     # Basic model validation
                     if hasattr(model, 'predict'):
                         metrics["has_predict_method"] = True
                     else:
                         metrics["integrity_issues"].append("Model missing predict method")
-                    
+
                     if hasattr(model, 'fit'):
                         metrics["has_fit_method"] = True
                     else:
                         metrics["integrity_issues"].append("Model missing fit method")
-                        
+
                 except Exception as e:
                     metrics["integrity_issues"].append(f"Model loading failed: {str(e)}")
 
             passed = (
-                metrics["exists"] 
+                metrics["exists"]
                 and (not required_files or not metrics["missing_files"])
                 and (not check_model_integrity or not metrics["integrity_issues"])
             )

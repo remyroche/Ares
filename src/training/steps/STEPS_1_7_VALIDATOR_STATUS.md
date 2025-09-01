@@ -167,7 +167,7 @@ else:
 # Validate all steps 1-7
 validators = [
     "step01_data_collection_validator",
-    "step01_5_data_converter_validator", 
+    "step01_5_data_converter_validator",
     "step02_data_reading_validator",
     "step03_hmm_regime_discovery_validator",
     "step04_regime_data_splitting_validator",

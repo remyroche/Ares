@@ -226,7 +226,7 @@ def get_regime_specific_config() -> Dict[str, Any]:
             "use_regime_specific_periods": True,
             "regime_feature_prefix": "regime_",
             "regime_specific_indicators": [
-                "RSI", "MACD_fast", "Bollinger_Bands", "SMA", "EMA", 
+                "RSI", "MACD_fast", "Bollinger_Bands", "SMA", "EMA",
                 "ATR", "VWAP", "VWAP_Momentum", "VWAP_Volatility"
             ]
         },

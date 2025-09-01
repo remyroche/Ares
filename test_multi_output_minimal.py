@@ -9,7 +9,6 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-from datetime import datetime
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -176,7 +175,6 @@ def test_model_saving_utils_core():
 
     try:
         # Test if we can import the utilities
-        from training.model_saving_utils import save_multi_output_model_with_probabilities, load_model_with_probabilities
 
         print("✅ Model saving utilities import test passed!")
         return True

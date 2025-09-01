@@ -18,7 +18,6 @@ from enum import Enum
 
 import pandas as pd
 import numpy as np
-import psutil
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

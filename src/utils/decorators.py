@@ -16,7 +16,6 @@ ENHANCED FEATURES:
 - Centralized configuration support
 """
 
-from __future__ import annotations
 
 import functools
 import inspect
@@ -49,7 +48,6 @@ from src.utils.domain_errors import (
     SchemaValidationError,
     VectorizationError,
 )
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.structured_logging import ensure_correlation_id, get_correlation_id
 
 # Import enhanced system components (optional to avoid circular imports)

@@ -6,7 +6,6 @@ This script tests the VIF validation decorators without requiring external depen
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add src to path
@@ -29,7 +28,6 @@ def test_vif_validation_decorators():
 
         # Test import of VIF calculator (will fail without numpy/pandas, but that's expected)
         try:
-            from src.utils.vif_calculator import (
                 calculate_vif_simple,
                 calculate_vif_robust,
                 analyze_vif_issues,
@@ -62,7 +60,6 @@ def test_step2_import():
 
     try:
         # Test import of step2
-        from src.training.steps.step2_feature_engineering import run_step
         print("✅ Successfully imported step2_feature_engineering")
 
         # Check if the VIF calculator import is working

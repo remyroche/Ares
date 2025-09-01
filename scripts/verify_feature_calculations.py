@@ -8,7 +8,6 @@ from pathlib import Path
 from src.utils.logger import system_logger
 from typing import Any
 import sys
-import traceback
 import warnings
 
 import numpy as np

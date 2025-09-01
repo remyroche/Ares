@@ -5,16 +5,12 @@ This module provides an alert system that can send notifications when data quali
 issues are detected, supporting multiple channels like Slack, email, and webhooks.
 """
 
-import os
 import sys
-import json
 import requests
 import smtplib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-import logging
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -25,7 +21,6 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.advanced_ml_validation import Alert, AlertConfig, MLValidationResult
 
 

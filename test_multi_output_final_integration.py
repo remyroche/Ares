@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import tempfile
-import shutil
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))

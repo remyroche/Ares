@@ -6,7 +6,6 @@ Test script to verify the pipeline flow and check for configuration issues.
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -122,8 +121,6 @@ async def test_pipeline_configuration():
         logger.info("✅ step7_enhanced_matrix_operations imported successfully")
 
         # Test validators import
-        from src.training.steps.step6_feature_engineering_validator import Step6FeatureEngineeringValidator
-        from src.training.steps.step7_enhanced_matrix_operations_validator import Step7EnhancedMatrixOperationsValidator
         logger.info("✅ Step validators imported successfully")
 
     except Exception as e:

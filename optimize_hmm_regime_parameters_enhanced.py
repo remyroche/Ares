@@ -11,10 +11,7 @@ This enhanced version includes:
 - Real-time progress monitoring
 """
 
-import asyncio
 import concurrent.futures
-import multiprocessing
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import time
 import warnings
@@ -25,8 +22,6 @@ import optuna
 from optuna.samplers import TPESampler, CmaEsSampler
 from optuna.pruners import MedianPruner, HyperbandPruner
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import silhouette_score, calinski_harabasz_score
-import joblib
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')

@@ -9,7 +9,6 @@ This module provides unified error handling patterns across all steps including:
 """
 
 import traceback
-import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Callable
 from enum import Enum

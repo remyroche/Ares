@@ -5,7 +5,6 @@ Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
 """
 
-from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field

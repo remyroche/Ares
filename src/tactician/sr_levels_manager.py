@@ -10,9 +10,7 @@ This module provides:
 5. Persistent storage and retrieval
 """
 
-import asyncio
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime, timedelta
@@ -23,7 +21,6 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 logger = system_logger.getChild("SRLevelsManager")

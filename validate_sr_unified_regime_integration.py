@@ -5,7 +5,6 @@ S/R UnifiedRegimeClassifier Integration Validator
 This script validates the full integration of SRBreakoutPredictor into UnifiedRegimeClassifier.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict

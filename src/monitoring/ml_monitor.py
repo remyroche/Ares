@@ -5,7 +5,6 @@ Machine Learning Monitor
 Provides ML monitoring including drift detection scaffolding and performance tracking.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime

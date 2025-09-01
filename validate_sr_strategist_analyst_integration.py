@@ -7,7 +7,6 @@ This script checks that all files properly use the updated sr_breakout_predictor
 import ast
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
 
 def check_file_syntax(file_path: str) -> bool:
     """Check if a Python file has valid syntax."""

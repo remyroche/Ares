@@ -5,7 +5,6 @@ Enhanced Matrix Operations with M1 GPU Integration.
 Combines advanced matrix operations with Mac M1 GPU acceleration.
 """
 
-from __future__ import annotations
 
 import asyncio
 import time

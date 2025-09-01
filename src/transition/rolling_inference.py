@@ -1,6 +1,5 @@
 # src/transition/rolling_inference.py
 
-from __future__ import annotations
 from src.transition.multitask_rf import MultiTaskRandomForest
 from src.utils.logger import system_logger
 from typing import Any

@@ -7,12 +7,10 @@ This script validates that the new categorized configuration system works correc
 
 import sys
 import os
-from typing import Any, Dict
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from config.config_manager import (
     get_config_manager,
     get_static_config_global,
     get_optimizable_config,
@@ -310,9 +308,6 @@ def test_step12_integration():
     try:
         # Try to import required dependencies
         try:
-            import numpy
-            import pandas
-            import optuna
             dependencies_available = True
         except ImportError as e:
             print(f"⚠️ Some dependencies not available: {e}")

@@ -12,8 +12,6 @@ This script fixes specific syntax errors that the general fixer couldn't handle:
 import os
 import re
 import ast
-from pathlib import Path
-from typing import List, Tuple, Dict, Optional
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

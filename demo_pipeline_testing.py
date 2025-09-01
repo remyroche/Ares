@@ -10,10 +10,7 @@ Usage:
     python demo_pipeline_testing.py
 """
 
-import os
-import sys
 from pathlib import Path
-from datetime import datetime, timedelta
 
 def create_mock_data_demo():
     """Demonstrate mock data creation for pipeline testing."""

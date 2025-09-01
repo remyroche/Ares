@@ -5,7 +5,6 @@ This module implements a complete step17-optimized Tactician where ALL decision 
 position sizing, leverage, and confidence calculations are configurable by step17.
 """
 
-import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple

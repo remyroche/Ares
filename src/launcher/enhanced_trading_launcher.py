@@ -33,7 +33,6 @@ from src.integration.paper_trading_integration import (
     setup_paper_trading_integration,
 )
 if TYPE_CHECKING:
-    from src.backtesting.enhanced_backtester import EnhancedBacktester  # type: ignore
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:

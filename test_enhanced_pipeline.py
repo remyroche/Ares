@@ -17,7 +17,6 @@ This script demonstrates the enhanced pipeline with the new step sequence:
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 # Add project root to path
 project_root = Path(__file__).parent

@@ -3,7 +3,6 @@ Enhanced Training Manager with Existing Decorators Integration
 Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
 """
 
-import asyncio
 import json
 import time
 from datetime import datetime

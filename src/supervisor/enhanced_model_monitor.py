@@ -7,9 +7,7 @@ decision path analysis, and ensemble performance monitoring that integrates with
 existing performance monitoring infrastructure.
 """
 
-import json
 import asyncio
-import numpy as np
 from dataclasses_json import dataclass_json
 from datetime import datetime
 from src.utils.logger import system_logger
@@ -19,7 +17,6 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,

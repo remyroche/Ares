@@ -11,9 +11,7 @@ This module optimizes feature engineering parameters using:
 5. Feature Interaction Engineering for capturing non-linear relationships
 """
 
-import asyncio
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -23,10 +21,7 @@ import pandas as pd
 import shap
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_squared_error, accuracy_score
-import optuna
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors

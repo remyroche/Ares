@@ -14,8 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import warnings
-from scipy import stats
-from sklearn.cluster import DBSCAN
 warnings.filterwarnings('ignore')
 
 from src.utils.logger import system_logger

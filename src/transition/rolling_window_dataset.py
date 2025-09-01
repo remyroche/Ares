@@ -1,6 +1,5 @@
 # src/transition/rolling_window_dataset.py
 
-from __future__ import annotations
 from src.transition.path_targets import PathTargetEngineer
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger

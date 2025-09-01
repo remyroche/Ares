@@ -5,7 +5,6 @@ Monitoring Integration Manager (minimal scaffold)
 Coordinates monitoring components.
 """
 
-from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass

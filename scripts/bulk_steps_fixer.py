@@ -10,7 +10,6 @@ Fixes:
 - function parameter defaults where comma is used (def f(a: T, default) -> def f(a: T = default))
 """
 
-from __future__ import annotations
 
 import re
 import sys

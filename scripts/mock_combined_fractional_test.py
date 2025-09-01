@@ -3,7 +3,6 @@
 """Mock combined fractional system test - simulates expected results."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime

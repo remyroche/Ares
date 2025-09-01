@@ -9,8 +9,6 @@ It ensures the S/R system uses the same data sources and configurations as the
 main trading system.
 """
 
-import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -19,7 +17,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import pandas as pd
-import numpy as np
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
@@ -35,7 +32,6 @@ try:
         LIGHT_TRAINING_LOOKBACK_DAYS,
     )
     from src.utils.logger import system_logger
-    from src.utils.error_handler import handle_errors, handle_specific_errors
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
     # Fallback imports

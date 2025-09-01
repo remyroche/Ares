@@ -8,7 +8,6 @@ throughout the training step files to make issues more visible.
 
 # ruff: noqa: I001, C901, PLR0911, TRY300
 
-from __future__ import annotations
 
 import re
 import sys

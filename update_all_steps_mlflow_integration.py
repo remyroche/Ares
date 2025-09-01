@@ -9,10 +9,8 @@ This script will:
 4. Ensure standardized naming and folder structure
 """
 
-import os
 import re
 from pathlib import Path
-from typing import List, Dict, Any
 
 # Define the steps that need to be updated
 STEPS_TO_UPDATE = [

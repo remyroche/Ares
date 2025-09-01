@@ -3,7 +3,6 @@
 """Test fractional labeling implementation and compare with baseline."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime

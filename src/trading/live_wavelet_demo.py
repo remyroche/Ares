@@ -10,7 +10,6 @@ from src.utils.logger import system_logger
 import asyncio
 import time
 
-from src.utils.warning_symbols import error, failed, initialization_error, warning
 import numpy as np
 import pandas as pd
 import yaml

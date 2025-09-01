@@ -7,7 +7,6 @@ from step2 with existing data (collected and processed in step1 and step1_5),
 without triggering new downloads.
 """
 
-import os
 import sys
 import asyncio
 from pathlib import Path

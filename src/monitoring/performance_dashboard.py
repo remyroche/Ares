@@ -5,7 +5,6 @@ Performance Dashboard for Dual Model System
 Real-time monitoring and visualization of system performance metrics.
 """
 
-from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass

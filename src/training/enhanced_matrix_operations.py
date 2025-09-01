@@ -23,7 +23,6 @@ import scipy.linalg as la
 import scipy.sparse as sp
 from sklearn.cluster import DBSCAN, KMeans, SpectralClustering
 from sklearn.decomposition import FactorAnalysis, FastICA, KernelPCA
-from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.feature_selection import RFE, mutual_info_classif
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import Lasso, Ridge

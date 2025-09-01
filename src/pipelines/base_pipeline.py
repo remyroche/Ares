@@ -2,7 +2,6 @@
 Base pipeline framework for Ares trading bot (minimal scaffold).
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime

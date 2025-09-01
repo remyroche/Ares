@@ -20,7 +20,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 
 # Add project root to path

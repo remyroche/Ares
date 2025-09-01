@@ -14,7 +14,6 @@ For ETHUSDT on BINANCE with 1m-30m timeframes.
 """
 
 import os
-import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 import numpy as np

@@ -6,8 +6,6 @@ into the Analyst and Tactician components.
 """
 
 import asyncio
-import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +19,6 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.analyst.analyst import setup_analyst
 from src.tactician.tactician import setup_tactician
-from src.utils.logger import system_logger
 
 
 def create_sample_market_data() -> pd.DataFrame:

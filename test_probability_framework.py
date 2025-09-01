@@ -9,7 +9,6 @@ to ensure they work correctly with different model types.
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import logging
@@ -69,7 +68,6 @@ def test_model_saving_utils():
     logger.info("🧪 Testing model saving utilities...")
 
     try:
-        from src.training.model_saving_utils import (
             save_model_with_probabilities,
             load_model_with_probabilities,
             validate_model_probabilities

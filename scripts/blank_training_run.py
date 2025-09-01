@@ -9,7 +9,6 @@ Usage:
     python scripts/blank_training_run.py --symbol BTCUSDT --exchange BINANCE
 """
 
-from __future__ import annotations
 
 import argparse
 import asyncio

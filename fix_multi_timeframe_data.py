@@ -8,13 +8,10 @@ This script addresses the following issues:
 3. Data alignment issues between different timeframes
 """
 
-from datetime import datetime, timedelta
-from pathlib import Path
 import glob
 import logging
 import os
 
-import numpy as np
 import pandas as pd
 
 # Setup logging

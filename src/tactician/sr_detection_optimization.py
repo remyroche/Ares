@@ -16,7 +16,6 @@ specifically optimized for 1-30m timeframes. It includes:
 The optimized parameters are then used by the main S/R predictor.
 """
 
-import asyncio
 import json
 import numpy as np
 import pandas as pd
@@ -29,16 +28,12 @@ warnings.filterwarnings('ignore')
 # Optimization libraries
 try:
     import optuna
-    from optuna.samplers import TPESampler
-    from optuna.pruners import MedianPruner
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
     print("Warning: optuna not available, using basic optimization")
 
 try:
-    from sklearn.cluster import DBSCAN
-    from sklearn.metrics import silhouette_score
     from sklearn.model_selection import TimeSeriesSplit
     SKLEARN_AVAILABLE = True
 except ImportError:

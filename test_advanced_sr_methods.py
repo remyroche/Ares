@@ -6,7 +6,6 @@ Test script for advanced S/R methods in sr_breakout_predictor.py
 import asyncio
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
 # Mock the imports to avoid dependency issues
 class MockLogger:

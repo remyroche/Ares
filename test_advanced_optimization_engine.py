@@ -15,9 +15,6 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-import json
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 # Import the advanced optimization engine
 try:
-    from src.training.steps.step17_final_parameters_optimization.advanced_optimization_engine import (
         MultiObjectiveParetoOptimizer,
         CrossValidationPruner,
         EnsembleParameterOptimizer,

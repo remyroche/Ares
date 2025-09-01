@@ -128,11 +128,11 @@ def create_regime_splits_file():
         "exchange": exchange , "symbol": symbol,
         "created_at": pd.Timestamp.now().isoformat(),
         "total_regimes": len(regime_details),
-        "regime_details": regime_details = }
+        "regime_details": regime_details}
 
     # Save the regime splits file
-    with open(output_file = "w") as f:
-        json.dump(regime_summary = f, indent=2)
+    with open(output_file, "w") as f:
+        json.dump(regime_summary, f, indent=2)
 
     print(f"✅ Created regime splits file: {output_file}")
     print(f"📊 Total regimes created: {len(regime_details)}")

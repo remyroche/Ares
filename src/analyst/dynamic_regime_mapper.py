@@ -1,6 +1,5 @@
 # src/analyst/dynamic_regime_mapper.py
 
-from __future__ import annotations
 from src.utils.logger import system_logger
 from typing import Any
 import json

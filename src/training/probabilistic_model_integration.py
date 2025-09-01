@@ -13,7 +13,6 @@ import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Union
 from dataclasses import dataclass
 import asyncio
-from pathlib import Path
 
 # Import the probabilistic Bayesian optimizer
 from .probabilistic_bayesian_optimizer import (
@@ -23,12 +22,6 @@ from .probabilistic_bayesian_optimizer import (
 
 # Import existing model components
 try:
-    from src.tactician.enhanced_prediction_integrator import TacticianEnhancedPredictionIntegrator
-    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
-    from src.analyst.regime_predictor import RegimePredictor
-    from src.analyst.volatility_predictor import VolatilityPredictor
-    from src.analyst.momentum_predictor import MomentumPredictor
-    from src.analyst.trend_predictor import TrendPredictor
 except ImportError:
     # Fallback for testing
     pass

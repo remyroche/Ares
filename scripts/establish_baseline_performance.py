@@ -3,7 +3,6 @@
 """Establish baseline performance metrics for current system."""
 
 import sys
-import os
 from pathlib import Path
 import numpy as np
 import pandas as pd

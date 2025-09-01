@@ -4,6 +4,7 @@ This directory contains scripts to assess and improve code quality across the re
 
 Available categories:
 
+- Auto-fixes (Python: black, ruff, isort, autoflake; Optional JS: prettier, eslint)
 - Linting (Python: ruff/flake8; Optional JS: eslint if present)
 - Formatting (Python: black; Optional JS: prettier)
 - Type Checking (Python: mypy; Optional JS/TS: tsc if present)

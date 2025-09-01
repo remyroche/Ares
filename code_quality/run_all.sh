@@ -15,6 +15,7 @@ run() {
 }
 
 run "Bootstrap tools" "$SCRIPT_DIR/bootstrap_tools.sh"
+run "Auto-fix issues" "$SCRIPT_DIR/scripts/auto_fix.sh"
 run "Formatting (Python)" "$SCRIPT_DIR/scripts/format_python.sh"
 run "Linting (Python)" "$SCRIPT_DIR/scripts/lint_python.sh"
 run "Type Check (Python)" "$SCRIPT_DIR/scripts/typecheck_python.sh"

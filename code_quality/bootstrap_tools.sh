@@ -23,6 +23,8 @@ pip_install() {
 pip_install ruff
 pip_install black
 pip_install mypy
+pip_install isort
+pip_install autoflake
 pip_install vulture
 pip_install radon
 pip_install pylint

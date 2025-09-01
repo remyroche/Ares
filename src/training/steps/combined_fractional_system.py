@@ -26,9 +26,15 @@ FractionalTripleBarrierLabeling
 from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
 class HMMFractionalIntegration:
+    pass  # TODO: Add implementation
+class HMMFractionalIntegration:
+class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
 
 def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize HMM integration component.
 
 Args:
@@ -212,12 +218,18 @@ Returns:
 return self.regime_metrics.copy()
 
 class CombinedFractionalSystem:
+    pass  # TODO: Add implementation
+class CombinedFractionalSystem:
+class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation.
 
 Designed to work with existing HMM regime system without redundant regime tuning.
 """
 
 def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize combined fractional system.
 
 Args:

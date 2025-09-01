@@ -40,6 +40,9 @@ logger, system_logger.getChild("MultiTimeframeHMMEnsemble")
 
 @dataclass
 class TimeframeConfig:
+    pass  # TODO: Add implementation
+class TimeframeConfig:
+class TimeframeConfig:
     """Configuration for each timeframe in the ensemble."""
 
 timeframe: str
@@ -52,6 +55,9 @@ False  # Hazard models are for regime transitions only
 
 @dataclass
 class EnsembleConfig:
+    pass  # TODO: Add implementation
+class EnsembleConfig:
+class EnsembleConfig:
     """Configuration for the multi - timeframe ensemble."""
 
 timeframes: list[TimeframeConfig]
@@ -63,6 +69,9 @@ ensemble_method: str = (
 "weighted_average"  # "weighted_average", "meta_learner", "stacking"
 )
 
+class MultiTimeframeHMMEnsemble:
+    pass  # TODO: Add implementation
+class MultiTimeframeHMMEnsemble:
 class MultiTimeframeHMMEnsemble:
     """Multi - timeframe HMM cluster ensemble that combines predictions from HMM clusters
 across multiple timeframes to improve regime forecasting accuracy.

@@ -170,6 +170,9 @@ ERROR_SEVERITY_LEVELS = {
 }
 
 class DataValidator:
+    pass  # TODO: Add implementation
+class DataValidator:
+class DataValidator:
     """Class to handle data validation with focused methods."""
 
 def __init__(self) -> None:

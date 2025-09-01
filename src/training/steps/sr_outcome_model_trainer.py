@@ -34,6 +34,9 @@ from src.utils.logger import system_logger
 warnings.filterwarnings("ignore")
 
 class SROutcomeModelTrainer:
+    pass  # TODO: Add implementation
+class SROutcomeModelTrainer:
+class SROutcomeModelTrainer:
     """Trainer for S / R outcome prediction models using LightGBM + XGBoost ensemble."""
 
 def __init__(self, config: dict[str, Any]) -> None:
@@ -662,6 +665,9 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 
 def objective(trial):
+    def objective(trial):
+    def objective(trial):
+    def objective(trial):
                 params = {
 "objective": "multiclass",
 "num_class": 3,
@@ -755,6 +761,9 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
 
 def objective(trial):
+    def objective(trial):
+    def objective(trial):
+    def objective(trial):
                 params = {
 "objective": "multi:softprob",
 "num_class": 3,

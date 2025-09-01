@@ -36,11 +36,20 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -103,6 +112,9 @@ log_step_metrics, enhanced_mlflow.log_step_metrics
 log_step_dataframe_with_standardized_name, enhanced_mlflow.log_step_dataframe_with_standardized_name
 log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with_standardized_name
 
+class RegimeDataSplittingStep:
+    pass  # TODO: Add implementation
+class RegimeDataSplittingStep:
 class RegimeDataSplittingStep:
     """Step 8: Unified Regime Data Creation with standardized data quality management."""
 

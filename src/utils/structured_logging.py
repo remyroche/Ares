@@ -49,6 +49,9 @@ def generate_correlation_id() -> str:
 
 @contextmanager
 def correlation_context(correlation_id: str | None, None):
+    def correlation_context(correlation_id: str | None, None):
+    def correlation_context(correlation_id: str | None, None):
+    def correlation_context(correlation_id: str | None, None):
     """Context manager that sets a correlation ID for the duration of the block."""
 token, None
 cid, correlation_id or generate_correlation_id()
@@ -62,6 +65,9 @@ finally:
         if token is not None:
             correlation_id_var.reset(token)
 
+class CorrelationIdFilter(logging.Filter):
+    pass  # TODO: Add implementation
+class CorrelationIdFilter(logging.Filter):
 class CorrelationIdFilter(logging.Filter):
     """Logging filter that injects correlation_id and session_id into records."""
 
@@ -109,6 +115,9 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
 """Middleware that extracts or generates X - Request - ID and sets it in context."""
 
 def __init__(self, app, header_name: str = "X - Request - ID"):
+    def __init__(self, app, header_name: str = "X - Request - ID"):
+    def __init__(self, app, header_name: str = "X - Request - ID"):
+    def __init__(self, app, header_name: str = "X - Request - ID"):
             super().__init__(app)
 self.header_name, header_name
 

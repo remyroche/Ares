@@ -29,6 +29,9 @@ ComponentT = TypeVar("ComponentT", bound, TradingComponent)
 # Protocol constraints for data processing
 @runtime_checkable
 class Serializable(Protocol):
+    pass  # TODO: Add implementation
+class Serializable(Protocol):
+class Serializable(Protocol):
     """Protocol for serializable data."""
 
 def to_dict(self) -> dict:
@@ -37,11 +40,17 @@ def to_dict(self) -> dict:
 
 @classmethod
 def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict):
         """Create from dictionary."""
 ...
 
 
 @runtime_checkable
+class Validatable(Protocol):
+    pass  # TODO: Add implementation
+class Validatable(Protocol):
 class Validatable(Protocol):
     """Protocol for validatable data."""
 
@@ -55,6 +64,9 @@ def get_validation_errors(self) -> list[str]:
 
 
 # Generic base classes
+class GenericTradingComponent(Generic[ConfigT], ABC):
+    pass  # TODO: Add implementation
+class GenericTradingComponent(Generic[ConfigT], ABC):
 class GenericTradingComponent(Generic[ConfigT], ABC):
     """
 Generic base class for trading components with type-safe configuration.
@@ -96,6 +108,9 @@ def get_health_status(self) -> dict:
 
 
 class GenericDataProcessor(Generic[DataT, ResultT], ABC):
+    pass  # TODO: Add implementation
+class GenericDataProcessor(Generic[DataT, ResultT], ABC):
+class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
 Generic base class for data processors with input/output type constraints.
 """
@@ -115,6 +130,9 @@ return self._processing_stats.copy()
 
 
 class GenericErrorHandler(Generic[ErrorT], ABC):
+    pass  # TODO: Add implementation
+class GenericErrorHandler(Generic[ErrorT], ABC):
+class GenericErrorHandler(Generic[ErrorT], ABC):
     """
 Generic base class for error handlers with type-safe error handling.
 """
@@ -133,6 +151,9 @@ def get_error_count(self) -> int:
 return self._error_count
 
 
+class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
+    pass  # TODO: Add implementation
+class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
 class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
 Generic base class for async context managers that manage components.
@@ -181,6 +202,9 @@ return self._is_active
 
 
 class GenericFactory(Generic[ComponentT], ABC):
+    pass  # TODO: Add implementation
+class GenericFactory(Generic[ComponentT], ABC):
+class GenericFactory(Generic[ComponentT], ABC):
     """
 Generic base class for component factories.
 """
@@ -203,6 +227,9 @@ def clear_components(self) -> None:
 self._created_components.clear()
 
 
+class GenericValidator(Generic[DataT], ABC):
+    pass  # TODO: Add implementation
+class GenericValidator(Generic[DataT], ABC):
 class GenericValidator(Generic[DataT], ABC):
     """
 Generic base class for data validators.

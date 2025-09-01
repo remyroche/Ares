@@ -22,6 +22,9 @@ from src.utils.centralized_decorators import handle_errors, with_tracing_span
 
 
 class EnhancedRegimePredictor:
+    pass  # TODO: Add implementation
+class EnhancedRegimePredictor:
+class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""
 
 def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:

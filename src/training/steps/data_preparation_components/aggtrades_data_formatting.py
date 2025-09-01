@@ -88,6 +88,9 @@ except Exception:
         return "unknown"
 
 class DataFileReformatter:
+    pass  # TODO: Add implementation
+class DataFileReformatter:
+class DataFileReformatter:
     """Class to handle reformatting of data files with different formats."""
 
 def __init__(self, input_path: str, output_path: str) -> None:
@@ -358,6 +361,9 @@ f.write("2025 - 07 - 30;00:00:04.865, 3791.55, 0.018, True, 2338842428\n")
 file3_path, os.path.join(input_dir, "empty_file.csv")
 open(file3_path, "w").close()
 
+class CSVNormalizer:
+    pass  # TODO: Add implementation
+class CSVNormalizer:
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
 

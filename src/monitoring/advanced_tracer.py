@@ -20,6 +20,9 @@ from src.utils.logger import system_logger
 
 
 class TraceLevel(Enum):
+    pass  # TODO: Add implementation
+class TraceLevel(Enum):
+class TraceLevel(Enum):
     """Trace levels for different types of tracing."""
 
 DEBUG = "debug"
@@ -29,6 +32,9 @@ ERROR = "error"
 CRITICAL = "critical"
 
 
+class ComponentType(Enum):
+    pass  # TODO: Add implementation
+class ComponentType(Enum):
 class ComponentType(Enum):
     """Component types for tracing."""
 
@@ -43,6 +49,9 @@ MONITORING = "monitoring"
 
 
 @dataclass
+class TraceSpan:
+    pass  # TODO: Add implementation
+class TraceSpan:
 class TraceSpan:
     """Individual trace span for a component operation."""
 
@@ -61,6 +70,9 @@ child_span_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
+class TraceRequest:
+    pass  # TODO: Add implementation
+class TraceRequest:
 class TraceRequest:
     """Complete trace request with all spans."""
 

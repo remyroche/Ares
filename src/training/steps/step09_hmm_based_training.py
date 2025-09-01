@@ -55,11 +55,20 @@ sklearn, PipelineStandards.safe_import("sklearn", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -109,6 +118,9 @@ log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
+class HMMBasedTrainingStep:
+    pass  # TODO: Add implementation
+class HMMBasedTrainingStep:
 class HMMBasedTrainingStep:
     """Step 9: HMM - Based Model Training with Standardized Data Quality Management.
 
@@ -3490,6 +3502,9 @@ return artifact
 # Model Architectures
 
 class CNNModel(nn.Module):
+    pass  # TODO: Add implementation
+class CNNModel(nn.Module):
+class CNNModel(nn.Module):
     """CNN model for 1m timeframe."""
 
 def __init__(self, input_channels: int, sequence_length: int, num_classes: int) -> None:
@@ -3509,6 +3524,9 @@ self.fc1, nn.Linear(conv_output_size, 512)
 self.fc2, nn.Linear(512, num_classes)
 
 def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
         # x shape: (batch, channels, sequence_length)
 x, self.relu(self.conv1(x))
 x, self.pool(x)
@@ -3527,6 +3545,9 @@ x, self.relu(self.fc1(x))
 x, self.dropout(x)
 return self.fc2(x)
 
+class TCNModel(nn.Module):
+    pass  # TODO: Add implementation
+class TCNModel(nn.Module):
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
@@ -3548,6 +3569,9 @@ self.dropout, nn.Dropout(0.3)
 self.fc, nn.Linear(num_channels[2], num_classes)
 
 def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
         # x shape: (batch, sequence_length, input_size)
 x, x.transpose(1, 2)  # (batch, input_size, sequence_length)
 
@@ -3560,6 +3584,9 @@ x, x[:, -1, :]  # Take last timestep,
 x, self.dropout(x)
 return self.fc(x)
 
+class TemporalBlock(nn.Module):
+    pass  # TODO: Add implementation
+class TemporalBlock(nn.Module):
 class TemporalBlock(nn.Module):
     """Temporal block for TCN."""
 
@@ -3593,6 +3620,9 @@ else:
         self.downsample, None
 
 def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
         out, self.conv1(x)
 out, self.relu(out)
 out, self.dropout(out)
@@ -3606,6 +3636,9 @@ if self.downsample is not None:
 
 return self.relu(out + x)
 
+class TransformerModel(nn.Module):
+    pass  # TODO: Add implementation
+class TransformerModel(nn.Module):
 class TransformerModel(nn.Module):
     """Transformer model for 15m timeframe."""
 
@@ -3629,6 +3662,9 @@ self.dropout, nn.Dropout(0.1)
 self.fc, nn.Linear(d_model, num_classes)
 
 def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
         # x shape: (batch, sequence_length, input_size)
 x, self.input_projection(x)
 x, self.positional_encoding(x)
@@ -3638,6 +3674,9 @@ x, x[:, -1, :]  # Take last timestep,
 x, self.dropout(x)
 return self.fc(x)
 
+class PositionalEncoding(nn.Module):
+    pass  # TODO: Add implementation
+class PositionalEncoding(nn.Module):
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
@@ -3657,10 +3696,16 @@ pe, pe.unsqueeze(0).transpose(0, 1)
 self.register_buffer("pe", pe)
 
 def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
+    def forward(self, x):
         return x + self.pe[: x.size(0), :]
 
 # Trainers
 
+class CNNTrainer:
+    pass  # TODO: Add implementation
+class CNNTrainer:
 class CNNTrainer:
     """Trainer for CNN model."""
 
@@ -3730,6 +3775,9 @@ history["test_acc"].append(test_acc)
 
 return history
 
+class TCNTrainer:
+    pass  # TODO: Add implementation
+class TCNTrainer:
 class TCNTrainer:
     """Trainer for TCN model."""
 
@@ -4330,6 +4378,9 @@ except Exception as e:
 return None
 
 def _time_aware_split(self, X: pd.DataFrame, y: pd.Series, test_frac: float, 0.2):
+    def _time_aware_split(self, X: pd.DataFrame, y: pd.Series, test_frac: float, 0.2):
+    def _time_aware_split(self, X: pd.DataFrame, y: pd.Series, test_frac: float, 0.2):
+    def _time_aware_split(self, X: pd.DataFrame, y: pd.Series, test_frac: float, 0.2):
         """Time - aware train / test split helper to prevent look - ahead bias."""
 if isinstance(X.index, pd.DatetimeIndex):
             n, len(X)
@@ -5182,6 +5233,9 @@ for category, count in sorted(category_counts.items()):
 except Exception as e:
         self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
 
+class TransformerTrainer:
+    pass  # TODO: Add implementation
+class TransformerTrainer:
 class TransformerTrainer:
     """Trainer for Transformer model."""
 

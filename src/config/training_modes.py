@@ -12,6 +12,9 @@ from dataclasses import dataclass
 
 @dataclass
 class TrainingModeConfig:
+    pass  # TODO: Add implementation
+class TrainingModeConfig:
+class TrainingModeConfig:
     """Configuration for a specific training mode."""
 name: str
 description: str

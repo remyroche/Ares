@@ -55,11 +55,20 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator

@@ -35,6 +35,9 @@ warnings.filterwarnings('ignore')
 
 @dataclass
 class RegimeBarrierResult:
+    pass  # TODO: Add implementation
+class RegimeBarrierResult:
+class RegimeBarrierResult:
     """Result of regime-specific barrier optimization."""
 
 regime_name: str
@@ -84,6 +87,9 @@ best_trial_number: int
 barrier_range: Tuple[float, float]  # (min, max) in decimal form
 
 
+class HMMRegimeBarrierOptimizer:
+    pass  # TODO: Add implementation
+class HMMRegimeBarrierOptimizer:
 class HMMRegimeBarrierOptimizer:
     """
 Optimizer for HMM regime-specific barrier limits.

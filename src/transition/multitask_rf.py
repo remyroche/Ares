@@ -13,6 +13,9 @@ import pickle
 
 @dataclass
 class MTRFConfig:
+    pass  # TODO: Add implementation
+class MTRFConfig:
+class MTRFConfig:
     enabled: bool
 n_estimators: int
 max_depth: int | None
@@ -21,6 +24,9 @@ random_state: int
 max_train_samples: int
 enable_regression: bool
 
+class MultiTaskRandomForest:
+    pass  # TODO: Add implementation
+class MultiTaskRandomForest:
 class MultiTaskRandomForest:
     """
 Simple multi-head trainer built on RF:

@@ -104,6 +104,9 @@ return labels, profit_pcts
 
 @dataclass
 class RegimeTripleBarrierConfig:
+    pass  # TODO: Add implementation
+class RegimeTripleBarrierConfig:
+class RegimeTripleBarrierConfig:
     """Configuration for regime - specific triple barrier parameters."""
 
 # Default parameters (used as fallback)
@@ -128,6 +131,9 @@ regime_id_to_name: Dict[int, str] = None
 regime_name_to_id: Dict[str, int] = None
 
 def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
         """Initialize default values."""
 if self.regime_profit_take_multipliers is None:
         self.regime_profit_take_multipliers = {}
@@ -148,6 +154,9 @@ if self.regime_id_to_name is None:
 if self.regime_name_to_id is None:
         self.regime_name_to_id = {}
 
+class RegimeAwareTripleBarrierLabeling:
+    pass  # TODO: Add implementation
+class RegimeAwareTripleBarrierLabeling:
 class RegimeAwareTripleBarrierLabeling:
     """
 Regime - aware Triple Barrier Method for labeling using regime - specific parameters.

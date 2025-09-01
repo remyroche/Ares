@@ -41,11 +41,20 @@ numpy, PipelineStandards.safe_import("numpy", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -92,6 +101,9 @@ log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with
 
 logger, system_logger.getChild("Step4RegimeDataSplitting")
 
+class RegimeDataSplittingStep:
+    pass  # TODO: Add implementation
+class RegimeDataSplittingStep:
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
 
@@ -482,6 +494,9 @@ return False
 
 if __name__ == "__main__":
     # Test the step
+async def test():
+    pass  # TODO: Add implementation
+async def test():
 async def test():
         test_config = {
 "symbol": "ETHUSDT",

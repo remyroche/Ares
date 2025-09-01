@@ -26,6 +26,9 @@ validation_error,
 )
 
 class MultiTimeframeTrainingManager:
+    pass  # TODO: Add implementation
+class MultiTimeframeTrainingManager:
+class MultiTimeframeTrainingManager:
     """Multi - timeframe training manager with comprehensive error handling and type safety."""
 
 def __init__(self, config: dict[str, Any]) -> None:

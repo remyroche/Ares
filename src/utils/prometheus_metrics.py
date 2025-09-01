@@ -32,9 +32,15 @@ failed,
 logger, logging.getLogger(__name__)
 
 class PrometheusMetrics:
+    pass  # TODO: Add implementation
+class PrometheusMetrics:
+class PrometheusMetrics:
     """Prometheus metrics collection for training step validators."""
 
 def __init__(self, port: int, 9000):
+    def __init__(self, port: int, 9000):
+    def __init__(self, port: int, 9000):
+    def __init__(self, port: int, 9000):
         self.port, port
 self.metrics_initialized, False
 
@@ -138,6 +144,9 @@ self.validation_failed, Counter(
 self._start_metrics_server()
 
 def _start_metrics_server(self):
+    def _start_metrics_server(self):
+    def _start_metrics_server(self):
+    def _start_metrics_server(self):
         """Start the Prometheus metrics server."""
 if not _PROM_AVAILABLE:
             return
@@ -173,6 +182,9 @@ except Exception as e:
             print(failed(f"Failed to start Prometheus metrics server: {e}"))
 
 def record_step_execution(self, step_name: str, duration: float, status: str):
+    def record_step_execution(self, step_name: str, duration: float, status: str):
+    def record_step_execution(self, step_name: str, duration: float, status: str):
+    def record_step_execution(self, step_name: str, duration: float, status: str):
         """Record step execution metrics."""
 if not _PROM_AVAILABLE:
             return
@@ -189,6 +201,9 @@ error_type = status,
 ).inc()
 
 def record_data_quality(self, step_name: str, data_type: str, quality_score: float):
+    def record_data_quality(self, step_name: str, data_type: str, quality_score: float):
+    def record_data_quality(self, step_name: str, data_type: str, quality_score: float):
+    def record_data_quality(self, step_name: str, data_type: str, quality_score: float):
         """Record data quality metrics."""
 if not _PROM_AVAILABLE:
             return
@@ -197,6 +212,9 @@ quality_score,
 )
 
 def record_data_size(self, step_name: str, data_type: str, size: int):
+    def record_data_size(self, step_name: str, data_type: str, size: int):
+    def record_data_size(self, step_name: str, data_type: str, size: int):
+    def record_data_size(self, step_name: str, data_type: str, size: int):
         """Record data size metrics."""
 if not _PROM_AVAILABLE:
             return
@@ -275,6 +293,9 @@ return generate_latest()  # type: ignore[return - value]
 _metrics_instance, None
 
 def get_metrics():
+    def get_metrics():
+    def get_metrics():
+    def get_metrics():
     """Get the global metrics instance (singleton pattern)."""
 global _metrics_instance
 if _metrics_instance is None:

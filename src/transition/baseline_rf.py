@@ -18,6 +18,9 @@ shap = None  # type: ignore
 
 @dataclass
 class RFConfig:
+    pass  # TODO: Add implementation
+class RFConfig:
+class RFConfig:
     enabled: bool
 n_estimators: int
 max_depth: int | None
@@ -26,6 +29,9 @@ random_state: int
 max_train_samples: int
 enable_shap: bool
 
+class TransitionRandomForest:
+    pass  # TODO: Add implementation
+class TransitionRandomForest:
 class TransitionRandomForest:
     pass  # TODO: Add proper implementation
 def __init__(self, config: dict[str, Any]) -> None:

@@ -5,8 +5,6 @@ from typing import Any
 
 
 
-class MarketRegime:
-    """Represents a market regime with specific characteristics."""
 
 def __init__(
 self,

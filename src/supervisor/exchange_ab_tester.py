@@ -16,6 +16,9 @@ import pandas as pd
 
 @dataclass
 class ABTestConfig:
+    pass  # TODO: Add implementation
+class ABTestConfig:
+class ABTestConfig:
     """A/B test configuration."""
 
 test_name: str
@@ -27,6 +30,9 @@ min_confidence_threshold: float = 0.6
 max_position_size: float = 0.05
 
 @dataclass
+class ExchangeResult:
+    pass  # TODO: Add implementation
+class ExchangeResult:
 class ExchangeResult:
     """Single exchange test result."""
 
@@ -40,6 +46,9 @@ profit_loss: float | None = None
 slippage: float | None = None
 error_message: str | None = None
 
+class ExchangeABTester:
+    pass  # TODO: Add implementation
+class ExchangeABTester:
 class ExchangeABTester:
     """A/B testing framework for comparing model performance across exchanges."""
 

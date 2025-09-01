@@ -8,6 +8,9 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, missing
 
 class Tactician:
+    pass  # TODO: Add implementation
+class Tactician:
+class Tactician:
     """
 Refactored Tactician component with modular architecture.
 This module orchestrates the tactics pipeline using specialized managers.

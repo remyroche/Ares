@@ -30,6 +30,9 @@ warning,
 
 
 class MultiTimeframeEnsemble:
+    pass  # TODO: Add implementation
+class MultiTimeframeEnsemble:
+class MultiTimeframeEnsemble:
     """
 Multi-timeframe ensemble that integrates into existing ensemble system.
 

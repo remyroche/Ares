@@ -13,6 +13,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class SROptimizationConfig:
+    pass  # TODO: Add implementation
+class SROptimizationConfig:
+class SROptimizationConfig:
     """Configuration for S/R detection optimization."""
 
 # Basic optimization settings

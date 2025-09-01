@@ -21,6 +21,9 @@ from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, cr
 
 @dataclass
 class SRLevelTest:
+    pass  # TODO: Add implementation
+class SRLevelTest:
+class SRLevelTest:
     """Individual S/R level test result."""
 
 level_price: float
@@ -59,6 +62,9 @@ higher_timeframe_alignment: float = 0.0  # Alignment with higher timeframes
 
 
 @dataclass
+class BacktestResult:
+    pass  # TODO: Add implementation
+class BacktestResult:
 class BacktestResult:
     """Result of S/R backtesting."""
 
@@ -102,10 +108,16 @@ sr_validation_score: float = 0.0
 level_tests: List[SRLevelTest] = None
 
 def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
         if self.level_tests is None:
             self.level_tests = []
 
 
+class SRBacktestingValidator:
+    pass  # TODO: Add implementation
+class SRBacktestingValidator:
 class SRBacktestingValidator:
     """
 Comprehensive S/R backtesting validator.

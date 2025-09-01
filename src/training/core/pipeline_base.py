@@ -22,6 +22,9 @@ validation_error,
 
 @dataclass
 class StageContext:
+    pass  # TODO: Add implementation
+class StageContext:
+class StageContext:
     """Context passed between pipeline stages.
 
 This class contains all the data and configuration that flows through
@@ -55,6 +58,9 @@ def get_metadata(self, key: str, default: Any | None = None) -> Any:
 return self.metadata.get(key, default)
 
 
+class PipelineStage:
+    pass  # TODO: Add implementation
+class PipelineStage:
 class PipelineStage:
     """Pipeline stage with comprehensive error handling and type safety."""
 

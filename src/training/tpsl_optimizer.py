@@ -107,6 +107,9 @@ return np.array(trades, dtype=np.float64)
 
 
 class TpSlOptimizer:
+    pass  # TODO: Add implementation
+class TpSlOptimizer:
+class TpSlOptimizer:
     """Optimizes asymmetrical Take Profit (TP) and Stop Loss (SL) thresholds
 for LONG & SHORT strategies, including trading fees.
 """

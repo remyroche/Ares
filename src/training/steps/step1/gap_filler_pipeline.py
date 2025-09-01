@@ -25,6 +25,9 @@ sys.path.insert(0, str(project_root))
 logger, system_logger.getChild("GapFillerPipeline")
 
 class GapFillerPipeline:
+    pass  # TODO: Add implementation
+class GapFillerPipeline:
+class GapFillerPipeline:
     """Pipeline for detecting and filling gaps in aggtrades data."""
 
 def __init__(self, data_cache_path: str = "data_cache") -> None:
@@ -369,6 +372,9 @@ finally:
         await self.close_session()
 
 # Function to integrate with pipeline
+async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"):
+    pass  # TODO: Add implementation
+async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"):
 async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"):
     """Run gap filling as part of the training pipeline."""
 gap_filler, GapFillerPipeline(data_cache_path)

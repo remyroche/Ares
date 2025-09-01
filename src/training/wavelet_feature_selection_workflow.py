@@ -45,6 +45,9 @@ initialization_error,
 
 @dataclass
 class FeatureImportanceResult:
+    pass  # TODO: Add implementation
+class FeatureImportanceResult:
+class FeatureImportanceResult:
     """Container for feature importance analysis results."""
 
 feature_name: str
@@ -55,6 +58,9 @@ feature_type: str  # 'wavelet', 'technical', 'other'
 computation_cost: float  # Estimated computation time in ms
 
 
+class WaveletFeatureSelectionWorkflow:
+    pass  # TODO: Add implementation
+class WaveletFeatureSelectionWorkflow:
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy.
 

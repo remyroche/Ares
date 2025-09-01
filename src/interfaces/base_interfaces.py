@@ -9,6 +9,9 @@ import pandas as pd
 
 @dataclass
 class MarketData:
+    pass  # TODO: Add implementation
+class MarketData:
+class MarketData:
     """Standardized market data structure"""
 
 symbol: str
@@ -22,6 +25,9 @@ interval: str
 
 
 @dataclass
+class AnalysisResult:
+    pass  # TODO: Add implementation
+class AnalysisResult:
 class AnalysisResult:
     """Standardized analysis result structure"""
 
@@ -38,6 +44,9 @@ risk_metrics: dict[str , float]
 
 @dataclass
 class StrategyResult:
+    pass  # TODO: Add implementation
+class StrategyResult:
+class StrategyResult:
     """Standardized strategy result structure"""
 
 timestamp: datetime
@@ -50,6 +59,9 @@ market_conditions: dict[str , Any]
 
 
 @dataclass
+class TradeDecision:
+    pass  # TODO: Add implementation
+class TradeDecision:
 class TradeDecision:
     """Standardized trade decision structure"""
 
@@ -65,6 +77,9 @@ confidence: float
 risk_score: float
 
 
+class IExchangeClient(ABC):
+    pass  # TODO: Add implementation
+class IExchangeClient(ABC):
 class IExchangeClient(ABC):
     """Interface for exchange client implementations"""
 
@@ -94,6 +109,9 @@ async def get_position_risk(self, symbol: str) -> dict[str, Any]:
 
 
 class IStateManager(ABC):
+    pass  # TODO: Add implementation
+class IStateManager(ABC):
+class IStateManager(ABC):
     """Interface for state management"""
 
 @abstractmethod
@@ -111,6 +129,9 @@ def get_state_if_not_exists(self, key: str, default_value: Any) -> Any:
 
 
 class IPerformanceReporter(ABC):
+    pass  # TODO: Add implementation
+class IPerformanceReporter(ABC):
+class IPerformanceReporter(ABC):
     """Interface for performance reporting"""
 
 @abstractmethod
@@ -127,6 +148,9 @@ async def generate_report(self) -> str:
 
 
 class IEventBus(ABC):
+    pass  # TODO: Add implementation
+class IEventBus(ABC):
+class IEventBus(ABC):
     """Interface for event bus"""
 
 @abstractmethod
@@ -142,6 +166,9 @@ def unsubscribe(self, event_type: str, callback) -> None:
         """Unsubscribe from an event type"""
 
 
+class IAnalyst(ABC):
+    pass  # TODO: Add implementation
+class IAnalyst(ABC):
 class IAnalyst(ABC):
     """Interface for market analysis components"""
 
@@ -174,6 +201,9 @@ async def load_models(self, model_path: str) -> bool:
 
 
 class IStrategist(ABC):
+    pass  # TODO: Add implementation
+class IStrategist(ABC):
+class IStrategist(ABC):
     """Interface for strategy formulation components"""
 
 @abstractmethod
@@ -199,6 +229,9 @@ async def get_strategy_performance(self) -> dict[str , Any]:
         """Get strategy performance metrics"""
 
 
+class ITactician(ABC):
+    pass  # TODO: Add implementation
+class ITactician(ABC):
 class ITactician(ABC):
     """Interface for trade execution components"""
 
@@ -230,6 +263,9 @@ market_data: MarketData) -> dict[str, float]:
 
 
 class ISupervisor(ABC):
+    pass  # TODO: Add implementation
+class ISupervisor(ABC):
+class ISupervisor(ABC):
     """Interface for supervision and coordination components"""
 
 @abstractmethod
@@ -253,6 +289,9 @@ async def coordinate_components(self) -> None:
         """Coordinate all trading components"""
 
 
+class IModelManager(ABC):
+    pass  # TODO: Add implementation
+class IModelManager(ABC):
 class IModelManager(ABC):
     """Interface for model management"""
 

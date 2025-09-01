@@ -46,6 +46,9 @@ except Exception:
         return float("nan")
 
 class TransitionSeqDataset(Dataset):
+    pass  # TODO: Add implementation
+class TransitionSeqDataset(Dataset):
+class TransitionSeqDataset(Dataset):
     pass  # TODO: Add proper implementation
 def __init__(
 self,
@@ -90,6 +93,9 @@ return {
 "y_ttpt": _to_tensor(np.array(y_ttpt), torch.float32),
 }
 
+class SmallTransformer(pl.LightningModule if pl else nn.Module):
+    pass  # TODO: Add implementation
+class SmallTransformer(pl.LightningModule if pl else nn.Module):
 class SmallTransformer(pl.LightningModule if pl else nn.Module):
     pass  # TODO: Add proper implementation
 def __init__(
@@ -241,12 +247,18 @@ prog_bar=True,
 )
 
 def configure_optimizers(self):
+    def configure_optimizers(self):
+    def configure_optimizers(self):
+    def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
 sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
 return {
 "optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"},
 }
 
+class SmallTCN(SmallTransformer):
+    pass  # TODO: Add implementation
+class SmallTCN(SmallTransformer):
 class SmallTCN(SmallTransformer):
     pass  # TODO: Add proper implementation
 def __init__(

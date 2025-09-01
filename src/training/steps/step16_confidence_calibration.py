@@ -27,6 +27,9 @@ except Exception:  # pragma: no cover
 joblib, None
 
 class RegimeAwareConfidenceCalibrationStep:
+    pass  # TODO: Add implementation
+class RegimeAwareConfidenceCalibrationStep:
+class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
 
 def __init__(self, config: dict[str, Any]) -> None:
@@ -803,6 +806,9 @@ f"Could not calculate base metrics for {type(model).__name__}: {e}",
 )
 return {}
 
+class _PrefitWrapper:
+    pass  # TODO: Add implementation
+class _PrefitWrapper:
 class _PrefitWrapper:
     """Wrapper to adapt prefit estimators / ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 

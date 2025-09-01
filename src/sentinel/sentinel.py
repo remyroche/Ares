@@ -17,6 +17,9 @@ warning,
 
 
 class Sentinel:
+    pass  # TODO: Add implementation
+class Sentinel:
+class Sentinel:
     """Enhanced sentinel with monitoring and alerting helpers."""
 
 def __init__(self, config: dict[str, Any]) -> None:

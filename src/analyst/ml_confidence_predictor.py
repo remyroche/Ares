@@ -29,6 +29,9 @@ execution_error,
 
 
 class MLConfidencePredictor:
+    pass  # TODO: Add implementation
+class MLConfidencePredictor:
+class MLConfidencePredictor:
     """
 ML Confidence Predictor that generates predictions with confidence scores
 for price increases and expected price decreases in table format.

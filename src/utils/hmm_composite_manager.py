@@ -27,6 +27,9 @@ _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
 
 class HMMCompositeManager:
+    pass  # TODO: Add implementation
+class HMMCompositeManager:
+class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
 
 def __init__(self) -> None:

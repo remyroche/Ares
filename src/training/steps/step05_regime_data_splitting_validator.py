@@ -17,6 +17,9 @@ from src.utils.logger import system_logger
 
 # Validator for Step 5: Regime Data Splitting
 class Step5RegimeDataSplittingValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step5RegimeDataSplittingValidator(BaseValidator):
+class Step5RegimeDataSplittingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step05_regime_data_splitting", config)
 self.logger, system_logger.getChild("Validator.Step5Split")

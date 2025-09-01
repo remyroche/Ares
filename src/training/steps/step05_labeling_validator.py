@@ -21,6 +21,9 @@ smart_validation_cache
 logger, system_logger.getChild("Step5LabelingValidator")
 
 class Step5LabelingValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step5LabelingValidator(BaseValidator):
+class Step5LabelingValidator(BaseValidator):
     """Validator for Step 5: Labeling."""
 
 def __init__(self, config: dict[str, Any]) -> None:

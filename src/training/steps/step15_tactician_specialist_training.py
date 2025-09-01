@@ -54,11 +54,20 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -95,6 +104,9 @@ if warning_symbols is None:
 else:
     error, warning_symbols.error
 
+class RegimeAwareTacticianSpecialistTrainingStep:
+    pass  # TODO: Add implementation
+class RegimeAwareTacticianSpecialistTrainingStep:
 class RegimeAwareTacticianSpecialistTrainingStep:
     """Step 15: Regime-Aware Tactician Specialist Models Training with Standardized Data Quality Management."""
 

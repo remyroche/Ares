@@ -16,6 +16,9 @@ validation_error,
 
 
 class StageContext:
+    pass  # TODO: Add implementation
+class StageContext:
+class StageContext:
     """Stage context with comprehensive error handling and type safety."""
 
 def __init__(self, config: dict[str, Any]) -> None:

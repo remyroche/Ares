@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class TechnicalIndicatorsConfig:
+    pass  # TODO: Add implementation
+class TechnicalIndicatorsConfig:
+class TechnicalIndicatorsConfig:
     """Optimizable technical indicator parameters."""
 
 # RSI parameters

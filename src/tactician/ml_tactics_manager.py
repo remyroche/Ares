@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 
 class MLTacticsManager:
+    pass  # TODO: Add implementation
+class MLTacticsManager:
+class MLTacticsManager:
     """
 ML Tactics Manager responsible for ML-based tactics and decision making.
 This module handles all ML tactics logic and decision making.

@@ -43,11 +43,20 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -102,6 +111,9 @@ log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with
 
 logger, system_logger.getChild("Step3HMMRegimeDiscovery")
 
+class HMMRegimeDiscoveryStep:
+    pass  # TODO: Add implementation
+class HMMRegimeDiscoveryStep:
 class HMMRegimeDiscoveryStep:
     """Step 3: HMM Regime Discovery with standardized data quality management."""
 

@@ -18,6 +18,9 @@ from src.utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
 class FractionalTripleBarrierLabeling:
+    pass  # TODO: Add implementation
+class FractionalTripleBarrierLabeling:
+class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.
 
 Instead of binary labels (1/-1), generates continuous values based on:

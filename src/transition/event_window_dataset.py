@@ -12,6 +12,9 @@ import pandas as pd
 
 @dataclass
 class WindowDatasetConfig:
+    pass  # TODO: Add implementation
+class WindowDatasetConfig:
+class WindowDatasetConfig:
     pre_window: int
 post_window: int
 max_events_per_label: int
@@ -19,6 +22,9 @@ duplicate_similarity_threshold: float
 downsample_near_duplicates: bool
 
 
+class EventWindowDatasetBuilder:
+    pass  # TODO: Add implementation
+class EventWindowDatasetBuilder:
 class EventWindowDatasetBuilder:
     """
 Creates a dataset of pre/post windows centered on event triggers.

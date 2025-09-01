@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class TrainingOptimizationConfig:
+    pass  # TODO: Add implementation
+class TrainingOptimizationConfig:
+class TrainingOptimizationConfig:
     """Optimizable training optimization parameters from other steps."""
 
 # Step 3: HMM Regime Discovery

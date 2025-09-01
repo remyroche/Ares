@@ -228,6 +228,9 @@ return {
 if __name__ == "__main__":
     # Test the validator
 async def test():
+    pass  # TODO: Add implementation
+async def test():
+async def test():
         test_input = {
 "symbol": "ETHUSDT",
 "exchange": "BINANCE",

@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 class ModelProbabilityGenerator:
+    pass  # TODO: Add implementation
+class ModelProbabilityGenerator:
+class ModelProbabilityGenerator:
     """
 Main class for generating probability outputs for trained models.
 
@@ -33,6 +36,9 @@ all 4 required probability outputs:
 """
 
 def __init__(self):
+    def __init__(self):
+    def __init__(self):
+    def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 self.classification_calculator = ClassificationProbabilityCalculator()
 self.regression_calculator = RegressionProbabilityCalculator()

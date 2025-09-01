@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
 @dataclass
 class MultiExchangeTestConfig:
+    pass  # TODO: Add implementation
+class MultiExchangeTestConfig:
+class MultiExchangeTestConfig:
     """Multi-exchange A/B test configuration."""
 
 test_name: str
@@ -34,6 +37,9 @@ enable_volume_adaptation: bool = True
 enable_performance_tracking: bool = True
 
 @dataclass
+class ExchangeTestResult:
+    pass  # TODO: Add implementation
+class ExchangeTestResult:
 class ExchangeTestResult:
     """Single exchange test result."""
 
@@ -51,6 +57,9 @@ error_message: str | None = None
 
 @dataclass
 class MultiExchangeTestSummary:
+    pass  # TODO: Add implementation
+class MultiExchangeTestSummary:
+class MultiExchangeTestSummary:
     """Multi-exchange test summary."""
 
 test_name: str
@@ -66,6 +75,9 @@ volume_adaptation_impact: dict[str, float]
 best_performing_exchange: str | None = None
 worst_performing_exchange: str | None = None
 
+class MultiExchangeABTester:
+    pass  # TODO: Add implementation
+class MultiExchangeABTester:
 class MultiExchangeABTester:
     """
 Multi-exchange A/B testing framework for comparing model performance across exchanges.

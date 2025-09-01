@@ -27,6 +27,9 @@ with_tracing_span,
 logger, system_logger.getChild("AggtradesFormatValidator")
 
 class AggtradesFormatValidator:
+    pass  # TODO: Add implementation
+class AggtradesFormatValidator:
+class AggtradesFormatValidator:
     """Validates and fixes aggtrades data format for pipeline compatibility."""
 
 # Expected columns for aggtrades data

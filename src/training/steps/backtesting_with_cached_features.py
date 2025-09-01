@@ -23,6 +23,9 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 class BacktestingWithCachedFeatures:
+    pass  # TODO: Add implementation
+class BacktestingWithCachedFeatures:
+class BacktestingWithCachedFeatures:
     """Backtesting system that leverages pre - computed wavelet features for fast execution."""
 
 def __init__(self, config: dict[str, Any]) -> None:

@@ -18,6 +18,9 @@ from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
 class Step1DataCollectionValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step1DataCollectionValidator(BaseValidator):
+class Step1DataCollectionValidator(BaseValidator):
 	"""Validator for Step 1: Data Collection."""
 
 def __init__(self, config: Dict[str, Any]) -> None:

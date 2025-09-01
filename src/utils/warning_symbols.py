@@ -8,6 +8,9 @@ import os
 import sys
 
 class ColorCodes:
+    pass  # TODO: Add implementation
+class ColorCodes:
+class ColorCodes:
     """ANSI color codes for terminal output."""
 
 # Reset
@@ -35,6 +38,9 @@ BRIGHT_MAGENTA = "\033[95m"
 BRIGHT_CYAN = "\033[96m"
 BRIGHT_WHITE = "\033[97m"
 
+class WarningSymbols:
+    pass  # TODO: Add implementation
+class WarningSymbols:
 class WarningSymbols:
     """Unicode warning symbols for enhanced visual feedback."""
 

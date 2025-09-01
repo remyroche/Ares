@@ -23,6 +23,9 @@ from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step9TacticianSpecialistTrainingValidator(BaseValidator):
+class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
 def __init__(self, config: dict[str, Any]) -> None:

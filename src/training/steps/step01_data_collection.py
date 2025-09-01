@@ -42,11 +42,20 @@ centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_dec
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -78,6 +87,9 @@ if centralized_decorators is None:
 else:
     monitor_data_collection, centralized_decorators.monitor_data_collection
 
+class DataCollectionStep:
+    pass  # TODO: Add implementation
+class DataCollectionStep:
 class DataCollectionStep:
     """Step 1: Data Collection using standardized pipeline utilities."""
 

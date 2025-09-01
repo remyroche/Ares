@@ -28,6 +28,9 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("DataQualityMonitor")
 
 class DataQualityAlert:
+    pass  # TODO: Add implementation
+class DataQualityAlert:
+class DataQualityAlert:
     """Represents a data quality alert."""
 
 def __init__(
@@ -70,6 +73,9 @@ return {
 def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
+class DataQualityMonitor:
+    pass  # TODO: Add implementation
+class DataQualityMonitor:
 class DataQualityMonitor:
     """Real - time data quality monitor with alerting capabilities."""
 

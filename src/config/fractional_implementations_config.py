@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class FractionalLabelingConfig:
+    pass  # TODO: Add implementation
+class FractionalLabelingConfig:
+class FractionalLabelingConfig:
     """Configuration for fractional triple barrier labeling."""
 
 # Enable/disable fractional labeling
@@ -53,6 +56,9 @@ regime_specific_configs: Dict[str, Dict[str, Any]] = field(default_factory=lambd
 
 @dataclass
 class FractionalDifferentiationConfig:
+    pass  # TODO: Add implementation
+class FractionalDifferentiationConfig:
+class FractionalDifferentiationConfig:
     """Configuration for fractional differentiation."""
 
 # Enable/disable fractional differentiation
@@ -83,6 +89,9 @@ max_parallel_workers: int = 4
 
 
 @dataclass
+class FractionalImplementationsConfig:
+    pass  # TODO: Add implementation
+class FractionalImplementationsConfig:
 class FractionalImplementationsConfig:
     """Main configuration for fractional implementations."""
 

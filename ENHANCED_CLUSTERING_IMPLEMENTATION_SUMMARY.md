@@ -60,11 +60,20 @@ The Enhanced Regime Clustering System has been successfully implemented with all
 
 ### Modified Files
 
-1. **`src/training/steps/step03_5_final_regime_clustering.py`**
-   - Integrated enhanced clustering system
-   - Replaced simple K-means with sophisticated approach
-   - Added comprehensive reporting
-   - Maintained backward compatibility
+1. **`src/training/steps/step03_hmm_regime_discovery.py`**
+   - Integrated enhanced clustering system directly into step03
+   - Replaced simple K-means with sophisticated enhanced clustering approach
+   - Added HMM reliability focus and comprehensive reporting
+   - Maintained backward compatibility with existing pipeline
+
+### Deleted Files
+
+1. **`src/training/steps/step03_5_final_regime_clustering.py`** - DELETED
+   - Functionality moved to step03_hmm_regime_discovery.py
+   - Enhanced clustering now integrated directly into main HMM regime discovery
+
+2. **`src/training/steps/step03_5_final_regime_clustering_validator.py`** - DELETED
+   - Validator no longer needed since step03_5 was removed
 
 ## 🚀 Key Features Implemented
 
@@ -307,7 +316,7 @@ python3 test_enhanced_clustering.py
 ```
 
 ### 3. Use in Training Pipeline
-The enhanced clustering is automatically integrated into the training pipeline:
+The enhanced clustering is now fully integrated into step03_hmm_regime_discovery.py:
 
 ```bash
 # Light mode (2 clusters)

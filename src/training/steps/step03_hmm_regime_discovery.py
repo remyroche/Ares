@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import time
+from datetime import datetime
 
 # Add project root to path
 project_root, Path(__file__).parent.parent.parent
@@ -1260,24 +1261,117 @@ class HMMRegimeDiscoveryStep:
             composite_scaler, StandardScaler()
             composite_features_scaled, composite_scaler.fit_transform(composite_features)
 
-        # Apply K-means clustering for 20 clusters (always use 20 for proper regime discovery)
-        n_clusters = 20
-            kmeans, KMeans(
-                n_clusters = n_clusters,
-                random_state = random_state,
-                n_init = 10,
-                max_iter = 300
-            )
+        # Apply enhanced regime clustering with HMM reliability focus
+        self.logger.info("🚀 Applying enhanced regime clustering with HMM reliability focus...")
+        
+        # Get training mode to determine target clusters
+        import os
+        light_mode = os.environ.get("LIGHT_TRAINING_MODE", "0") == "1"
+        blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
+        
+        if light_mode:
+            target_clusters = 2
+            self.logger.info(f"💡 LIGHT MODE: Target {target_clusters} clusters")
+        elif blank_mode:
+            target_clusters = 4
+            self.logger.info(f"🧪 BLANK MODE: Target {target_clusters} clusters")
+        else:
+            target_clusters = 20
+            self.logger.info(f"📊 FULL MODE: Target {target_clusters} clusters")
 
-            cluster_labels, kmeans.fit_predict(composite_features_scaled)
+        # Initialize enhanced clustering with HMM reliability focus
+        from src.training.steps.enhanced_regime_clustering import EnhancedRegimeClustering
+        
+        enhanced_config = {
+            "target_clusters": target_clusters,
+            "min_quality_threshold": 0.3,
+            "quality_drop_threshold": 0.8,
+            "max_iterations": 50,
+            "no_improvement_limit": 10,
+            "min_coverage_threshold": 0.98,
+            "bayesian_calls": 50,  # Reduced for faster execution
+            
+            # Explainable AI settings
+            "use_lime_shap": True,
+            "lime_samples": 500,  # Reduced for faster execution
+            "shap_samples": 50,    # Reduced for faster execution
+            
+            # Smart splitting settings
+            "smart_splitting": True,
+            "min_cluster_size_for_split": 20,
+            
+            # Automated K-means settings
+            "auto_k_means": True,
+            "max_k_for_auto": 8,  # Reduced for faster execution
+            "k_selection_method": "silhouette",  # "silhouette" or "elbow"
+            
+            # HMM reliability settings
+            "hmm_reliability_focus": True,
+            "hmm_entropy_penalty_weight": 0.15,  # Weight for HMM transition entropy penalty
+            "min_hmm_state_duration": 5,  # Minimum expected state duration
+            "hmm_transition_smoothness_weight": 0.1  # Weight for transition smoothness
+        }
+        
+        enhanced_clustering = EnhancedRegimeClustering(enhanced_config)
+        
+        # Run enhanced clustering
+        self.logger.info("🚀 Running enhanced regime clustering...")
+        clustering_results = enhanced_clustering.run_enhanced_clustering(
+            composite_features_scaled, 
+            list(composite_features.columns)
+        )
+        
+        # Extract results
+        cluster_labels = clustering_results["final_labels"]
+        final_score_dict = clustering_results["final_score_dict"]
+        refinement_results = clustering_results["refinement_results"]
+        report = clustering_results["report"]
+        
+        # Save comprehensive report
+        report_path = Path("reports") / f"enhanced_clustering_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        report_path.parent.mkdir(exist_ok=True)
+        
+        with open(report_path, 'w') as f:
+            f.write(report)
+        
+        self.logger.info(f"📊 Comprehensive report saved to: {report_path}")
+        
+        # Create clustering model for compatibility
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=final_score_dict["n_clusters"], random_state=42)
+        kmeans.fit(composite_features_scaled)
+        
+        n_clusters = final_score_dict["n_clusters"]
+        
+        self.logger.info(f"✅ Enhanced clustering completed: {n_clusters} clusters")
+        self.logger.info(f"   Composite Score: {final_score_dict['composite_score']:.4f}")
+        self.logger.info(f"   Coverage: {final_score_dict['coverage']:.3f}")
+        self.logger.info(f"   Quality Improvement: {refinement_results['quality_improvement']:.4f}")
+        
+        # Store enhanced clustering results for later use
+        enhanced_clustering_results = {
+            "enhanced_results": clustering_results,
+            "report_path": str(report_path),
+            "final_score_dict": final_score_dict,
+            "refinement_results": refinement_results
+        }
 
         # === PHASE 3: Cluster Quality Analysis ===
         self.logger.info("🎯 Phase 3: Analyzing cluster quality...")
 
-        # Calculate cluster quality metrics
-            cluster_metrics, self._calculate_cluster_quality_metrics(
-                composite_features_scaled, cluster_labels, kmeans
-            )
+        # Calculate cluster quality metrics using enhanced clustering results
+            cluster_metrics = {
+                "silhouette_score": final_score_dict["silhouette"],
+                "calinski_harabasz_score": final_score_dict["calinski_harabasz"],
+                "davies_bouldin_score": final_score_dict["davies_bouldin"],
+                "composite_score": final_score_dict["composite_score"],
+                "coverage": final_score_dict["coverage"],
+                "n_clusters": final_score_dict["n_clusters"],
+                "hmm_reliability_score": final_score_dict.get("hmm_reliability_score", 0.0),
+                "hmm_entropy_penalty": final_score_dict.get("hmm_entropy_penalty", 0.0),
+                "hmm_transition_smoothness": final_score_dict.get("hmm_transition_smoothness", 0.0),
+                "enhanced_clustering_results": enhanced_clustering_results
+            }
 
         # === PHASE 4: Enhanced Regime Analysis ===
         self.logger.info("🎯 Phase 4: Enhanced regime analysis and interpretation...")
@@ -1342,13 +1436,22 @@ class HMMRegimeDiscoveryStep:
                 "cluster_quality": cluster_metrics,
                 "hmm_score": hmm_model.score(features_scaled),
                 "composite_analysis": composite_analysis,
-                "reports_generated": list(reports.keys())
+                "reports_generated": list(reports.keys()),
+                "enhanced_clustering": {
+                    "composite_score": final_score_dict["composite_score"],
+                    "hmm_reliability_score": final_score_dict.get("hmm_reliability_score", 0.0),
+                    "quality_improvement": refinement_results["quality_improvement"],
+                    "iterations": refinement_results["iterations"],
+                    "report_path": str(report_path)
+                }
             }
 
-        self.logger.info(f"✅ Composite HMM regime discovery completed successfully")
-        self.logger.info(f"📊 HMM States: {n_hmm_states}, Composite Clusters: {n_clusters}")
-        self.logger.info(f"📈 Cluster Quality - Silhouette: {cluster_metrics['silhouette_score']:.4f}")
+        self.logger.info(f"✅ Enhanced HMM regime discovery completed successfully")
+        self.logger.info(f"📊 HMM States: {n_hmm_states}, Enhanced Clusters: {n_clusters}")
+        self.logger.info(f"📈 Enhanced Cluster Quality - Composite Score: {cluster_metrics['composite_score']:.4f}")
+        self.logger.info(f"🎯 HMM Reliability Score: {cluster_metrics['hmm_reliability_score']:.4f}")
         self.logger.info(f"📊 Reports Generated: {len(reports)}")
+        self.logger.info(f"📋 Enhanced Clustering Report: {report_path}")
 
         return {
                 "success": True,

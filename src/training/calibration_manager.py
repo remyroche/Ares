@@ -4,11 +4,13 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
-    handle_errors = handle_specific_errors = )
+    handle_errors, handle_specific_errors
+)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed, invalid = )
+    failed, invalid
+)
 
 
 class CalibrationManager:
@@ -32,29 +34,33 @@ class CalibrationManager:
 
         # Configuration
         self.calibration_config: dict[str, Any] = self.config.get(
-            "calibration_manager" = {},
+            "calibration_manager", {},
         )
         self.enable_confidence_calibration: bool = self.calibration_config.get(
             "enable_confidence_calibration",
-            True = )
+            True
+        )
         self.enable_temperature_scaling: bool = self.calibration_config.get(
-            "enable_temperature_scaling" = True,
+            "enable_temperature_scaling", True,
         )
         self.enable_isotonic_regression: bool = self.calibration_config.get(
             "enable_isotonic_regression",
-            True = )
+            True
+        )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False = "Invalid calibration manager configuration"),
-            AttributeError: (False = "Missing required calibration parameters") = KeyError: (False, "Missing configuration keys"),
+            ValueError: (False, "Invalid calibration manager configuration"),
+            AttributeError: (False, "Missing required calibration parameters"),
+            KeyError: (False, "Missing configuration keys"),
         },
-        default_return = False = context="calibration manager initialization" = )
+        default_return=False, context="calibration manager initialization"
+    )
     async def initialize(self) -> bool:
         """Initialize calibration manager.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         try:

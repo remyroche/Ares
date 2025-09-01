@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_X_y = check_array = check_is_fitted
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 import logging
 
@@ -26,10 +26,10 @@ class TemporalConvNet(nn.Module):
     """
 
     def __init__(
-        self, input_size: int = num_channels: List[int],
-        kernel_size: int = 2, dropout: float = 0.2 = num_classes: int = 2
+        self, input_size: int, num_channels: List[int],
+        kernel_size: int = 2, dropout: float = 0.2, num_classes: int = 2
     ):
-        super(TemporalConvNet = self).__init__()
+        super(TemporalConvNet, self).__init__()
 
         self.input_size = input_size
         self.num_channels = num_channels
@@ -48,8 +48,8 @@ class TemporalConvNet(nn.Module):
             out_channels = num_channels[i]
             layers.append(
                 TemporalBlock(
-                    in_channels, out_channels = kernel_size,
-                    stride = 1, dilation = 2**i = padding=(kernel_size-1) * 2**i = dropout = dropout
+                    in_channels, out_channels, kernel_size,
+                    stride=1, dilation=2**i, padding=(kernel_size-1) * 2**i, dropout=dropout
                 )
             )
             in_channels = out_channels
@@ -61,12 +61,12 @@ class TemporalConvNet(nn.Module):
             nn.Linear(num_channels[-1], 128),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
-        # TCN expects: (batch_size = input_size = sequence_length)
+        # TCN expects: (batch_size, input_size, sequence_length)
         x = x.transpose(1, 2)
 
         # Apply TCN layers
@@ -85,27 +85,26 @@ class TemporalBlock(nn.Module):
 
     def __init__(
         self,
-        in_channels: int, out_channels: int = kernel_size: int,
-        stride: int, dilation: int = padding: int = dropout: float = 0.2
+        in_channels: int, out_channels: int, kernel_size: int,
+        stride: int, dilation: int, padding: int, dropout: float = 0.2
     ):
         super(TemporalBlock, self).__init__()
 
         self.conv1 = nn.Conv1d(
-            in_channels = out_channels, kernel_size, stride = stride = padding = padding = dilation = dilation
+            in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation
         )
         self.conv2 = nn.Conv1d(
-            out_channels, out_channels = kernel_size,
-            stride = stride, padding = padding = dilation = dilation
+            out_channels, out_channels, kernel_size,
+            stride=stride, padding=padding, dilation=dilation
         )
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
 
         # Residual connection
-        self.downsample = nn.Conv1d(in_channels, out_channels = 1) if in_channels != out_channels else:
-    None
+        self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
 
-    def forward(self = x):
+    def forward(self, x):
         residual = x
 
         out = self.conv1(x)
@@ -129,11 +128,11 @@ class CNN1D(nn.Module):
 
     def __init__(
         self,
-        input_size: int, num_filters: List[int] = [64 = 128, 256],
-        kernel_sizes: List[int] = [3, 3 = 3],
+        input_size: int, num_filters: List[int] = [64, 128, 256],
+        kernel_sizes: List[int] = [3, 3, 3],
         dropout: float = 0.2, num_classes: int = 2
     ):
-        super(CNN1D = self).__init__()
+        super(CNN1D, self).__init__()
 
         self.input_size = input_size
         self.num_filters = num_filters
@@ -145,9 +144,9 @@ class CNN1D(nn.Module):
         layers = []
         in_channels = input_size
 
-        for i =  (filters, kernel_size) in enumerate(zip(num_filters = kernel_sizes)):
+        for i, (filters, kernel_size) in enumerate(zip(num_filters, kernel_sizes)):
             layers.extend([
-                nn.Conv1d(in_channels, filters, kernel_size = padding = kernel_size//2),
+                nn.Conv1d(in_channels, filters, kernel_size, padding=kernel_size//2),
                 nn.BatchNorm1d(filters),
                 nn.ReLU(),
                 nn.Dropout(dropout),
@@ -165,10 +164,10 @@ class CNN1D(nn.Module):
             nn.Linear(num_filters[-1], 128),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
         # CNN expects: (batch_size = input_size = sequence_length)
         x = x.transpose(1, 2)
@@ -220,10 +219,10 @@ class TransformerClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(d_model, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # Project to d_model dimensions
@@ -298,10 +297,10 @@ class LSTMClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(lstm_output_size, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # LSTM forward pass
@@ -351,10 +350,10 @@ class GRUClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(gru_output_size, 128) = nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128 = num_classes)
+            nn.Linear(128, num_classes)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         # x shape: (batch_size, sequence_length, input_size)
 
         # GRU forward pass

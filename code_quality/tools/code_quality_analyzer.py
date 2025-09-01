@@ -64,9 +64,6 @@ class CodeQualityAnalyzer:
     passreturn {}
 
         try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 
@@ -263,12 +260,18 @@ except Exception as e:
 
         return long_lines
 
+<<<<<<< HEAD
+    def fix_unused_imports(self, filepath: str, dry_run: bool = True) -> bool:
+        """Remove unused imports from a file."""
+        try:
+=======
     def fix_unused_imports(...) -> ...:
     """..."""
     passtry:
     passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
     passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+>>>>>>> origin/main
             with open(filepath, 'r', encoding='utf-8') as f:
     passcontent = f.read()
 

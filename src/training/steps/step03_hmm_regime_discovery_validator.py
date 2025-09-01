@@ -16,6 +16,7 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
 @handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return = False)
@@ -37,12 +38,18 @@ async def run_validator(
 
 	try:
 		# Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 		symbol, training_input.get("symbol", "")
 		exchange, training_input.get("exchange", "")
 		timeframe, training_input.get("timeframe", "")
 		data_dir, training_input.get("data_dir", "data / training")
 
 		if not all([symbol, exchange, timeframe]):
+    pass
+    pass
 			return {
 				"validation_passed": False,
 				"error": "Missing required parameters: symbol, exchange, timeframe",
@@ -54,6 +61,8 @@ async def run_validator(
 		# Check pipeline state
 		hmm_state, pipeline_state.get("hmm_regime_discovery", {})
 		if not hmm_state.get("completed", False):
+    pass
+    pass
 			return {
 				"validation_passed": False,
 				"error": "Step 3 HMM regime discovery not completed in pipeline state",
@@ -73,8 +82,12 @@ async def run_validator(
 		artifact_info: Dict[str, Any] = {}
 
 		for artifact in required_artifacts:
+    pass
+    pass
 			artifact_path, Path(data_dir) / artifact
 			if artifact_path.exists():
+    pass
+    pass
 				# Get file info
 				stat, artifact_path.stat()
 				artifact_info[artifact] = {
@@ -85,24 +98,38 @@ async def run_validator(
 
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
+    pass
+    pass
 					try:
 						df, pd.read_parquet(artifact_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 						artifact_info[artifact]["rows"] = len(df)
 						artifact_info[artifact]["columns"] = list(df.columns)
 
 						# Check for required columns based on artifact type
 						if "block_states" in artifact:
+    pass
+    pass
 							required_cols = [col for col in df.columns if "state_id" in col or "p_state_" in col]
 							if not required_cols:
+    pass
+    pass
 								missing_artifacts.append(f"{artifact} - missing state columns")
 
 						elif "composite_clusters" in artifact:
 							if "composite_cluster_id" not in df.columns:
+    pass
+    pass
 								missing_artifacts.append(f"{artifact} - missing composite_cluster_id column")
 
 						elif "intensity" in artifact:
 							intensity_cols = [col for col in df.columns if "intensity_" in col]
 							if not intensity_cols:
+    pass
+    pass
 								missing_artifacts.append(f"{artifact} - missing intensity columns")
 
 					except Exception as e:
@@ -113,12 +140,18 @@ async def run_validator(
 					try:
 						with open(artifact_path) as f:
 							meta, json.load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
 						required_meta_fields = ["symbol", "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
 						missing_fields = [field for field in required_meta_fields if field not in meta]
 						if missing_fields:
+    pass
+    pass
 							missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
 
 					except Exception as e:
@@ -134,8 +167,12 @@ async def run_validator(
 		]
 
 		for artifact in hmm_regimes_artifacts:
+    pass
+    pass
 			artifact_path, hmm_regimes_dir / artifact
 			if artifact_path.exists():
+    pass
+    pass
 				artifact_info[f"hmm_regimes/{artifact}"] = {
 					"exists": True,
 					"size_bytes": artifact_path.stat().st_size,
@@ -163,6 +200,8 @@ async def run_validator(
 		}
 
 		if validation_passed:
+    pass
+    pass
 			logger.info(f"✅ Step 3 validation passed: {artifacts_found}/{total_artifacts} artifacts found")
 		else:
 			logger.error(f"❌ Step 3 validation failed: {len(missing_artifacts)} missing artifacts")

@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
 )
 
@@ -88,13 +89,21 @@ class UnifiedDataManager:
         try:
             self.logger.info("🔄 Creating unified database with time-based splits...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate ratios
             if abs(train_ratio + validation_ratio + test_ratio - 1.0) > 1e-6:
+    pass
+    pass
                 msg = "Train, validation, and test ratios must sum to 1.0"
                 raise ValueError(msg)
 
             # Ensure data is sorted by time
             if not labeled_data.index.is_monotonic_increasing:
+    pass
+    pass
                 labeled_data = labeled_data.sort_index()
 
             # Apply lookback filtering based on configuration
@@ -124,6 +133,8 @@ class UnifiedDataManager:
 
             # Save strategic signals if provided
             if strategic_signals is not None:
+    pass
+    pass
                 self._save_strategic_signals(strategic_signals)
 
             self.logger.info("✅ Unified database created successfully")
@@ -145,6 +156,8 @@ class UnifiedDataManager:
             raise
 
     def _apply_lookback_filter(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Apply lookback period filtering to the data.
 
         Args:
@@ -155,6 +168,8 @@ class UnifiedDataManager:
 
         """
         if self.lookback_days and self.lookback_days > 0:
+    pass
+    pass
             self.logger.info(f"📅 Applying lookback filter: {self.lookback_days} days")
 
             # Calculate cutoff date
@@ -200,6 +215,8 @@ class UnifiedDataManager:
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
 
         if blank_mode:
+    pass
+    pass
             min_train_samples = 50  # Reduced for BLANK mode
             min_val_samples = 25  # Reduced for BLANK mode
             min_test_samples = 25  # Reduced for BLANK mode
@@ -210,6 +227,8 @@ class UnifiedDataManager:
 
         # Ensure data is properly sorted by time
         if not data.index.is_monotonic_increasing:
+    pass
+    pass
             self.logger.info(
                 "📅 Sorting data by time index for proper temporal ordering...",
             )
@@ -226,7 +245,11 @@ class UnifiedDataManager:
 
         # Validate temporal ordering
         if len(validation_data) > 0 and len(test_data) > 0:
+    pass
+    pass
             if train_data.index.max() >= validation_data.index.min():
+    pass
+    pass
                 self.logger.warning(
                     "⚠️ Temporal ordering issue detected - adjusting splits...",
                 )
@@ -239,7 +262,11 @@ class UnifiedDataManager:
 
         # Ensure we have minimum viable datasets with BLANK mode consideration
         if len(train_data) < min_train_samples:
+    pass
+    pass
             if blank_mode:
+    pass
+    pass
                 self.logger.warning(
                     f"⚠️ Training set small for BLANK mode: {len(train_data)} samples",
                 )
@@ -248,7 +275,11 @@ class UnifiedDataManager:
                 raise ValueError(msg)
 
         if len(validation_data) < min_val_samples:
+    pass
+    pass
             if blank_mode:
+    pass
+    pass
                 self.logger.warning(
                     f"⚠️ Validation set small for BLANK mode: {len(validation_data)} samples",
                 )
@@ -258,7 +289,11 @@ class UnifiedDataManager:
                 )
 
         if len(test_data) < min_test_samples:
+    pass
+    pass
             if blank_mode:
+    pass
+    pass
                 self.logger.warning(
                     f"⚠️ Test set small for BLANK mode: {len(test_data)} samples",
                 )
@@ -271,6 +306,8 @@ class UnifiedDataManager:
             os.environ.get("ENABLE_CLASS_AUGMENTATION", "1") == "1"
         )
         if blank_mode and enable_class_augmentation:
+    pass
+    pass
             label_columns = [
                 col
                 for col in data.columns
@@ -278,11 +315,15 @@ class UnifiedDataManager:
             ]
             label_col = None
             if "target" in data.columns:
+    pass
+    pass
                 label_col = "target"
             elif len(label_columns) > 0:
                 label_col = label_columns[0]
 
             if label_col is not None:
+    pass
+    pass
                 all_classes = set(pd.Series(data[label_col]).dropna().unique().tolist())
 
                 def _augment_split(
@@ -291,12 +332,16 @@ class UnifiedDataManager:
                     candidate_pool: pd.DataFrame,
                 ) -> pd.DataFrame:
                     if label_col not in split_df.columns or split_df.empty:
+    pass
+    pass
                         return split_df
                     present = set(
                         pd.Series(split_df[label_col]).dropna().unique().tolist(),
                     )
                     missing = all_classes - present
                     if not missing:
+    pass
+    pass
                         return split_df
 
                     self.logger.info(
@@ -305,8 +350,12 @@ class UnifiedDataManager:
 
                     samples_to_add = []
                     for m in missing:
+    pass
+    pass
                         candidates = candidate_pool[candidate_pool[label_col] == m]
                         if candidates.empty:
+    pass
+    pass
                             self.logger.info(
                                 f"📊 No candidates found for missing class {m} in {split_name} split",
                             )
@@ -319,6 +368,8 @@ class UnifiedDataManager:
                         )
 
                     if samples_to_add:
+    pass
+    pass
                         augmented = pd.concat([split_df, *samples_to_add], axis=0)
                         # Ensure temporal order and de-duplicate indices
                         augmented = augmented[
@@ -347,6 +398,8 @@ class UnifiedDataManager:
                     else (None, None)
                 )
                 if validation_data.empty:
+    pass
+    pass
                     val_candidates = (
                         data.loc[train_data.index.max() :].copy()
                         if not train_data.empty
@@ -355,6 +408,8 @@ class UnifiedDataManager:
                 else:
                     val_candidates = data.loc[val_window[0] : val_window[1]].copy()
                     if val_candidates.empty and not train_data.empty:
+    pass
+    pass
                         val_candidates = data.loc[train_data.index.max() :].copy()
 
                 train_data = _augment_split(train_data, "Training", train_candidates)
@@ -364,6 +419,8 @@ class UnifiedDataManager:
 
         # Log temporal ordering information and final sizes
         if len(train_data) > 0 and len(validation_data) > 0:
+    pass
+    pass
             self.logger.info(
                 f"📅 Train period: {train_data.index.min()} to {train_data.index.max()}",
             )
@@ -371,14 +428,16 @@ class UnifiedDataManager:
                 f"📅 Validation period: {validation_data.index.min()} to {validation_data.index.max()}",
             )
         if len(validation_data) > 0 and len(test_data) > 0:
+    pass
+    pass
             self.logger.info(
                 f"📅 Test period: {test_data.index.min()} to {test_data.index.max()}",
             )
 
         self.logger.info(
-            f"📊 Time-based splits created (post-augmentation if applied):\n"
-            f"  • Training: {len(train_data)} samples ({len(train_data)/total_samples:.1%})\n"
-            f"  • Validation: {len(validation_data)} samples ({len(validation_data)/total_samples:.1%})\n"
+            f"📊 Time-based splits created (post-augmentation if applied):\\\n"
+            f"  • Training: {len(train_data)} samples ({len(train_data)/total_samples:.1%})\\\n"
+            f"  • Validation: {len(validation_data)} samples ({len(validation_data)/total_samples:.1%})\\\n"
             f"  • Test: {len(test_data)} samples ({len(test_data)/total_samples:.1%})",
         )
 
@@ -454,7 +513,11 @@ class UnifiedDataManager:
 
         # Add label distributions for each label column
         for label_col in label_columns:
+    pass
+    pass
             if label_col in full_data.columns:
+    pass
+    pass
                 distribution = full_data[label_col].value_counts().to_dict()
                 metadata["label_distributions"][label_col] = {
                     "full_dataset": distribution,
@@ -501,6 +564,10 @@ class UnifiedDataManager:
         try:
             train_data.to_parquet(
                 self.train_file_parquet, compression="snappy", index=False,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             validation_data.to_parquet(
                 self.validation_file_parquet, compression="snappy", index=False,
@@ -532,6 +599,8 @@ class UnifiedDataManager:
         self.logger.info(f"  • Test: {self.test_file}")
 
     def _save_strategic_signals(self, strategic_signals: pd.Series) -> None:
+    pass
+    pass
         """Save strategic signals with metadata."""
         # Prefer Parquet for signals (store as DataFrame)
         parquet_path = os.path.join(
@@ -543,6 +612,10 @@ class UnifiedDataManager:
                 strategic_signals.to_frame(name="signal")
                 .reset_index()
                 .to_parquet(parquet_path, compression="snappy", index=False)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(f"💾 Strategic signals saved (Parquet) to {parquet_path}")
         except Exception:
@@ -556,6 +629,8 @@ class UnifiedDataManager:
             self.logger.info(f"💾 Strategic signals saved (Pickle) to {signals_file}")
 
     def load_data_split(self, split_type: str) -> pd.DataFrame:
+    pass
+    pass
         """Load a specific data split.
 
         Args:
@@ -576,6 +651,8 @@ class UnifiedDataManager:
         }
 
         if split_type not in split_files:
+    pass
+    pass
             msg = f"Invalid split_type: {split_type}. Must be one of {list(split_files.keys())}"
             raise ValueError(
                 msg,
@@ -585,10 +662,18 @@ class UnifiedDataManager:
 
         # Prefer Parquet (project columns if configured)
         if os.path.exists(parquet_path) and parquet_path.endswith(".parquet"):
+    pass
+    pass
             try:
                 feat_cols = getattr(self, "feature_columns", None)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 label_col = getattr(self, "label_column", None) or "label"
                 if isinstance(feat_cols, list) and len(feat_cols) > 0:
+    pass
+    pass
                     data = pd.read_parquet(
                         parquet_path, columns=["timestamp", *feat_cols, label_col],
                     )
@@ -603,6 +688,8 @@ class UnifiedDataManager:
 
         # Fallback to Pickle
         if not os.path.exists(pickle_path):
+    pass
+    pass
             msg = f"Data split file not found: {parquet_path} or {pickle_path}"
             raise FileNotFoundError(msg)
 
@@ -613,8 +700,12 @@ class UnifiedDataManager:
         return data
 
     def get_metadata(self) -> dict[str, Any]:
+    pass
+    pass
         """Load and return dataset metadata."""
         if not os.path.exists(self.metadata_file):
+    pass
+    pass
             msg = f"Metadata file not found: {self.metadata_file}"
             raise FileNotFoundError(msg)
 
@@ -624,6 +715,8 @@ class UnifiedDataManager:
             return json.load(f)
 
     def update_data_split(self, split_type: str, updated_data: pd.DataFrame) -> None:
+    pass
+    pass
         """Update a specific data split (useful for steps like step 8 that modify data).
 
         Args:
@@ -638,6 +731,8 @@ class UnifiedDataManager:
         }
 
         if split_type not in split_files:
+    pass
+    pass
             msg = f"Invalid split_type: {split_type}. Must be one of {list(split_files.keys())}"
             raise ValueError(
                 msg,
@@ -646,6 +741,10 @@ class UnifiedDataManager:
         parquet_path, pickle_path = split_files[split_type]
         try:
             updated_data.to_parquet(parquet_path, compression="snappy", index=False)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 f"💾 Updated {split_type} data (Parquet): {len(updated_data)} samples",
             )
@@ -677,6 +776,8 @@ class UnifiedDataManager:
         data = self.load_data_split(split_type)
 
         if label_column not in data.columns:
+    pass
+    pass
             msg = f"Label column '{label_column}' not found in data"
             raise ValueError(msg)
 
@@ -689,6 +790,8 @@ class UnifiedDataManager:
         return X, y
 
     def validate_database_integrity(self) -> dict[str, Any]:
+    pass
+    pass
         """Validate the integrity of the unified database and splits.
 
         Returns:
@@ -698,6 +801,10 @@ class UnifiedDataManager:
         try:
             validation_results = {"status": "SUCCESS", "issues": [], "warnings": []}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check if all files exist
             required_files = [
                 self.database_file,
@@ -708,10 +815,16 @@ class UnifiedDataManager:
             ]
 
             for file_path in required_files:
+    pass
+    pass
                 if not os.path.exists(file_path):
+    pass
+    pass
                     validation_results["issues"].append(f"Missing file: {file_path}")
 
             if validation_results["issues"]:
+    pass
+    pass
                 validation_results["status"] = "FAILED"
                 return validation_results
 
@@ -725,6 +838,8 @@ class UnifiedDataManager:
             # Check data consistency
             total_splits = len(train_data) + len(validation_data) + len(test_data)
             if total_splits != len(full_data):
+    pass
+    pass
                 validation_results["issues"].append(
                     f"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}",
                 )
@@ -741,16 +856,22 @@ class UnifiedDataManager:
 
             # Check for sufficient data in each split
             if len(train_data) < 100:
+    pass
+    pass
                 validation_results["warnings"].append(
                     f"Small training set: {len(train_data)} samples",
                 )
             if len(validation_data) < 50:
+    pass
+    pass
                 validation_results["warnings"].append(
                     f"Small validation set: {len(validation_data)} samples",
                 )
 
             # Update status based on issues
             if validation_results["issues"]:
+    pass
+    pass
                 validation_results["status"] = "FAILED"
             elif validation_results["warnings"]:
                 validation_results["status"] = "WARNING"
@@ -773,13 +894,23 @@ class UnifiedDataManager:
         """Check if the temporal ordering is maintained across splits."""
         try:
             if len(validation_data) > 0 and len(test_data) > 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return (
                     train_data.index.max() <= validation_data.index.min()
                     and validation_data.index.max() <= test_data.index.min()
                 )
+    except Exception as e:
+        pass
             if len(validation_data) > 0:
+    pass
+    pass
                 return train_data.index.max() <= validation_data.index.min()
             if len(test_data) > 0:
+    pass
+    pass
                 return train_data.index.max() <= test_data.index.min()
             return True
         except Exception:

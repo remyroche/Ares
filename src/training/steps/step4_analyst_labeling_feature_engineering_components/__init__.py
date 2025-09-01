@@ -11,6 +11,7 @@ from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
 
 # Import regime - specific triple barrier optimizer
 from .regime_specific_triple_barrier_optimizer import (
+import RegimeSpecificTripleBarrierOptimizer,
     RegimeSpecificTripleBarrierOptimizer,
     create_regime_specific_triple_barrier_optimizer,
 )
@@ -23,6 +24,6 @@ __all__ = [
 ]
 
 # Version information
-__version__ = "1.0.0"
+__version__ = "1.00"
 __author__ = "Ares Trading System"
 __description__ = "Optimized triple barrier labeling and feature engineering components for step 4"

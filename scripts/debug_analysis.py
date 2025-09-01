@@ -5,6 +5,8 @@ import pandas as pd
 )
 
 def debug_triple_barrier():
+    pass
+    pass
     """Debug the triple barrier logic with a simple example"""
 
     # Create a simple test dataset with known price movements
@@ -22,7 +24,7 @@ def debug_triple_barrier():
     target_pct = 0.4  # 0.4%
     stop_pct = 0.1    # 0.1%
 
-    print(f"\nTesting: Target {target_pct}%, Stop {stop_pct}%")
+    print(f"\\\nTesting: Target {target_pct}%, Stop {stop_pct}%")
 
     prices = test_data['price'].values
     timestamps = test_data['timestamp'].values
@@ -31,10 +33,12 @@ def debug_triple_barrier():
     total_attempts = 0
 
     for i in range(len(test_data) - 1):
+    pass
+    pass
         start_price = prices[i]
         start_time = timestamps[i]
 
-        print(f"\nStarting from price ${start_price:.2f} at {start_time}")
+        print(f"\\\nStarting from price ${start_price:.2f} at {start_time}")
 
         # Calculate target and stop prices
         up_target = start_price * (1 + target_pct / 100)
@@ -49,6 +53,8 @@ def debug_triple_barrier():
 
         # Look ahead
         for j in range(i + 1, len(test_data)):
+    pass
+    pass
             current_price = prices[j]
             current_time = timestamps[j]
 
@@ -57,11 +63,15 @@ def debug_triple_barrier():
             # Check time barrier (24 hours)
             time_diff = (current_time - start_time).astype('timedelta64[s]').astype(float)
             if time_diff > 24 * 3600:
+    pass
+    pass
                 print(f"      Time barrier hit ({time_diff/3600:.1f}h)")
                 break
 
             # Check stop loss first
             if current_price >= up_stop:
+    pass
+    pass
                 print(f"      STOP LOSS HIT: Price ${current_price:.2f} >= Up stop ${up_stop:.2f}")
                 break
             elif current_price <= down_stop:
@@ -70,6 +80,8 @@ def debug_triple_barrier():
 
             # Check targets
             if current_price >= up_target:
+    pass
+    pass
                 print(f"      SUCCESS: Price ${current_price:.2f} >= Up target ${up_target:.2f}")
                 occurrences += 1
                 break
@@ -80,7 +92,9 @@ def debug_triple_barrier():
 
         total_attempts += 1
 
-    print(f"\nResults: {occurrences} successes out of {total_attempts} attempts")
+    print(f"\\\nResults: {occurrences} successes out of {total_attempts} attempts")
 
 if __name__ == "__main__":
+    pass
+    pass
     debug_triple_barrier()

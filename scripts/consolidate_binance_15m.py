@@ -20,11 +20,15 @@ sys.path.append(str(project_root))
 
 
 def _list_source_files(pattern: str) -> List[str]:
+    pass
+    pass
 	"""List files matching the provided glob pattern, sorted for determinism."""
 	return sorted(glob.glob(pattern))
 
 
 def consolidate_binance_15m_data() -> bool:
+    pass
+    pass
 	"""Consolidate all Binance 15m klines data files."""
 	setup_logging()
 	logger = system_logger.getChild("ConsolidateBinance15m")
@@ -39,12 +43,18 @@ def consolidate_binance_15m_data() -> bool:
 	logger.info(f"📁 Found {len(source_files)} 15m Binance files")
 	logger.info("📋 Source files:")
 	for i, file in enumerate(source_files[:5], 1):
+    pass
+    pass
 		file_size = os.path.getsize(file)
 		logger.info(f"   {i}. {os.path.basename(file)} ({file_size:,} bytes)")
 	if len(source_files) > 5:
+    pass
+    pass
 		logger.info(f"   ... and {len(source_files) - 5} more files")
 
 	if not source_files:
+    pass
+    pass
 		print(error("❌ No 15m Binance files found"))
 		return False
 
@@ -57,23 +67,33 @@ def consolidate_binance_15m_data() -> bool:
 	total_records = 0
 
 	for i, file in enumerate(source_files, 1):
+    pass
+    pass
 		logger.info(
 			f"📖 [{i}/{len(source_files)}] Processing {os.path.basename(file)}...",
 		)
 
 		try:
 			# Read the CSV file
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 			df = pd.read_csv(file)
 			logger.info(f"   📊 Loaded {len(df)} records")
 
 			# Validate data
 			if len(df) == 0:
+    pass
+    pass
 				print(warning(f"   ⚠️ Empty file: {os.path.basename(file)}"))
 				continue
 
 			# Check columns
 			expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
 			if not all(col in df.columns for col in expected_columns):
+    pass
+    pass
 				print(missing(f"   ⚠️ Missing columns in {os.path.basename(file)}"))
 				print(warning(f"   📋 Expected: {expected_columns}"))
 				print(warning(f"   📋 Found: {list(df.columns)}"))
@@ -89,6 +109,8 @@ def consolidate_binance_15m_data() -> bool:
 
 			# Check for reasonable price data
 			if df["close"].isna().all():
+    pass
+    pass
 				print(invalid(f"   ⚠️ Invalid price data in {os.path.basename(file)}"))
 				continue
 
@@ -96,6 +118,8 @@ def consolidate_binance_15m_data() -> bool:
 			min_price = float(df["low"].min())
 			max_price = float(df["high"].max())
 			if min_price < 100 or max_price > 10000:
+    pass
+    pass
 				logger.warning(
 					f"   ⚠️ Unreasonable price range in {os.path.basename(file)}: ${min_price:.2f} - ${max_price:.2f}",
 				)
@@ -114,6 +138,8 @@ def consolidate_binance_15m_data() -> bool:
 			continue
 
 	if not all_data:
+    pass
+    pass
 		print(error("❌ No valid data files found"))
 		return False
 
@@ -177,6 +203,10 @@ def consolidate_binance_15m_data() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
 	success = consolidate_binance_15m_data()
 	if not success:
+    pass
+    pass
 		sys.exit(1)

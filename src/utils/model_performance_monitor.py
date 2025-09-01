@@ -19,6 +19,7 @@ import pandas as pd
 
 from src.utils.centralized_decorators import (
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import handle_errors,
     handle_errors,
     monitor_step_execution,
     secure_step_execution,
@@ -29,10 +30,13 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 )
 from src.utils.logger import system_logger
 
+import class ModelPerformanceMonitor:
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize the model performance monitor.
 
         Args:
@@ -70,6 +74,8 @@ class ModelPerformanceMonitor:
         context="model_performance_monitor_initialization"
     )
     def _initialize_performance_tracking(self) -> None:
+    pass
+    pass
         """Initialize performance tracking structures."""
         self.logger.info("🔧 Initializing model performance tracking...")
 
@@ -83,6 +89,8 @@ class ModelPerformanceMonitor:
         ]
 
         for model_type in model_types:
+    pass
+    pass
         self.performance_history[model_type] = []
         self.current_metrics[model_type] = {}
         self.model_registry[model_type] = {
@@ -153,6 +161,10 @@ class ModelPerformanceMonitor:
         try:
         self.logger.info(f"📊 Tracking performance for {model_type}:{model_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate basic metrics
             metrics, await self._calculate_performance_metrics(
                 predictions, actual_values, confidence_scores
@@ -160,6 +172,8 @@ class ModelPerformanceMonitor:
 
         # Add additional metrics if provided
         if additional_metrics:
+    pass
+    pass
                 metrics.update(additional_metrics)
 
         # Add metadata
@@ -221,6 +235,10 @@ class ModelPerformanceMonitor:
         try:
         self.logger.info("🔧 Calculating performance metrics...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Ensure arrays are numpy arrays
             predictions, np.array(predictions)
             actual_values, np.array(actual_values)
@@ -244,6 +262,8 @@ class ModelPerformanceMonitor:
 
         # Confidence metrics (if available)
         if confidence_scores is not None:
+    pass
+    pass
                 metrics.update(await self._calculate_confidence_metrics(confidence_scores, predictions, actual_values))
 
         # Model drift detection
@@ -277,6 +297,12 @@ class ModelPerformanceMonitor:
         """
         try:
             from sklearn.metrics import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import accuracy_score, precision_score, recall_score, f1_score,
                 accuracy_score, precision_score, recall_score, f1_score,
                 confusion_matrix, classification_report
             )
@@ -336,7 +362,13 @@ class ModelPerformanceMonitor:
         try:
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Calculate regression metrics
+import mse, mean_squared_error
             mse, mean_squared_error(actual_values, predictions)
             rmse, np.sqrt(mse)
             mae, mean_absolute_error(actual_values, predictions)
@@ -392,6 +424,10 @@ class ModelPerformanceMonitor:
             confidence_mean, float(np.mean(confidence_scores))
             confidence_std, float(np.std(confidence_scores))
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate calibration metrics
             correct_predictions = (predictions == actual_values).astype(float)
             calibration_error, float(np.mean(np.abs(confidence_scores - correct_predictions)))
@@ -402,8 +438,12 @@ class ModelPerformanceMonitor:
             bin_confidences = []
 
         for i in range(len(confidence_bins) - 1):
+    pass
+    pass
                 mask = (confidence_scores >= confidence_bins[i]) & (confidence_scores < confidence_bins[i + 1])
         if np.sum(mask) > 0:
+    pass
+    pass
                     bin_accuracy, np.mean(correct_predictions[mask])
                     bin_confidence, np.mean(confidence_scores[mask])
                     bin_accuracies.append(bin_accuracy)
@@ -450,7 +490,13 @@ class ModelPerformanceMonitor:
         try:
             from scipy import stats
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Calculate prediction errors
+import errors, predictions - actual_values
             errors, predictions - actual_values
 
         # Statistical tests for drift detection
@@ -510,7 +556,13 @@ class ModelPerformanceMonitor:
         """
         try:
         # Add to performance history
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if model_type not in self.performance_history:
+    pass
+    pass
         self.performance_history[model_type] = []
 
         self.performance_history[model_type].append(metrics)
@@ -553,6 +605,10 @@ class ModelPerformanceMonitor:
             model_dir, self.results_dir / model_type / model_name
             model_dir.mkdir(parents = True, exist_ok = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Save current metrics
             timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
             metrics_file, model_dir / f"metrics_{timestamp}.json"
@@ -590,33 +646,55 @@ class ModelPerformanceMonitor:
                 "overall_status": "PASS",
                 "failed_checks": [],
                 "warnings": []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         # Check classification metrics
         if "accuracy" in metrics:
+    pass
+    pass
         if metrics["accuracy"] < self.performance_thresholds["min_accuracy"]:
+    pass
+    pass
                     status["failed_checks"].append(f"Accuracy below threshold: {metrics['accuracy']:.3f} < {self.performance_thresholds['min_accuracy']}")
                     status["overall_status"] = "FAIL"
                 elif metrics["accuracy"] < self.performance_thresholds["min_accuracy"] + 0.1:
                     status["warnings"].append(f"Accuracy close to threshold: {metrics['accuracy']:.3f}")
 
         if "precision" in metrics:
+    pass
+    pass
         if metrics["precision"] < self.performance_thresholds["min_precision"]:
+    pass
+    pass
                     status["failed_checks"].append(f"Precision below threshold: {metrics['precision']:.3f} < {self.performance_thresholds['min_precision']}")
                     status["overall_status"] = "FAIL"
 
         if "recall" in metrics:
+    pass
+    pass
         if metrics["recall"] < self.performance_thresholds["min_recall"]:
+    pass
+    pass
                     status["failed_checks"].append(f"Recall below threshold: {metrics['recall']:.3f} < {self.performance_thresholds['min_recall']}")
                     status["overall_status"] = "FAIL"
 
         if "f1_score" in metrics:
+    pass
+    pass
         if metrics["f1_score"] < self.performance_thresholds["min_f1_score"]:
+    pass
+    pass
                     status["failed_checks"].append(f"F1 score below threshold: {metrics['f1_score']:.3f} < {self.performance_thresholds['min_f1_score']}")
                     status["overall_status"] = "FAIL"
 
         # Check for model drift
         if "drift_detected" in metrics and metrics["drift_detected"]:
+    pass
+    pass
                 status["warnings"].append("Model drift detected")
 
         return status
@@ -650,6 +728,12 @@ class ModelPerformanceMonitor:
         """
         try:
         if model_type not in self.model_registry:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         self.model_registry[model_type] = {}
 
         # Update registry
@@ -662,6 +746,8 @@ class ModelPerformanceMonitor:
 
         # Update success / failure counts
         if performance_status.get("overall_status") == "PASS":
+    pass
+    pass
         self.model_registry[model_type]["successful_runs"] = self.model_registry[model_type].get("successful_runs", 0) + 1
             else:
         self.model_registry[model_type]["failed_runs"] = self.model_registry[model_type].get("failed_runs", 0) + 1
@@ -694,20 +780,36 @@ class ModelPerformanceMonitor:
         """
         try:
             status_icon = "✅" if performance_status.get("overall_status") == "PASS" else "❌"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(f"{status_icon} Performance Summary for {model_type}:{model_name}")
 
         # Log key metrics
         if "accuracy" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 Accuracy: {metrics['accuracy']:.3f}")
         if "precision" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 Precision: {metrics['precision']:.3f}")
         if "recall" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 Recall: {metrics['recall']:.3f}")
         if "f1_score" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 F1 Score: {metrics['f1_score']:.3f}")
         if "r2_score" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 R² Score: {metrics['r2_score']:.3f}")
         if "rmse" in metrics:
+    pass
+    pass
         self.logger.info(f"   📊 RMSE: {metrics['rmse']:.6f}")
 
         # Log status
@@ -715,11 +817,19 @@ class ModelPerformanceMonitor:
 
         # Log warnings and failures
         if performance_status.get("warnings"):
+    pass
+    pass
         for warning in performance_status["warnings"]:
+    pass
+    pass
         self.logger.warning(f"   ⚠️ {warning}")
 
         if performance_status.get("failed_checks"):
+    pass
+    pass
         for failure in performance_status["failed_checks"]:
+    pass
+    pass
         self.logger.error(f"   ❌ {failure}")
 
         except Exception as e:
@@ -750,12 +860,20 @@ class ModelPerformanceMonitor:
                 "recommendations": []
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Generate summary statistics
         if model_type:
+    pass
+    pass
                 report["summary"] = await self._generate_model_type_summary(model_type)
                 report["detailed_metrics"] = self.performance_history.get(model_type, [])
             else:
         for mt in self.performance_history.keys():
+    pass
+    pass
                     report["summary"][mt] = await self._generate_model_type_summary(mt)
                     report["detailed_metrics"][mt] = self.performance_history[mt]
 
@@ -788,7 +906,13 @@ class ModelPerformanceMonitor:
         """
         try:
             history, self.performance_history.get(model_type, [])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not history:
+    pass
+    pass
         return {"error": "No performance history available"}
 
         # Calculate summary statistics
@@ -802,8 +926,12 @@ class ModelPerformanceMonitor:
         # Calculate averages for key metrics
             key_metrics = ["accuracy", "precision", "recall", "f1_score", "r2_score", "rmse"]
         for metric in key_metrics:
+    pass
+    pass
                 values = [h.get(metric, 0) for h in history if h.get(metric) is not None]
         if values:
+    pass
+    pass
                     summary["average_metrics"][metric] = {
                         "mean": float(np.mean(values)),
                         "std": float(np.std(values)),
@@ -834,29 +962,47 @@ class ModelPerformanceMonitor:
         try:
             recommendations = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for model_type, model_summary in summary.items():
+    pass
+    pass
         if "error" in model_summary:
+    pass
+    pass
                     continue
 
                 avg_metrics, model_summary.get("average_metrics", {})
 
         # Check accuracy trends
         if "accuracy" in avg_metrics:
+    pass
+    pass
                     accuracy_mean, avg_metrics["accuracy"]["mean"]
         if accuracy_mean < 0.7:
+    pass
+    pass
                         recommendations.append(f"Consider retraining {model_type} model - low average accuracy ({accuracy_mean:.3f})")
                     elif accuracy_mean < 0.8:
                         recommendations.append(f"Monitor {model_type} model performance - accuracy below optimal ({accuracy_mean:.3f})")
 
         # Check for high variance
         for metric, stats in avg_metrics.items():
+    pass
+    pass
         if stats["std"] > 0.1:  # High variance
                         recommendations.append(f"High variance detected in {model_type} {metric} - consider model stabilization")
 
         # Check for performance degradation
         if "latest_run" in model_summary and model_summary["latest_run"]:
+    pass
+    pass
                     latest, model_summary["latest_run"]
         if "drift_detected" in latest and latest["drift_detected"]:
+    pass
+    pass
                         recommendations.append(f"Model drift detected in {model_type} - consider retraining with recent data")
 
         return recommendations
@@ -881,6 +1027,10 @@ class ModelPerformanceMonitor:
         """
         try:
             timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             report_file, self.results_dir / f"performance_report_{timestamp}.json"
 
         with open(report_file, 'w') as f:
@@ -924,9 +1074,15 @@ class ModelPerformanceMonitor:
                 "model_type": model_type,
                 "current_metrics": self.current_metrics.get(model_type, {}),
                 "registry_info": self.model_registry.get(model_type, {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if include_history:
+    pass
+    pass
                 result["performance_history"] = self.performance_history.get(model_type, [])
 
         return result

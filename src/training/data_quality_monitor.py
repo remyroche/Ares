@@ -21,6 +21,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
+import log_step_metrics,
     log_step_metrics,
     log_step_report,
     create_detailed_step_report
@@ -111,6 +112,8 @@ class DataQualityMonitor:
     """
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataQualityMonitor")
         self.quality_history: List[DataQualityMetrics] = []
@@ -140,11 +143,19 @@ class DataQualityMonitor:
         self.logger.info(f"🔍 Monitoring data quality for {step_name}")
 
         if context is None:
+    pass
+    pass
             context = {}
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 metrics = await self._analyze_dataframe_quality(data, step_name, context)
+    except Exception as e:
+        pass
             elif isinstance(data, dict):
                 metrics = await self._analyze_dict_quality(data, step_name, context)
             else:
@@ -158,6 +169,8 @@ class DataQualityMonitor:
 
             # Check for alerts
             if metrics.overall_score < self.alert_threshold:
+    pass
+    pass
                 await self._trigger_quality_alert(step_name, metrics)
 
             return metrics
@@ -189,35 +202,47 @@ class DataQualityMonitor:
         # Completeness
         completeness = self._calculate_completeness(data)
         if completeness < 0.95:
+    pass
+    pass
             issues.append(f"Low completeness: {completeness:.3f}")
             recommendations.append("Consider data imputation or collection")
 
         # Consistency
         consistency = self._calculate_consistency(data)
         if consistency < 0.9:
+    pass
+    pass
             issues.append(f"Low consistency: {consistency:.3f}")
             recommendations.append("Check data relationships and constraints")
 
         # Validity
         validity = self._calculate_validity(data)
         if validity < 0.95:
+    pass
+    pass
             issues.append(f"Low validity: {validity:.3f}")
             recommendations.append("Validate data ranges and formats")
 
         # Timeliness
         timeliness = self._calculate_timeliness(data, context)
         if timeliness < 0.9:
+    pass
+    pass
             warnings.append(f"Timeliness concern: {timeliness:.3f}")
 
         # Uniqueness
         uniqueness = self._calculate_uniqueness(data)
         if uniqueness < 0.95:
+    pass
+    pass
             issues.append(f"Low uniqueness: {uniqueness:.3f}")
             recommendations.append("Check for duplicate records")
 
         # Accuracy
         accuracy = self._calculate_accuracy(data)
         if accuracy < 0.9:
+    pass
+    pass
             warnings.append(f"Accuracy concern: {accuracy:.3f}")
 
         # Overall score
@@ -242,11 +267,19 @@ class DataQualityMonitor:
         )
 
     def _calculate_completeness(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate data completeness score."""
         try:
             if data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             # Calculate missing value ratio
             missing_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
             return 1.0 - missing_ratio
@@ -255,12 +288,20 @@ class DataQualityMonitor:
             return 0.0
 
     def _calculate_consistency(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate data consistency score."""
         try:
             consistency_checks = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check price relationships if OHLC data
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
                 price_consistency = (
                     (data["high"] >= data["low"]) &
                     (data["high"] >= data["open"]) &
@@ -272,11 +313,15 @@ class DataQualityMonitor:
 
             # Check volume consistency
             if "volume" in data.columns:
+    pass
+    pass
                 volume_consistency = (data["volume"] >= 0).mean()
                 consistency_checks.append(volume_consistency)
 
             # Check timestamp consistency
             if "timestamp" in data.columns:
+    pass
+    pass
                 timestamp_consistency = data["timestamp"].is_monotonic_increasing
                 consistency_checks.append(float(timestamp_consistency))
 
@@ -286,17 +331,27 @@ class DataQualityMonitor:
             return 0.5
 
     def _calculate_validity(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate data validity score."""
         try:
             validity_checks = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check for negative prices
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
                 price_validity = (data[["open", "high", "low", "close"]] > 0).all(axis=1).mean()
                 validity_checks.append(price_validity)
 
             # Check for reasonable price ranges
             if "close" in data.columns:
+    pass
+    pass
                 price_range_validity = (
                     (data["close"] > 0) & (data["close"] < 1e6)
                 ).mean()
@@ -304,6 +359,8 @@ class DataQualityMonitor:
 
             # Check for reasonable volumes
             if "volume" in data.columns:
+    pass
+    pass
                 volume_validity = (
                     (data["volume"] >= 0) & (data["volume"] < 1e12)
                 ).mean()
@@ -315,11 +372,19 @@ class DataQualityMonitor:
             return 0.5
 
     def _calculate_timeliness(self, data: pd.DataFrame, context: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate data timeliness score."""
         try:
             if "timestamp" not in data.columns:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.5
 
+    except Exception as e:
+        pass
             # Check if data is recent
             latest_timestamp = data["timestamp"].max()
             current_time = pd.Timestamp.now()
@@ -329,6 +394,8 @@ class DataQualityMonitor:
 
             # Score based on age (fresher data gets higher score)
             if age_hours < 1:
+    pass
+    pass
                 return 1.0
             elif age_hours < 24:
                 return 0.9
@@ -341,11 +408,19 @@ class DataQualityMonitor:
             return 0.5
 
     def _calculate_uniqueness(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate data uniqueness score."""
         try:
             if data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             # Check for duplicate rows
             duplicate_ratio = data.duplicated().mean()
             return 1.0 - duplicate_ratio
@@ -354,12 +429,20 @@ class DataQualityMonitor:
             return 0.5
 
     def _calculate_accuracy(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate data accuracy score."""
         try:
             accuracy_checks = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check for extreme outliers
             if "close" in data.columns:
+    pass
+    pass
                 q1 = data["close"].quantile(0.25)
                 q3 = data["close"].quantile(0.75)
                 iqr = q3 - q1
@@ -371,6 +454,8 @@ class DataQualityMonitor:
 
             # Check for reasonable price movements
             if "close" in data.columns and len(data) > 1:
+    pass
+    pass
                 returns = data["close"].pct_change().abs()
                 extreme_moves = (returns > 0.5).mean()  # 50% moves
                 accuracy_checks.append(1.0 - extreme_moves)
@@ -381,8 +466,12 @@ class DataQualityMonitor:
             return 0.5
 
     def _determine_quality_level(self, score: float) -> QualityLevel:
+    pass
+    pass
         """Determine quality level based on score."""
         if score >= self.quality_thresholds["excellent"]:
+    pass
+    pass
             return QualityLevel.EXCELLENT
         elif score >= self.quality_thresholds["good"]:
             return QualityLevel.GOOD
@@ -404,6 +493,8 @@ class DataQualityMonitor:
         missing_keys = [key for key in required_keys if key not in data]
 
         if missing_keys:
+    pass
+    pass
             issues.append(f"Missing required keys: {missing_keys}")
             recommendations.append("Ensure all required keys are present")
 
@@ -450,6 +541,8 @@ class DataQualityMonitor:
         accuracy = 1.0
 
         if data is None:
+    pass
+    pass
             issues.append("Data is None")
             recommendations.append("Ensure data is properly loaded")
 
@@ -472,6 +565,8 @@ class DataQualityMonitor:
         )
 
     def _get_required_keys_for_step(self, step_name: str) -> List[str]:
+    pass
+    pass
         """Get required keys for a specific step."""
         key_requirements = {
             "step1": ["symbol", "exchange", "timeframe", "data_dir"],
@@ -491,7 +586,13 @@ class DataQualityMonitor:
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 metrics = self._analyze_dataframe_compatibility(data, step_name, expected_format)
+    except Exception as e:
+        pass
             elif isinstance(data, dict):
                 metrics = self._analyze_dict_compatibility(data, step_name, expected_format)
             else:
@@ -518,6 +619,8 @@ class DataQualityMonitor:
             )
 
     def _analyze_dataframe_compatibility(self, data: pd.DataFrame, step_name: str, expected_format: str) -> CompatibilityMetrics:
+    pass
+    pass
         """Analyze DataFrame compatibility."""
         issues = []
         warnings = []
@@ -529,6 +632,8 @@ class DataQualityMonitor:
         schema_compatible = len(missing_columns) == 0
 
         if missing_columns:
+    pass
+    pass
             issues.append(f"Missing required columns: {missing_columns}")
 
         # Check data types
@@ -536,6 +641,8 @@ class DataQualityMonitor:
         type_compatible = len(type_issues) == 0
 
         if type_issues:
+    pass
+    pass
             warnings.extend(type_issues)
 
         # Check indexing
@@ -543,11 +650,15 @@ class DataQualityMonitor:
         index_compatible = len(index_issues) == 0
 
         if index_issues:
+    pass
+    pass
             warnings.extend(index_issues)
 
         # Check temporal alignment
         temporal_aligned = self._check_temporal_alignment(data)
         if not temporal_aligned:
+    pass
+    pass
             warnings.append("Temporal alignment issues detected")
 
         # Check format compatibility
@@ -575,6 +686,8 @@ class DataQualityMonitor:
         )
 
     def _get_required_columns_for_step(self, step_name: str) -> List[str]:
+    pass
+    pass
         """Get required columns for a specific step."""
         column_requirements = {
             "step1": ["timestamp", "open", "high", "low", "close", "volume"],
@@ -589,6 +702,8 @@ class DataQualityMonitor:
         return column_requirements.get(step_name, [])
 
     def _check_data_types(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Check data types for compatibility."""
         issues = []
 
@@ -602,41 +717,67 @@ class DataQualityMonitor:
         }
 
         for column, expected_type in expected_types.items():
+    pass
+    pass
             if column in data.columns:
+    pass
+    pass
                 actual_type = str(data[column].dtype)
                 if actual_type != expected_type:
+    pass
+    pass
                     issues.append(f"Column {column}: expected {expected_type}, got {actual_type}")
 
         return issues
 
     def _check_indexing(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Check indexing for compatibility."""
         issues = []
 
         if "timestamp" in data.columns:
+    pass
+    pass
             # Check if timestamp is sorted
             if not data["timestamp"].is_monotonic_increasing:
+    pass
+    pass
                 issues.append("Timestamp column is not monotonically increasing")
 
             # Check for duplicate timestamps
             if data["timestamp"].duplicated().any():
+    pass
+    pass
                 issues.append("Found duplicate timestamps")
 
         return issues
 
     def _check_temporal_alignment(self, data: pd.DataFrame) -> bool:
+    pass
+    pass
         """Check temporal alignment."""
         try:
             if "timestamp" in data.columns and len(data) > 1:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Check for reasonable time intervals
                 time_diff = data["timestamp"].diff().dropna()
                 if time_diff.std() > time_diff.mean() * 3:
+    pass
+    pass
                     return False
+    except Exception as e:
+        pass
             return True
         except Exception:
             return False
 
     def _analyze_dict_compatibility(self, data: Dict[str, Any], step_name: str, expected_format: str) -> CompatibilityMetrics:
+    pass
+    pass
         """Analyze dictionary compatibility."""
         issues = []
         warnings = []
@@ -648,6 +789,8 @@ class DataQualityMonitor:
         schema_compatible = len(missing_keys) == 0
 
         if missing_keys:
+    pass
+    pass
             issues.append(f"Missing required keys: {missing_keys}")
 
         # Other compatibility checks for dict
@@ -678,6 +821,8 @@ class DataQualityMonitor:
         )
 
     def _analyze_generic_compatibility(self, data: Any, step_name: str, expected_format: str) -> CompatibilityMetrics:
+    pass
+    pass
         """Analyze generic data compatibility."""
         issues = []
         warnings = []
@@ -691,6 +836,8 @@ class DataQualityMonitor:
         format_compatible = True
 
         if data is None:
+    pass
+    pass
             issues.append("Data is None")
 
         overall_compatible = all([
@@ -720,7 +867,13 @@ class DataQualityMonitor:
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 metrics = self._analyze_dataframe_format(data, expected_format)
+    except Exception as e:
+        pass
             else:
                 metrics = self._analyze_generic_format(data, expected_format)
 
@@ -744,6 +897,8 @@ class DataQualityMonitor:
             )
 
     def _analyze_dataframe_format(self, data: pd.DataFrame, expected_format: str) -> FormatMetrics:
+    pass
+    pass
         """Analyze DataFrame format."""
         issues = []
         warnings = []
@@ -772,6 +927,8 @@ class DataQualityMonitor:
         )
 
     def _analyze_generic_format(self, data: Any, expected_format: str) -> FormatMetrics:
+    pass
+    pass
         """Analyze generic data format."""
         issues = []
         warnings = []
@@ -783,6 +940,8 @@ class DataQualityMonitor:
         file_size_reasonable = True
 
         if data is None:
+    pass
+    pass
             issues.append("Data is None")
             format_match = False
 
@@ -804,7 +963,13 @@ class DataQualityMonitor:
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 metrics = self._analyze_dataframe_indexing(data)
+    except Exception as e:
+        pass
             else:
                 metrics = self._analyze_generic_indexing(data)
 
@@ -829,6 +994,8 @@ class DataQualityMonitor:
             )
 
     def _analyze_dataframe_indexing(self, data: pd.DataFrame) -> IndexMetrics:
+    pass
+    pass
         """Analyze DataFrame indexing."""
         issues = []
         warnings = []
@@ -839,6 +1006,8 @@ class DataQualityMonitor:
         # Check if sorted
         index_sorted = True
         if "timestamp" in data.columns:
+    pass
+    pass
             index_sorted = data["timestamp"].is_monotonic_increasing
         elif data.index.name == "timestamp":
             index_sorted = data.index.is_monotonic_increasing
@@ -846,6 +1015,8 @@ class DataQualityMonitor:
         # Check for duplicates
         no_duplicates = True
         if "timestamp" in data.columns:
+    pass
+    pass
             no_duplicates = not data["timestamp"].duplicated().any()
         elif data.index.name == "timestamp":
             no_duplicates = not data.index.duplicated().any()
@@ -853,23 +1024,35 @@ class DataQualityMonitor:
         # Check for gaps
         no_gaps = True
         if "timestamp" in data.columns and len(data) > 1:
+    pass
+    pass
             time_diff = data["timestamp"].diff().dropna()
             if time_diff.std() > time_diff.mean() * 2:
+    pass
+    pass
                 no_gaps = False
                 warnings.append("Large time gaps detected")
 
         # Check frequency consistency
         frequency_consistent = True
         if "timestamp" in data.columns and len(data) > 1:
+    pass
+    pass
             time_diff = data["timestamp"].diff().dropna()
             if time_diff.std() > time_diff.mean() * 0.5:
+    pass
+    pass
                 frequency_consistent = False
                 warnings.append("Inconsistent time frequency")
 
         # Check timezone consistency
         timezone_consistent = True
         if "timestamp" in data.columns:
+    pass
+    pass
             if data["timestamp"].dt.tz is not None:
+    pass
+    pass
                 timezone_consistent = data["timestamp"].dt.tz == data["timestamp"].dt.tz
 
         overall_valid = all([
@@ -895,6 +1078,8 @@ class DataQualityMonitor:
         )
 
     def _analyze_generic_indexing(self, data: Any) -> IndexMetrics:
+    pass
+    pass
         """Analyze generic data indexing."""
         issues = []
         warnings = []
@@ -908,6 +1093,8 @@ class DataQualityMonitor:
         timezone_consistent = True
 
         if data is None:
+    pass
+    pass
             issues.append("Data is None")
             overall_valid = False
         else:
@@ -930,6 +1117,10 @@ class DataQualityMonitor:
         """Log quality metrics to MLflow."""
         try:
             # Convert metrics to dict for logging
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             metrics_dict = asdict(metrics)
             metrics_dict["quality_level"] = metrics_dict["quality_level"].value
             metrics_dict["timestamp"] = metrics_dict["timestamp"].isoformat()
@@ -969,6 +1160,8 @@ class DataQualityMonitor:
     async def get_quality_summary(self) -> Dict[str, Any]:
         """Get comprehensive quality summary."""
         if not self.quality_history:
+    pass
+    pass
             return {"message": "No quality data available"}
 
         # Calculate summary statistics
@@ -1062,7 +1255,7 @@ async def main():
     report = await monitor.generate_quality_report()
 
     # Print results
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("DATA QUALITY MONITORING RESULTS")
     print("="*80)
     print(f"Quality Score: {quality_metrics.overall_score:.3f} ({quality_metrics.quality_level.value})")
@@ -1070,9 +1263,11 @@ async def main():
     print(f"Format Match: {'✅' if format_metrics.format_match else '❌'}")
     print(f"Index Valid: {'✅' if index_metrics.overall_valid else '❌'}")
 
-    print("\nQuality Summary:")
+    print("\\\nQuality Summary:")
     print(json.dumps(report["quality_summary"], indent=2))
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

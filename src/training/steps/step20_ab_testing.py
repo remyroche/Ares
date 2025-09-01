@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     initialization_error,
 )
@@ -17,13 +18,19 @@ class ABTestingStep:
     """Step 15: A / B Testing using existing step08_ab_testing_setup."""
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger
 
@@ -31,6 +38,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the A / B testing step."""
         try:
         self.logger.info("🚀 Initializing A / B Testing Step...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ A / B Testing Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
@@ -55,6 +66,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
         self.logger.info("🔄 Executing A / B Testing...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -67,6 +82,8 @@ def __init__(self, config: dict[str, Any]) -> None:
             ab_results_file, f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json"
 
         if os.path.exists(ab_results_file):
+    pass
+    pass
         with open(ab_results_file) as f:
                     ab_results: Dict[str, Any] = json.load(f)
             else:
@@ -90,6 +107,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
                 winner = (
                     ab_results.get("winner") if isinstance(ab_results, dict) else None
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
         self.logger.info(
                     f"A / B testing results prepared: winner={winner}"
@@ -202,6 +223,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -306,6 +328,10 @@ async def run_step(
     """
     try:
         # Create step instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, ABTestingStep(config)
         await step.initialize()
@@ -328,6 +354,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")

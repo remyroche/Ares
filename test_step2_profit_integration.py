@@ -11,6 +11,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create test market data with profit percentages."""
     dates = pd.date_range("2024-01-01", periods=n_samples, freq="1min")
 
@@ -23,6 +25,8 @@ def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
 
     # Generate price movements with some trend and volatility
     for i in range(1, n_samples):
+    pass
+    pass
         # Add some trend and random walk
         change = np.random.normal(0, 0.001) + 0.0001  # Small upward trend
         new_price = prices[-1] * (1 + change)
@@ -69,9 +73,15 @@ async def test_step02_profit_integration():
     print(f"   SHORT positions: {(test_data['label'] == -1).sum()}")
 
     # Test profit-based feature engineering directly
-    print("\n🔧 Testing Profit-Based Feature Engineering Directly...")
+    print("\\\n🔧 Testing Profit-Based Feature Engineering Directly...")
     try:
         from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ProfitBasedFeatureEngineering
             ProfitBasedFeatureEngineering
         )
 
@@ -100,9 +110,15 @@ async def test_step02_profit_integration():
         return False
 
     # Test step02 vectorized feature engineering integration
-    print("\n🔧 Testing Step02 Vectorized Feature Engineering Integration...")
+    print("\\\n🔧 Testing Step02 Vectorized Feature Engineering Integration...")
     try:
         from src.training.steps.vectorized_advanced_feature_engineering import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import VectorizedAdvancedFeatureEngineering
             VectorizedAdvancedFeatureEngineering
         )
 
@@ -125,6 +141,8 @@ async def test_step02_profit_integration():
     init_success = await step02_feature_eng.initialize()
 
         if not init_success:
+    pass
+    pass
             print("❌ Step02 feature engineering initialization failed")
             return False
 
@@ -154,12 +172,18 @@ async def test_step02_profit_integration():
     print(f"   - Profit-based features in step02: {len(profit_based_features)}")
 
         if profit_based_features:
+    pass
+    pass
             print(f"   - Sample profit features: {profit_based_features[:10]}")
 
             # Analyze profit feature categories
             feature_categories = {}
             for feature_name in profit_based_features:
+    pass
+    pass
                 if "squared" in feature_name or "cubed" in feature_name or "abs" in feature_name:
+    pass
+    pass
                     feature_categories["basic"] = feature_categories.get("basic", 0) + 1
                 elif "sign" in feature_name or "magnitude" in feature_name or "bins" in feature_name:
                     feature_categories["categorical"] = feature_categories.get("categorical", 0) + 1
@@ -182,13 +206,17 @@ async def test_step02_profit_integration():
 
         # Show overall feature distribution
         all_features = list(step02_features.keys())
-        print(f"\n📊 Overall Feature Distribution:")
+        print(f"\\\n📊 Overall Feature Distribution:")
         print(f"   - Total features: {len(all_features)}")
 
         # Categorize all features
         all_categories = {}
         for feature_name in all_features:
+    pass
+    pass
             if "potential_profit_pct" in feature_name:
+    pass
+    pass
                 all_categories["profit_based"] = all_categories.get("profit_based", 0) + 1
             elif "wavelet" in feature_name.lower():
                 all_categories["wavelet"] = all_categories.get("wavelet", 0) + 1
@@ -210,17 +238,25 @@ async def test_step02_profit_integration():
         print(f"   - Feature categories: {all_categories}")
 
         # Test feature quality
-        print(f"\n🔍 Feature Quality Analysis:")
+        print(f"\\\n🔍 Feature Quality Analysis:")
 
         # Check for missing values
         missing_features = []
         for feature_name, feature_values in step02_features.items():
+    pass
+    pass
             if hasattr(feature_values, 'isna'):
+    pass
+    pass
                 missing_count = feature_values.isna().sum()
                 if missing_count > 0:
+    pass
+    pass
                     missing_features.append((feature_name, missing_count))
 
         if missing_features:
+    pass
+    pass
             print(f"   - Features with missing values: {len(missing_features)}")
             print(f"   - Sample missing features: {missing_features[:5]}")
         else:
@@ -229,17 +265,25 @@ async def test_step02_profit_integration():
         # Check for infinite values
         inf_features = []
         for feature_name, feature_values in step02_features.items():
+    pass
+    pass
             if hasattr(feature_values, 'values'):
+    pass
+    pass
                 if np.any(np.isinf(feature_values.values)):
+    pass
+    pass
                     inf_features.append(feature_name)
 
         if inf_features:
+    pass
+    pass
             print(f"   - Features with infinite values: {len(inf_features)}")
             print(f"   - Sample infinite features: {inf_features[:5]}")
         else:
             print(f"   - No infinite values found")
 
-        print("\n✅ Step02 Profit Integration Test Completed Successfully!")
+        print("\\\n✅ Step02 Profit Integration Test Completed Successfully!")
         return True
 
     except Exception as e:
@@ -249,13 +293,17 @@ async def test_step02_profit_integration():
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio
 
     # Run the test
     success = asyncio.run(test_step02_profit_integration())
 
     if success:
-        print("\n🎉 All tests passed! Profit-based feature engineering is properly integrated into step02.")
+    pass
+    pass
+        print("\\\n🎉 All tests passed! Profit-based feature engineering is properly integrated into step02.")
     else:
-        print("\n❌ Tests failed. Please check the implementation.")
+        print("\\\n❌ Tests failed. Please check the implementation.")
         sys.exit(1)

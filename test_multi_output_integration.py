@@ -17,13 +17,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def test_multi_output_probability_trainer():
+    pass
+    pass
     """Test the MultiOutputProbabilityTrainer directly."""
     logger.info("🧪 Testing MultiOutputProbabilityTrainer...")
 
     try:
         from src.training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create test data
+import n_samples = 1000
         n_samples = 1000
         n_features = 10
 
@@ -57,6 +65,8 @@ def test_multi_output_probability_trainer():
         # Verify targets
         expected_targets = ["triple_barrier", "direction", "magnitude", "barrier_avoidance"]
         for target_name in expected_targets:
+    pass
+    pass
             assert target_name in y_multi, f"Missing target: {target_name}"
             assert len(y_multi[target_name]) == len(X), f"Target length mismatch for {target_name}"
             assert np.all((y_multi[target_name] >= 0) & (y_multi[target_name] <= 1)), f"Invalid target values for {target_name}"
@@ -89,6 +99,8 @@ def test_multi_output_probability_trainer():
         ]
 
         for prob_name in expected_probabilities:
+    pass
+    pass
             assert prob_name in price_action_probabilities, f"Missing probability: {prob_name}"
             prob_value = price_action_probabilities[prob_name]
             assert 0.0 <= prob_value <= 1.0, f"Invalid probability value for {prob_name}: {prob_value}"
@@ -106,13 +118,21 @@ def test_multi_output_probability_trainer():
         return False
 
 def test_step6_integration():
+    pass
+    pass
     """Test Step 6 HMM-based training integration."""
     logger.info("🧪 Testing Step 6 HMM-based training integration...")
 
     try:
         from src.training.steps.step6_hmm_based_training import HMMBasedTrainingStep
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create test configuration
+import config = {
         config = {
             "HMM_LM": {
                 "specialist_models": {
@@ -136,6 +156,8 @@ def test_step6_integration():
 
         # Add some features
         for i in range(n_features):
+    pass
+    pass
             data[f'feature_{i}'] = np.random.randn(n_samples)
 
         data = pd.DataFrame(data)
@@ -144,6 +166,8 @@ def test_step6_integration():
         result = step._train_lightgbm_model(data, "30m")
 
         if result:
+    pass
+    pass
             # Verify result structure
             assert "architecture" in result
             assert "model_path" in result
@@ -159,6 +183,8 @@ def test_step6_integration():
             ]
 
             for prob_name in expected_probs:
+    pass
+    pass
                 assert prob_name in probabilities, f"Missing probability in Step 6: {prob_name}"
 
             logger.info("✅ Step 6 integration test passed!")
@@ -172,13 +198,21 @@ def test_step6_integration():
         return False
 
 def test_step9_integration():
+    pass
+    pass
     """Test Step 9 Tactician specialist training integration."""
     logger.info("🧪 Testing Step 9 Tactician specialist training integration...")
 
     try:
         from src.training.steps.step9_tactician_specialist_training import TacticianSpecialistTrainingStep
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create test configuration
+import config = {}
         config = {}
 
         # Initialize step
@@ -199,6 +233,8 @@ def test_step9_integration():
         result = step._train_lightgbm(X_train, X_test, y_train, y_test, "ETHUSDT", "binance")
 
         if result:
+    pass
+    pass
             # Verify result structure
             assert "multi_output_trainer" in result
             assert "trained_models" in result
@@ -214,6 +250,8 @@ def test_step9_integration():
             ]
 
             for prob_name in expected_probs:
+    pass
+    pass
                 assert prob_name in probabilities, f"Missing probability in Step 9: {prob_name}"
 
             logger.info("✅ Step 9 integration test passed!")
@@ -227,13 +265,21 @@ def test_step9_integration():
         return False
 
 def test_enhanced_step6_integration():
+    pass
+    pass
     """Test Enhanced Step 6 integration."""
     logger.info("🧪 Testing Enhanced Step 6 integration...")
 
     try:
         from src.training.steps.step6_hmm_based_training_enhanced import HMMBasedTrainingStepEnhanced
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create test configuration
+import config = {
         config = {
             "enable_multi_output": True,
             "multi_output_model_type": "LightGBM"
@@ -254,6 +300,8 @@ def test_enhanced_step6_integration():
 
         # Add features
         for i in range(n_features):
+    pass
+    pass
             data[f'feature_{i}'] = np.random.randn(n_samples)
 
         # Test data preparation
@@ -264,11 +312,15 @@ def test_enhanced_step6_integration():
         assert "features" in prepared_data
 
         if prepared_data["has_multi_output"] and step.multi_output_trainer:
+    pass
+    pass
             # Test prediction
             features = prepared_data["features"]
             predictions = step.predict_enhanced(features, "test_model", "multi_output")
 
             if predictions and len(predictions) == 2:
+    pass
+    pass
                 direction_pred, profit_pred = predictions
                 assert direction_pred is not None
                 assert profit_pred is not None
@@ -286,14 +338,22 @@ def test_enhanced_step6_integration():
         return False
 
 def test_model_saving_utils():
+    pass
+    pass
     """Test model saving utilities with multi-output models."""
     logger.info("🧪 Testing model saving utilities...")
 
     try:
         from src.training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         from src.training.model_saving_utils import save_multi_output_model_with_probabilities, load_model_with_probabilities
 
         # Create test trainer
+import config = {
         config = {
             "use_lightgbm": True,
             "n_estimators": 50,
@@ -347,6 +407,8 @@ def test_model_saving_utils():
         # Clean up
         import os
         if os.path.exists(model_path):
+    pass
+    pass
             os.remove(model_path)
 
         logger.info("✅ Model saving utilities test passed!")
@@ -371,18 +433,28 @@ async def run_all_tests():
     results = {}
 
     for test_name, test_func in tests:
-        logger.info(f"\n{'='*50}")
+    pass
+    pass
+        logger.info(f"\\\n{'='*50}")
         logger.info(f"Running {test_name} test...")
 
         try:
             if asyncio.iscoroutinefunction(test_func):
+    pass
+    except Exception as e:
+        pass
+    pass
                 result = await test_func()
+    except Exception as e:
+        pass
             else:
                 result = test_func()
 
             results[test_name] = result
 
             if result:
+    pass
+    pass
                 logger.info(f"✅ {test_name} PASSED")
             else:
                 logger.error(f"❌ {test_name} FAILED")
@@ -392,7 +464,7 @@ async def run_all_tests():
             results[test_name] = False
 
     # Summary
-    logger.info(f"\n{'='*50}")
+    logger.info(f"\\\n{'='*50}")
     logger.info("INTEGRATION TEST SUMMARY")
     logger.info(f"{'='*50}")
 
@@ -400,12 +472,16 @@ async def run_all_tests():
     total = len(results)
 
     for test_name, result in results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         logger.info(f"{test_name}: {status}")
 
-    logger.info(f"\nOverall: {passed}/{total} tests passed")
+    logger.info(f"\\\nOverall: {passed}/{total} tests passed")
 
     if passed == total:
+    pass
+    pass
         logger.info("🎉 ALL TESTS PASSED! Multi-output training integration is working correctly.")
     else:
         logger.error(f"⚠️ {total - passed} tests failed. Please check the implementation.")
@@ -413,4 +489,6 @@ async def run_all_tests():
     return passed == total
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(run_all_tests())

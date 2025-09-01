@@ -17,6 +17,8 @@ class CombinedFractionalSystemTester:
     """Test combined fractional system integration and performance."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the tester."""
         self.output_dir = Path("data/fractional_performance/combined_system_test")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -52,6 +54,8 @@ class CombinedFractionalSystemTester:
         self.hmm_regimes = ['regime_0', 'regime_1', 'regime_2', 'regime_3']
 
     def generate_test_data(self, n_samples: int = 1000, regime: str = 'regime_0') -> Tuple['pd.DataFrame', 'pd.DataFrame']:
+    pass
+    pass
         """Generate test data for specific HMM regime.
 
         Args:
@@ -80,6 +84,8 @@ class CombinedFractionalSystemTester:
         prices = [base_price]
 
         for i in range(n_samples - 1):
+    pass
+    pass
             noise = random.gauss(0, params['volatility'])
             new_price = prices[-1] * (1 + params['trend'] + noise)
             prices.append(new_price)
@@ -94,6 +100,8 @@ class CombinedFractionalSystemTester:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             price_data['high'][i] = max(price_data['high'][i], price_data['close'][i])
             price_data['low'][i] = min(price_data['low'][i], price_data['close'][i])
 
@@ -131,6 +139,12 @@ class CombinedFractionalSystemTester:
         # Test fractional labeling only
         try:
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import FractionalTripleBarrierLabeling
                 FractionalTripleBarrierLabeling
             )
 
@@ -153,12 +167,22 @@ class CombinedFractionalSystemTester:
         try:
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import generator = FractionalFeatureGenerator
             generator = FractionalFeatureGenerator(config=self.test_config['differentiation'])
 
             # Combine data
             combined_data = price_data.copy()
             for col in volume_data.columns:
+    pass
+    pass
                 if col not in combined_data.columns:
+    pass
+    pass
                     combined_data[col] = volume_data[col]
 
             features = generator.generate_features(combined_data)
@@ -197,7 +221,13 @@ class CombinedFractionalSystemTester:
         try:
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Initialize combined system
+import config = get_combined_fractional_config
             config = get_combined_fractional_config(
                 labeling_config=self.test_config['labeling'],
                 differentiation_config=self.test_config['differentiation'],
@@ -257,6 +287,8 @@ class CombinedFractionalSystemTester:
         hmm_results = {}
 
         for regime in self.hmm_regimes:
+    pass
+    pass
             print(f"   Testing regime: {regime}")
 
             # Generate regime-specific data
@@ -268,6 +300,8 @@ class CombinedFractionalSystemTester:
             hmm_results[regime] = regime_result
 
             if regime_result['success']:
+    pass
+    pass
                 print(f"      ✅ {regime}: {regime_result['total_features']} features, quality={regime_result['feature_quality']:.3f}")
             else:
                 print(f"      ❌ {regime}: {regime_result['error']}")
@@ -323,6 +357,8 @@ class CombinedFractionalSystemTester:
         successful_regimes = [regime for regime, result in hmm_results.items() if result.get('success', False)]
 
         if successful_regimes:
+    pass
+    pass
             regime_qualities = [hmm_results[regime]['feature_quality'] for regime in successful_regimes]
             comparison['analysis'] = {
                 'successful_regimes': len(successful_regimes),
@@ -384,6 +420,8 @@ class CombinedFractionalSystemTester:
 """)
 
             if individual_results.get('fractional_labeling', {}).get('success', False):
+    pass
+    pass
                 f.write(f"""
 ### Fractional Labeling
 - **Success**: ✅
@@ -399,6 +437,8 @@ class CombinedFractionalSystemTester:
 """)
 
             if individual_results.get('fractional_differentiation', {}).get('success', False):
+    pass
+    pass
                 f.write(f"""
 ### Fractional Differentiation
 - **Success**: ✅
@@ -417,6 +457,8 @@ class CombinedFractionalSystemTester:
 """)
 
             if combined_results.get('success', False):
+    pass
+    pass
                 f.write(f"""
 - **Success**: ✅
 - **Processing Time**: {combined_results['processing_time']:.3f}s
@@ -444,8 +486,12 @@ class CombinedFractionalSystemTester:
 """)
 
             for regime in self.hmm_regimes:
+    pass
+    pass
                 result = hmm_results.get(regime, {})
                 if result.get('success', False):
+    pass
+    pass
                     f.write(f"""
 ### {regime}
 - **Success**: ✅
@@ -465,6 +511,8 @@ class CombinedFractionalSystemTester:
 """)
 
             if 'improvements' in comparison:
+    pass
+    pass
                 f.write(f"""
 - **Feature Count Improvement**: {comparison['improvements']['feature_count_improvement']:+.2%}
 - **Label Count Improvement**: {comparison['improvements']['label_count_improvement']:+.2%}
@@ -477,6 +525,8 @@ class CombinedFractionalSystemTester:
 """)
 
             if 'analysis' in comparison:
+    pass
+    pass
                 f.write(f"""
 - **Successful Regimes**: {comparison['analysis']['successful_regimes']}/{comparison['analysis']['total_regimes']}
 - **Average Regime Quality**: {comparison['analysis']['avg_regime_quality']:.3f}
@@ -527,7 +577,7 @@ class CombinedFractionalSystemTester:
         # Export results
         self.export_results(individual_results, combined_results, hmm_results, comparison)
 
-        print("\n✅ Combined fractional system integration test complete!")
+        print("\\\n✅ Combined fractional system integration test complete!")
         print(f"📁 Results saved to: {self.output_dir}")
 
         return {
@@ -545,22 +595,26 @@ async def main():
     tester = CombinedFractionalSystemTester()
     results = await tester.run_complete_test(n_samples=1000)
 
-    print("\n🎯 Integration Test Summary:")
+    print("\\\n🎯 Integration Test Summary:")
     print(f"   Individual Systems: {'✅' if results['individual_results'].get('fractional_labeling', {}).get('success', False) and results['individual_results'].get('fractional_differentiation', {}).get('success', False) else '❌'}")
     print(f"   Combined System: {'✅' if results['combined_results'].get('success', False) else '❌'}")
     print(f"   HMM Integration: {sum(1 for r in results['hmm_results'].values() if r.get('success', False))}/{len(results['hmm_results'])} regimes")
 
     if 'improvements' in results['comparison']:
+    pass
+    pass
         print(f"   Feature Improvement: {results['comparison']['improvements']['feature_count_improvement']:+.2%}")
         print(f"   Label Improvement: {results['comparison']['improvements']['label_count_improvement']:+.2%}")
 
-    print("\n📋 Key Findings:")
+    print("\\\n📋 Key Findings:")
     print("   • Combined fractional system successfully integrates both components")
     print("   • HMM integration works seamlessly across different regimes")
     print("   • Ready for parameter optimization and production deployment")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio
     import pandas as pd
 

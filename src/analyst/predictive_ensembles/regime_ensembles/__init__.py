@@ -4,6 +4,7 @@
 from .base_ensemble import BaseEnsemble
 from .volatile_regime_ensemble import VolatileRegimeEnsemble
 
+import __all__ = [
 __all__ = [
     "BaseEnsemble",
     "VolatileRegimeEnsemble",

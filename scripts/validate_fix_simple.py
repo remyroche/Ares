@@ -20,15 +20,25 @@ DecoratorFunc = Callable[[Callable[..., bool]], Callable[..., bool]]
 
 
 def handle_errors(*, default_return: bool = False) -> DecoratorFunc:
+    pass
+    pass
     """Decorator to handle unexpected exceptions and return a default value.
 
     Helps ensure the script exits cleanly while reporting issues.
     """
 
     def decorator(func: Callable[..., bool]) -> Callable[..., bool]:
+    pass
+    pass
         def wrapper(*args: object, **kwargs: object) -> bool:
+    pass
+    pass
             try:
                 return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception as e:  # noqa: BLE001
                 print(f"❌ Error during {func.__name__}: {e}")
                 return default_return
@@ -39,6 +49,8 @@ def handle_errors(*, default_return: bool = False) -> DecoratorFunc:
 
 @handle_errors(default_return=False)
 def validate_fix() -> bool:
+    pass
+    pass
     """Validate that the multicollinearity fix was applied correctly."""
 
     print("🔍 Validating multicollinearity fix...")
@@ -49,6 +61,8 @@ def validate_fix() -> bool:
     )
 
     if not feature_eng_file.exists():
+    pass
+    pass
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
@@ -76,8 +90,12 @@ def validate_fix() -> bool:
     ]
 
     if missing_indicators:
+    pass
+    pass
         print("❌ Fix validation failed! Missing indicators:")
         for indicator in missing_indicators:
+    pass
+    pass
             print(f"   - {indicator}")
         return False
 
@@ -92,8 +110,12 @@ def validate_fix() -> bool:
     ]
 
     if remaining_problems:
+    pass
+    pass
         print("❌ Fix validation failed! Problematic code still present:")
         for problem in remaining_problems:
+    pass
+    pass
             print(f"   - {problem}")
         return False
 
@@ -105,6 +127,8 @@ def validate_fix() -> bool:
 
 @handle_errors(default_return=False)
 def check_feature_selection_config() -> bool:
+    pass
+    pass
     """Check that the feature selection config was updated."""
 
     print("🔍 Checking feature selection configuration...")
@@ -112,6 +136,8 @@ def check_feature_selection_config() -> bool:
     config_file = Path("src/config/feature_selection_config.yaml")
 
     if not config_file.exists():
+    pass
+    pass
         print(f"❌ Feature selection config not found: {config_file}")
         return False
 
@@ -131,8 +157,12 @@ def check_feature_selection_config() -> bool:
     ]
 
     if missing_settings:
+    pass
+    pass
         print("❌ Feature selection config validation failed! Missing settings:")
         for setting in missing_settings:
+    pass
+    pass
             print(f"   - {setting}")
         return False
 
@@ -141,6 +171,8 @@ def check_feature_selection_config() -> bool:
 
 
 def main() -> bool:
+    pass
+    pass
     """Main function to run the validation."""
 
     print("🚀 Starting multicollinearity fix validation...")
@@ -152,10 +184,12 @@ def main() -> bool:
     config_ok = check_feature_selection_config()
 
     if feature_eng_ok and config_ok:
-        print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
+    pass
+    pass
+        print("\\\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
         print("✅ Your feature engineering fix has been applied correctly.")
         print("✅ Your feature selection config has been updated.")
-        print("\n📋 Summary of fixes applied:")
+        print("\\\n📋 Summary of fixes applied:")
         print(
             "   1. ✅ Fixed multi-timeframe price_change calculations "
             "with proper periods",
@@ -166,16 +200,18 @@ def main() -> bool:
         )
         print("   3. ✅ Increased max_removal_percentage from 0.3 to 0.7")
         print("   4. ✅ Added emergency override settings for perfect correlations")
-        print("\n🔍 Next steps:")
+        print("\\\n🔍 Next steps:")
         print("   1. Test your training pipeline again")
         print("   2. Monitor the logs for any remaining issues")
         print("   3. The VIF should no longer be infinite")
         return True
 
-    print("\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
+    print("\\\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
     print("❌ Some fixes were not applied correctly.")
     sys.exit(1)
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

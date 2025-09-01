@@ -17,6 +17,10 @@ import uuid
 # Handle optional dependencies
 try:
     import pandas as pd
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     PANDAS_AVAILABLE, True
 except ImportError:
     PANDAS_AVAILABLE, False
@@ -24,6 +28,10 @@ except ImportError:
 
 try:
     import numpy as np
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     NUMPY_AVAILABLE, True
 except ImportError:
     NUMPY_AVAILABLE, False
@@ -31,6 +39,10 @@ except ImportError:
 
 try:
     import psutil
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     PSUTIL_AVAILABLE, True
 except ImportError:
     PSUTIL_AVAILABLE, False
@@ -39,6 +51,7 @@ except ImportError:
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, critical, success
 
+import class StepStatus
 class StepStatus(Enum):
     """Step execution status."""
     PENDING = "pending"
@@ -59,6 +72,8 @@ class EnhancedPipelineDecorator:
     """Enhanced decorator for pipeline steps with comprehensive monitoring and reporting."""
 
     def __init__(self, step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
+    pass
+    pass
         self.step_name, step_name
         self.report_level, report_level
         self.logger, system_logger.getChild(f"EnhancedPipeline.{step_name}")
@@ -66,6 +81,8 @@ class EnhancedPipelineDecorator:
         self.reports_dir.mkdir(parents = True, exist_ok = True)
 
     def __call__(self, func: Callable) -> Callable:
+    pass
+    pass
         """Apply the enhanced decorator to a function."""
 
         @functools.wraps(func)
@@ -74,6 +91,8 @@ class EnhancedPipelineDecorator:
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
+    pass
+    pass
         return asyncio.run(self._execute_with_enhanced_monitoring(func, args, kwargs, is_async = False))
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
@@ -112,10 +131,16 @@ class EnhancedPipelineDecorator:
 
         try:
         # Pre - execution monitoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await self._pre_execution_monitoring(step_report, args, kwargs)
 
         # Execute the function
         if is_async:
+    pass
+    pass
                 result, await func(*args, **kwargs)
             else:
                 result, func(*args, **kwargs)
@@ -155,6 +180,8 @@ class EnhancedPipelineDecorator:
 
         # System resource monitoring
         if PSUTIL_AVAILABLE:
+    pass
+    pass
             memory_info, psutil.virtual_memory()
             cpu_percent, psutil.cpu_percent()
 
@@ -167,6 +194,8 @@ class EnhancedPipelineDecorator:
 
         # Check for resource warnings
         if memory_info.percent > 80:
+    pass
+    pass
                 warning_msg, f"High memory usage: {memory_info.percent:.1f}%"
                 step_report["warnings"].append(warning_msg)
         self.logger.warning(f"⚠️ {warning_msg}")
@@ -180,6 +209,8 @@ class EnhancedPipelineDecorator:
 
         # Data quality checks for pandas DataFrames
         if PANDAS_AVAILABLE:
+    pass
+    pass
             data_quality_info, await self._check_data_quality(args, kwargs)
             step_report["pre_execution"]["data_quality"] = data_quality_info
 
@@ -197,6 +228,8 @@ class EnhancedPipelineDecorator:
 
         # System resource monitoring after execution
         if PSUTIL_AVAILABLE:
+    pass
+    pass
             memory_info, psutil.virtual_memory()
             step_report["post_execution"]["system_resources"] = {
                 "memory_usage_percent": memory_info.percent,
@@ -212,6 +245,8 @@ class EnhancedPipelineDecorator:
             step_report["recommendations"].append("Consider optimizing step performance - execution time exceeds 5 minutes")
 
         if PSUTIL_AVAILABLE and psutil.virtual_memory().percent > 85:
+    pass
+    pass
             step_report["recommendations"].append("High memory usage detected - consider memory optimization")
 
     async def _check_data_quality(self, args: tuple, kwargs: dict) -> Dict[str, Any]:
@@ -221,8 +256,16 @@ class EnhancedPipelineDecorator:
 
         try:
         # Check args for DataFrames
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for i, arg in enumerate(args):
+    pass
+    pass
         if PANDAS_AVAILABLE and isinstance(arg, pd.DataFrame):
+    pass
+    pass
                     data_quality_info[f"arg_{i}"] = {
                         "shape": arg.shape,
                         "memory_usage_mb": arg.memory_usage(deep = True).sum() / (1024**2),
@@ -232,7 +275,11 @@ class EnhancedPipelineDecorator:
 
         # Check kwargs for DataFrames
         for key, value in kwargs.items():
+    pass
+    pass
         if PANDAS_AVAILABLE and isinstance(value, pd.DataFrame):
+    pass
+    pass
                     data_quality_info[f"kwarg_{key}"] = {
                         "shape": value.shape,
                         "memory_usage_mb": value.memory_usage(deep = True).sum() / (1024**2),
@@ -256,6 +303,10 @@ class EnhancedPipelineDecorator:
 
         try:
         if PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 analysis.update({
                     "result_size": result.shape,
                     "result_summary": {
@@ -284,19 +335,29 @@ class EnhancedPipelineDecorator:
             else:
                 analysis["result_summary"] = {"value": str(result)[:100]}  # Truncate long strings
 
+    except Exception as e:
+        pass
         except Exception as e:
             analysis["error"] = str(e)
 
         return analysis
 
     def _analyze_dict_structure(self, data: dict, max_depth: int, 3, current_depth: int, 0) -> dict:
+    pass
+    pass
         """Recursively analyze dictionary structure."""
         if current_depth >= max_depth:
+    pass
+    pass
         return {"type": "max_depth_reached"}
 
         structure = {}
         for key, value in data.items():
+    pass
+    pass
         if isinstance(value, dict):
+    pass
+    pass
                 structure[key] = {
                     "type": "dict",
                     "size": len(value),
@@ -317,9 +378,17 @@ class EnhancedPipelineDecorator:
         return structure
 
     def _serialize_result(self, result: Any) -> Any:
+    pass
+    pass
         """Safely serialize result for JSON storage."""
         try:
         if PANDAS_AVAILABLE and isinstance(result, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return {
                     "type": "DataFrame",
                     "shape": result.shape,
@@ -359,6 +428,10 @@ class EnhancedPipelineDecorator:
 
         try:
         # Save detailed JSON report
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with open(report_path, 'w', encoding='utf - 8') as f:
                 json.dump(step_report, f, indent = 2, ensure_ascii = False, default = str)
 
@@ -381,6 +454,8 @@ class EnhancedPipelineDecorator:
         self.logger.error(f"❌ Failed to save report for {self.step_name}: {e}")
 
     def _generate_summary_report(self, step_report: Dict[str, Any]) -> str:
+    pass
+    pass
         """Generate a human - readable summary report."""
 
         summary = []
@@ -397,6 +472,8 @@ class EnhancedPipelineDecorator:
 
         # Performance metrics
         if step_report.get("performance_metrics"):
+    pass
+    pass
             metrics, step_report["performance_metrics"]
             summary.append("PERFORMANCE METRICS:")
             summary.append("-" * 40)
@@ -406,6 +483,8 @@ class EnhancedPipelineDecorator:
 
         # System resources
         if step_report.get("pre_execution", {}).get("system_resources"):
+    pass
+    pass
             resources, step_report["pre_execution"]["system_resources"]
             summary.append("SYSTEM RESOURCES (Pre - execution):")
             summary.append("-" * 40)
@@ -416,44 +495,66 @@ class EnhancedPipelineDecorator:
 
         # Data quality summary
         if step_report.get("pre_execution", {}).get("data_quality"):
+    pass
+    pass
             data_quality, step_report["pre_execution"]["data_quality"]
             summary.append("DATA QUALITY SUMMARY:")
             summary.append("-" * 40)
         for key, info in data_quality.items():
+    pass
+    pass
         if isinstance(info, dict) and "shape" in info:
+    pass
+    pass
                     summary.append(f"{key}: Shape {info['shape']}, Memory {info.get('memory_usage_mb', 'N / A'):.2f} MB")
             summary.append("")
 
         # Result analysis
         if step_report.get("post_execution", {}).get("result_analysis"):
+    pass
+    pass
             analysis, step_report["post_execution"]["result_analysis"]
             summary.append("RESULT ANALYSIS:")
             summary.append("-" * 40)
             summary.append(f"Result Type: {analysis.get('result_type', 'N / A')}")
         if analysis.get("result_size"):
+    pass
+    pass
                 summary.append(f"Result Size: {analysis['result_size']}")
             summary.append("")
 
         # Warnings and errors
         if step_report.get("warnings"):
+    pass
+    pass
             summary.append("WARNINGS:")
             summary.append("-" * 40)
         for warning in step_report["warnings"]:
+    pass
+    pass
                 summary.append(f"⚠️ {warning}")
             summary.append("")
 
         if step_report.get("errors"):
+    pass
+    pass
             summary.append("ERRORS:")
             summary.append("-" * 40)
         for error in step_report["errors"]:
+    pass
+    pass
                 summary.append(f"❌ {error.get('type', 'Unknown')}: {error.get('message', 'No message')}")
             summary.append("")
 
         # Recommendations
         if step_report.get("recommendations"):
+    pass
+    pass
             summary.append("RECOMMENDATIONS:")
             summary.append("-" * 40)
         for rec in step_report["recommendations"]:
+    pass
+    pass
                 summary.append(f"💡 {rec}")
             summary.append("")
 
@@ -461,7 +562,7 @@ class EnhancedPipelineDecorator:
         summary.append("End of Report")
         summary.append("=" * 80)
 
-        return "\n".join(summary)
+        return "\\\n".join(summary)
 
     async def _store_report_metadata(self, step_report: Dict[str, Any], report_path: Path, summary_path: Path):
         """Store metadata about the report for indexing and retrieval."""
@@ -485,6 +586,12 @@ class EnhancedPipelineDecorator:
         metadata_file, self.reports_dir / "reports_metadata.json"
         try:
         if metadata_file.exists():
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         with open(metadata_file, 'r', encoding='utf - 8') as f:
                     metadata_index, json.load(f)
             else:
@@ -494,6 +601,8 @@ class EnhancedPipelineDecorator:
 
         # Keep only last 1000 reports
         if len(metadata_index) > 1000:
+    pass
+    pass
                 metadata_index, metadata_index[-1000:]
 
         with open(metadata_file, 'w', encoding='utf - 8') as f:
@@ -504,22 +613,32 @@ class EnhancedPipelineDecorator:
 
 # Convenience decorators for different report levels
 def enhanced_pipeline_step(step_name: str, report_level: ReportLevel, ReportLevel.DETAILED):
+    pass
+    pass
     """Enhanced pipeline step decorator with comprehensive monitoring and reporting."""
     return EnhancedPipelineDecorator(step_name, report_level)
 
 def basic_pipeline_step(step_name: str):
+    pass
+    pass
     """Basic pipeline step decorator with minimal reporting."""
     return EnhancedPipelineDecorator(step_name, ReportLevel.BASIC)
 
 def detailed_pipeline_step(step_name: str):
+    pass
+    pass
     """Detailed pipeline step decorator with comprehensive reporting."""
     return EnhancedPipelineDecorator(step_name, ReportLevel.DETAILED)
 
 def comprehensive_pipeline_step(step_name: str):
+    pass
+    pass
     """Comprehensive pipeline step decorator with full debugging information."""
     return EnhancedPipelineDecorator(step_name, ReportLevel.COMPREHENSIVE)
 
 def debug_pipeline_step(step_name: str):
+    pass
+    pass
     """Debug pipeline step decorator with maximum detail."""
     return EnhancedPipelineDecorator(step_name, ReportLevel.DEBUG)
 
@@ -531,14 +650,22 @@ async def get_step_reports(step_name: str, None, limit: int, 50) -> List[Dict[st
     metadata_file, reports_dir / "reports_metadata.json"
 
     if not metadata_file.exists():
+    pass
+    pass
         return []
 
     try:
         with open(metadata_file, 'r', encoding='utf - 8') as f:
             metadata_index, json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Filter by step name if provided
         if step_name:
+    pass
+    pass
             metadata_index = [m for m in metadata_index if m["step_name"] == step_name]
 
         # Sort by completion time (newest first) and limit
@@ -560,6 +687,8 @@ async def cleanup_old_reports(days_to_keep: int, 30):
 
     reports_dir, Path("reports / enhanced_training_pipeline")
     if not reports_dir.exists():
+    pass
+    pass
         return
 
     cutoff_date, datetime.now() - timedelta(days = days_to_keep)
@@ -567,28 +696,48 @@ async def cleanup_old_reports(days_to_keep: int, 30):
 
     try:
         metadata_file, reports_dir / "reports_metadata.json"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if metadata_file.exists():
+    pass
+    pass
         with open(metadata_file, 'r', encoding='utf - 8') as f:
                 metadata_index, json.load(f)
 
         # Filter out old reports
             old_reports = []
         for metadata in metadata_index:
+    pass
+    pass
                 report_date, datetime.fromisoformat(metadata["completion_time"])
         if report_date < cutoff_date:
+    pass
+    pass
                     old_reports.append(metadata)
 
         # Remove old report files
         for old_report in old_reports:
+    pass
+    pass
         try:
                     report_path, Path(old_report["report_path"])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     summary_path, Path(old_report["summary_path"])
 
         if report_path.exists():
+    pass
+    pass
                         report_path.unlink()
                         cleaned_count += 1
 
         if summary_path.exists():
+    pass
+    pass
                         summary_path.unlink()
                         cleaned_count += 1
 

@@ -12,17 +12,25 @@ import os
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 try:
     from src.utils.comprehensive_data_quality_validator import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ComprehensiveDataQualityValidator,
         ComprehensiveDataQualityValidator,
             validate_step01_quality,
     validate_step01_5_quality,
     validate_step02_quality
     )
     from src.utils.data_quality_decorators import (
+import log_feature_quality_issues,
         log_feature_quality_issues,
         quick_validate_features
     )
@@ -36,7 +44,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 
+import def create_test_data_with_issues
 def create_test_data_with_issues():
+    pass
+    pass
     """Create test data with various quality issues for demonstration."""
     print("🔧 Creating test data with quality issues...")
 
@@ -83,6 +94,8 @@ def create_test_data_with_issues():
 
 
 def create_test_feature_data():
+    pass
+    pass
     """Create test feature data with various issues for Step2 validation."""
     print("🔧 Creating test feature data with quality issues...")
 
@@ -129,7 +142,7 @@ def create_test_feature_data():
 
 async def test_step01_validation():
     """Test Step1 data quality validation."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🧪 TESTING STEP1 DATA QUALITY VALIDATION")
     print("="*80)
 
@@ -151,22 +164,28 @@ async def test_step01_validation():
     print(f"   - {aggtrades_file}")
 
     # Test Step1 validation
-    print("\n🔍 Running Step1 data quality validation...")
+    print("\\\n🔍 Running Step1 data quality validation...")
     result = validate_step01_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
     )
 
-    print(f"\n📊 Step1 Validation Results:")
+    print(f"\\\n📊 Step1 Validation Results:")
     print(f"   - Validation passed: {result['validation_passed']}")
     print(f"   - Issues found: {len(result['issues'])}")
 
     if result['issues']:
+    pass
+    pass
         print("   - Issues:")
         for issue in result['issues'][:5]:
+    pass
+    pass
             print(f"     * {issue}")
         if len(result['issues']) > 5:
+    pass
+    pass
             print(f"     ... and {len(result['issues']) - 5} more issues")
 
     return result
@@ -174,7 +193,7 @@ async def test_step01_validation():
 
 async def test_step01_5_validation():
     """Test Step1.5 data quality validation."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🧪 TESTING STEP1.5 DATA QUALITY VALIDATION")
     print("="*80)
 
@@ -185,28 +204,36 @@ async def test_step01_5_validation():
 
     # Create test unified data files
     for i in range(3):
+    pass
+    pass
         unified_data = create_test_data_with_issues()
         unified_file = f"{unified_dir}/part-{i}.parquet"
         unified_data.to_parquet(unified_file)
         print(f"✅ Created test unified file: {unified_file}")
 
     # Test Step1.5 validation
-    print("\n🔍 Running Step1.5 data quality validation...")
+    print("\\\n🔍 Running Step1.5 data quality validation...")
     result = validate_step01_5_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
     )
 
-    print(f"\n📊 Step1.5 Validation Results:")
+    print(f"\\\n📊 Step1.5 Validation Results:")
     print(f"   - Validation passed: {result['validation_passed']}")
     print(f"   - Issues found: {len(result['issues'])}")
 
     if result['issues']:
+    pass
+    pass
         print("   - Issues:")
         for issue in result['issues'][:5]:
+    pass
+    pass
             print(f"     * {issue}")
         if len(result['issues']) > 5:
+    pass
+    pass
             print(f"     ... and {len(result['issues']) - 5} more issues")
 
     return result
@@ -214,7 +241,7 @@ async def test_step01_5_validation():
 
 async def test_step02_validation():
     """Test Step2 data quality validation with special attention to features."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🧪 TESTING STEP2 DATA QUALITY VALIDATION")
     print("="*80)
 
@@ -241,43 +268,61 @@ async def test_step02_validation():
     print(f"   - {test_file}")
 
     # Test Step2 validation
-    print("\n🔍 Running Step2 data quality validation...")
+    print("\\\n🔍 Running Step2 data quality validation...")
     result = validate_step02_quality(
         symbol="ETHUSDT",
         exchange="BINANCE",
         data_dir=test_data_dir
     )
 
-    print(f"\n📊 Step2 Validation Results:")
+    print(f"\\\n📊 Step2 Validation Results:")
     print(f"   - Validation passed: {result['validation_passed']}")
     print(f"   - Issues found: {len(result['issues'])}")
 
     # Show problematic features
     problematic = result.get("problematic_features", {})
     if any(problematic.values()):
+    pass
+    pass
         print("   - Problematic features:")
         if problematic.get("nan_features"):
+    pass
+    pass
             print(f"     * NaN features: {len(problematic['nan_features'])}")
         if problematic.get("infinite_features"):
+    pass
+    pass
             print(f"     * Infinite features: {len(problematic['infinite_features'])}")
         if problematic.get("constant_features"):
+    pass
+    pass
             print(f"     * Constant features: {len(problematic['constant_features'])}")
         if problematic.get("high_correlation_pairs"):
+    pass
+    pass
             print(f"     * High correlation pairs: {len(problematic['high_correlation_pairs'])}")
 
     if result['issues']:
+    pass
+    pass
         print("   - Issues:")
         for issue in result['issues'][:5]:
+    pass
+    pass
             print(f"     * {issue}")
         if len(result['issues']) > 5:
+    pass
+    pass
             print(f"     ... and {len(result['issues']) - 5} more issues")
 
     return result
 
 
 def test_feature_quality_logging():
+    pass
+    pass
     """Test feature quality logging functionality."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🧪 TESTING FEATURE QUALITY LOGGING")
     print("="*80)
 
@@ -287,10 +332,10 @@ def test_feature_quality_logging():
     print("🔍 Testing feature quality logging...")
     log_feature_quality_issues(feature_data, "Test Features")
 
-    print("\n🔍 Testing quick validation...")
+    print("\\\n🔍 Testing quick validation...")
     validation_result = quick_validate_features(feature_data, "Test Features")
 
-    print(f"\n📊 Quick Validation Summary:")
+    print(f"\\\n📊 Quick Validation Summary:")
     print(f"   - Shape: {validation_result['shape']}")
     print(f"   - Total features: {validation_result['total_features']}")
     print(f"   - Total samples: {validation_result['total_samples']}")
@@ -302,7 +347,7 @@ def test_feature_quality_logging():
 
 async def test_comprehensive_validator():
     """Test the comprehensive validator with all steps."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🧪 TESTING COMPREHENSIVE VALIDATOR")
     print("="*80)
 
@@ -326,7 +371,7 @@ async def test_comprehensive_validator():
     report_path = "comprehensive_validation_report.json"
     validator.save_validation_report(report_path)
 
-    print(f"\n📊 Comprehensive Validation Summary:")
+    print(f"\\\n📊 Comprehensive Validation Summary:")
     print(f"   - Step01 passed: {step01_result['validation_passed']}")
     print(f"   - Step01.5 passed: {step01_5_result['validation_passed']}")
     print(f"   - Step02 passed: {step02_result['validation_passed']}")
@@ -355,6 +400,10 @@ async def main():
     try:
         # Test individual step validations
             await test_step01_validation()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     await test_step01_5_validation()
     await test_step02_validation()
 
@@ -364,14 +413,14 @@ async def main():
         # Test comprehensive validator
         await test_comprehensive_validator()
 
-        print("\n" + "="*80)
+        print("\\\n" + "="*80)
         print("✅ ALL TESTS COMPLETED SUCCESSFULLY")
         print("="*80)
         print("The comprehensive data quality validation system is working correctly.")
         print("Check the generated reports and logs for detailed information.")
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -380,12 +429,16 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the test
     success = asyncio.run(main())
 
     if success:
-        print("\n🎉 Test completed successfully!")
+    pass
+    pass
+        print("\\\n🎉 Test completed successfully!")
         sys.exit(0)
     else:
-        print("\n💥 Test failed!")
+        print("\\\n💥 Test failed!")
         sys.exit(1)

@@ -5,6 +5,7 @@ from src.interfaces.base_interfaces import MarketData
 from .base_exchange import BaseExchange
 
 
+import class GateioExchange
 class GateioExchange(BaseExchange):
     """Minimal Gateio exchange placeholder to restore syntax integrity."""
 

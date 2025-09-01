@@ -8,12 +8,15 @@ multiplier into its position sizing logic.
 from kelly_criterion_formula import calculate_kelly_multiplier
 
 
+import class TacticianPositionSizer:
 class TacticianPositionSizer:
     """
     Example Tactician position sizer that uses Kelly criterion multiplier.
     """
 
     def __init__(self, account_balance: float = 10000.0):
+    pass
+    pass
         self.account_balance = account_balance
 
     def calculate_position_size(
@@ -65,6 +68,8 @@ class TacticianPositionSizer:
 
 # Example usage
 if __name__ == "__main__":
+    pass
+    pass
     # Test data
     price_target_confidences = {
         "0.5%": 0.7,

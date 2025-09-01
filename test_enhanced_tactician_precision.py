@@ -19,6 +19,7 @@ from src.training.steps.step14_tactician_labeling import TacticianTripleBarrierL
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 
 
+import def create_test_market_data
 def create_test_market_data(
     start_date: str = "2024-01-01",
     periods: int = 1000,
@@ -36,6 +37,8 @@ def create_test_market_data(
     prices = [base_price]
 
     for i in range(1, periods):
+    pass
+    pass
         # Add some trend and mean reversion
         trend = 0.0001 * np.sin(i / 100)  # Small cyclical trend
         price_change = returns[i] + trend
@@ -61,12 +64,18 @@ def create_test_market_data(
 
 
 def create_analyst_signals(data: pd.DataFrame, signal_frequency: float = 0.1) -> pd.Series:
+    pass
+    pass
     """Create realistic Analyst signals."""
     signals = pd.Series(0, index=data.index)
 
     # Generate signals based on price momentum
     for i in range(20, len(data) - 1):
+    pass
+    pass
         if np.random.random() < signal_frequency:
+    pass
+    pass
             # Calculate momentum
             recent_return = (data['close'].iloc[i] - data['close'].iloc[i-5]) / data['close'].iloc[i-5]
 
@@ -79,6 +88,8 @@ def create_analyst_signals(data: pd.DataFrame, signal_frequency: float = 0.1) ->
 
 
 def test_enhanced_tactician_triple_barrier():
+    pass
+    pass
     """Test the enhanced Tactician triple barrier labeling."""
     print("🧪 Testing Enhanced Tactician Triple Barrier Labeling")
     print("=" * 60)
@@ -116,7 +127,7 @@ def test_enhanced_tactician_triple_barrier():
     precision_scores = labeled_data['tactician_precision_score']
     execution_quality = labeled_data['tactician_execution_quality']
 
-    print(f"\n📈 Enhanced Tactician Labeling Results:")
+    print(f"\\\n📈 Enhanced Tactician Labeling Results:")
     print(f"   Total samples: {len(labeled_data)}")
     print(f"   Tactician signals: {tactician_labels[tactician_labels != 0].count()}")
     print(f"   High precision signals: {(precision_scores >= 0.85).sum()}")
@@ -131,8 +142,10 @@ def test_enhanced_tactician_triple_barrier():
 
 
 def test_enhanced_execution_manager():
+    pass
+    pass
     """Test the enhanced execution manager."""
-    print("\n🧪 Testing Enhanced Execution Manager")
+    print("\\\n🧪 Testing Enhanced Execution Manager")
     print("=" * 60)
 
     # Create test data
@@ -173,7 +186,7 @@ def test_enhanced_execution_manager():
     # Test execution parameter calculation
     current_price = market_data['close'].iloc[-1]
 
-    print(f"\n📊 Testing Execution Parameter Calculation:")
+    print(f"\\\n📊 Testing Execution Parameter Calculation:")
     execution_params = execution_manager.calculate_execution_parameters(
         market_data=market_data,
         analyst_signal=analyst_signal,
@@ -182,6 +195,8 @@ def test_enhanced_execution_manager():
     )
 
     if execution_params.get("should_execute", False):
+    pass
+    pass
         print(f"   Should execute: {execution_params['should_execute']}")
         print(f"   Trade direction: {execution_params['trade_direction']}")
         print(f"   Entry price: {execution_params['entry_price']:.4f}")
@@ -199,7 +214,7 @@ def test_enhanced_execution_manager():
 
 async def test_enhanced_trade_execution():
     """Test the enhanced trade execution."""
-    print("\n🧪 Testing Enhanced Trade Execution")
+    print("\\\n🧪 Testing Enhanced Trade Execution")
     print("=" * 60)
 
     # Create test data
@@ -236,11 +251,13 @@ async def test_enhanced_trade_execution():
 
     print(f"   Execution success: {execution_result['success']}")
     if execution_result['success']:
+    pass
+    pass
         print(f"   Execution time: {execution_result['execution_time']}")
         print(f"   Reason: {execution_result['reason']}")
 
     # Test performance summary
-    print(f"\n📊 Performance Summary:")
+    print(f"\\\n📊 Performance Summary:")
     performance = execution_manager.get_performance_summary()
     print(f"   Total executions: {performance['total_executions']}")
     print(f"   Success rate: {performance['success_rate']:.3f}")
@@ -251,8 +268,10 @@ async def test_enhanced_trade_execution():
 
 
 def test_barrier_comparison():
+    pass
+    pass
     """Compare Analyst vs Tactician barriers."""
-    print("\n🧪 Testing Barrier Comparison (Analyst vs Tactician)")
+    print("\\\n🧪 Testing Barrier Comparison (Analyst vs Tactician)")
     print("=" * 60)
 
     # Analyst barriers (current)
@@ -270,11 +289,11 @@ def test_barrier_comparison():
     print(f"   Tactician Profit Take: {tactician_pt:.4f} ({tactician_pt*100:.3f}%)")
     print(f"   Reduction: {((analyst_pt - tactician_pt) / analyst_pt * 100):.1f}%")
 
-    print(f"\n   Analyst Stop Loss: {analyst_sl:.4f} ({analyst_sl*100:.3f}%)")
+    print(f"\\\n   Analyst Stop Loss: {analyst_sl:.4f} ({analyst_sl*100:.3f}%)")
     print(f"   Tactician Stop Loss: {tactician_sl:.4f} ({tactician_sl*100:.3f}%)")
     print(f"   Reduction: {((analyst_sl - tactician_sl) / analyst_sl * 100):.1f}%")
 
-    print(f"\n   Analyst Time Barrier: {analyst_time} minutes")
+    print(f"\\\n   Analyst Time Barrier: {analyst_time} minutes")
     print(f"   Tactician Time Barrier: {tactician_time} minutes")
     print(f"   Reduction: {((analyst_time - tactician_time) / analyst_time * 100):.1f}%")
 
@@ -282,14 +301,16 @@ def test_barrier_comparison():
     analyst_rr = analyst_pt / analyst_sl
     tactician_rr = tactician_pt / tactician_sl
 
-    print(f"\n   Analyst Risk-Reward: {analyst_rr:.2f}:1")
+    print(f"\\\n   Analyst Risk-Reward: {analyst_rr:.2f}:1")
     print(f"   Tactician Risk-Reward: {tactician_rr:.2f}:1")
     print(f"   Improvement: {((tactician_rr - analyst_rr) / analyst_rr * 100):.1f}%")
 
 
 def test_precision_metrics():
+    pass
+    pass
     """Test precision metrics calculation."""
-    print("\n🧪 Testing Precision Metrics")
+    print("\\\n🧪 Testing Precision Metrics")
     print("=" * 60)
 
     # Create test data
@@ -316,6 +337,8 @@ def test_precision_metrics():
 
     print(f"📊 Precision Score Analysis:")
     for scenario in scenarios:
+    pass
+    pass
         precision_score = execution_manager._calculate_precision_score(
             combined_confidence=scenario["confidence"],
             volatility=scenario["volatility"],
@@ -330,6 +353,8 @@ def test_precision_metrics():
 
 
 def main():
+    pass
+    pass
     """Run all tests."""
     print("🚀 Enhanced Tactician Triple Barrier with High Precision Completion")
     print("=" * 80)
@@ -339,6 +364,10 @@ def main():
 
     try:
         # Test 1: Enhanced Tactician Triple Barrier Labeling
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         labeled_data = test_enhanced_tactician_triple_barrier()
 
         # Test 2: Enhanced Execution Manager
@@ -353,8 +382,8 @@ def main():
         # Test 5: Precision Metrics
         test_precision_metrics()
 
-        print("\n✅ All Enhanced Tactician Tests Completed Successfully!")
-        print("\n📋 Summary:")
+        print("\\\n✅ All Enhanced Tactician Tests Completed Successfully!")
+        print("\\\n📋 Summary:")
         print("   ✓ Enhanced triple barrier labeling with 50%/25% smaller barriers")
         print("   ✓ High precision execution filters")
         print("   ✓ Quality filters and adaptive barriers")
@@ -362,7 +391,7 @@ def main():
         print("   ✓ Precision metrics and performance tracking")
         print("   ✓ Risk-adjusted position sizing")
 
-        print("\n🎯 Key Benefits:")
+        print("\\\n🎯 Key Benefits:")
         print("   • Tactician completes Analyst with higher precision")
         print("   • Smaller barriers reduce risk while maintaining profitability")
         print("   • Quality filters ensure only high-quality executions")
@@ -370,10 +399,12 @@ def main():
         print("   • Comprehensive performance tracking and metrics")
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

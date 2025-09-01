@@ -22,6 +22,7 @@ from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 from src.training.steps.step14_tactician_labeling import TacticianTripleBarrierLabeler
 
 
+import def create_test_market_data
 def create_test_market_data(
     start_date: str = "2024-01-01",
     periods: int = 1000,
@@ -40,6 +41,8 @@ def create_test_market_data(
     prices = [base_price]
 
     for i in range(1, periods):
+    pass
+    pass
         # Add some trend and mean reversion
         trend = 0.0001 * np.sin(i / 100)  # Small cyclical trend
         price_change = returns[i] + trend
@@ -65,6 +68,8 @@ def create_test_market_data(
 
 
 def create_analyst_multi_outcome_predictions() -> Dict[str, Any]:
+    pass
+    pass
     """Create realistic Analyst multi-outcome predictions."""
     return {
         "price_prediction": {
@@ -92,6 +97,8 @@ def create_analyst_multi_outcome_predictions() -> Dict[str, Any]:
 
 
 def test_tactician_enhanced_prediction_integrator():
+    pass
+    pass
     """Test the updated Tactician enhanced prediction integrator."""
     print("🧪 Testing Updated Tactician Enhanced Prediction Integrator")
     print("=" * 70)
@@ -123,10 +130,12 @@ def test_tactician_enhanced_prediction_integrator():
 
     print(f"📊 Analyst Multi-Outcome Predictions:")
     for pred_type, pred_data in analyst_predictions.items():
+    pass
+    pass
         print(f"   {pred_type}: {pred_data['prediction']:.4f} (confidence: {pred_data['confidence']:.2f})")
 
     # Test 1m timeframe predictions
-    print(f"\n📊 Testing 1m Timeframe Enhanced Predictions:")
+    print(f"\\\n📊 Testing 1m Timeframe Enhanced Predictions:")
     tactician_predictions_1m = await tactician_integrator.generate_tactician_predictions(
         market_data=market_data_1m,
         analyst_predictions=analyst_predictions,
@@ -136,9 +145,15 @@ def test_tactician_enhanced_prediction_integrator():
     )
 
     if tactician_predictions_1m:
+    pass
+    pass
         print(f"   1m Results:")
         for pred_type in tactician_integrator.prediction_types:
+    pass
+    pass
             if pred_type in tactician_predictions_1m:
+    pass
+    pass
                 pred_data = tactician_predictions_1m[pred_type]
                 print(f"     {pred_type}:")
                 print(f"       Prediction: {pred_data['prediction']:.4f}")
@@ -155,7 +170,7 @@ def test_tactician_enhanced_prediction_integrator():
         print(f"       Avg Precision Score: {summary_1m['average_precision_score']:.3f}")
 
     # Test 5m timeframe predictions
-    print(f"\n📊 Testing 5m Timeframe Enhanced Predictions:")
+    print(f"\\\n📊 Testing 5m Timeframe Enhanced Predictions:")
     tactician_predictions_5m = await tactician_integrator.generate_tactician_predictions(
         market_data=market_data_5m,
         analyst_predictions=analyst_predictions,
@@ -165,9 +180,15 @@ def test_tactician_enhanced_prediction_integrator():
     )
 
     if tactician_predictions_5m:
+    pass
+    pass
         print(f"   5m Results:")
         for pred_type in tactician_integrator.prediction_types:
+    pass
+    pass
             if pred_type in tactician_predictions_5m:
+    pass
+    pass
                 pred_data = tactician_predictions_5m[pred_type]
                 print(f"     {pred_type}:")
                 print(f"       Prediction: {pred_data['prediction']:.4f}")
@@ -187,8 +208,10 @@ def test_tactician_enhanced_prediction_integrator():
 
 
 def test_prediction_comparison():
+    pass
+    pass
     """Test and compare predictions between Analyst and Tactician."""
-    print("\n🧪 Testing Prediction Comparison (Analyst vs Tactician)")
+    print("\\\n🧪 Testing Prediction Comparison (Analyst vs Tactician)")
     print("=" * 70)
 
     # Test configuration
@@ -223,7 +246,11 @@ def test_prediction_comparison():
     print("-" * 75)
 
     for pred_type in tactician_integrator.prediction_types:
+    pass
+    pass
         if pred_type in tactician_predictions:
+    pass
+    pass
             tactician_pred = tactician_predictions[pred_type]
 
             # Find corresponding Analyst prediction
@@ -242,6 +269,8 @@ def test_prediction_comparison():
 
             # Calculate deviation
             if analyst_value != 0:
+    pass
+    pass
                 deviation = abs(tactician_value / analyst_value)
             else:
                 deviation = 1.0
@@ -249,7 +278,7 @@ def test_prediction_comparison():
             print(f"{pred_type:<25} {analyst_value:<12.4f} {tactician_value:<12.4f} {deviation:<12.2f} {tactician_confidence:<12.3f}")
 
     # Validate predictions
-    print(f"\n📊 Prediction Validation:")
+    print(f"\\\n📊 Prediction Validation:")
     validation = await tactician_integrator.validate_tactician_predictions(
         tactician_predictions, analyst_predictions
     )
@@ -258,19 +287,29 @@ def test_prediction_comparison():
     print(f"   Is Valid: {'✓' if validation['is_valid'] else '✗'}")
 
     if validation['enhancements']:
+    pass
+    pass
         print(f"   Enhancements:")
         for enhancement in validation['enhancements']:
+    pass
+    pass
             print(f"     ✓ {enhancement}")
 
     if validation['issues']:
+    pass
+    pass
         print(f"   Issues:")
         for issue in validation['issues']:
+    pass
+    pass
             print(f"     ✗ {issue}")
 
 
 def test_step14_tactician_labeling():
+    pass
+    pass
     """Test the updated step 14 Tactician labeling with multi-outcome predictions."""
-    print("\n🧪 Testing Step 14 Tactician Labeling (Multi-Outcome)")
+    print("\\\n🧪 Testing Step 14 Tactician Labeling (Multi-Outcome)")
     print("=" * 70)
 
     # Test configuration
@@ -297,6 +336,8 @@ def test_step14_tactician_labeling():
 
     # Add some signals
     for i in range(100, len(market_data) - 1, 50):
+    pass
+    pass
         if np.random.random() < 0.3:  # 30% chance of signal
             analyst_signals.iloc[i] = 1 if np.random.random() > 0.5 else -1
 
@@ -308,13 +349,15 @@ def test_step14_tactician_labeling():
     labeled_data = labeler.apply_labels(market_data, analyst_signals)
 
     # Check results
-    print(f"\n📊 Multi-Outcome Prediction Results:")
+    print(f"\\\n📊 Multi-Outcome Prediction Results:")
 
     # Check price deviation predictions
     price_deviations = labeled_data["tactician_price_deviation"]
     non_zero_deviations = price_deviations[price_deviations != 0]
     print(f"   Price deviation predictions: {len(non_zero_deviations)}")
     if len(non_zero_deviations) > 0:
+    pass
+    pass
         print(f"   Average price deviation: {non_zero_deviations.mean():.4f}")
         print(f"   Min price deviation: {non_zero_deviations.min():.4f}")
         print(f"   Max price deviation: {non_zero_deviations.max():.4f}")
@@ -324,6 +367,8 @@ def test_step14_tactician_labeling():
     non_zero_directions = price_directions[price_directions != 0]
     print(f"   Price direction predictions: {len(non_zero_directions)}")
     if len(non_zero_directions) > 0:
+    pass
+    pass
         long_signals = (non_zero_directions == 1).sum()
         short_signals = (non_zero_directions == -1).sum()
         print(f"   Long signals: {long_signals}")
@@ -334,6 +379,8 @@ def test_step14_tactician_labeling():
     non_zero_confidence = target_confidence[target_confidence != 0]
     print(f"   Price target confidence predictions: {len(non_zero_confidence)}")
     if len(non_zero_confidence) > 0:
+    pass
+    pass
         print(f"   Average confidence: {non_zero_confidence.mean():.3f}")
         print(f"   Min confidence: {non_zero_confidence.min():.3f}")
         print(f"   Max confidence: {non_zero_confidence.max():.3f}")
@@ -346,6 +393,8 @@ def test_step14_tactician_labeling():
     non_zero_labels = traditional_labels[traditional_labels != 0]
     print(f"   Traditional labels: {len(non_zero_labels)}")
     if len(non_zero_labels) > 0:
+    pass
+    pass
         label_distribution = non_zero_labels.value_counts()
         print(f"   Label distribution: {label_distribution.to_dict()}")
 
@@ -353,8 +402,10 @@ def test_step14_tactician_labeling():
 
 
 def test_enhanced_execution_manager():
+    pass
+    pass
     """Test the enhanced execution manager with multi-outcome predictions."""
-    print("\n🧪 Testing Enhanced Execution Manager (Multi-Outcome)")
+    print("\\\n🧪 Testing Enhanced Execution Manager (Multi-Outcome)")
     print("=" * 70)
 
     # Test configuration
@@ -401,7 +452,9 @@ def test_enhanced_execution_manager():
 
     # Test execution parameter calculation
     if validation['should_execute']:
-        print(f"\n📊 Testing Execution Parameter Calculation:")
+    pass
+    pass
+        print(f"\\\n📊 Testing Execution Parameter Calculation:")
         current_price = market_data['close'].iloc[-1]
 
         execution_params = execution_manager.calculate_execution_parameters(
@@ -412,6 +465,8 @@ def test_enhanced_execution_manager():
         )
 
         if execution_params.get("should_execute", False):
+    pass
+    pass
             print(f"   Execution Parameters:")
             print(f"     Trade Direction: {execution_params['trade_direction']}")
             print(f"     Entry Price: {execution_params['entry_price']:.4f}")
@@ -440,6 +495,10 @@ async def main():
 
     try:
         # Test 1: Updated Tactician Enhanced Prediction Integrator
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         tactician_1m, tactician_5m = test_tactician_enhanced_prediction_integrator()
 
         # Test 2: Prediction Comparison
@@ -451,8 +510,8 @@ async def main():
         # Test 4: Enhanced Execution Manager
         test_enhanced_execution_manager()
 
-        print("\n✅ Updated Tactician Multi-Outcome Predictions Test Completed Successfully!")
-        print("\n📋 Implementation Summary:")
+        print("\\\n✅ Updated Tactician Multi-Outcome Predictions Test Completed Successfully!")
+        print("\\\n📋 Implementation Summary:")
         print("   ✓ Multi-outcome predictions similar to Analyst")
         print("   ✓ Smaller price deviations (50%/25% of Analyst barriers)")
         print("   ✓ Higher confidence for reaching target prices")
@@ -461,7 +520,7 @@ async def main():
         print("   ✓ Step 14 labeling with multi-outcome predictions")
         print("   ✓ Complete execution integration")
 
-        print("\n🎯 Key Features Verified:")
+        print("\\\n🎯 Key Features Verified:")
         print("   • Price deviation predictions: 50% and 25% of Analyst barriers")
         print("   • Price direction predictions: Same direction as Analyst")
         print("   • Price target confidence: Calculated by ML model")
@@ -470,7 +529,7 @@ async def main():
         print("   • High precision filtering")
         print("   • Complete execution validation")
 
-        print("\n🔧 Technical Implementation:")
+        print("\\\n🔧 Technical Implementation:")
         print("   • TacticianEnhancedPredictionIntegrator: Core prediction enhancement")
         print("   • Multi-outcome prediction types: 3 prediction categories")
         print("   • Price deviation: Uses both 50% and 25% of Analyst barriers")
@@ -481,10 +540,12 @@ async def main():
         print("   • Execution integration: Full parameter calculation")
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

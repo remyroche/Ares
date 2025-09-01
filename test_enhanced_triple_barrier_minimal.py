@@ -11,6 +11,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create test market data."""
     dates = pd.date_range("2024-01-01", periods=n_samples, freq="1min")
 
@@ -23,6 +25,8 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
 
     # Generate price movements with some trend and volatility
     for i in range(1, n_samples):
+    pass
+    pass
         # Add some trend and random walk
         change = np.random.normal(0, 0.001) + 0.0001  # Small upward trend
         new_price = prices[-1] * (1 + change)
@@ -57,13 +61,19 @@ def simple_triple_barrier_with_profit_tracking(data: pd.DataFrame,
     profit_pcts = np.zeros(len(close_prices), dtype=np.float64)
 
     for i in range(len(close_prices) - 1):
+    pass
+    pass
         entry_price = close_prices[i]
         profit_barrier = entry_price * (1 + profit_take_multiplier)
         stop_barrier = entry_price * (1 - stop_loss_multiplier)
 
         # Look ahead for barrier hits
         for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
+    pass
+    pass
             if high_prices[j] >= profit_barrier:
+    pass
+    pass
                 labels[i] = 1  # Buy signal
                 profit_pcts[i] = profit_take_multiplier  # Profit take hit
                 break
@@ -84,6 +94,8 @@ def simple_triple_barrier_with_profit_tracking(data: pd.DataFrame,
     return result_data
 
 def create_enhanced_labels(data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
     """Create enhanced labels that include profit information."""
 
     enhanced_data = data.copy()
@@ -110,6 +122,8 @@ def create_enhanced_labels(data: pd.DataFrame) -> pd.DataFrame:
     # Create confidence scores
     max_profit = enhanced_data['potential_profit_pct'].abs().max()
     if max_profit > 0:
+    pass
+    pass
         enhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
     else:
         enhanced_data['signal_confidence'] = 0.0
@@ -117,6 +131,8 @@ def create_enhanced_labels(data: pd.DataFrame) -> pd.DataFrame:
     return enhanced_data
 
 def test_enhanced_triple_barrier():
+    pass
+    pass
     """Test the enhanced triple barrier method with profit tracking."""
     print("🧪 Testing Enhanced Triple Barrier Method with Profit Tracking")
     print("=" * 60)
@@ -128,7 +144,7 @@ def test_enhanced_triple_barrier():
     print(f"   Price range: ${test_data['close'].min():.2f} - ${test_data['close'].max():.2f}")
 
     # Test triple barrier labeling with profit tracking
-    print("\n🔧 Testing triple barrier labeling with profit tracking...")
+    print("\\\n🔧 Testing triple barrier labeling with profit tracking...")
     labeled_data = simple_triple_barrier_with_profit_tracking(
         test_data,
         profit_take_multiplier=0.002,  # 0.2%
@@ -141,7 +157,7 @@ def test_enhanced_triple_barrier():
     print(f"   - SHORT positions: {(labeled_data['label'] == -1).sum()}")
 
     # Analyze profit tracking
-    print("\n💰 Profit Tracking Analysis:")
+    print("\\\n💰 Profit Tracking Analysis:")
     long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
     short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
 
@@ -160,7 +176,7 @@ def test_enhanced_triple_barrier():
     print(f"     - Max profit: {short_profits.max():.4f}")
 
     # Test enhanced labeling
-    print("\n🎯 Testing Enhanced Labeling...")
+    print("\\\n🎯 Testing Enhanced Labeling...")
     enhanced_data = create_enhanced_labels(labeled_data)
 
     print("✅ Enhanced labeling completed")
@@ -169,39 +185,43 @@ def test_enhanced_triple_barrier():
     print(f"   - Average signal confidence: {enhanced_data['signal_confidence'].mean():.4f}")
 
     # Show sample results
-    print("\n📋 Sample Results:")
+    print("\\\n📋 Sample Results:")
     sample_cols = ['label', 'potential_profit_pct', 'profit_category', 'direction_profit_label', 'signal_confidence']
     print(enhanced_data[sample_cols].head(10).to_string())
 
     # Verify profit calculations
-    print("\n🔍 Verifying Profit Calculations:")
+    print("\\\n🔍 Verifying Profit Calculations:")
     print("   - All LONG positions should have positive profit percentages")
     print(f"   - LONG positions with positive profits: {(long_profits > 0).sum()}/{len(long_profits)}")
     print("   - All SHORT positions should have negative profit percentages")
     print(f"   - SHORT positions with negative profits: {(short_profits < 0).sum()}/{len(short_profits)}")
 
     # Test performance
-    print("\n⚡ Performance Test:")
+    print("\\\n⚡ Performance Test:")
     import time
 
     start_time = time.time()
     for _ in range(10):
+    pass
+    pass
         _ = simple_triple_barrier_with_profit_tracking(test_data)
     total_time = time.time() - start_time
 
     print(f"   - Average time per run: {total_time/10:.4f} seconds")
     print(f"   - Processing speed: {len(test_data)/(total_time/10):.0f} samples/second")
 
-    print("\n✅ Enhanced Triple Barrier Method Test Completed Successfully!")
+    print("\\\n✅ Enhanced Triple Barrier Method Test Completed Successfully!")
 
     # Return the enhanced data for further analysis
     return enhanced_data
 
 if __name__ == "__main__":
+    pass
+    pass
     enhanced_data = test_enhanced_triple_barrier()
 
     # Additional analysis
-    print("\n📈 Additional Analysis:")
+    print("\\\n📈 Additional Analysis:")
     print(f"   - Total profitable positions: {(enhanced_data['potential_profit_pct'] > 0).sum()}")
     print(f"   - Total loss positions: {(enhanced_data['potential_profit_pct'] < 0).sum()}")
     print(f"   - Overall profit distribution:")

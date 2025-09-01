@@ -13,6 +13,7 @@ from typing import Any
 from src.training.progress_manager import ProgressManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
 )
@@ -22,6 +23,8 @@ class StepOrchestrator:
     """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
     def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    pass
+    pass
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -58,6 +61,8 @@ class StepOrchestrator:
         self.logger.info(f"Initialized StepOrchestrator for {symbol} on {exchange}")
 
     def print(self, message: str) -> None:
+    pass
+    pass
         """Print a message using the logger."""
         self.logger.info(message)
 
@@ -73,6 +78,12 @@ class StepOrchestrator:
         """
         try:
             from src.training.enhanced_training_manager import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import setup_enhanced_training_manager,
                 setup_enhanced_training_manager,
             )
 
@@ -80,6 +91,8 @@ class StepOrchestrator:
                 config,
             )
             if not self.enhanced_training_manager:
+    pass
+    pass
                 self.print(failed("❌ Failed to setup enhanced training manager"))
                 return False
 
@@ -96,6 +109,8 @@ class StepOrchestrator:
             return False
 
     def get_step_module(self, step_name: str) -> Any | None:
+    pass
+    pass
         """Import and return a step module.
 
         Args:
@@ -107,6 +122,10 @@ class StepOrchestrator:
         """
         try:
             module_path = f"src.training.steps.{step_name}"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             module = importlib.import_module(module_path)
             self.logger.info(f"✅ Loaded step module: {step_name}")
             return module
@@ -115,6 +134,8 @@ class StepOrchestrator:
             return None
 
     def get_step_class(self, step_name: str) -> Any | None:
+    pass
+    pass
         """Get the main step class from a step module.
 
         Args:
@@ -126,6 +147,8 @@ class StepOrchestrator:
         """
         module = self.get_step_module(step_name)
         if not module:
+    pass
+    pass
             return None
 
         # Look for the main step class (usually ends with 'Step')
@@ -136,6 +159,8 @@ class StepOrchestrator:
         ]
 
         if step_classes:
+    pass
+    pass
             step_class = getattr(module, step_classes[0])
             self.logger.info(f"✅ Found step class: {step_classes[0]}")
             return step_class
@@ -164,14 +189,24 @@ class StepOrchestrator:
 
         # Check if step already completed (unless force_rerun)
         if not force_rerun and self.progress_manager.step_exists(step_name):
+    pass
+    pass
             self.logger.info(f"⏭️  Step {step_name} already completed, skipping")
             return True
 
         try:
             # Set up enhanced training manager if not already done
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self.enhanced_training_manager:
+    pass
+    pass
                 setup_success = await self._setup_enhanced_training_manager(config)
                 if not setup_success:
+    pass
+    pass
                     return False
 
             # Determine training mode and apply mode-specific parameters
@@ -200,6 +235,8 @@ class StepOrchestrator:
             )
 
             if success:
+    pass
+    pass
                 # Save progress
                 step_data = {
                     "result": {"status": "SUCCESS"},
@@ -233,6 +270,8 @@ class StepOrchestrator:
             return False
 
     def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
+    pass
+    pass
         """Build pipeline state from previous step progress.
 
         Args:
@@ -246,15 +285,25 @@ class StepOrchestrator:
 
         # Load progress from all previous steps
         for step_name in self.available_steps:
+    pass
+    pass
             if step_name == current_step:
+    pass
+    pass
                 break  # Stop at current step
 
             progress = self.progress_manager.load_step_progress(step_name)
             if progress and "data" in progress:
+    pass
+    pass
                 step_data = progress["data"]
                 if "result" in step_data:
+    pass
+    pass
                     pipeline_state[step_name] = step_data["result"]
                 if "pipeline_state" in step_data:
+    pass
+    pass
                     pipeline_state.update(step_data["pipeline_state"])
 
         self.logger.info(f"📋 Built pipeline state with {len(pipeline_state)} items")
@@ -282,6 +331,10 @@ class StepOrchestrator:
         # Find the starting step index
         try:
             self.available_steps.index(start_step)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except ValueError:
             self.print(error("❌ Unknown step: {start_step}"))
             return False
@@ -289,6 +342,8 @@ class StepOrchestrator:
         # Set up enhanced training manager
         setup_success = await self._setup_enhanced_training_manager(config)
         if not setup_success:
+    pass
+    pass
             return False
 
         # Prepare training input for enhanced training manager
@@ -297,6 +352,7 @@ class StepOrchestrator:
             FULL_TRAINING_LOOKBACK_DAYS,
         )
         from src.config.training_modes import (
+import get_step_specific_parameters,
             get_step_specific_parameters,
             apply_mode_parameters_to_config,
         )
@@ -326,6 +382,8 @@ class StepOrchestrator:
         )
 
         if success:
+    pass
+    pass
             self.logger.info(
                 "✅ Enhanced 16-step training pipeline completed successfully",
             )
@@ -355,6 +413,8 @@ class StepOrchestrator:
         )
 
     def get_execution_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get the current execution status.
 
         Returns:
@@ -372,10 +432,16 @@ class StepOrchestrator:
 
         latest_step = self.progress_manager.get_latest_step()
         if latest_step:
+    pass
+    pass
             status["latest_step"] = latest_step
 
         for step_name in self.available_steps:
+    pass
+    pass
             if self.progress_manager.step_exists(step_name):
+    pass
+    pass
                 status["completed_steps"].append(step_name)
             else:
                 status["pending_steps"].append(step_name)
@@ -383,6 +449,8 @@ class StepOrchestrator:
         return status
 
     def clear_progress(self, step_name: str | None = None) -> bool:
+    pass
+    pass
         """Clear progress for specific step or all steps.
 
         Args:
@@ -395,6 +463,8 @@ class StepOrchestrator:
         return self.progress_manager.clear_progress(step_name)
 
     def list_available_steps(self) -> list[str]:
+    pass
+    pass
         """Get list of available steps.
 
         Returns:

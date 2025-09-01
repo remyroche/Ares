@@ -15,6 +15,7 @@ from src.config import CONFIG
 from src.utils.warning_symbols import error, failed
 
 # Add the project root to the Python path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -27,10 +28,16 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
 
     try:
         # Step 1: Download raw data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("🔄 Step 1: Downloading raw data...")
         success = await download_all_data_with_consolidation(symbol, exchange, interval)
 
         if not success:
+    pass
+    pass
             print(failed("❌ Data downloading failed"))
             return False
 
@@ -66,14 +73,20 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         while True:
             output = consolidation_process.stdout.readline()
             if output == "" and consolidation_process.poll() is not None:
+    pass
+    pass
                 break
             if output:
+    pass
+    pass
                 print(output.strip())
                 logger.info(output.strip())
 
         consolidation_return_code = consolidation_process.poll()
 
         if consolidation_return_code == 0:
+    pass
+    pass
             logger.info("✅ Data consolidation completed successfully")
             logger.info(
                 f"📁 Consolidated data saved to: data/{exchange}_{symbol}_historical_data.pkl",
@@ -88,6 +101,8 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
         return False
 
 def main():
+    pass
+    pass
     """Main function."""
     parser = argparse.ArgumentParser(description="Simple data loader")
     parser.add_argument(
@@ -112,6 +127,8 @@ def main():
     success = asyncio.run(load_data(args.symbol, args.exchange, args.interval))
 
     if success:
+    pass
+    pass
         print("✅ Data loading completed successfully")
         sys.exit(0)
     else:
@@ -119,4 +136,6 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

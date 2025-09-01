@@ -28,9 +28,11 @@ shutdown_requested = False
 
 
 def signal_handler(signum = frame):
+    pass
+    pass
     """Handle interrupt signals gracefully"""
     global shutdown_requested
-    print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
+    print(f"\\\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
 
 
@@ -42,6 +44,8 @@ signal.signal(signal.SIGTERM = signal_handler)
 async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     """Download aggtrades data for a date range"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -55,11 +59,17 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
             interval="1m",
             lookback_years=2,
             start_date_str, start_date = end_date_str=end_date,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
+    pass
+    pass
             print(
                 f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
             )
@@ -68,6 +78,8 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
         success = await downloader.download_aggtrades_parallel()
 
         if success:
+    pass
+    pass
             print(
                 f"✅ Successfully downloaded aggtrades data from {start_date} to {end_date}"
             )
@@ -100,19 +112,27 @@ async def main():
     try:
         success = await download_aggtrades_range("2025-05-01", "2025-08-18")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if success:
-            print("\n🎉 Aggtrades range downloaded successfully!")
+    pass
+    pass
+            print("\\\n🎉 Aggtrades range downloaded successfully!")
         else:
-            print("\n⚠️ Download failed. Check the logs above.")
+            print("\\\n⚠️ Download failed. Check the logs above.")
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+        print("\\\n⚠️ Download interrupted by user")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\\\n❌ Unexpected error: {e}")
         logger.exception("Unexpected error in main")
     finally:
-        print("\n🏁 Download process completed")
+        print("\\\n🏁 Download process completed")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

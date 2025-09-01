@@ -19,12 +19,14 @@ project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import handle_errors,
     handle_errors,
     resource_monitor,
     with_tracing_span,
 )
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("DataQualityMonitor")
 
 class DataQualityAlert:
@@ -53,6 +55,8 @@ class DataQualityAlert:
         self.resolved, False
 
     def to_dict(self) -> Dict[str, Any]:
+    pass
+    pass
         """Convert alert to dictionary."""
         return {
             "alert_type": self.alert_type,
@@ -68,12 +72,16 @@ class DataQualityAlert:
         }
 
     def __str__(self) -> str:
+    pass
+    pass
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
 class DataQualityMonitor:
     """Real - time data quality monitor with alerting capabilities."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -126,6 +134,10 @@ class DataQualityMonitor:
         """
         try:
         self.monitoring_active, True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.monitoring_interval, interval_seconds
 
             logger.info(f"🚀 Starting data quality monitoring for {len(symbols)} symbols")
@@ -148,6 +160,8 @@ class DataQualityMonitor:
 
     @with_tracing_span("add_alert_callback")
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
+    pass
+    pass
         """Add a callback function to be called when alerts are generated.
 
         Args:
@@ -158,6 +172,8 @@ class DataQualityMonitor:
 
     @with_tracing_span("set_quality_thresholds")
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
+    pass
+    pass
         """Set quality monitoring thresholds.
 
         Args:
@@ -178,10 +194,20 @@ class DataQualityMonitor:
         try:
                 start_time, datetime.now()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Run quality checks for all combinations
         for symbol in symbols:
+    pass
+    pass
         for exchange in exchanges:
+    pass
+    pass
         for timeframe in timeframes:
+    pass
+    pass
         await self._check_data_quality(symbol, exchange, timeframe)
 
         # Update performance metrics
@@ -213,6 +239,12 @@ class DataQualityMonitor:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(self.data_cache_path))
 
         # Run quality check
@@ -256,7 +288,13 @@ class DataQualityMonitor:
         try:
         # Check for gaps
             gaps_detected, quality_results.get("gaps_detected", [])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(gaps_detected) > self.quality_thresholds["gap_threshold"]:
+    pass
+    pass
                 alert, DataQualityAlert(
                     alert_type="excessive_gaps",
                     severity="high" if len(gaps_detected) > 20 else "medium",
@@ -276,6 +314,8 @@ class DataQualityMonitor:
         # Check for format issues
             format_issues, quality_results.get("format_issues", [])
         if len(format_issues) > self.quality_thresholds["format_issues_threshold"]:
+    pass
+    pass
                 alert, DataQualityAlert(
                     alert_type="format_issues",
                     severity="medium",
@@ -307,13 +347,23 @@ class DataQualityMonitor:
         try:
         # Check klines data freshness
             klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if klines_file.exists():
+    pass
+    pass
                 df, pd.read_parquet(klines_file)
         if "timestamp" in df.columns:
+    pass
+    pass
                     latest_timestamp, pd.to_datetime(df["timestamp"].max())
                     hours_old = (datetime.now() - latest_timestamp).total_seconds() / 3600
 
         if hours_old > self.quality_thresholds["data_freshness_hours"]:
+    pass
+    pass
                         alert, DataQualityAlert(
                             alert_type="stale_data",
                             severity="medium",
@@ -345,7 +395,13 @@ class DataQualityMonitor:
         try:
         # Check if data is ready for step3 / step4
             step3_step4_ready, quality_results.get("step3_step4_ready", False)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not step3_step4_ready:
+    pass
+    pass
                 missing_for_steps, quality_results.get("missing_for_steps", [])
                 alert, DataQualityAlert(
                     alert_type="incomplete_data",
@@ -365,9 +421,15 @@ class DataQualityMonitor:
         # Check data volume
             quality_metrics, quality_results.get("quality_metrics", {})
         for file_metric in quality_metrics.values():
+    pass
+    pass
         if isinstance(file_metric, dict) and "row_count" in file_metric:
+    pass
+    pass
                     row_count, file_metric["row_count"]
         if row_count < self.quality_thresholds["min_data_rows"]:
+    pass
+    pass
                         alert, DataQualityAlert(
                             alert_type="insufficient_data",
                             severity="medium",
@@ -391,6 +453,10 @@ class DataQualityMonitor:
         """Generate and process an alert."""
         try:
         # Add alert to storage
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.alerts.append(alert)
         self.performance_metrics["total_alerts"] += 1
 
@@ -399,8 +465,14 @@ class DataQualityMonitor:
 
         # Call alert callbacks
         for callback in self.alert_callbacks:
+    pass
+    pass
         try:
                     callback(alert)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
                     logger.exception(f"❌ Error in alert callback {callback.__name__}: {e}")
 
@@ -415,6 +487,10 @@ class DataQualityMonitor:
         """Save alert to persistent storage."""
         try:
             alerts_dir, self.data_cache_path / "quality_alerts"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             alerts_dir.mkdir(exist_ok = True)
 
         # Save to daily file
@@ -422,7 +498,7 @@ class DataQualityMonitor:
             alert_file, alerts_dir / f"alerts_{date_str}.jsonl"
 
         with open(alert_file, "a") as f:
-                f.write(json.dumps(alert.to_dict()) + "\n")
+                f.write(json.dumps(alert.to_dict()) + "\\\n")
 
         except Exception as e:
             logger.exception(f"❌ Error saving alert: {e}")
@@ -455,29 +531,47 @@ class DataQualityMonitor:
         filtered_alerts = []
 
         for alert in self.alerts:
+    pass
+    pass
         # Apply filters
         if symbol and alert.symbol != symbol:
+    pass
+    pass
                 continue
         if exchange and alert.exchange != exchange:
+    pass
+    pass
                 continue
         if severity and alert.severity != severity:
+    pass
+    pass
                 continue
         if alert_type and alert.alert_type != alert_type:
+    pass
+    pass
                 continue
         if start_time and alert.timestamp < start_time:
+    pass
+    pass
                 continue
         if end_time and alert.timestamp > end_time:
+    pass
+    pass
                 continue
 
             filtered_alerts.append(alert)
 
         if len(filtered_alerts) >= limit:
+    pass
+    pass
                 break
 
         return filtered_alerts
 
     @with_tracing_span("acknowledge_alert")
     def acknowledge_alert(self, alert_index: int) -> bool:
+    pass
+    pass
         """Acknowledge an alert by index.
 
         Args:
@@ -488,6 +582,12 @@ class DataQualityMonitor:
         """
         try:
         if 0 <= alert_index < len(self.alerts):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         self.alerts[alert_index].acknowledged, True
                 logger.info(f"✅ Alert acknowledged: {self.alerts[alert_index]}")
         return True
@@ -498,6 +598,8 @@ class DataQualityMonitor:
 
     @with_tracing_span("resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
+    pass
+    pass
         """Mark an alert as resolved.
 
         Args:
@@ -508,6 +610,12 @@ class DataQualityMonitor:
         """
         try:
         if 0 <= alert_index < len(self.alerts):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         self.alerts[alert_index].resolved, True
                 logger.info(f"✅ Alert resolved: {self.alerts[alert_index]}")
         return True
@@ -518,11 +626,15 @@ class DataQualityMonitor:
 
     @with_tracing_span("get_performance_metrics")
     def get_performance_metrics(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get monitoring performance metrics."""
         return self.performance_metrics.copy()
 
     @with_tracing_span("generate_monitoring_report")
     def generate_monitoring_report(self) -> str:
+    pass
+    pass
         """Generate a monitoring report."""
         report = []
         report.append("=" * 80)
@@ -539,6 +651,8 @@ class DataQualityMonitor:
         report.append(f"   Total Alerts: {self.performance_metrics['total_alerts']}")
         report.append(f"   Average Check Duration: {self.performance_metrics['average_check_duration']:.2f}s")
         if self.performance_metrics['last_check_time']:
+    pass
+    pass
             report.append(f"   Last Check: {self.performance_metrics['last_check_time'].strftime('%Y-%m-%d %H:%M:%S')}")
         report.append("")
 
@@ -548,28 +662,38 @@ class DataQualityMonitor:
         severity_counts = {}
 
         for alert in self.alerts:
+    pass
+    pass
             alert_counts[alert.alert_type] = alert_counts.get(alert.alert_type, 0) + 1
             severity_counts[alert.severity] = severity_counts.get(alert.severity, 0) + 1
 
         report.append("   By Type:")
         for alert_type, count in alert_counts.items():
+    pass
+    pass
             report.append(f"     {alert_type}: {count}")
 
         report.append("   By Severity:")
         for severity, count in severity_counts.items():
+    pass
+    pass
             report.append(f"     {severity}: {count}")
 
         # Recent alerts
         recent_alerts, sorted(self.alerts, key = lambda x: x.timestamp, reverse = True)[:10]
         if recent_alerts:
+    pass
+    pass
             report.append("")
             report.append("🕒 RECENT ALERTS:")
         for alert in recent_alerts:
+    pass
+    pass
                 status = "✅" if alert.resolved else "⚠️" if alert.acknowledged else "🚨"
                 report.append(f"   {status} {alert.timestamp.strftime('%H:%M:%S')} - {alert}")
 
         report.append("=" * 80)
-        return "\n".join(report)
+        return "\\\n".join(report)
 
 # Convenience functions for easy integration
 async def start_data_quality_monitoring(
@@ -584,6 +708,8 @@ async def start_data_quality_monitoring(
     success, await monitor.start_monitoring(symbols, exchanges, timeframes, interval_seconds)
 
     if success:
+    pass
+    pass
         logger.info("✅ Data quality monitoring started successfully")
     else:
         logger.error("❌ Failed to start data quality monitoring")
@@ -591,16 +717,24 @@ async def start_data_quality_monitoring(
     return monitor
 
 def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAlert], None]:
+    pass
+    pass
     """Create an email alert callback function."""
     def email_callback(alert: DataQualityAlert) -> None:
+    pass
+    pass
         # This would integrate with your email system
         logger.info(f"📧 Would send email to {email_address}: {alert}")
 
     return email_callback
 
 def create_slack_alert_callback(webhook_url: str) -> Callable[[DataQualityAlert], None]:
+    pass
+    pass
     """Create a Slack alert callback function."""
     def slack_callback(alert: DataQualityAlert) -> None:
+    pass
+    pass
         # This would integrate with Slack webhooks
         logger.info(f"💬 Would send Slack message: {alert}")
 

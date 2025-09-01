@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     initialization_error,
 )
@@ -26,6 +27,8 @@ class FeatureIntegrationManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("FeatureIntegrationManager")
 
@@ -61,9 +64,16 @@ class FeatureIntegrationManager:
         try:
             self.logger.info("🚀 Initializing feature integration manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
+    pass
+    pass
                 from src.analyst.advanced_feature_engineering import (
+import AdvancedFeatureEngineering,
                     AdvancedFeatureEngineering,
                 )
 
@@ -106,16 +116,24 @@ class FeatureIntegrationManager:
         """
         try:
             if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(
                     initialization_error("Feature integration manager not initialized"),
                 )
                 return historical_data
 
+    except Exception as e:
+        pass
             # Start with original data
             integrated_data = historical_data.copy()
 
             # Add advanced features including liquidity features
             if self.advanced_feature_engineering:
+    pass
+    pass
                 advanced_features = await self._add_advanced_features(
                     historical_data,
                     market_data,
@@ -128,6 +146,8 @@ class FeatureIntegrationManager:
 
             # Add liquidity-specific features
             if self.enable_liquidity_features:
+    pass
+    pass
                 liquidity_features = await self._add_liquidity_features(
                     historical_data,
                     market_data,
@@ -157,6 +177,10 @@ class FeatureIntegrationManager:
         """Add advanced features from advanced feature engineering."""
         try:
             # Prepare data for advanced feature engineering
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             price_data = historical_data[["open", "high", "low", "close"]].copy()
             volume_data = historical_data[["volume"]].copy()
 
@@ -195,6 +219,10 @@ class FeatureIntegrationManager:
         try:
             liquidity_features = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Calculate basic liquidity metrics
             volume = historical_data["volume"]
             price_changes = historical_data["close"].pct_change()
@@ -240,12 +268,20 @@ class FeatureIntegrationManager:
             return pd.DataFrame()
 
     def _select_optimal_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Select optimal features using correlation analysis and PCA."""
         try:
             # Remove NaN values
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             data_clean = data.dropna()
 
             if data_clean.empty:
+    pass
+    pass
                 return data
 
             # Remove constant features
@@ -253,6 +289,8 @@ class FeatureIntegrationManager:
 
             # Remove highly correlated features
             if len(data_clean.columns) > 1:
+    pass
+    pass
                 correlation_matrix = data_clean.corr()
                 upper_triangle = np.triu(np.ones_like(correlation_matrix, dtype=bool))
                 high_correlation = np.abs(correlation_matrix) > 0.95
@@ -260,8 +298,14 @@ class FeatureIntegrationManager:
 
                 to_drop = []
                 for i in range(len(correlation_matrix.columns)):
+    pass
+    pass
                     for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
+    pass
                         if high_correlation.iloc[i, j]:
+    pass
+    pass
                             to_drop.append(correlation_matrix.columns[j])
 
                 data_clean = data_clean.drop(columns=list(set(to_drop)))
@@ -270,6 +314,10 @@ class FeatureIntegrationManager:
             if len(data_clean.columns) > 50:  # Only if we have many features
                 try:
                     # Scale and reduce within CV folds or train-only sections to avoid lookahead
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     scaled_features = self.feature_scaler.fit_transform(data_clean)
                     pca_features = self.feature_pca.fit_transform(scaled_features)
 
@@ -305,13 +353,21 @@ class FeatureIntegrationManager:
         """Get feature importance from trained model."""
         try:
             if hasattr(model, "feature_importances_"):
+    pass
+    except Exception as e:
+        pass
+    pass
                 importance_dict = dict(
                     zip(feature_names, model.feature_importances_, strict=False),
                 )
                 return dict(
                     sorted(importance_dict.items(), key=lambda x: x[1], reverse=True),
                 )
+    except Exception as e:
+        pass
             if hasattr(model, "coef_"):
+    pass
+    pass
                 importance_dict = dict(
                     zip(feature_names, np.abs(model.coef_[0]), strict=False),
                 )
@@ -325,6 +381,8 @@ class FeatureIntegrationManager:
             return {}
 
     def get_liquidity_feature_summary(self, data: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Get summary of liquidity features in the dataset."""
         try:
             liquidity_features = [
@@ -341,6 +399,10 @@ class FeatureIntegrationManager:
                 "volume_roc",
                 "volume_ma_ratio",
                 "liquidity_stress",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ]
 
             available_features = [f for f in liquidity_features if f in data.columns]
@@ -354,9 +416,15 @@ class FeatureIntegrationManager:
             }
 
             for feature in available_features:
+    pass
+    pass
                 if feature in data.columns:
+    pass
+    pass
                     feature_data = data[feature].dropna()
                     if not feature_data.empty:
+    pass
+    pass
                         summary["feature_statistics"][feature] = {
                             "mean": feature_data.mean(),
                             "std": feature_data.std(),

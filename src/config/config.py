@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class DatabaseConfig:
     """Database configuration settings."""
@@ -138,6 +139,8 @@ class TrainingConfig:
 
 
 def get_static_config() -> dict[str, Any]:
+    pass
+    pass
     """Get the complete non-optimizable configuration."""
     return {
         "database": DatabaseConfig(),
@@ -150,12 +153,18 @@ def get_static_config() -> dict[str, Any]:
 
 
 def get_config_section(section_name: str) -> dict[str, Any]:
+    pass
+    pass
     """Get a specific configuration section."""
     config = get_static_config()
     section = config.get(section_name)
     if section is None:
+    pass
+    pass
         return {}
 
     if hasattr(section, '__dict__'):
+    pass
+    pass
         return section.__dict__
     return section

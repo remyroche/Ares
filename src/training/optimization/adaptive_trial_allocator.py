@@ -12,6 +12,7 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     warning,
 )
@@ -34,6 +35,8 @@ class AdaptiveTrialAllocator:
     """Allocates trials based on parameter importance and performance."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize adaptive trial allocator."""
         self.config = config
         self.logger = system_logger.getChild("AdaptiveTrialAllocator")
@@ -59,7 +62,13 @@ class AdaptiveTrialAllocator:
         try:
             importance_scores = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for param_path in parameters:
+    pass
+    pass
                 # Base importance based on parameter category
                 base_importance = self._get_base_importance(param_path)
 
@@ -80,8 +89,12 @@ class AdaptiveTrialAllocator:
 
             # Normalize importance scores
             if importance_scores:
+    pass
+    pass
                 max_importance = max(importance_scores.values())
                 if max_importance > 0:
+    pass
+    pass
                     importance_scores = {
                         k: v / max_importance for k, v in importance_scores.items()
                     }
@@ -97,9 +110,15 @@ class AdaptiveTrialAllocator:
             return {}
 
     def _get_base_importance(self, param_path: str) -> float:
+    pass
+    pass
         """Get base importance based on parameter category."""
         try:
             # Critical parameters get highest importance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             critical_params = [
                 "confidence_thresholds.base_entry_threshold",
                 "confidence_thresholds.position_close_threshold",
@@ -117,12 +136,20 @@ class AdaptiveTrialAllocator:
             ]
 
             if param_path in critical_params:
+    pass
+    pass
                 return 1.0
             if param_path in important_params:
+    pass
+    pass
                 return 0.7
             if "threshold" in param_path.lower():
+    pass
+    pass
                 return 0.6
             if "multiplier" in param_path.lower():
+    pass
+    pass
                 return 0.5
             return 0.3
 
@@ -131,15 +158,25 @@ class AdaptiveTrialAllocator:
             return 0.3
 
     def _get_performance_importance(self, param_path: str) -> float:
+    pass
+    pass
         """Get performance-based importance."""
         try:
             if param_path in self.parameter_performance:
+    pass
+    except Exception as e:
+        pass
+    pass
                 performances = self.parameter_performance[param_path]
                 if performances:
+    pass
+    pass
                     # Higher variance in performance = higher importance
                     variance = np.var(performances)
                     return min(variance * 10, 1.0)  # Scale variance
 
+    except Exception as e:
+        pass
             return 0.5  # Default importance
 
         except Exception as e:
@@ -149,16 +186,30 @@ class AdaptiveTrialAllocator:
             return 0.5
 
     def _get_sensitivity_importance(self, param_path: str) -> float:
+    pass
+    pass
         """Get sensitivity-based importance."""
         try:
             # Parameters that affect multiple components get higher importance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if "confidence" in param_path.lower():
+    pass
+    pass
                 return 0.8  # Confidence affects many decisions
             if "sizing" in param_path.lower() or "position" in param_path.lower():
+    pass
+    pass
                 return 0.7  # Sizing affects risk and returns
             if "risk" in param_path.lower() or "stop_loss" in param_path.lower():
+    pass
+    pass
                 return 0.6  # Risk parameters are important
             if "ensemble" in param_path.lower():
+    pass
+    pass
                 return 0.5  # Ensemble parameters affect model combination
             return 0.3
 
@@ -180,9 +231,15 @@ class AdaptiveTrialAllocator:
         """Allocate trials based on parameter importance."""
         try:
             # Calculate parameter importance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             importance_scores = self.calculate_parameter_importance(parameters)
 
             if not importance_scores:
+    pass
+    pass
                 # Fallback to equal allocation
                 equal_trials = self.allocation_config.total_trials // len(parameters)
                 return dict.fromkeys(parameters, equal_trials)
@@ -192,6 +249,8 @@ class AdaptiveTrialAllocator:
             allocated_trials = {}
 
             for param, importance in importance_scores.items():
+    pass
+    pass
                 # Calculate proportional allocation
                 proportional_trials = int(
                     (importance / total_importance)
@@ -212,11 +271,15 @@ class AdaptiveTrialAllocator:
             # Ensure total trials constraint
             total_allocated = sum(allocated_trials.values())
             if total_allocated != self.allocation_config.total_trials:
+    pass
+    pass
                 # Adjust allocation to match total
                 adjustment_factor = (
                     self.allocation_config.total_trials / total_allocated
                 )
                 for param in allocated_trials:
+    pass
+    pass
                     allocated_trials[param] = int(
                         allocated_trials[param] * adjustment_factor,
                     )
@@ -245,12 +308,20 @@ class AdaptiveTrialAllocator:
         context="performance tracking",
     )
     def track_parameter_performance(self, param_path: str, performance: float) -> bool:
+    pass
+    pass
         """Track performance for a specific parameter."""
         try:
             self.parameter_performance[param_path].append(performance)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Keep only recent performance data (last 20 trials)
             if len(self.parameter_performance[param_path]) > 20:
+    pass
+    pass
                 self.parameter_performance[param_path] = self.parameter_performance[
                     param_path
                 ][-20:]
@@ -273,9 +344,17 @@ class AdaptiveTrialAllocator:
         """Check if dynamic reallocation is needed."""
         try:
             if not self.allocation_config.dynamic_allocation:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
+    except Exception as e:
+        pass
             if len(self.allocation_history) < 2:
+    pass
+    pass
                 return False
 
             # Compare current allocation with previous
@@ -284,7 +363,11 @@ class AdaptiveTrialAllocator:
             # Calculate allocation change
             total_change = 0
             for param in current_allocation:
+    pass
+    pass
                 if param in previous_allocation:
+    pass
+    pass
                     change = abs(current_allocation[param] - previous_allocation[param])
                     total_change += change
 
@@ -293,6 +376,8 @@ class AdaptiveTrialAllocator:
             change_ratio = total_change / total_trials
 
             if change_ratio > self.allocation_config.reallocation_threshold:
+    pass
+    pass
                 self.logger.info(
                     f"Dynamic reallocation triggered (change ratio: {change_ratio:.3f})",
                 )
@@ -316,11 +401,17 @@ class AdaptiveTrialAllocator:
         """Calculate optimal trial allocation based on historical performance."""
         try:
             # Get importance scores
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             importance_scores = self.calculate_parameter_importance(parameters)
 
             # Calculate performance-based weights
             performance_weights = {}
             for param in parameters:
+    pass
+    pass
                 if (
                     self.parameter_performance.get(param)
                 ):
@@ -333,6 +424,8 @@ class AdaptiveTrialAllocator:
             # Combine importance and performance
             combined_weights = {}
             for param in parameters:
+    pass
+    pass
                 importance = importance_scores.get(param, 0.5)
                 performance = performance_weights.get(param, 0.5)
 
@@ -346,6 +439,8 @@ class AdaptiveTrialAllocator:
             allocated_trials = {}
 
             for param, weight in combined_weights.items():
+    pass
+    pass
                 trials = int(
                     (weight / total_weight) * self.allocation_config.total_trials,
                 )
@@ -360,11 +455,19 @@ class AdaptiveTrialAllocator:
             return {}
 
     def get_allocation_statistics(self) -> dict[str, Any]:
+    pass
+    pass
         """Get allocation statistics."""
         try:
             if not self.allocation_history:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"message": "No allocation history available"}
 
+    except Exception as e:
+        pass
             latest_allocation = self.allocation_history[-1]["allocation"]
 
             return {
@@ -384,12 +487,22 @@ class AdaptiveTrialAllocator:
             return {}
 
     def get_parameter_performance_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """Get parameter performance summary."""
         try:
             summary = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for param, performances in self.parameter_performance.items():
+    pass
+    pass
                 if performances:
+    pass
+    pass
                     summary[param] = {
                         "mean_performance": np.mean(performances),
                         "std_performance": np.std(performances),
@@ -410,11 +523,19 @@ class AdaptiveTrialAllocator:
         context="allocation validation",
     )
     def validate_allocation(self, allocation: dict[str, int]) -> bool:
+    pass
+    pass
         """Validate trial allocation."""
         try:
             # Check total trials
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             total_trials = sum(allocation.values())
             if total_trials != self.allocation_config.total_trials:
+    pass
+    pass
                 self.logger.warning(
                     f"Total trials mismatch: {total_trials} vs {self.allocation_config.total_trials}",
                 )
@@ -422,10 +543,16 @@ class AdaptiveTrialAllocator:
 
             # Check min/max constraints
             for trials in allocation.values():
+    pass
+    pass
                 if trials < self.allocation_config.min_trials_per_parameter:
+    pass
+    pass
                     self.print(warning("Too few trials for {param}: {trials}"))
                     return False
                 if trials > self.allocation_config.max_trials_per_parameter:
+    pass
+    pass
                     self.print(warning("Too many trials for {param}: {trials}"))
                     return False
 

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
@@ -20,6 +21,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
+import REQUIRED_MODULES = [
 REQUIRED_MODULES = [
     "pandas",
     "numpy",
@@ -48,20 +50,30 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
 # Initialize fallbacks
 if system_logger is None:
+    pass
+    pass
     system_logger, create_fallback_logger()
 
 if training_pipeline_decorators is None:
+    pass
+    pass
     circuit_breaker_protection, create_fallback_decorator()
     debug_training_step, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
@@ -81,11 +93,15 @@ else:
     validate_step_output, training_pipeline_decorators.validate_step_output
 
 if error_handler is None:
+    pass
+    pass
     handle_errors, create_fallback_decorator()
 else:
     handle_errors, error_handler.handle_errors
 
 if enhanced_mlflow is None:
+    pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_report, lambda * args, **kwargs: "fallback_report"
     create_detailed_step_report, lambda * args, **kwargs: {}
@@ -104,6 +120,8 @@ class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize Step 7 Enhanced Matrix Operations."""
         self.config, config
         self.logger, system_logger.getChild("Step7EnhancedMatrixOperations")
@@ -114,6 +132,8 @@ class Step7EnhancedMatrixOperations:
 
         # Initialize enhanced matrix operations if available
         if enhanced_matrix_operations is not None:
+    pass
+    pass
         self.matrix_ops, enhanced_matrix_operations.EnhancedMatrixOperations(config)
         else:
         self.logger.warning("⚠️ EnhancedMatrixOperations not available")
@@ -125,11 +145,15 @@ class Step7EnhancedMatrixOperations:
         self.output_dir.mkdir(parents = True, exist_ok = True)
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
+    pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
@@ -168,6 +192,10 @@ class Step7EnhancedMatrixOperations:
         """
         try:
             start_time, datetime.now()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("🚀 Starting Step 7: Enhanced Matrix Operations...")
 
         # Extract parameters
@@ -180,9 +208,13 @@ class Step7EnhancedMatrixOperations:
             features_val_path, f"data / training/{exchange}_{symbol}_{timeframe}_features_val.parquet"
 
         if not os.path.exists(features_train_path):
+    pass
+    pass
                 raise ValueError(f"Features train file not found: {features_train_path}")
 
         if not os.path.exists(features_val_path):
+    pass
+    pass
                 raise ValueError(f"Features validation file not found: {features_val_path}")
 
         self.logger.info(f"📊 Loading engineered features from: {features_train_path}")
@@ -203,14 +235,20 @@ class Step7EnhancedMatrixOperations:
             hmm_regimes, None
             hmm_path, f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_hmm_regimes.parquet"
         if os.path.exists(hmm_path):
+    pass
+    pass
         self.logger.info(f"🎭 Loading HMM regimes from: {hmm_path}")
                 hmm_data, pd.read_parquet(hmm_path)
         if 'regime' in hmm_data.columns:
+    pass
+    pass
                     hmm_regimes, hmm_data['regime']
 
         # Prepare target variable for optimization (use returns if available)
             target, None
         if 'returns' in df.columns:
+    pass
+    pass
                 target, df['returns']
             elif 'close' in df.columns:
                 target, df['close'].pct_change().dropna()
@@ -220,6 +258,8 @@ class Step7EnhancedMatrixOperations:
 
         # 1. Optimize feature engineering parameters
         if target is not None:
+    pass
+    pass
         self.logger.info("🔧 Starting feature engineering parameter optimization...")
                 feature_optimization_results, await feature_optimizer.optimize_feature_parameters(
                     data = df,
@@ -244,12 +284,18 @@ class Step7EnhancedMatrixOperations:
         # Load multi - timeframe data if available
             timeframe_data = {}
         for tf in ['1m', '5m', '15m', '30m', '1h']:
+    pass
+    pass
                 tf_path, f"data / training/{exchange}_{symbol}_{tf}_features_train.parquet"
         if os.path.exists(tf_path):
+    pass
+    pass
                     tf_data, pd.read_parquet(tf_path)
                     timeframe_data[tf] = tf_data
 
         if timeframe_data:
+    pass
+    pass
                 timeframe_analysis_results, await timeframe_analyzer.analyze_timeframe_relevance(
                     data_dict = timeframe_data,
                     symbol = symbol,
@@ -349,6 +395,10 @@ class Step7EnhancedMatrixOperations:
         """Log step 7 artifacts and create detailed report."""
         try:
             symbol, training_input.get("symbol", "UNKNOWN")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", "UNKNOWN")
             timeframe, training_input.get("timeframe", "1m")
 
@@ -405,7 +455,7 @@ class Step7EnhancedMatrixOperations:
                     "matrix_operations_success": pipeline_state.get("step07_enhanced_matrix_operations", {,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }).get("status") == "completed",
                     "matrix_operations_count": len(matrix_results) if matrix_results else 0,
                     "timeframe": timeframe,
@@ -415,6 +465,8 @@ class Step7EnhancedMatrixOperations:
 
         # Log matrix results
         if matrix_results:
+    pass
+    pass
                 matrix_report_name, log_step_report(
                     config = self.config,
                     step_name="step07_enhanced_matrix_operations",
@@ -426,13 +478,15 @@ class Step7EnhancedMatrixOperations:
                     ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
                 )
         self.logger.info(f"✅ Logged matrix results: {matrix_report_name}")
 
         # Log quality metrics
         if quality_metrics:
+    pass
+    pass
                 quality_report_name, log_step_report(
                     config = self.config,
                     step_name="step07_enhanced_matrix_operations",
@@ -444,7 +498,7 @@ class Step7EnhancedMatrixOperations:
                     ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
                 )
         self.logger.info(f"✅ Logged quality metrics: {quality_report_name}")
@@ -460,7 +514,7 @@ class Step7EnhancedMatrixOperations:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
 
@@ -561,6 +615,8 @@ class Step7EnhancedMatrixOperations:
         numeric_df, df.select_dtypes(include=[np.number])
 
         if len(numeric_df.columns) == 0:
+    pass
+    pass
         self.logger.warning("⚠️ No numeric columns found for matrix operations")
         return {"error": "No numeric columns available"}
 
@@ -571,6 +627,8 @@ class Step7EnhancedMatrixOperations:
 
         # SR - specific matrix operations
         if config.get("enable_sr_analysis", False) and config.get("sr_features"):
+    pass
+    pass
         self.logger.info("🎯 Performing SR - specific matrix operations...")
             results["sr_analysis"] = await self._execute_sr_matrix_operations(df, config)
 
@@ -621,6 +679,10 @@ class Step7EnhancedMatrixOperations:
         self.logger.info("🔧 Performing SVD analysis...")
         try:
             U, s, Vt, np.linalg.svd(numeric_df.values, full_matrices = False)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results["singular_value_decomposition"] = {
                 "singular_values": s.tolist(),
                 "rank": int(np.sum(s > config["min_eigenvalue_threshold"])),
@@ -634,6 +696,10 @@ class Step7EnhancedMatrixOperations:
         self.logger.info("📊 Analyzing matrix rank...")
         try:
             rank, np.linalg.matrix_rank(numeric_df.values)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results["matrix_rank_analysis"] = {
                 "rank": int(rank),
                 "full_rank": rank == min(numeric_df.shape),
@@ -653,13 +719,21 @@ class Step7EnhancedMatrixOperations:
         """Execute SR - specific matrix operations."""
         try:
             sr_features, config.get("sr_features", [])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not sr_features:
+    pass
+    pass
         return {"error": "No SR features found"}
 
         # Get SR feature columns
             sr_df, df[sr_features].select_dtypes(include=[np.number])
 
         if len(sr_df.columns) == 0:
+    pass
+    pass
         return {"error": "No numeric SR features found"}
 
         self.logger.info(f"🎯 Analyzing {len(sr_df.columns)} SR features")
@@ -725,12 +799,20 @@ class Step7EnhancedMatrixOperations:
                 "sr_pivot_", "sr_support_1_pct", "sr_support_2_pct", "sr_resistance_1_pct", "sr_resistance_2_pct"
             ])]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not enhanced_sr_features:
+    pass
+    pass
         return {"error": "No enhanced SR features found"}
 
             enhanced_sr_df, df[enhanced_sr_features].select_dtypes(include=[np.number])
 
         if len(enhanced_sr_df.columns) == 0:
+    pass
+    pass
         return {"error": "No numeric enhanced SR features found"}
 
         self.logger.info(f"🎯 Analyzing {len(enhanced_sr_df.columns)} enhanced SR features")
@@ -776,12 +858,20 @@ class Step7EnhancedMatrixOperations:
                 "sr_optimized_", "sr_optimization_"
             ])]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not optimization_features:
+    pass
+    pass
         return {"error": "No SR optimization features found"}
 
             optimization_df, df[optimization_features].select_dtypes(include=[np.number])
 
         if len(optimization_df.columns) == 0:
+    pass
+    pass
         return {"error": "No numeric SR optimization features found"}
 
         self.logger.info(f"🎯 Analyzing {len(optimization_df.columns)} SR optimization features")
@@ -808,6 +898,8 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_enhanced_sr_feature_clusters(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze enhanced SR feature clusters."""
         try:
         # Group enhanced SR features by type
@@ -820,10 +912,18 @@ class Step7EnhancedMatrixOperations:
                 "pivot": [col for col in enhanced_sr_df.columns if "pivot" in col or "support_1" in col or "resistance_1" in col]
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate group statistics
             group_stats = {}
         for group_name, group_features in feature_groups.items():
+    pass
+    pass
         if group_features:
+    pass
+    pass
                     group_data, enhanced_sr_df[group_features]
                     group_stats[group_name] = {
                         "feature_count": len(group_features),
@@ -842,19 +942,31 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_enhanced_sr_feature_stability(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze enhanced SR feature stability."""
         try:
             stability_metrics = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for column in enhanced_sr_df.columns:
+    pass
+    pass
                 values, enhanced_sr_df[column].dropna()
         if len(values) > 1:
+    pass
+    pass
         # Coefficient of variation
                     cv, values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
 
         # Feature type classification
                     feature_type = "unknown"
         if "enhanced_strength" in column:
+    pass
+    pass
                         feature_type = "enhanced_strength"
                     elif "clusters" in column or "noise" in column:
                         feature_type = "clustering"
@@ -880,13 +992,19 @@ class Step7EnhancedMatrixOperations:
         # Group stability by feature type
             type_stability = {}
         for metrics in stability_metrics.values():
+    pass
+    pass
                 feature_type, metrics["feature_type"]
         if feature_type not in type_stability:
+    pass
+    pass
                     type_stability[feature_type] = []
                 type_stability[feature_type].append(metrics["stability_score"])
 
         # Calculate average stability by type
         for feature_type, scores in type_stability.items():
+    pass
+    pass
                 type_stability[feature_type] = {
                     "average_stability": np.mean(scores),
                     "stability_count": len(scores)
@@ -902,12 +1020,18 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_enhanced_sr_feature_importance(self, enhanced_sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze enhanced SR feature importance."""
         try:
         # Calculate variance - based importance
             variances, enhanced_sr_df.var()
             variance_importance, variances.sort_values(ascending = False)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate correlation - based importance
             correlation_matrix, enhanced_sr_df.corr()
             avg_correlations, correlation_matrix.abs().mean()
@@ -929,7 +1053,11 @@ class Step7EnhancedMatrixOperations:
             }
 
         for feature, importance in combined_importance.items():
+    pass
+    pass
         if "enhanced_strength" in feature:
+    pass
+    pass
                     feature_importance_by_type["enhanced_strength"].append((feature, importance))
                 elif "clusters" in feature or "noise" in feature:
                     feature_importance_by_type["clustering"].append((feature, importance))
@@ -946,6 +1074,8 @@ class Step7EnhancedMatrixOperations:
 
         # Sort each group by importance
         for feature_type in feature_importance_by_type:
+    pass
+    pass
                 feature_importance_by_type[feature_type].sort(key = lambda x: x[1], reverse = True)
 
         return {
@@ -960,6 +1090,8 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_sr_optimization_parameters(self, optimization_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze SR optimization parameters."""
         try:
         # Identify parameter features
@@ -967,7 +1099,13 @@ class Step7EnhancedMatrixOperations:
                 "method_weights", "strength_weights", "dbscan", "fibonacci", "elliott", "order_flow", "tf_"
             ])]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not parameter_features:
+    pass
+    pass
         return {"error": "No parameter features found"}
 
             parameter_data, optimization_df[parameter_features]
@@ -975,8 +1113,12 @@ class Step7EnhancedMatrixOperations:
         # Calculate parameter statistics
             parameter_stats = {}
         for col in parameter_data.columns:
+    pass
+    pass
                 values, parameter_data[col].dropna()
         if len(values) > 0:
+    pass
+    pass
                     parameter_stats[col] = {
                         "mean": float(values.mean()),
                         "std": float(values.std()),
@@ -1004,13 +1146,25 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _calculate_group_correlations(self, df: pd.DataFrame, feature_groups: dict[str, list]) -> dict[str, float]:
+    pass
+    pass
         """Calculate correlations between feature groups."""
         try:
             group_correlations = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for group1_name, group1_features in feature_groups.items():
+    pass
+    pass
         for group2_name, group2_features in feature_groups.items():
+    pass
+    pass
         if group1_name < group2_name and group1_features and group2_features:
+    pass
+    pass
         # Calculate average correlation between groups
                         group1_data, df[group1_features]
                         group2_data, df[group2_features]
@@ -1027,30 +1181,46 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_sr_feature_clusters(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze SR feature clusters."""
         try:
         # Simple clustering analysis based on correlation
             correlation_matrix, sr_df.corr()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Find feature groups with high correlation
             high_corr_groups = []
             processed_features, set()
 
         for i, feature1 in enumerate(sr_df.columns):
+    pass
+    pass
         if feature1 in processed_features:
+    pass
+    pass
                     continue
 
                 group = [feature1]
                 processed_features.add(feature1)
 
         for feature2 in sr_df.columns[i + 1:]:
+    pass
+    pass
         if feature2 not in processed_features:
+    pass
+    pass
                         corr, abs(correlation_matrix.loc[feature1, feature2])
         if corr > 0.8:  # High correlation threshold
                             group.append(feature2)
                             processed_features.add(feature2)
 
         if len(group) > 1:
+    pass
+    pass
                     high_corr_groups.append(group)
 
         return {
@@ -1063,14 +1233,24 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_sr_feature_stability(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze SR feature stability over time."""
         try:
         # Calculate stability metrics for each SR feature
             stability_metrics = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for column in sr_df.columns:
+    pass
+    pass
                 values, sr_df[column].dropna()
         if len(values) > 1:
+    pass
+    pass
         # Coefficient of variation (lower, more stable)
                     cv, values.std() / abs(values.mean()) if values.mean() != 0 else float('inf')
 
@@ -1108,22 +1288,38 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_feature_stability_over_time(self, df: pd.DataFrame, window_sizes: list[int] = None) -> dict[str, Any]:
+    pass
+    pass
         """Analyze feature stability over different time windows."""
         try:
         if window_sizes is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 window_sizes = [100, 500, 1000]  # Default window sizes
 
             stability_over_time = {}
 
+    except Exception as e:
+        pass
         for column in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
                 values, df[column].dropna()
         if len(values) < min(window_sizes):
+    pass
+    pass
                     continue
 
                 column_stability = {}
 
         for window_size in window_sizes:
+    pass
+    pass
         if len(values) < window_size:
+    pass
+    pass
                         continue
 
         # Rolling statistics
@@ -1146,17 +1342,27 @@ class Step7EnhancedMatrixOperations:
                     }
 
         if column_stability:
+    pass
+    pass
                     stability_over_time[column] = column_stability
 
         # Overall time - based stability metrics
             overall_time_stability = {}
         for window_size in window_sizes:
+    pass
+    pass
                 window_stabilities = []
         for column_data in stability_over_time.values():
+    pass
+    pass
         if f"window_{window_size}" in column_data:
+    pass
+    pass
                         window_stabilities.append(column_data[f"window_{window_size}"])
 
         if window_stabilities:
+    pass
+    pass
                     overall_time_stability[f"window_{window_size}"] = {
                         "mean_mean_stability": np.mean([w["mean_stability"] for w in window_stabilities]),
                         "mean_variance_stability": np.mean([w["variance_stability"] for w in window_stabilities]),
@@ -1173,14 +1379,24 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_distribution_stability(self, df: pd.DataFrame, reference_period: int, 1000) -> dict[str, Any]:
+    pass
+    pass
         """Analyze distribution stability using PSI and other distribution metrics."""
         try:
             numeric_df, df.select_dtypes(include=[np.number])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             distribution_stability = {}
 
         for column in numeric_df.columns:
+    pass
+    pass
                 values, numeric_df[column].dropna()
         if len(values) < reference_period * 2:
+    pass
+    pass
                     continue
 
         # Split data into reference and current periods
@@ -1230,10 +1446,18 @@ class Step7EnhancedMatrixOperations:
         """Analyze stability of feature importance over time."""
         try:
         if window_sizes is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 window_sizes = [500, 1000, 2000]
 
             numeric_df, df.select_dtypes(include=[np.number])
+    except Exception as e:
+        pass
         if target_column and target_column in numeric_df.columns:
+    pass
+    pass
                 target, numeric_df[target_column]
                 features_df, numeric_df.drop(columns=[target_column])
             else:
@@ -1244,16 +1468,24 @@ class Step7EnhancedMatrixOperations:
             importance_stability = {}
 
         for column in features_df.columns:
+    pass
+    pass
                 values, features_df[column].dropna()
                 target_values, target.loc[values.index].dropna()
 
         if len(values) < min(window_sizes) or len(target_values) < min(window_sizes):
+    pass
+    pass
                     continue
 
                 column_importance_stability = {}
 
         for window_size in window_sizes:
+    pass
+    pass
         if len(values) < window_size:
+    pass
+    pass
                         continue
 
         # Rolling correlation importance
@@ -1280,17 +1512,27 @@ class Step7EnhancedMatrixOperations:
                     }
 
         if column_importance_stability:
+    pass
+    pass
                     importance_stability[column] = column_importance_stability
 
         # Overall importance stability metrics
             overall_importance_stability = {}
         for window_size in window_sizes:
+    pass
+    pass
                 window_stabilities = []
         for column_data in importance_stability.values():
+    pass
+    pass
         if f"window_{window_size}" in column_data:
+    pass
+    pass
                         window_stabilities.append(column_data[f"window_{window_size}"])
 
         if window_stabilities:
+    pass
+    pass
                     overall_importance_stability[f"window_{window_size}"] = {
                         "mean_correlation_stability": np.mean([w["correlation_stability"] for w in window_stabilities]),
                         "mean_mutual_info_stability": np.mean([w["mutual_info_stability"] for w in window_stabilities]),
@@ -1309,12 +1551,18 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _analyze_sr_feature_importance(self, sr_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Analyze SR feature importance based on variance and correlation."""
         try:
         # Calculate variance - based importance
             variances, sr_df.var()
             variance_importance, variances.sort_values(ascending = False)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate correlation - based importance (inverse of average correlation)
             correlation_matrix, sr_df.corr()
             avg_correlations, correlation_matrix.abs().mean()
@@ -1335,6 +1583,8 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _calculate_quality_metrics(self, df: pd.DataFrame, matrix_results: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         """Calculate comprehensive quality metrics for the feature matrix."""
         try:
         self.logger.info("📊 Calculating quality metrics...")
@@ -1342,6 +1592,10 @@ class Step7EnhancedMatrixOperations:
             numeric_df, df.select_dtypes(include=[np.number])
             quality_metrics = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # 1. Data Completeness Metrics
             quality_metrics["completeness"] = {
                 "total_cells": numeric_df.size,
@@ -1364,6 +1618,8 @@ class Step7EnhancedMatrixOperations:
 
         # 3. Feature Correlation Metrics
         if "correlation_analysis" in matrix_results:
+    pass
+    pass
                 corr_matrix, pd.DataFrame(matrix_results["correlation_analysis"]["correlation_matrix"])
                 high_corrs, matrix_results["correlation_analysis"]["high_correlations"]
 
@@ -1376,6 +1632,8 @@ class Step7EnhancedMatrixOperations:
 
         # 4. Numerical Stability Metrics
         if "condition_number_check" in matrix_results:
+    pass
+    pass
                 quality_metrics["numerical_stability"] = {
                     "condition_number": matrix_results["condition_number_check"]["condition_number"],
                     "is_well_conditioned": matrix_results["condition_number_check"]["is_well_conditioned"],
@@ -1384,6 +1642,8 @@ class Step7EnhancedMatrixOperations:
 
         # 5. Dimensionality Metrics
         if "matrix_rank_analysis" in matrix_results:
+    pass
+    pass
                 quality_metrics["dimensionality"] = {
                     "matrix_rank": matrix_results["matrix_rank_analysis"]["rank"],
                     "full_rank": matrix_results["matrix_rank_analysis"]["full_rank"],
@@ -1425,6 +1685,8 @@ class Step7EnhancedMatrixOperations:
         return {"error": str(e)}
 
     def _calculate_outlier_metrics(self, df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Calculate outlier metrics for features."""
         outlier_metrics = {}
 
@@ -1433,7 +1695,13 @@ class Step7EnhancedMatrixOperations:
             outlier_counts = []
             outlier_ratios = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in df.columns:
+    pass
+    pass
                 Q1, df[col].quantile(0.25)
                 Q3, df[col].quantile(0.75)
                 IQR, Q3 - Q1
@@ -1458,14 +1726,22 @@ class Step7EnhancedMatrixOperations:
         return outlier_metrics
 
     def _calculate_overall_quality_score(self, quality_metrics: dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate overall quality score from individual metrics."""
         try:
             score, 0.0
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             max_score, 0.0
 
         # Completeness score (0 - 25 points)
             completeness, quality_metrics.get("completeness", {})
         if "missing_ratio" in completeness:
+    pass
+    pass
                 completeness_score, max(0, 25 * (1 - completeness["missing_ratio"]))
                 score += completeness_score
                 max_score += 25
@@ -1473,6 +1749,8 @@ class Step7EnhancedMatrixOperations:
         # Variance score (0 - 20 points)
             variance, quality_metrics.get("variance", {})
         if "zero_variance_features" in variance:
+    pass
+    pass
                 zero_var_ratio, variance["zero_variance_features"] / len(quality_metrics.get("completeness", {}).get("total_cells", 1))
                 variance_score, max(0, 20 * (1 - zero_var_ratio))
                 score += variance_score
@@ -1481,6 +1759,8 @@ class Step7EnhancedMatrixOperations:
         # Correlation score (0 - 20 points)
             correlation, quality_metrics.get("correlation", {})
         if "high_correlation_pairs" in correlation:
+    pass
+    pass
                 corr_score, max(0, 20 * (1 - correlation["high_correlation_pairs"] / 100))  # Penalize high correlations
                 score += corr_score
                 max_score += 20
@@ -1488,6 +1768,8 @@ class Step7EnhancedMatrixOperations:
         # Numerical stability score (0 - 15 points)
             stability, quality_metrics.get("numerical_stability", {})
         if "is_well_conditioned" in stability:
+    pass
+    pass
                 stability_score, 15 if stability["is_well_conditioned"] else 5
                 score += stability_score
                 max_score += 15
@@ -1495,6 +1777,8 @@ class Step7EnhancedMatrixOperations:
         # Dimensionality score (0 - 10 points)
             dimensionality, quality_metrics.get("dimensionality", {})
         if "rank_deficiency" in dimensionality:
+    pass
+    pass
                 rank_score, max(0, 10 * (1 - dimensionality["rank_deficiency"] / 100))
                 score += rank_score
                 max_score += 10
@@ -1502,6 +1786,8 @@ class Step7EnhancedMatrixOperations:
         # Distribution score (0 - 10 points)
             distribution, quality_metrics.get("distribution", {})
         if "high_skew_features" in distribution:
+    pass
+    pass
                 skew_penalty, min(10, distribution["high_skew_features"] / 10)
                 distribution_score, max(0, 10 - skew_penalty)
                 score += distribution_score
@@ -1514,14 +1800,24 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_stability_metrics(self, matrix_results: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         """Calculate comprehensive stability metrics from matrix results."""
         try:
             stability_metrics = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Time - based stability metrics
         if "time_based_stability" in matrix_results:
+    pass
+    pass
                 time_stability, matrix_results["time_based_stability"]
         if "overall_time_stability" in time_stability:
+    pass
+    pass
                     overall_time, time_stability["overall_time_stability"]
                     stability_metrics["time_based"] = {
                         "mean_stability_score": np.mean([
@@ -1548,8 +1844,12 @@ class Step7EnhancedMatrixOperations:
 
         # Distribution stability metrics
         if "distribution_stability" in matrix_results:
+    pass
+    pass
                 dist_stability, matrix_results["distribution_stability"]
         if "overall_distribution_stability" in dist_stability:
+    pass
+    pass
                     overall_dist, dist_stability["overall_distribution_stability"]
                     stability_metrics["distribution"] = {
                         "mean_psi": overall_dist.get("mean_psi", 0.0),
@@ -1562,8 +1862,12 @@ class Step7EnhancedMatrixOperations:
 
         # Feature importance stability metrics
         if "feature_importance_stability" in matrix_results:
+    pass
+    pass
                 imp_stability, matrix_results["feature_importance_stability"]
         if "overall_importance_stability" in imp_stability:
+    pass
+    pass
                     overall_imp, imp_stability["overall_importance_stability"]
                     stability_metrics["importance"] = {
                         "mean_correlation_stability": np.mean([
@@ -1600,6 +1904,8 @@ class Step7EnhancedMatrixOperations:
 
         # Overall stability score
         if stability_metrics:
+    pass
+    pass
                 overall_stability_score, np.mean([
                     stability_metrics.get("time_based", {}).get("mean_stability_score", 0.0),
                     stability_metrics.get("distribution", {}).get("distribution_stability_score", 0.0),
@@ -1616,9 +1922,15 @@ class Step7EnhancedMatrixOperations:
         return {"overall_stability_score": 0.0}
 
     def _generate_detailed_quality_report(self, quality_metrics: dict[str, Any]) -> str:
+    pass
+    pass
         """Generate detailed quality report with recommendations."""
         try:
             report = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             report.append("=" * 80)
             report.append("📊 DETAILED FEATURE MATRIX QUALITY REPORT")
             report.append("=" * 80)
@@ -1629,6 +1941,8 @@ class Step7EnhancedMatrixOperations:
 
         # Score interpretation
         if overall_score >= 0.9:
+    pass
+    pass
                 report.append("✅ EXCELLENT - Feature matrix is of very high quality")
             elif overall_score >= 0.8:
                 report.append("🟢 GOOD - Feature matrix is of good quality with minor issues")
@@ -1652,6 +1966,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Complete columns: {completeness.get('complete_columns', 0):,}")
 
         if completeness.get('missing_ratio', 0) > 0.05:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: High missing data ratio - consider imputation")
             else:
                 report.append("   ✅ Data completeness is acceptable")
@@ -1669,6 +1985,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Zero variance features: {variance.get('zero_variance_features', 0)}")
 
         if variance.get('zero_variance_features', 0) > 0:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Remove zero - variance features")
             else:
                 report.append("   ✅ Feature variance is acceptable")
@@ -1684,6 +2002,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Correlation threshold: {correlation.get('correlation_threshold', 0.8)}")
 
         if correlation.get('high_correlation_pairs', 0) > 10:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Many highly correlated features - consider feature selection")
             elif correlation.get('high_correlation_pairs', 0) > 0:
                 report.append("   ⚠️  RECOMMENDATION: Some highly correlated features - review for redundancy")
@@ -1700,6 +2020,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Condition threshold: {stability.get('condition_threshold', 1e12):.2e}")
 
         if not stability.get('is_well_conditioned', False):
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Matrix is ill - conditioned - consider regularization or feature scaling")
             else:
                 report.append("   ✅ Numerical stability is good")
@@ -1715,6 +2037,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Effective dimensions: {dimensionality.get('effective_dimensions', 0)}")
 
         if dimensionality.get('rank_deficiency', 0) > 0:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Rank - deficient matrix - consider dimensionality reduction")
             else:
                 report.append("   ✅ Matrix has full rank")
@@ -1732,6 +2056,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   High kurtosis features: {distribution.get('high_kurtosis_features', 0)}")
 
         if distribution.get('high_skew_features', 0) > 10:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Many skewed features - consider transformations")
             else:
                 report.append("   ✅ Feature distributions are generally acceptable")
@@ -1748,6 +2074,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   High outlier features: {outliers.get('high_outlier_features', 0)}")
 
         if outliers.get('high_outlier_features', 0) > 5:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: Many features with high outlier ratios - consider outlier handling")
             else:
                 report.append("   ✅ Outlier levels are acceptable")
@@ -1762,6 +2090,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Data types: {memory.get('data_types', {})}")
 
         if memory.get('memory_usage_mb', 0) > 1000:
+    pass
+    pass
                 report.append("   ⚠️  RECOMMENDATION: High memory usage - consider data type optimization")
             else:
                 report.append("   ✅ Memory usage is reasonable")
@@ -1775,6 +2105,8 @@ class Step7EnhancedMatrixOperations:
         # Time - based stability
             time_stability, stability.get("time_based", {})
         if time_stability:
+    pass
+    pass
                 report.append(f"   Time - based stability score: {time_stability.get('mean_stability_score', 0):.3f}")
                 report.append(f"   Variance stability score: {time_stability.get('variance_stability_score', 0):.3f}")
                 report.append(f"   Entropy stability score: {time_stability.get('entropy_stability_score', 0):.3f}")
@@ -1783,6 +2115,8 @@ class Step7EnhancedMatrixOperations:
         # Distribution stability
             dist_stability, stability.get("distribution", {})
         if dist_stability:
+    pass
+    pass
                 report.append(f"   Distribution stability score: {dist_stability.get('distribution_stability_score', 0):.3f}")
                 report.append(f"   Mean PSI: {dist_stability.get('mean_psi', 0):.3f}")
                 report.append(f"   Stable distributions: {dist_stability.get('stable_distributions_count', 0)}")
@@ -1793,6 +2127,8 @@ class Step7EnhancedMatrixOperations:
         # Feature importance stability
             imp_stability, stability.get("importance", {})
         if imp_stability:
+    pass
+    pass
                 report.append(f"   Importance stability score: {imp_stability.get('mean_overall_stability', 0):.3f}")
                 report.append(f"   Correlation stability: {imp_stability.get('mean_correlation_stability', 0):.3f}")
                 report.append(f"   Mutual info stability: {imp_stability.get('mean_mutual_info_stability', 0):.3f}")
@@ -1805,6 +2141,8 @@ class Step7EnhancedMatrixOperations:
             report.append(f"   Overall stability score: {overall_stability:.3f}")
 
         if overall_stability >= 0.8:
+    pass
+    pass
                 report.append("   ✅ EXCELLENT - Features are very stable over time")
             elif overall_stability >= 0.6:
                 report.append("   🟢 GOOD - Features are generally stable")
@@ -1816,32 +2154,52 @@ class Step7EnhancedMatrixOperations:
 
         # 10. SR - Specific Analysis (if available)
         if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+    pass
+    pass
                 report.append("🎯 10. SR - SPECIFIC ANALYSIS")
                 report.append("-" * 40)
 
         # Basic SR analysis
         if "sr_analysis" in matrix_results:
+    pass
+    pass
                     sr_analysis, matrix_results["sr_analysis"]
         if "sr_feature_count" in sr_analysis:
+    pass
+    pass
                         report.append(f"   SR Features: {sr_analysis['sr_feature_count']}")
         if "sr_correlation_analysis" in sr_analysis:
+    pass
+    pass
                         high_corrs, sr_analysis["sr_correlation_analysis"].get("high_correlations", [])
                         report.append(f"   SR High Correlations: {len(high_corrs)}")
 
         # Enhanced SR analysis
         if "sr_enhanced_analysis" in matrix_results:
+    pass
+    pass
                     enhanced_analysis, matrix_results["sr_enhanced_analysis"]
         if "enhanced_sr_feature_count" in enhanced_analysis:
+    pass
+    pass
                         report.append(f"   Enhanced SR Features: {enhanced_analysis['enhanced_sr_feature_count']}")
         if "enhanced_sr_importance_analysis" in enhanced_analysis:
+    pass
+    pass
                         importance, enhanced_analysis["enhanced_sr_importance_analysis"]
         if "top_features" in importance:
+    pass
+    pass
                             report.append(f"   Top Enhanced SR Features: {len(importance['top_features'])}")
 
         # SR optimization analysis
         if "sr_optimization_analysis" in matrix_results:
+    pass
+    pass
                     opt_analysis, matrix_results["sr_optimization_analysis"]
         if "optimization_feature_count" in opt_analysis:
+    pass
+    pass
                         report.append(f"   SR Optimization Features: {opt_analysis['optimization_feature_count']}")
 
                 report.append("")
@@ -1853,39 +2211,61 @@ class Step7EnhancedMatrixOperations:
             recommendations = []
 
         if completeness.get('missing_ratio', 0) > 0.05:
+    pass
+    pass
                 recommendations.append("• Implement data imputation for missing values")
 
         if variance.get('zero_variance_features', 0) > 0:
+    pass
+    pass
                 recommendations.append("• Remove zero - variance features")
 
         if correlation.get('high_correlation_pairs', 0) > 5:
+    pass
+    pass
                 recommendations.append("• Apply feature selection to reduce multicollinearity")
 
         if not stability.get('is_well_conditioned', False):
+    pass
+    pass
                 recommendations.append("• Apply feature scaling or regularization")
 
         if dimensionality.get('rank_deficiency', 0) > 0:
+    pass
+    pass
                 recommendations.append("• Consider PCA or other dimensionality reduction techniques")
 
         if distribution.get('high_skew_features', 0) > 10:
+    pass
+    pass
                 recommendations.append("• Apply log or power transformations to skewed features")
 
         if outliers.get('high_outlier_features', 0) > 5:
+    pass
+    pass
                 recommendations.append("• Implement outlier detection and handling strategies")
 
         if memory.get('memory_usage_mb', 0) > 1000:
+    pass
+    pass
                 recommendations.append("• Optimize data types to reduce memory usage")
 
         # SR - specific recommendations
         if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results:
+    pass
+    pass
                 recommendations.append("• Review SR feature correlations and consider feature selection")
                 recommendations.append("• Validate SR feature stability across different market conditions")
                 recommendations.append("• Consider SR feature importance for model training prioritization")
 
         if not recommendations:
+    pass
+    pass
                 recommendations.append("• No immediate actions required - feature matrix is in good condition")
 
         for rec in recommendations:
+    pass
+    pass
                 report.append(f"   {rec}")
 
             report.append("")
@@ -1898,10 +2278,14 @@ class Step7EnhancedMatrixOperations:
         # Stability summary
             stability, quality_metrics.get("stability", {})
         if stability:
+    pass
+    pass
                 overall_stability, stability.get("overall_stability_score", 0.0)
                 report.append(f"   Overall Stability Score: {overall_stability:.3f}/1.00")
 
         if overall_stability >= 0.8:
+    pass
+    pass
                     report.append("   Stability Status: ✅ EXCELLENT - Features are very stable")
                 elif overall_stability >= 0.6:
                     report.append("   Stability Status: 🟢 GOOD - Features are generally stable")
@@ -1914,24 +2298,38 @@ class Step7EnhancedMatrixOperations:
 
         # SR - specific summary
         if "sr_analysis" in matrix_results or "sr_enhanced_analysis" in matrix_results or "sr_optimization_analysis" in matrix_results:
+    pass
+    pass
                 report.append("   SR Analysis: ✅ COMPREHENSIVE SR FEATURES ANALYZED")
 
                 total_sr_features, 0
         if "sr_analysis" in matrix_results:
+    pass
+    pass
                     total_sr_features += matrix_results["sr_analysis"].get("sr_feature_count", 0)
         if "sr_enhanced_analysis" in matrix_results:
+    pass
+    pass
                     total_sr_features += matrix_results["sr_enhanced_analysis"].get("enhanced_sr_feature_count", 0)
         if "sr_optimization_analysis" in matrix_results:
+    pass
+    pass
                     total_sr_features += matrix_results["sr_optimization_analysis"].get("optimization_feature_count", 0)
 
                 report.append(f"   Total SR Features: {total_sr_features}")
 
         # SR optimization status
         if "sr_optimization_analysis" in matrix_results:
+    pass
+    pass
                     opt_analysis, matrix_results["sr_optimization_analysis"]
         if "sr_optimization_performance_analysis" in opt_analysis:
+    pass
+    pass
                         perf_score, opt_analysis["sr_optimization_performance_analysis"].get("overall_performance_score", 0)
         if perf_score >= 0.7:
+    pass
+    pass
                             report.append("   SR Optimization: ✅ HIGH PERFORMANCE")
                         elif perf_score >= 0.5:
                             report.append("   SR Optimization: ⚠️  MODERATE PERFORMANCE")
@@ -1941,6 +2339,8 @@ class Step7EnhancedMatrixOperations:
                 report.append("   SR Analysis: ⚠️  NO SR FEATURES DETECTED")
 
         if overall_score >= 0.8:
+    pass
+    pass
                 report.append("   Status: ✅ READY FOR MODEL TRAINING")
             elif overall_score >= 0.6:
                 report.append("   Status: ⚠️  NEEDS IMPROVEMENT BEFORE TRAINING")
@@ -1949,7 +2349,7 @@ class Step7EnhancedMatrixOperations:
 
             report.append("=" * 80)
 
-        return "\n".join(report)
+        return "\\\n".join(report)
 
         except Exception as e:
         self.logger.error(f"Error generating detailed quality report: {str(e)}")
@@ -1964,9 +2364,15 @@ class Step7EnhancedMatrixOperations:
         high_correlations = []
 
         for i in range(len(correlation_matrix.columns)):
+    pass
+    pass
         for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
+    pass
                 corr_value, correlation_matrix.iloc[i, j]
         if abs(corr_value) >= threshold:
+    pass
+    pass
                     high_correlations.append({
                         "column1": correlation_matrix.columns[i],
                         "column2": correlation_matrix.columns[j],
@@ -2014,7 +2420,7 @@ class Step7EnhancedMatrixOperations:
         output_files["quality_report"] = str(report_file)
 
         # Log the detailed report
-        self.logger.info("\n" + detailed_report)
+        self.logger.info("\\\n" + detailed_report)
 
         # Save summary
         summary = {
@@ -2047,9 +2453,17 @@ class Step7EnhancedMatrixOperations:
     # ============================================================================
 
     def _calculate_entropy_stability(self, values: pd.Series) -> float:
+    pass
+    pass
         """Calculate entropy - based stability measure."""
         try:
         if len(values) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Calculate Shannon entropy
@@ -2070,24 +2484,38 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_rolling_entropy_stability(self, values: pd.Series, window_size: int) -> float:
+    pass
+    pass
         """Calculate rolling entropy stability over time."""
         try:
         if len(values) < window_size:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Calculate rolling entropy
             rolling_entropy = []
         for i in range(window_size, len(values)):
+    pass
+    pass
                 window_values, values.iloc[i - window_size:i]
                 hist, _, np.histogram(window_values, bins = min(10, window_size//5), density = True)
                 hist, hist[hist > 0]
         if len(hist) > 1:
+    pass
+    pass
                     entropy = -np.sum(hist * np.log2(hist))
                     max_entropy, np.log2(len(hist))
                     normalized_entropy, entropy / max_entropy if max_entropy > 0 else 0
                     rolling_entropy.append(normalized_entropy)
 
         if not rolling_entropy:
+    pass
+    pass
         return 0.0
 
         # Stability is inverse of entropy variance (lower variance, more stable)
@@ -2100,9 +2528,17 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_entropy_distribution_stability(self, reference: pd.Series, current: pd.Series) -> float:
+    pass
+    pass
         """Calculate entropy - based distribution stability between reference and current data."""
         try:
         if len(reference) < 2 or len(current) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Calculate entropy for both distributions
@@ -2113,6 +2549,8 @@ class Step7EnhancedMatrixOperations:
             curr_hist, curr_hist[curr_hist > 0]
 
         if len(ref_hist) < 2 or len(curr_hist) < 2:
+    pass
+    pass
         return 0.0
 
             ref_entropy = -np.sum(ref_hist * np.log2(ref_hist))
@@ -2124,6 +2562,8 @@ class Step7EnhancedMatrixOperations:
 
         # Stability is inverse of relative entropy difference
         if max_entropy > 0:
+    pass
+    pass
                 relative_diff, entropy_diff / max_entropy
                 stability, 1.0 - relative_diff
             else:
@@ -2135,14 +2575,24 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_entropy_importance_stability(self, feature: pd.Series, target: pd.Series, window_size: int) -> float:
+    pass
+    pass
         """Calculate entropy - based importance stability."""
         try:
         if len(feature) < window_size or len(target) < window_size:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Calculate rolling mutual information
             rolling_mi = []
         for i in range(window_size, len(feature)):
+    pass
+    pass
                 f_window, feature.iloc[i - window_size:i]
                 t_window, target.iloc[i - window_size:i]
 
@@ -2151,6 +2601,8 @@ class Step7EnhancedMatrixOperations:
                 rolling_mi.append(mi)
 
         if not rolling_mi:
+    pass
+    pass
         return 0.0
 
         # Stability is inverse of mutual information variance
@@ -2163,9 +2615,17 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
+    pass
+    pass
         """Calculate mutual information between two series."""
         try:
         if len(x) < 2 or len(y) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Create 2D histogram
@@ -2174,6 +2634,8 @@ class Step7EnhancedMatrixOperations:
             hist_2d, hist_2d[hist_2d > 0]
 
         if len(hist_2d) < 2:
+    pass
+    pass
         return 0.0
 
         # Normalize to probabilities
@@ -2188,9 +2650,17 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_psi(self, reference: pd.Series, current: pd.Series) -> float:
+    pass
+    pass
         """Calculate Population Stability Index."""
         try:
         if len(reference) < 2 or len(current) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return 0.0
 
         # Create bins for both distributions
@@ -2208,11 +2678,17 @@ class Step7EnhancedMatrixOperations:
         # Calculate PSI
             psi, 0
         for bin_name in ref_probs.index:
+    pass
+    pass
         if bin_name in curr_probs.index:
+    pass
+    pass
                     ref_p, ref_probs[bin_name]
                     curr_p, curr_probs[bin_name]
 
         if ref_p > 0 and curr_p > 0:
+    pass
+    pass
                         psi += (curr_p - ref_p) * np.log(curr_p / ref_p)
 
         return max(0.0, psi)
@@ -2221,14 +2697,24 @@ class Step7EnhancedMatrixOperations:
         return 0.0
 
     def _calculate_ks_test(self, reference: pd.Series, current: pd.Series) -> tuple[float, float]:
+    pass
+    pass
         """Calculate Kolmogorov - Smirnov test statistic and p - value."""
         try:
             from scipy import stats
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ref_clean, reference.dropna
             ref_clean, reference.dropna()
             curr_clean, current.dropna()
 
         if len(ref_clean) > 0 and len(curr_clean) > 0:
+    pass
+    pass
                 ks_stat, p_value, stats.ks_2samp(ref_clean, curr_clean)
         return float(ks_stat), float(p_value)
             else:
@@ -2238,9 +2724,15 @@ class Step7EnhancedMatrixOperations:
         return 0.0, 1.0
 
     def _calculate_moment_stability(self, reference: pd.Series, current: pd.Series) -> dict[str, float]:
+    pass
+    pass
         """Calculate stability of distribution moments."""
         try:
             ref_mean, reference.mean()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ref_std, reference.std()
             ref_skew, reference.skew()
             ref_kurt, reference.kurtosis()
@@ -2272,15 +2764,25 @@ class Step7EnhancedMatrixOperations:
             }
 
     def _calculate_rolling_correlation(self, x: pd.Series, y: pd.Series, window_size: int) -> pd.Series:
+    pass
+    pass
         """Calculate rolling correlation between two series."""
         try:
         if len(x) < window_size or len(y) < window_size:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return pd.Series(dtype = float)
 
         # Align series
             aligned_data, pd.DataFrame({'x': x, 'y': y}).dropna()
 
         if len(aligned_data) < window_size:
+    pass
+    pass
         return pd.Series(dtype = float)
 
         # Calculate rolling correlation
@@ -2292,20 +2794,32 @@ class Step7EnhancedMatrixOperations:
         return pd.Series(dtype = float)
 
     def _calculate_rolling_mutual_information(self, x: pd.Series, y: pd.Series, window_size: int) -> pd.Series:
+    pass
+    pass
         """Calculate rolling mutual information between two series."""
         try:
         if len(x) < window_size or len(y) < window_size:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return pd.Series(dtype = float)
 
         # Align series
             aligned_data, pd.DataFrame({'x': x, 'y': y}).dropna()
 
         if len(aligned_data) < window_size:
+    pass
+    pass
         return pd.Series(dtype = float)
 
         # Calculate rolling mutual information
             rolling_mi = []
         for i in range(window_size, len(aligned_data)):
+    pass
+    pass
                 x_window, aligned_data['x'].iloc[i - window_size:i]
                 y_window, aligned_data['y'].iloc[i - window_size:i]
 
@@ -2344,11 +2858,18 @@ async def run_step(
     """
     try:
         # Use standardized path construction
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if data_dir is None:
+    pass
+    pass
             data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
         # Load configuration
         from src.config.training import get_training_config
+import config, get_training_config
         config, get_training_config()
 
         # Create step instance
@@ -2363,7 +2884,7 @@ async def run_step(
             "force_rerun": force_rerun,
             "asset": symbol,  # Use symbol as asset
             "lookback_period": config.get("lookback_days", 1095),  # Default to 3 years
-            "project_version": config.get("project_version", "1.0.0"),  # Default version
+            "project_version": config.get("project_version", "1.00"),  # Default version
             **kwargs
         }
 

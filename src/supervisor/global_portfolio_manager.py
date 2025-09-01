@@ -5,6 +5,7 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import error,
     error,
     initialization_error,
     invalid,
@@ -16,6 +17,8 @@ class GlobalPortfolioManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize global portfolio manager with enhanced type safety.
 
@@ -77,11 +80,17 @@ class GlobalPortfolioManager:
         try:
             self.logger.info("Initializing Global Portfolio Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load global portfolio manager configuration
             await self._load_portfolio_configuration()
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(
                     invalid("Invalid configuration for global portfolio manager"),
                 )
@@ -109,6 +118,10 @@ class GlobalPortfolioManager:
         """Load global portfolio manager configuration."""
         try:
             # Set default portfolio parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.portfolio_config.setdefault("management_interval", 3600)
             self.portfolio_config.setdefault("max_management_history", 100)
             self.portfolio_config.setdefault("enable_portfolio_allocation", True)
@@ -144,6 +157,8 @@ class GlobalPortfolioManager:
     )
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate global portfolio manager configuration.
 
@@ -152,12 +167,20 @@ class GlobalPortfolioManager:
         """
         try:
             # Validate management interval
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.management_interval <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid management interval"))
                 return False
 
             # Validate max management history
             if self.max_management_history <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max management history"))
                 return False
 
@@ -189,23 +212,37 @@ class GlobalPortfolioManager:
         """Initialize global portfolio manager modules."""
         try:
             # Initialize portfolio allocation module
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.enable_portfolio_allocation:
+    pass
+    pass
                 await self._initialize_portfolio_allocation()
 
             # Initialize risk management module
             if self.enable_risk_management:
+    pass
+    pass
                 await self._initialize_risk_management()
 
             # Initialize rebalancing module
             if self.enable_rebalancing:
+    pass
+    pass
                 await self._initialize_rebalancing()
 
             # Initialize performance monitoring module
             if self.portfolio_config.get("enable_performance_monitoring", True):
+    pass
+    pass
                 await self._initialize_performance_monitoring()
 
             # Initialize optimization module
             if self.portfolio_config.get("enable_optimization", True):
+    pass
+    pass
                 await self._initialize_optimization()
 
             self.logger.info(
@@ -225,6 +262,10 @@ class GlobalPortfolioManager:
         """Initialize portfolio allocation module."""
         try:
             # Initialize portfolio allocation components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.portfolio_allocation_components = {
                 "asset_allocation": True , "sector_allocation": True,
                 "geographic_allocation": True , "strategy_allocation": True,
@@ -245,6 +286,10 @@ class GlobalPortfolioManager:
         """Initialize risk management module."""
         try:
             # Initialize risk management components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.risk_management_components = {
                 "stop_loss_management": True,
                 "correlation_management": True,
@@ -264,6 +309,10 @@ class GlobalPortfolioManager:
         """Initialize rebalancing module."""
         try:
             # Initialize rebalancing components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.rebalancing_components = {
                 "periodic_rebalancing": True , "threshold_rebalancing": True,
                 "drift_rebalancing": True , "opportunistic_rebalancing": True,
@@ -283,6 +332,10 @@ class GlobalPortfolioManager:
         """Initialize performance monitoring module."""
         try:
             # Initialize performance monitoring components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.performance_monitoring_components = {
                 "return_monitoring": True , "risk_monitoring": True,
                 "attribution_monitoring": True , "benchmark_monitoring": True,
@@ -303,6 +356,10 @@ class GlobalPortfolioManager:
         """Initialize optimization module."""
         try:
             # Initialize optimization components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.optimization_components = {
                 "mean_variance_optimization": True , "black_litterman_optimization": True,
                 "risk_parity_optimization": True , "factor_optimization": True,
@@ -335,35 +392,51 @@ class GlobalPortfolioManager:
         """
         try:
             if not self._validate_management_inputs(management_input):
+    pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
+    except Exception as e:
+        pass
             self.is_managing = True
             self.logger.info("🔄 Starting global portfolio management execution...")
 
             # Perform portfolio allocation
             if self.enable_portfolio_allocation:
+    pass
+    pass
                 allocation_results = await self._perform_portfolio_allocation(
                     management_input)
                 self.management_results["portfolio_allocation"] = allocation_results
 
             # Perform risk management
             if self.enable_risk_management:
+    pass
+    pass
                 risk_results = await self._perform_risk_management(management_input)
                 self.management_results["risk_management"] = risk_results
 
             # Perform rebalancing
             if self.enable_rebalancing:
+    pass
+    pass
                 rebalancing_results = await self._perform_rebalancing(management_input)
                 self.management_results["rebalancing"] = rebalancing_results
 
             # Perform performance monitoring
             if self.portfolio_config.get("enable_performance_monitoring", True):
+    pass
+    pass
                 performance_results = await self._perform_performance_monitoring(
                     management_input)
                 self.management_results["performance_monitoring"] = performance_results
 
             # Perform optimization
             if self.portfolio_config.get("enable_optimization", True):
+    pass
+    pass
                 optimization_results = await self._perform_optimization(
                     management_input)
                 self.management_results["optimization"] = optimization_results
@@ -388,6 +461,8 @@ class GlobalPortfolioManager:
     )
 
     def _validate_management_inputs(self, management_input: dict[str, Any]) -> bool:
+    pass
+    pass
         """
         Validate management inputs.
 
@@ -399,9 +474,17 @@ class GlobalPortfolioManager:
         """
         try:
             # Check required management input fields
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_fields = ["management_type", "data_source", "timestamp"]
             for field in required_fields:
+    pass
+    pass
                 if field not in management_input:
+    pass
+    pass
                     self.logger.error(
                         f"Missing required management input field: {field}",
                     )
@@ -409,10 +492,14 @@ class GlobalPortfolioManager:
 
             # Validate data types
             if not isinstance(management_input["management_type"], str):
+    pass
+    pass
                 self.print(invalid("Invalid management type"))
                 return False
 
             if not isinstance(management_input["data_source"], str):
+    pass
+    pass
                 self.print(invalid("Invalid data source"))
                 return False
 
@@ -441,23 +528,35 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform asset allocation
             if self.portfolio_allocation_components.get("asset_allocation", False):
+    pass
+    pass
                 results["asset_allocation"] = self._perform_asset_allocation(
                     management_input)
 
             # Perform sector allocation
             if self.portfolio_allocation_components.get("sector_allocation", False):
+    pass
+    pass
                 results["sector_allocation"] = self._perform_sector_allocation(
                     management_input)
 
             # Perform geographic allocation
             if self.portfolio_allocation_components.get("geographic_allocation", False):
+    pass
+    pass
                 results["geographic_allocation"] = self._perform_geographic_allocation(
                     management_input)
 
             # Perform strategy allocation
             if self.portfolio_allocation_components.get("strategy_allocation", False):
+    pass
+    pass
                 results["strategy_allocation"] = self._perform_strategy_allocation(
                     management_input)
 
@@ -487,22 +586,32 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Position sizing is handled by the Tactician component
             # No position sizing performed at supervisor level
 
             # Perform stop loss management
             if self.risk_management_components.get("stop_loss_management", False):
+    pass
+    pass
                 results["stop_loss_management"] = self._perform_stop_loss_management(
                     management_input)
 
             # Perform correlation management
             if self.risk_management_components.get("correlation_management", False):
+    pass
+    pass
                 results["correlation_management"] = (
                     self._perform_correlation_management(management_input)
                 )
 
             # Perform volatility management
             if self.risk_management_components.get("volatility_management", False):
+    pass
+    pass
                 results["volatility_management"] = self._perform_volatility_management(
                     management_input)
 
@@ -532,23 +641,35 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform periodic rebalancing
             if self.rebalancing_components.get("periodic_rebalancing", False):
+    pass
+    pass
                 results["periodic_rebalancing"] = self._perform_periodic_rebalancing(
                     management_input)
 
             # Perform threshold rebalancing
             if self.rebalancing_components.get("threshold_rebalancing", False):
+    pass
+    pass
                 results["threshold_rebalancing"] = self._perform_threshold_rebalancing(
                     management_input)
 
             # Perform drift rebalancing
             if self.rebalancing_components.get("drift_rebalancing", False):
+    pass
+    pass
                 results["drift_rebalancing"] = self._perform_drift_rebalancing(
                     management_input)
 
             # Perform opportunistic rebalancing
             if self.rebalancing_components.get("opportunistic_rebalancing", False):
+    pass
+    pass
                 results["opportunistic_rebalancing"] = (
                     self._perform_opportunistic_rebalancing(management_input)
                 )
@@ -580,13 +701,21 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform return monitoring
             if self.performance_monitoring_components.get("return_monitoring", False):
+    pass
+    pass
                 results["return_monitoring"] = self._perform_return_monitoring(
                     management_input)
 
             # Perform risk monitoring
             if self.performance_monitoring_components.get("risk_monitoring", False):
+    pass
+    pass
                 results["risk_monitoring"] = self._perform_risk_monitoring(
                     management_input)
 
@@ -631,26 +760,38 @@ class GlobalPortfolioManager:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform mean variance optimization
             if self.optimization_components.get("mean_variance_optimization", False):
+    pass
+    pass
                 results["mean_variance_optimization"] = (
                     self._perform_mean_variance_optimization(management_input)
                 )
 
             # Perform Black Litterman optimization
             if self.optimization_components.get("black_litterman_optimization", False):
+    pass
+    pass
                 results["black_litterman_optimization"] = (
                     self._perform_black_litterman_optimization(management_input)
                 )
 
             # Perform risk parity optimization
             if self.optimization_components.get("risk_parity_optimization", False):
+    pass
+    pass
                 results["risk_parity_optimization"] = (
                     self._perform_risk_parity_optimization(management_input)
                 )
 
             # Perform factor optimization
             if self.optimization_components.get("factor_optimization", False):
+    pass
+    pass
                 results["factor_optimization"] = self._perform_factor_optimization(
                     management_input)
 
@@ -669,6 +810,10 @@ class GlobalPortfolioManager:
         """Perform asset allocation."""
         try:
             # Simulate asset allocation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "asset_allocation_completed": True , "allocation_method": "mean_variance",
                 "allocations": {"stocks": 0.6, "bonds": 0.3, "cash": 0.1},
@@ -685,6 +830,10 @@ class GlobalPortfolioManager:
         """Perform sector allocation."""
         try:
             # Simulate sector allocation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "sector_allocation_completed": True , "allocation_method": "sector_rotation",
                 "allocations": {
@@ -707,6 +856,10 @@ class GlobalPortfolioManager:
         """Perform geographic allocation."""
         try:
             # Simulate geographic allocation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "geographic_allocation_completed": True,
                 "allocation_method": "geographic_diversification",
@@ -729,6 +882,10 @@ class GlobalPortfolioManager:
         """Perform strategy allocation."""
         try:
             # Simulate strategy allocation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "strategy_allocation_completed": True,
                 "allocation_method": "strategy_diversification",
@@ -756,6 +913,10 @@ class GlobalPortfolioManager:
         """Perform stop loss management."""
         try:
             # Simulate stop loss management
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "stop_loss_management_completed": True , "stop_loss_method": "trailing_stop",
                 "stop_loss_levels": [-0.02, -0.03, -0.05],
@@ -772,6 +933,10 @@ class GlobalPortfolioManager:
         """Perform correlation management."""
         try:
             # Simulate correlation management
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "correlation_management_completed": True , "correlation_threshold": 0.7,
                 "high_correlation_pairs": 3,
@@ -788,6 +953,10 @@ class GlobalPortfolioManager:
         """Perform volatility management."""
         try:
             # Simulate volatility management
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "volatility_management_completed": True , "volatility_target": 0.12,
                 "current_volatility": 0.14,
@@ -806,6 +975,10 @@ class GlobalPortfolioManager:
         """Perform periodic rebalancing."""
         try:
             # Simulate periodic rebalancing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "periodic_rebalancing_completed": True , "rebalancing_frequency": "monthly",
                 "rebalancing_date": datetime.now().isoformat(),
@@ -823,6 +996,10 @@ class GlobalPortfolioManager:
         """Perform threshold rebalancing."""
         try:
             # Simulate threshold rebalancing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "threshold_rebalancing_completed": True , "threshold_level": 0.05,
                 "threshold_breaches": 2,
@@ -840,6 +1017,10 @@ class GlobalPortfolioManager:
         """Perform drift rebalancing."""
         try:
             # Simulate drift rebalancing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "drift_rebalancing_completed": True,
                 "drift_threshold": 0.03,
@@ -857,6 +1038,10 @@ class GlobalPortfolioManager:
         """Perform opportunistic rebalancing."""
         try:
             # Simulate opportunistic rebalancing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "opportunistic_rebalancing_completed": True , "opportunity_detected": True,
                 "opportunity_score": 0.75,
@@ -876,6 +1061,10 @@ class GlobalPortfolioManager:
         """Perform return monitoring."""
         try:
             # Simulate return monitoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "return_monitoring_completed": True , "current_return": 0.085,
                 "target_return": 0.10,
@@ -893,6 +1082,10 @@ class GlobalPortfolioManager:
         """Perform risk monitoring."""
         try:
             # Simulate risk monitoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "risk_monitoring_completed": True , "current_risk": 0.12,
                 "target_risk": 0.10,
@@ -910,6 +1103,10 @@ class GlobalPortfolioManager:
         """Perform attribution monitoring."""
         try:
             # Simulate attribution monitoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "attribution_monitoring_completed": True , "attribution_factors": [
                     "asset_allocation",
@@ -930,6 +1127,10 @@ class GlobalPortfolioManager:
         """Perform benchmark monitoring."""
         try:
             # Simulate benchmark monitoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "benchmark_monitoring_completed": True , "benchmark_return": 0.08,
                 "portfolio_return": 0.085,
@@ -949,6 +1150,10 @@ class GlobalPortfolioManager:
         """Perform mean variance optimization."""
         try:
             # Simulate mean variance optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "mean_variance_optimization_completed": True , "optimization_method": "mean_variance",
                 "optimal_weights": [0.4, 0.3, 0.2, 0.1],
@@ -966,6 +1171,10 @@ class GlobalPortfolioManager:
         """Perform Black Litterman optimization."""
         try:
             # Simulate Black Litterman optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "black_litterman_optimization_completed": True , "optimization_method": "black_litterman",
                 "optimal_weights": [0.35, 0.25, 0.25, 0.15],
@@ -983,6 +1192,10 @@ class GlobalPortfolioManager:
         """Perform risk parity optimization."""
         try:
             # Simulate risk parity optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "risk_parity_optimization_completed": True , "optimization_method": "risk_parity",
                 "optimal_weights": [0.25, 0.25, 0.25, 0.25],
@@ -1000,6 +1213,10 @@ class GlobalPortfolioManager:
         """Perform factor optimization."""
         try:
             # Simulate factor optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "factor_optimization_completed": True , "optimization_method": "factor_based",
                 "optimal_weights": [0.3, 0.3, 0.2, 0.2],
@@ -1019,6 +1236,10 @@ class GlobalPortfolioManager:
         """Store management results."""
         try:
             # Add timestamp
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.management_results["timestamp"] = datetime.now().isoformat()
 
             # Add to history
@@ -1026,6 +1247,8 @@ class GlobalPortfolioManager:
 
             # Limit history size
             if len(self.management_history) > self.max_management_history:
+    pass
+    pass
                 self.management_history.pop(0)
 
             self.logger.info("Management results stored successfully")
@@ -1052,7 +1275,13 @@ class GlobalPortfolioManager:
         """
         try:
             if management_type:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.management_results.get(management_type = {})
+    except Exception as e:
+        pass
             return self.management_results.copy()
 
         except Exception:
@@ -1065,6 +1294,8 @@ class GlobalPortfolioManager:
     )
 
     def get_management_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         """
         Get management history.
 
@@ -1077,7 +1308,13 @@ class GlobalPortfolioManager:
         try:
             history = self.management_history.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if limit:
+    pass
+    pass
                 history = history[-limit:]
 
             return history
@@ -1087,6 +1324,8 @@ class GlobalPortfolioManager:
             return []
 
     def get_management_status(self) -> dict[str , Any]:
+    pass
+    pass
         """
         Get management status information.
 
@@ -1121,6 +1360,10 @@ class GlobalPortfolioManager:
 
         try:
             # Stop managing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_managing = False
 
             # Clear results
@@ -1156,7 +1399,13 @@ async def setup_global_portfolio_manager(
     try:
         global global_portfolio_manager
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {
                 "global_portfolio_manager": {
                     "management_interval": 3600,
@@ -1173,6 +1422,8 @@ async def setup_global_portfolio_manager(
         # Initialize global portfolio manager
         success = await global_portfolio_manager.initialize()
         if success:
+    pass
+    pass
             return global_portfolio_manager
         return None
 

@@ -10,6 +10,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_centralized_decorators():
+    pass
+    pass
     """Test that all centralized decorators can be imported."""
 
     print("🧪 Testing Centralized Decorators (Simple)")
@@ -27,28 +29,42 @@ def test_centralized_decorators():
             idempotent_step,
             handle_errors,
             with_tracing_span
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
         print("✅ All decorators imported successfully")
 
         # Test that decorators can be applied
         @validate_data_quality(validation_level="WARNING", context="test")
         def test_function1():
+    pass
+    pass
             return "test1"
 
         @quality_gate(min_quality_score=0.7, required_grade="C")
         def test_function2():
+    pass
+    pass
             return "test2"
 
         @step_specific_ml_validation("step3")
         def test_function3():
+    pass
+    pass
             return "test3"
 
         @auto_fix_data_quality_issues(context="test")
         def test_function4():
+    pass
+    pass
             return "test4"
 
         @monitor_feature_engineering()
         def test_function5():
+    pass
+    pass
             return "test5"
 
         @deterministic_seed(42)
@@ -56,6 +72,8 @@ def test_centralized_decorators():
         @handle_errors()
         @with_tracing_span("test")
         def test_function6():
+    pass
+    pass
             return "test6"
 
         print("✅ All decorators applied successfully")
@@ -80,17 +98,25 @@ def test_centralized_decorators():
         return False
 
 def test_step3_import():
+    pass
+    pass
     """Test that step3 can import quality_gate from centralized_decorators."""
 
-    print("\n🧪 Testing Step3 Import")
+    print("\\\n🧪 Testing Step3 Import")
     print("=" * 50)
 
     try:
         # Test that step3 can import quality_gate
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         import src.training.steps.step3_hmm_regime_discovery as step3_module
 
         # Check if quality_gate is imported
         if hasattr(step3_module, 'quality_gate'):
+    pass
+    pass
             print("✅ Step3 successfully imports quality_gate from centralized_decorators")
         else:
             print("❌ Step3 does not have quality_gate imported")
@@ -106,13 +132,21 @@ def test_step3_import():
         return False
 
 def test_decorator_signatures():
+    pass
+    pass
     """Test that decorators have the correct signatures."""
 
-    print("\n🧪 Testing Decorator Signatures")
+    print("\\\n🧪 Testing Decorator Signatures")
     print("=" * 50)
 
     try:
         from src.utils.centralized_decorators import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import validate_data_quality,
             validate_data_quality,
             quality_gate,
             step_specific_ml_validation,
@@ -152,14 +186,18 @@ def test_decorator_signatures():
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run tests
     success1 = test_centralized_decorators()
     success2 = test_step3_import()
     success3 = test_decorator_signatures()
 
     if all([success1, success2, success3]):
-        print("\n🎉 All tests passed! Centralized decorators are working correctly.")
-        print("\n📋 Summary:")
+    pass
+    pass
+        print("\\\n🎉 All tests passed! Centralized decorators are working correctly.")
+        print("\\\n📋 Summary:")
         print("   ✅ validate_data_quality decorator implemented and working")
         print("   ✅ quality_gate decorator implemented and working")
         print("   ✅ auto_fix_data_quality_issues decorator implemented and working")
@@ -167,4 +205,4 @@ if __name__ == "__main__":
         print("   ✅ All decorators centralized for maintainability")
         print("   ✅ Step3 uses correct quality_gate from centralized_decorators")
     else:
-        print("\n❌ Some tests failed. Please check the implementation.")
+        print("\\\n❌ Some tests failed. Please check the implementation.")

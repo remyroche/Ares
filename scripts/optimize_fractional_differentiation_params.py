@@ -18,6 +18,8 @@ class FractionalDifferentiationOptimizer:
     """Optimize fractional differentiation parameters for best performance."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the optimizer."""
         self.output_dir = Path("data/fractional_performance/fractional_differentiation_optimization")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -41,6 +43,8 @@ class FractionalDifferentiationOptimizer:
         }
 
     def generate_optimization_data(self, n_samples: int = 2000) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    pass
+    pass
         """Generate comprehensive data for parameter optimization.
 
         Args:
@@ -58,6 +62,8 @@ class FractionalDifferentiationOptimizer:
         regime_length = n_samples // 5
 
         for i in range(5):
+    pass
+    pass
             if i == 0:  # Strong trending up
                 trend = 0.0005
                 volatility = 0.012
@@ -86,9 +92,15 @@ class FractionalDifferentiationOptimizer:
         prices = [base_price]
 
         for i, (trend, volatility, regime) in enumerate(regimes):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 # Add regime-specific noise patterns
                 if regime == "mean_reversion":
+    pass
+    pass
                     # Add mean reversion component
                     deviation = prices[-1] - base_price
                     mean_reversion = -0.1 * deviation / base_price
@@ -110,6 +122,8 @@ class FractionalDifferentiationOptimizer:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             price_data['high'][i] = max(price_data['high'][i], price_data['close'][i])
             price_data['low'][i] = min(price_data['low'][i], price_data['close'][i])
 
@@ -131,6 +145,8 @@ class FractionalDifferentiationOptimizer:
         return price_df, volume_df
 
     def evaluate_parameter_combination(self, params: Dict[str, Any], price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Evaluate a specific parameter combination.
 
         Args:
@@ -144,7 +160,13 @@ class FractionalDifferentiationOptimizer:
         try:
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Create configuration with current parameters
+import config = {
             config = {
                 'default_d': params['d'],
                 'window': params['window_size'],
@@ -160,7 +182,11 @@ class FractionalDifferentiationOptimizer:
             # Combine data
             combined_data = price_data.copy()
             for col in volume_data.columns:
+    pass
+    pass
                 if col not in combined_data.columns:
+    pass
+    pass
                     combined_data[col] = volume_data[col]
 
             # Generate features and measure performance
@@ -174,7 +200,11 @@ class FractionalDifferentiationOptimizer:
             # Extract fractional differentiation features
             frac_diff_features = {}
             for col in fractional_features.columns:
+    pass
+    pass
                 if 'frac_diff' in col and col not in combined_data.columns:
+    pass
+    pass
                     frac_diff_features[col] = fractional_features[col]
 
             # Calculate evaluation metrics
@@ -215,6 +245,8 @@ class FractionalDifferentiationOptimizer:
         metrics = {}
 
         if not frac_diff_features:
+    pass
+    pass
             return {
                 'stationarity_score': 0.0,
                 'feature_quality': 0.0,
@@ -227,6 +259,8 @@ class FractionalDifferentiationOptimizer:
         # 1. Stationarity Score (using ADF test simulation)
         stationarity_scores = []
         for feature_name, feature_series in frac_diff_features.items():
+    pass
+    pass
             # Simulate ADF test results based on parameter d
             d_value = params['d']
             # Higher d values should lead to better stationarity
@@ -238,6 +272,8 @@ class FractionalDifferentiationOptimizer:
         # 2. Feature Quality (based on variance and correlation)
         feature_qualities = []
         for feature_name, feature_series in frac_diff_features.items():
+    pass
+    pass
             # Calculate feature quality based on variance and non-zero values
             variance = feature_series.var()
             non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
@@ -263,7 +299,11 @@ class FractionalDifferentiationOptimizer:
         # Based on different types of features generated
         feature_types = set()
         for feature_name in frac_diff_features.keys():
+    pass
+    pass
             if 'close' in feature_name:
+    pass
+    pass
                 feature_types.add('price')
             elif 'volume' in feature_name:
                 feature_types.add('volume')
@@ -285,6 +325,8 @@ class FractionalDifferentiationOptimizer:
         return metrics
 
     def run_grid_search(self, max_combinations: int = 50) -> Dict[str, Any]:
+    pass
+    pass
         """Run grid search optimization.
 
         Args:
@@ -308,6 +350,8 @@ class FractionalDifferentiationOptimizer:
 
         # Limit combinations if needed
         if len(combinations) > max_combinations:
+    pass
+    pass
             import random
             random.seed(42)
             combinations = random.sample(combinations, max_combinations)
@@ -319,6 +363,8 @@ class FractionalDifferentiationOptimizer:
         successful_tests = 0
 
         for i, combination in enumerate(combinations):
+    pass
+    pass
             params = dict(zip(param_names, combination))
 
             print(f"   Testing combination {i+1}/{len(combinations)}: d={params['d']}, window={params['window_size']}, threshold={params['threshold']}")
@@ -327,6 +373,8 @@ class FractionalDifferentiationOptimizer:
             results.append(result)
 
             if result['success']:
+    pass
+    pass
                 successful_tests += 1
                 score = result['evaluation_metrics']['overall_score']
                 print(f"      ✅ Success - Score: {score:.3f}")
@@ -337,6 +385,8 @@ class FractionalDifferentiationOptimizer:
         successful_results = [r for r in results if r['success']]
 
         if successful_results:
+    pass
+    pass
             best_result = max(successful_results, key=lambda x: x['evaluation_metrics']['overall_score'])
 
             optimization_summary = {
@@ -363,17 +413,21 @@ class FractionalDifferentiationOptimizer:
         # Export results
         self._export_optimization_results(optimization_summary, price_data, volume_data)
 
-        print(f"\n✅ Parameter optimization complete!")
+        print(f"\\\n✅ Parameter optimization complete!")
         print(f"   Successful tests: {successful_tests}/{len(combinations)}")
         print(f"   Success rate: {optimization_summary['success_rate']:.2%}")
 
         if successful_tests > 0:
+    pass
+    pass
             print(f"   Best score: {optimization_summary['best_score']:.3f}")
             print(f"   Best parameters: {optimization_summary['best_parameters']}")
 
         return optimization_summary
 
     def _analyze_parameters(self, successful_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze parameter performance patterns.
 
         Args:
@@ -389,20 +443,28 @@ class FractionalDifferentiationOptimizer:
         }
 
         if not successful_results:
+    pass
+    pass
             return analysis
 
         # Analyze each parameter
         for param_name in self.parameter_space.keys():
+    pass
+    pass
             param_values = []
             scores = []
 
             for result in successful_results:
+    pass
+    pass
                 param_values.append(result['parameters'][param_name])
                 scores.append(result['evaluation_metrics']['overall_score'])
 
             # Calculate parameter performance
             param_performance = {}
             for value in set(param_values):
+    pass
+    pass
                 value_scores = [score for pv, score in zip(param_values, scores) if pv == value]
                 param_performance[value] = {
                     'mean_score': sum(value_scores) / len(value_scores),
@@ -418,18 +480,24 @@ class FractionalDifferentiationOptimizer:
         # Best d value
         d_performance = analysis['parameter_performance'].get('d_values', {})
         if d_performance:
+    pass
+    pass
             best_d = max(d_performance.keys(), key=lambda x: d_performance[x]['mean_score'])
             recommendations.append(f"Optimal d value: {best_d} (score: {d_performance[best_d]['mean_score']:.3f})")
 
         # Best window size
         window_performance = analysis['parameter_performance'].get('window_sizes', {})
         if window_performance:
+    pass
+    pass
             best_window = max(window_performance.keys(), key=lambda x: window_performance[x]['mean_score'])
             recommendations.append(f"Optimal window size: {best_window} (score: {window_performance[best_window]['mean_score']:.3f})")
 
         # Best threshold
         threshold_performance = analysis['parameter_performance'].get('thresholds', {})
         if threshold_performance:
+    pass
+    pass
             best_threshold = max(threshold_performance.keys(), key=lambda x: threshold_performance[x]['mean_score'])
             recommendations.append(f"Optimal threshold: {best_threshold} (score: {threshold_performance[best_threshold]['mean_score']:.3f})")
 
@@ -478,6 +546,8 @@ class FractionalDifferentiationOptimizer:
 """)
 
             if 'best_parameters' in optimization_summary:
+    pass
+    pass
                 f.write(f"""
 - **d Value**: {optimization_summary['best_parameters']['d']}
 - **Window Size**: {optimization_summary['best_parameters']['window_size']}
@@ -494,21 +564,29 @@ class FractionalDifferentiationOptimizer:
 - **Feature Diversity**: {optimization_summary['best_metrics']['feature_diversity']:.3f}
 """)
             else:
-                f.write("- **No successful parameter combinations found**\n")
+                f.write("- **No successful parameter combinations found**\\\n")
 
             f.write(f"""
 ## Parameter Analysis
 """)
 
             if 'parameter_analysis' in optimization_summary:
+    pass
+    pass
                 for param_name, performance in optimization_summary['parameter_analysis']['parameter_performance'].items():
-                    f.write(f"\n### {param_name.replace('_', ' ').title()}\n")
+    pass
+    pass
+                    f.write(f"\\\n### {param_name.replace('_', ' ').title()}\\\n")
                     for value, stats in performance.items():
-                        f.write(f"- **{value}**: Score {stats['mean_score']:.3f} ± {stats['std_score']:.3f} (n={stats['count']})\n")
+    pass
+    pass
+                        f.write(f"- **{value}**: Score {stats['mean_score']:.3f} ± {stats['std_score']:.3f} (n={stats['count']})\\\n")
 
-                f.write(f"\n## Recommendations\n")
+                f.write(f"\\\n## Recommendations\\\n")
                 for rec in optimization_summary['parameter_analysis']['recommendations']:
-                    f.write(f"- {rec}\n")
+    pass
+    pass
+                    f.write(f"- {rec}\\\n")
 
             f.write(f"""
 ## Next Steps
@@ -522,28 +600,34 @@ class FractionalDifferentiationOptimizer:
 
 
 def main():
+    pass
+    pass
     """Main function to run fractional differentiation parameter optimization."""
     import pandas as pd
 
     optimizer = FractionalDifferentiationOptimizer()
     results = optimizer.run_grid_search(max_combinations=30)
 
-    print("\n🎯 Optimization Summary:")
+    print("\\\n🎯 Optimization Summary:")
     print(f"   Success Rate: {results['success_rate']:.2%}")
 
     if 'best_parameters' in results:
+    pass
+    pass
         print(f"   Best Score: {results['best_score']:.3f}")
         print(f"   Best d Value: {results['best_parameters']['d']}")
         print(f"   Best Window Size: {results['best_parameters']['window_size']}")
         print(f"   Best Threshold: {results['best_parameters']['threshold']}")
 
-    print("\n📋 Key Findings:")
+    print("\\\n📋 Key Findings:")
     print("   • Parameter optimization completed successfully")
     print("   • Best parameters identified for fractional differentiation")
     print("   • Ready for validation with real market data")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import pandas as pd
 
     main()

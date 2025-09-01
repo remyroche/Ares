@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -56,6 +58,10 @@ async def run_validator(
 
     try:
         # Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -65,6 +71,8 @@ async def run_validator(
         unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
 
         if not unified_data_path.exists():
+    pass
+    pass
             logger.error(f"❌ Unified data directory not found: {unified_data_path}")
         return {
                 "step_name": "step02_data_reading",
@@ -75,6 +83,8 @@ async def run_validator(
         # Check for parquet files
         data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
+    pass
+    pass
             logger.error(f"❌ No parquet files found in {unified_data_path}")
         return {
                 "step_name": "step02_data_reading",
@@ -88,6 +98,10 @@ async def run_validator(
         # Try to read the files to validate structure
         try:
             import pandas as pd
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             import json
 
         # Read the most recent data file
@@ -96,6 +110,8 @@ async def run_validator(
 
         # Check data quality
         if len(data) == 0:
+    pass
+    pass
                 logger.error("❌ No data rows found")
         return {
                     "step_name": "step02_data_reading",
@@ -108,6 +124,8 @@ async def run_validator(
             missing_columns = [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
+    pass
+    pass
                 logger.error(f"❌ Missing required columns: {missing_columns}")
         return {
                     "step_name": "step02_data_reading",
@@ -117,21 +135,29 @@ async def run_validator(
 
         # Check for timestamp column
         if "timestamp" not in data.columns:
+    pass
+    pass
                 logger.warning("⚠️ Timestamp column not found")
 
         # Check for NaN values
             nan_count, data[required_columns].isna().sum().sum()
         if nan_count > 0:
+    pass
+    pass
                 logger.warning(f"⚠️ Found {nan_count} NaN values in required columns")
 
         # Check for infinite values
             inf_count, data[required_columns].isin([float('inf'), float('-inf')]).sum().sum()
         if inf_count > 0:
+    pass
+    pass
                 logger.warning(f"⚠️ Found {inf_count} infinite values in required columns")
 
         # Check for negative prices
             negative_prices = ((data[['open', 'high', 'low', 'close']] < 0).sum().sum())
         if negative_prices > 0:
+    pass
+    pass
                 logger.error(f"❌ Found {negative_prices} negative price values")
         return {
                     "step_name": "step02_data_reading",
@@ -142,6 +168,8 @@ async def run_validator(
         # Check for zero prices
             zero_prices = ((data[['open', 'high', 'low', 'close']] == 0).sum().sum())
         if zero_prices > 0:
+    pass
+    pass
                 logger.warning(f"⚠️ Found {zero_prices} zero price values")
 
         # Check for reasonable price ranges
@@ -155,34 +183,52 @@ async def run_validator(
         # Check for OHLC consistency
             ohlc_errors, 0
         for idx, row in data.iterrows():
+    pass
+    pass
         if not (row['low'] <= row['open'] <= row['high'] and
                        row['low'] <= row['close'] <= row['high']):
                     ohlc_errors += 1
 
         if ohlc_errors > 0:
+    pass
+    pass
                 logger.warning(f"⚠️ Found {ohlc_errors} OHLC consistency errors")
 
         # Check for duplicate timestamps
         if "timestamp" in data.columns:
+    pass
+    pass
                 duplicate_timestamps, data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
+    pass
+    pass
                     logger.warning(f"⚠️ Found {duplicate_timestamps} duplicate timestamps")
 
         # Check for reasonable time gaps
         if "timestamp" in data.columns:
+    pass
+    pass
                 data_sorted, data.sort_values('timestamp')
                 time_diffs, data_sorted['timestamp'].diff().dropna()
         if len(time_diffs) > 0:
+    pass
+    pass
                     avg_time_diff, time_diffs.mean()
                     logger.info(f"✅ Average time difference: {avg_time_diff}")
 
         # Check validation report if it exists
             validation_metadata = {}
         if validation_report_path.exists():
+    pass
+    pass
         try:
         with open(validation_report_path, 'r') as f:
                         validation_metadata, json.load(f)
                     logger.info("✅ Validation report found and loaded")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
                     logger.warning(f"⚠️ Error reading validation report: {e}")
 
@@ -222,6 +268,8 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the validator
     async def test():
         test_input = {

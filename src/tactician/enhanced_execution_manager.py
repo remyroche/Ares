@@ -10,6 +10,7 @@ import pandas as pd
 from src.utils.logger import get_logger
 
 
+import class EnhancedExecutionManager:
 class EnhancedExecutionManager:
     """Enhanced execution manager for Tactician with high precision triple barrier completion.
 
@@ -21,6 +22,8 @@ class EnhancedExecutionManager:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize the enhanced execution manager."""
         self.config = config.get("tactician_triple_barrier", {})
         self.logger = get_logger("EnhancedExecutionManager")
@@ -33,11 +36,14 @@ class EnhancedExecutionManager:
         self.precision_metrics: Dict[str, float] = {}
 
     def _load_config(self) -> None:
+    pass
+    pass
         """Load configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
         # Initialize dynamic barrier calculator
+import self.barrier_calculator = DynamicBarrierCalculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
 
         # Get dynamic barriers for primary timeframe (1m)
@@ -90,12 +96,18 @@ class EnhancedExecutionManager:
         """Validate Analyst predictions and Tactician predictions for execution."""
         try:
             if not analyst_predictions or not tactician_predictions:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "valid": False,
                     "reason": "missing_predictions",
                     "should_execute": False
                 }
 
+    except Exception as e:
+        pass
             # Extract key predictions from Analyst
             analyst_price_pred = analyst_predictions.get("price_prediction", {}).get("prediction", 0.0)
             analyst_confidence = analyst_predictions.get("confidence_prediction", {}).get("prediction", 0.5)
@@ -108,6 +120,8 @@ class EnhancedExecutionManager:
 
             # Check if predictions are valid
             if analyst_confidence < 0.5 or tactician_confidence < 0.5:
+    pass
+    pass
                 return {
                     "valid": False,
                     "should_execute": False,
@@ -118,6 +132,8 @@ class EnhancedExecutionManager:
 
             # Determine trade direction based on price predictions
             if analyst_price_pred > 0 and tactician_price_pred > 0:
+    pass
+    pass
                 trade_direction = "long"
             elif analyst_price_pred < 0 and tactician_price_pred < 0:
                 trade_direction = "short"
@@ -134,6 +150,8 @@ class EnhancedExecutionManager:
             combined_confidence = (analyst_confidence + tactician_confidence) / 2
 
             if combined_confidence < self.precision_threshold:
+    pass
+    pass
                 return {
                     "valid": False,
                     "should_execute": False,
@@ -164,10 +182,14 @@ class EnhancedExecutionManager:
             }
 
     def _determine_tactician_direction(self, confidence: float) -> str:
+    pass
+    pass
         """Determine Tactician direction based on confidence."""
         # This would be based on the specific Tactician model outputs
         # For now, use a simple threshold-based approach
         if confidence > 0.7:
+    pass
+    pass
             return "long"
         elif confidence < 0.3:
             return "short"
@@ -175,8 +197,12 @@ class EnhancedExecutionManager:
             return "neutral"
 
     def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
+    pass
+    pass
         """Check if Analyst and Tactician agree on trade direction."""
         if analyst_direction == "neutral" or tactician_direction == "neutral":
+    pass
+    pass
             return False
         return analyst_direction == tactician_direction
 
@@ -196,8 +222,14 @@ class EnhancedExecutionManager:
         """Calculate execution parameters with high precision triple barrier strategy based on multi-outcome predictions."""
         try:
             # Validate predictions first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             validation = self.validate_analyst_predictions(analyst_predictions, tactician_predictions)
             if not validation["should_execute"]:
+    pass
+    pass
                 return {
                     "should_execute": False,
                     "reason": validation["reason"],
@@ -289,6 +321,10 @@ class EnhancedExecutionManager:
         """Calculate risk-adjusted position size."""
         try:
             # Calculate risk per unit
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             risk_per_unit = abs(current_price - stop_loss_price) / current_price
 
             # Calculate maximum position size based on risk limit
@@ -302,10 +338,18 @@ class EnhancedExecutionManager:
             return base_size
 
     def _calculate_entry_timing(self, market_data: pd.DataFrame, confidence: float) -> Dict[str, Any]:
+    pass
+    pass
         """Calculate optimal entry timing."""
         try:
             # Simple timing based on confidence and market conditions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if confidence > self.confidence_boost_threshold:
+    pass
+    pass
                 delay = 0  # Immediate execution for high confidence
             else:
                 delay = self.entry_delay_seconds
@@ -333,6 +377,10 @@ class EnhancedExecutionManager:
         """Calculate precision score for execution quality."""
         try:
             # Base precision from confidence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_precision = combined_confidence
 
             # Volatility penalty (higher volatility = lower precision)
@@ -341,6 +389,8 @@ class EnhancedExecutionManager:
             # Market condition bonus (if recent price action is favorable)
             market_bonus = 0.0
             if len(market_data) >= 5:
+    pass
+    pass
                 recent_returns = market_data["close"].pct_change().tail(5).mean()
                 if abs(recent_returns) < 0.001:  # Low volatility period
                     market_bonus = 0.05
@@ -366,11 +416,17 @@ class EnhancedExecutionManager:
         """Execute trade with high precision parameters."""
         try:
             if not execution_params.get("should_execute", False):
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "reason": execution_params.get("reason", "no_execution_params")
                 }
 
+    except Exception as e:
+        pass
             # Simulate trade execution (replace with actual execution logic)
             execution_time = datetime.now()
 
@@ -411,12 +467,20 @@ class EnhancedExecutionManager:
             }
 
     def _update_precision_metrics(self, execution_params: Dict[str, Any]) -> None:
+    pass
+    pass
         """Update precision metrics for performance tracking."""
         try:
             precision_score = execution_params.get("precision_score", 0.0)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Update running averages
             if "avg_precision" not in self.precision_metrics:
+    pass
+    pass
                 self.precision_metrics["avg_precision"] = precision_score
                 self.precision_metrics["execution_count"] = 1
             else:
@@ -428,6 +492,8 @@ class EnhancedExecutionManager:
 
             # Update max precision
             if "max_precision" not in self.precision_metrics:
+    pass
+    pass
                 self.precision_metrics["max_precision"] = precision_score
             else:
                 self.precision_metrics["max_precision"] = max(
@@ -438,9 +504,15 @@ class EnhancedExecutionManager:
             self.logger.warning(f"⚠️ Error updating precision metrics: {e}")
 
     def get_performance_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get performance summary for the enhanced execution manager."""
         try:
             if not self.execution_history:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "total_executions": 0,
                     "success_rate": 0.0,
@@ -448,6 +520,8 @@ class EnhancedExecutionManager:
                     "max_precision": 0.0
                 }
 
+    except Exception as e:
+        pass
             total_executions = len(self.execution_history)
             successful_executions = sum(
                 1 for record in self.execution_history

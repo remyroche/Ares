@@ -3,4 +3,5 @@
 
 from .ensemble_orchestrator import RegimePredictiveEnsembles
 
+import __all__ = ["RegimePredictiveEnsembles"]
 __all__ = ["RegimePredictiveEnsembles"]

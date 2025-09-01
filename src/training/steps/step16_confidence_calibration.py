@@ -15,11 +15,16 @@ from sklearn.metrics import accuracy_score, f1_score
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
 )
 
 try:
     import joblib  # Optional; used when loading joblib artifacts
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except Exception:  # pragma: no cover
     joblib, None
 
@@ -27,13 +32,19 @@ class ConfidenceCalibrationStep:
     """Step 11: Confidence Calibration for individual models and ensembles."""
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger
 
@@ -67,6 +78,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
         self.logger.info("🔄 Executing Confidence Calibration...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -79,19 +94,30 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Load analyst models
             analyst_models_dir, f"{data_dir}/enhanced_analyst_models"
         if os.path.exists(analyst_models_dir):
+    pass
+    pass
                 from src.utils.logger import heartbeat
 
+import with heartbeat
         with heartbeat(
         self.logger,
                     name="Step11 load_analyst_models",
                     interval_seconds = 60.0,
                 ):
         for regime_dir in os.listdir(analyst_models_dir):
+    pass
+    pass
                         regime_path, os.path.join(analyst_models_dir, regime_dir)
         if os.path.isdir(regime_path):
+    pass
+    pass
                             regime_models: dict[str, Any] = {}
         for model_file in os.listdir(regime_path):
+    pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
+    pass
                                     model_name, model_file.replace(".pkl", "").replace(
                                         ".joblib",
                                         "",
@@ -99,10 +125,16 @@ def __init__(self, config: dict[str, Any]) -> None:
                                     model_path, os.path.join(regime_path, model_file)
         try:
         if model_file.endswith(".joblib") and joblib is not None:
+    pass
+    except Exception as e:
+        pass
+    pass
                                             regime_models[model_name] = joblib.load(
                                                 model_path,
                                             )
                                         else:
+    except Exception as e:
+        pass
         with open(model_path, "rb") as f:
                                                 regime_models[model_name] = pickle.load(
                                                     f,
@@ -120,15 +152,22 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Load tactician models
             tactician_models_dir, f"{data_dir}/tactician_models"
         if os.path.exists(tactician_models_dir):
+    pass
+    pass
                 from src.utils.logger import heartbeat
 
+import with heartbeat
         with heartbeat(
         self.logger,
                     name="Step11 load_tactician_models",
                     interval_seconds = 60.0,
                 ):
         for model_file in os.listdir(tactician_models_dir):
+    pass
+    pass
         if model_file.endswith(".pkl"):
+    pass
+    pass
                             model_name, model_file.replace(".pkl", "")
                             model_path, os.path.join(tactician_models_dir, model_file)
 
@@ -146,15 +185,22 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Load analyst ensembles
             analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
         if os.path.exists(analyst_ensembles_dir):
+    pass
+    pass
                 from src.utils.logger import heartbeat
 
+import with heartbeat
         with heartbeat(
         self.logger,
                     name="Step11 load_analyst_ensembles",
                     interval_seconds = 60.0,
                 ):
         for ensemble_file in os.listdir(analyst_ensembles_dir):
+    pass
+    pass
         if ensemble_file.endswith("_ensemble.pkl"):
+    pass
+    pass
                             regime_name, ensemble_file.replace("_ensemble.pkl", "")
                             ensemble_path, os.path.join(
                                 analyst_ensembles_dir,
@@ -167,9 +213,12 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Load tactician ensembles
             tactician_ensembles_dir, f"{data_dir}/tactician_ensembles"
         if os.path.exists(tactician_ensembles_dir):
+    pass
+    pass
         # New format: single model pickle per symbol / exchange
                 from src.utils.logger import heartbeat
 
+import with heartbeat
         with heartbeat(
         self.logger,
                     name="Step11 load_tactician_ensembles",
@@ -180,6 +229,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                         f"{exchange}_{symbol}_tactician_ensemble.pkl",
                     )
         if os.path.exists(model_path):
+    pass
+    pass
         with open(model_path, "rb") as f:
         # Store under a default key for downstream usage
                             tactician_ensembles["blended"] = {
@@ -187,6 +238,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                             }
         # Also support any additional ensembles present (e.g., experimental)
         for ensemble_file in os.listdir(tactician_ensembles_dir):
+    pass
+    pass
                         candidate_path, os.path.join(
                             tactician_ensembles_dir,
                             ensemble_file,
@@ -200,6 +253,10 @@ def __init__(self, config: dict[str, Any]) -> None:
                                     tactician_ensembles[ensemble_file] = {
                                         "ensemble": pickle.load(f),
                                     }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(
                                     f"⚠️ Failed to load tactician ensemble {ensemble_file}: {e}",
@@ -212,6 +269,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Try to augment with 1m meta - labels if present
         try:
                 step04_train, f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(step04_train) and isinstance(
                     generic_val, pd.DataFrame,
                 ):
@@ -306,6 +367,10 @@ def __init__(self, config: dict[str, Any]) -> None:
                 pickle.dump(calibration_results, f)
         try:
         self.logger.info(f"Saved calibration results: {calibration_file}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Compact summary of counts for quick troubleshooting
                 summary_counts = {
                     "analyst_models": sum(
@@ -337,6 +402,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
                 artifacts_dir, self.config.get("meta_labeling", {}).get(
                     "artifacts_dir", "artifacts / meta_labeling",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 os.makedirs(artifacts_dir, exist_ok = True)
         # Persist reliability if available from pipeline_state or calibration
@@ -346,13 +415,27 @@ def __init__(self, config: dict[str, Any]) -> None:
                     else {}
                 )
         if not reliability:
+    pass
+    pass
         # fallback: simple per - label accuracy proxy from analyst_models calibration if present
                     acc_map: dict[str, float] = {}
         try:
         for models in (analyst_calibration or {}).values():
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         if isinstance(models, dict):
+    pass
+    pass
         for name, res in models.items():
+    pass
+    pass
         if isinstance(res, dict) and "metrics" in res:
+    pass
+    pass
                                         acc_map[name] = float(
                                             res.get("metrics", {}).get("accuracy", 0.0),
                                         )
@@ -370,6 +453,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                     else {}
                 )
         if thresholds:
+    pass
+    pass
         with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
                         json.dump(thresholds, f, indent = 2)
         self.logger.info(f"Persisted meta - label artifacts to {artifacts_dir}")
@@ -402,10 +487,18 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Load generic validation features frame saved by step 4."""
         try:
             path, f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(path):
+    pass
+    pass
         with open(path, "rb") as f:
                     df, pickle.load(f)
         if isinstance(df, pd.DataFrame) and "label" in df.columns:
+    pass
+    pass
         return df
         except Exception:
         self.logger.warning("Failed to load generic validation frame from step 4")
@@ -422,14 +515,22 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Load regime - specific validation frame saved by step 3 (if available)."""
         try:
             regime_dir, os.path.join(data_dir, "regime_data")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             path, os.path.join(
                 regime_dir,
                 f"{exchange}_{symbol}_{regime_name}_data.pkl",
             )
         if os.path.exists(path):
+    pass
+    pass
         with open(path, "rb") as f:
                     df, pickle.load(f)
         if isinstance(df, pd.DataFrame) and "label" in df.columns:
+    pass
+    pass
         return df
         except Exception as e:
         self.logger.warning(
@@ -443,6 +544,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Extract feature matrix X and labels y for a given model from a dataframe."""
         y, df["label"].astype(int)
         if hasattr(model, "feature_names_in_"):
+    pass
+    pass
             cols = [
                 c for c in model.feature_names_in_ if c in df.columns and c != "label"
             ]
@@ -467,24 +570,36 @@ def __init__(self, config: dict[str, Any]) -> None:
     ) -> dict[str, Any]:
         results: dict[str, Any] = {}
         for regime_name, regime_models in models.items():
+    pass
+    pass
             regime_df = (
         self._load_regime_validation(data_dir, exchange, symbol, regime_name)
                 or generic_val
             )
         if regime_df is None:
+    pass
+    pass
         self.logger.warning(
                     f"No validation data available for regime {regime_name}; skipping calibration",
                 )
                 continue
             regime_res: dict[str, Any] = {}
         for model_name, model_data in regime_models.items():
+    pass
+    pass
         try:
                     base_model = (
                         model_data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if hasattr(model_data, "predict_proba")
                         else (model_data.get("model", None) if isinstance(model_data, dict) else None)
                     )
         if base_model is None:
+    pass
+    pass
                         continue
                     X_val, y_val, self._extract_features(regime_df, base_model)
         # Baseline metrics before calibration
@@ -532,15 +647,25 @@ def __init__(self, config: dict[str, Any]) -> None:
     ) -> dict[str, Any]:
         results: dict[str, Any] = {}
         if generic_val is None:
+    pass
+    pass
         return results
         for model_name, model_data in models.items():
+    pass
+    pass
         try:
                 base_model = (
                     model_data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if hasattr(model_data, "predict_proba")
                     else (model_data.get("model", None) if isinstance(model_data, dict) else None)
                 )
         if base_model is None:
+    pass
+    pass
                     continue
                 X_val, y_val, self._extract_features(generic_val, base_model)
         # Baseline metrics
@@ -584,18 +709,28 @@ def __init__(self, config: dict[str, Any]) -> None:
     ) -> dict[str, Any]:
         results: dict[str, Any] = {}
         for regime_name, regime_ensembles in ensembles.items():
+    pass
+    pass
         # Prefer stacking_cv ensemble if present
             ensemble_obj: Any | None, None
         if isinstance(regime_ensembles, dict):
+    pass
+    pass
         for key in ("stacking_cv", "dynamic_weighting", "voting"):
+    pass
+    pass
         if key in regime_ensembles and isinstance(
                         regime_ensembles[key],
                         dict,
                     ):
                         ensemble_obj, regime_ensembles[key].get("ensemble")
         if ensemble_obj is not None:
+    pass
+    pass
                             break
         if ensemble_obj is None:
+    pass
+    pass
                 continue
         # Validation data
             regime_df = (
@@ -603,9 +738,15 @@ def __init__(self, config: dict[str, Any]) -> None:
                 or generic_val
             )
         if regime_df is None:
+    pass
+    pass
                 continue
         try:
                 X_val, y_val, self._extract_features(regime_df, ensemble_obj)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Baseline metrics
                 base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper, _PrefitWrapper(ensemble_obj)
@@ -645,18 +786,28 @@ def __init__(self, config: dict[str, Any]) -> None:
     ) -> dict[str, Any]:
         results: dict[str, Any] = {}
         if not ensembles or generic_val is None:
+    pass
+    pass
         return results
         # ensembles may be a dict of types -> data
         for ensemble_type, ensemble_data in ensembles.items():
+    pass
+    pass
             ensemble_obj = (
                 ensemble_data.get("ensemble")
         if isinstance(ensemble_data, dict)
                 else None
             )
         if ensemble_obj is None:
+    pass
+    pass
                 continue
         try:
                 X_val, y_val, self._extract_features(generic_val, ensemble_obj)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Baseline metrics
                 base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
                 wrapper, _PrefitWrapper(ensemble_obj)
@@ -690,6 +841,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         return results
 
     def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         summary: dict[str, Any] = {}
         # Analyst models
         analyst, results.get("analyst_models", {})
@@ -722,6 +875,12 @@ def __init__(self, config: dict[str, Any]) -> None:
         """
         try:
         if not hasattr(model, "predict"):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return {}
             base_pred, model.predict(X_val)
             base_acc, accuracy_score(y_val, base_pred)
@@ -738,9 +897,13 @@ class _PrefitWrapper:
     """Wrapper to adapt prefit estimators / ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
     def __init__(self, base) -> None:
+    pass
+    pass
         self.base, base
         # feature_names_in_ passthrough for feature selection
         if hasattr(base, "feature_names_in_"):
+    pass
+    pass
         self.feature_names_in_, base.feature_names_in_  # type: ignore[attr - defined]
 
     def fit(self, X: pd.DataFrame, y: pd.Series):  # noqa: D401
@@ -748,13 +911,21 @@ class _PrefitWrapper:
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         if hasattr(self.base, "predict"):
+    pass
+    pass
         return np.asarray(self.base.predict(X))
         proba, self.predict_proba(X)
         return np.argmax(proba, axis = 1)
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         if hasattr(self.base, "predict_proba"):
+    pass
+    pass
         return np.asarray(self.base.predict_proba(X))
         # Fallback: construct probabilities from class predictions (uniform confidence)
         preds, np.asarray(self.base.predict(X))
@@ -765,6 +936,8 @@ class _PrefitWrapper:
         idx, preds.astype(int) + 1
         valid_mask = (idx >= 0) & (idx < n_classes)
         if np.any(valid_mask):
+    pass
+    pass
             proba[np.arange(len(preds))[valid_mask], idx[valid_mask]] = 1.0
         if not np.all(valid_mask):  # log once
             system_logger.warning(
@@ -776,6 +949,7 @@ class _PrefitWrapper:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -882,6 +1056,10 @@ async def run_step(
     """
     try:
         # Create step instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, ConfidenceCalibrationStep(config)
         await step.initialize()
@@ -904,6 +1082,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")

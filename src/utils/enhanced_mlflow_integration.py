@@ -22,6 +22,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
+import extract_training_metadata,
     extract_training_metadata,
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,
@@ -32,7 +33,10 @@ from src.utils.mlflow_utils import (
 )
 from src.utils.error_handler import handle_errors
 
+import def with_enhanced_mlflow_logging
 def with_enhanced_mlflow_logging(step_name: str):
+    pass
+    pass
     """Decorator to automatically add enhanced MLflow logging to pipeline steps.
 
     This decorator ensures that all step executions are properly logged to MLflow
@@ -48,6 +52,8 @@ def with_enhanced_mlflow_logging(step_name: str):
         return results
     """
     def decorator(func):
+    pass
+    pass
         @wraps(func)
         async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
         # Extract metadata from config
@@ -68,6 +74,10 @@ def with_enhanced_mlflow_logging(step_name: str):
                 mlflow.set_tracking_uri(tracking_uri)
                 mlflow.set_experiment(experiment_name)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create run name
                 run_name, f"{exchange}_{symbol}_{step_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -135,12 +145,20 @@ def with_enhanced_mlflow_logging(step_name: str):
 
         # Log step metrics
         if isinstance(result, dict):
+    pass
+    pass
                         metrics = {}
         for key, value in result.items():
+    pass
+    pass
         if isinstance(value, (int, float)) and key not in ["status", "duration"]:
+    pass
+    pass
                                 metrics[f"step_{key}"] = float(value)
 
         if metrics:
+    pass
+    pass
                             log_metrics_with_metadata(
                                 metrics = metrics,
                                 asset = metadata["asset"],
@@ -185,9 +203,15 @@ def log_step_artifact(
     """
     try:
         if not os.path.exists(artifact_path):
+    pass
+    except Exception as e:
+        pass
+    pass
             system_logger.warning(f"Artifact file not found: {artifact_path}")
             return
 
+    except Exception as e:
+        pass
         metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
@@ -198,6 +222,8 @@ def log_step_artifact(
             "artifact_size_bytes": os.path.getsize(artifact_path),
         }
         if additional_metadata:
+    pass
+    pass
             extra_metadata.update(additional_metadata)
 
         # Log artifact with metadata
@@ -239,6 +265,8 @@ def generate_standardized_artifact_name(
         Standardized artifact name
     """
     if timestamp is None:
+    pass
+    pass
         # Fallback implementation for timestamp
         timestamp, datetime.now()
 
@@ -255,7 +283,11 @@ def generate_standardized_artifact_name(
     artifact_name, f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
 
     if extension:
+    pass
+    pass
         if not extension.startswith("."):
+    pass
+    pass
             extension = "." + extension
         artifact_name += extension
 
@@ -282,6 +314,10 @@ def log_step_dataframe(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create temporary file
         with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
             df.to_parquet(tmp_file.name, index = False)
@@ -295,6 +331,8 @@ def log_step_dataframe(
             "dataframe_dtypes": df.dtypes.to_dict(),
         }
         if additional_metadata:
+    pass
+    pass
             extra_metadata.update(additional_metadata)
 
         # Log artifact
@@ -318,6 +356,8 @@ def log_step_dataframe(
         system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
 
 def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[str, str]:
+    pass
+    pass
     """Create standardized folder structure for all pipeline artifacts.
 
     Args:
@@ -340,6 +380,8 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[st
 
     # Create all folders
     for folder_path in folders.values():
+    pass
+    pass
         os.makedirs(folder_path, exist_ok = True)
 
     return folders
@@ -502,6 +544,10 @@ def log_step_report(
     """
     try:
         metadata, extract_training_metadata(config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         exchange, metadata["exchange"]
         token, metadata["asset"]
 
@@ -531,6 +577,8 @@ def log_step_report(
             "report_size": len(report_data),
         }
         if additional_metadata:
+    pass
+    pass
             extra_metadata.update(additional_metadata)
 
         # Log artifact
@@ -578,6 +626,10 @@ def log_step_model(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Prepare additional metadata
         extra_metadata = {
             "model_type": model_type,
@@ -585,6 +637,8 @@ def log_step_model(
             "training_algorithm": getattr(model, '__class__.__name__', 'Unknown'),
         }
         if additional_metadata:
+    pass
+    pass
             extra_metadata.update(additional_metadata)
 
         # Log model with metadata
@@ -623,12 +677,18 @@ def log_step_metrics(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Prepare additional metadata
         extra_metadata = {
             "metrics_type": "step_performance",
             "pipeline_step": step_name,
         }
         if additional_metadata:
+    pass
+    pass
             extra_metadata.update(additional_metadata)
 
         # Log metrics with metadata
@@ -651,6 +711,8 @@ class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         """Initialize the enhanced MLflow manager.
 
         Args:
@@ -665,9 +727,15 @@ class EnhancedMLflowManager:
         self._setup_mlflow()
 
     def _setup_mlflow(self) -> None:
+    pass
+    pass
         """Set up MLflow tracking and experiment."""
         try:
             tracking_uri, self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             experiment_name, self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
 
             mlflow.set_tracking_uri(tracking_uri)
@@ -680,6 +748,8 @@ class EnhancedMLflowManager:
             raise
 
     def start_run(self, run_name: Optional[str] = None, step_name: Optional[str] = None) -> str:
+    pass
+    pass
         """Start an MLflow run with enhanced metadata.
 
         Args:
@@ -691,8 +761,14 @@ class EnhancedMLflowManager:
         """
         try:
         if not run_name:
+    pass
+    except Exception as e:
+        pass
+    pass
                 run_name, f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    except Exception as e:
+        pass
         with mlflow.start_run(run_name = run_name) as run:
         self.current_run_id, run.info.run_id
 
@@ -733,6 +809,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
+    pass
+    pass
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
@@ -741,7 +819,13 @@ class EnhancedMLflowManager:
                 "model_type": model_type,
                 "pipeline_step": "model_logging",
             }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log model with metadata
@@ -776,13 +860,21 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
+    pass
+    pass
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
         # Convert metrics to float
             float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not float_metrics:
+    pass
+    pass
         self.logger.warning("No valid metrics to log")
                 return
 
@@ -791,6 +883,8 @@ class EnhancedMLflowManager:
                 "pipeline_step": "metrics_logging",
             }
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log metrics with metadata
@@ -823,6 +917,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
+    pass
+    pass
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
@@ -830,7 +926,13 @@ class EnhancedMLflowManager:
             extra_metadata = {
                 "pipeline_step": "parameters_logging",
             }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log parameters with metadata
@@ -866,6 +968,8 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         if not self.current_run_id:
+    pass
+    pass
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
@@ -874,7 +978,13 @@ class EnhancedMLflowManager:
                 "artifact_type": artifact_type,
                 "pipeline_step": "artifact_logging",
             }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log artifact with metadata
@@ -910,6 +1020,10 @@ class EnhancedMLflowManager:
         """
         try:
         # Create temporary file
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
                 df.to_parquet(tmp_file.name, index = False)
                 tmp_path, tmp_file.name
@@ -922,6 +1036,8 @@ class EnhancedMLflowManager:
                 "dataframe_dtypes": df.dtypes.to_dict(),
             }
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log artifact
@@ -953,6 +1069,10 @@ class EnhancedMLflowManager:
         try:
         # Create temporary file
             import json
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with tempfile.NamedTemporaryFile(suffix=".json", delete = False, mode="w") as tmp_file:
                 json.dump(summary, tmp_file, indent = 2, default = str)
                 tmp_path, tmp_file.name
@@ -964,6 +1084,8 @@ class EnhancedMLflowManager:
                 "summary_size": len(summary),
             }
         if additional_metadata:
+    pass
+    pass
                 extra_metadata.update(additional_metadata)
 
         # Log artifact
@@ -982,32 +1104,45 @@ class EnhancedMLflowManager:
             raise
 
     def validate_current_run(self) -> bool:
+    pass
+    pass
         """Validate that the current run has all required metadata.
 
         Returns:
             True if validation passes, False otherwise
         """
         if not self.current_run_id:
+    pass
+    pass
         self.logger.warning("No active run to validate")
         return False
 
         return validate_run_metadata(self.current_run_id)
 
     def get_run_metadata(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get metadata for the current run.
 
         Returns:
             Dictionary containing run metadata
         """
         if not self.current_run_id:
+    pass
+    pass
             raise ValueError("No active MLflow run")
 
         from src.utils.mlflow_utils import get_enhanced_run_metadata
+import return get_enhanced_run_metadata
         return get_enhanced_run_metadata(self.current_run_id) or {}
 
     def end_run(self) -> None:
+    pass
+    pass
         """End the current MLflow run."""
         if self.current_run_id:
+    pass
+    pass
             mlflow.end_run()
         self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
         self.current_run_id, None
@@ -1030,6 +1165,10 @@ def log_step_metadata(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Log enhanced training metadata for the step
         log_enhanced_training_metadata(
             asset = metadata["asset"],
@@ -1070,6 +1209,10 @@ def log_model_performance(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Log metrics with metadata
         log_metrics_with_metadata(
             metrics = performance_metrics,
@@ -1106,6 +1249,10 @@ def log_pipeline_completion(
     try:
         metadata, extract_training_metadata(config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Log enhanced training metadata for pipeline completion
         log_enhanced_training_metadata(
             asset = metadata["asset"],

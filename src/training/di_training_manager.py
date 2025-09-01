@@ -13,6 +13,7 @@ from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
+import failed,
     failed,
     initialization_error,
     invalid,
@@ -71,14 +72,22 @@ class DITrainingManager(InjectableBase):
     async def initialize(self) -> bool:
         """Initialize the training manager with dependency injection."""
         if not await super().initialize():
+    pass
+    pass
             return False
 
         try:
             # Create training pipeline and steps using DI
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._initialize_training_components()
 
             # Validate training configuration
             if not self._validate_training_configuration():
+    pass
+    pass
                 return False
 
             self.logger.info("Training manager initialized successfully")
@@ -94,10 +103,17 @@ class DITrainingManager(InjectableBase):
         """Initialize training components using dependency injection."""
         try:
             # Create training pipeline
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.container:
+    pass
+    pass
                 from src.training.core.pipeline_base import TrainingPipeline
 
                 # Register training manager instance
+import self.container.register_instance
                 self.container.register_instance(DITrainingManager, self)
 
                 # Create pipeline with DI
@@ -106,6 +122,7 @@ class DITrainingManager(InjectableBase):
                 # Fallback to manual creation
                 from src.training.core.pipeline_base import TrainingPipeline
 
+import self.training_pipeline = TrainingPipeline
                 self.training_pipeline = TrainingPipeline(self.training_config)
 
             # Initialize training steps
@@ -138,8 +155,14 @@ class DITrainingManager(InjectableBase):
         ]
 
         for step_name in step_classes:
+    pass
+    pass
             try:
                 # Import step class dynamically
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 module_path = f"src.training.steps.{step_name}"
                 module = __import__(module_path, fromlist=[step_name])
 
@@ -151,6 +174,8 @@ class DITrainingManager(InjectableBase):
 
                 # Create step instance
                 if self.container and self.container.is_registered(step_class):
+    pass
+    pass
                     step_instance = self.container.resolve(step_class)
                 else:
                     # Create with configuration
@@ -164,23 +189,37 @@ class DITrainingManager(InjectableBase):
                 )
 
     def _validate_training_configuration(self) -> bool:
+    pass
+    pass
         """Validate training configuration."""
         try:
             # Validate training interval
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.training_interval <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid training interval"))
                 return False
 
             # Validate max training history
             if self.max_training_history <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max training history"))
                 return False
 
             # Validate required directories exist
             required_dirs = ["models", "data", "checkpoints"]
             for dir_name in required_dirs:
+    pass
+    pass
                 dir_path = self.training_config.get(f"{dir_name}_directory", dir_name)
                 if not dir_path:
+    pass
+    pass
                     self.print(missing(f"Missing {dir_name} directory configuration"))
                     return False
 
@@ -213,11 +252,17 @@ class DITrainingManager(InjectableBase):
 
         """
         if self.is_training:
+    pass
+    pass
             self.print(warning("Training already in progress"))
             return False
 
         try:
             self.is_training = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 f"Starting {training_type} training pipeline for {symbol} on {exchange}",
             )
@@ -234,6 +279,8 @@ class DITrainingManager(InjectableBase):
 
             # Execute training pipeline
             if training_type == "full":
+    pass
+    pass
                 success = await self._run_full_training_pipeline(training_context)
             elif training_type == "incremental":
                 success = await self._run_incremental_training(training_context)
@@ -263,9 +310,15 @@ class DITrainingManager(InjectableBase):
         """Run the complete training pipeline."""
         try:
             if not self.training_pipeline:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(initialization_error("Training pipeline not initialized"))
                 return False
 
+    except Exception as e:
+        pass
             # Execute all training steps
             pipeline_steps = [
                 "step01_data_collection",
@@ -283,19 +336,27 @@ class DITrainingManager(InjectableBase):
             ]
 
             for step_name in pipeline_steps:
+    pass
+    pass
                 step = self.training_steps.get(step_name)
                 if not step:
+    pass
+    pass
                     self.print(warning(f"Training step {step_name} not available"))
                     continue
 
                 self.logger.info(f"Executing {step_name}")
 
                 if hasattr(step, "execute"):
+    pass
+    pass
                     success = await step.execute(context)
                 else:
                     success = await step.run(context)
 
                 if not success:
+    pass
+    pass
                     self.print(failed(f"Training step {step_name} failed"))
                     return False
 
@@ -313,6 +374,10 @@ class DITrainingManager(InjectableBase):
         """Run incremental training pipeline."""
         try:
             # Execute subset of steps for incremental training
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             incremental_steps = [
                 "step01_data_collection",
                 "step03_hmm_regime_discovery",
@@ -322,8 +387,12 @@ class DITrainingManager(InjectableBase):
             ]
 
             for step_name in incremental_steps:
+    pass
+    pass
                 step = self.training_steps.get(step_name)
                 if not step:
+    pass
+    pass
                     continue
 
                 self.logger.info(f"Executing incremental {step_name}")
@@ -332,11 +401,15 @@ class DITrainingManager(InjectableBase):
                 context["incremental_mode"] = True
 
                 if hasattr(step, "execute"):
+    pass
+    pass
                     success = await step.execute(context)
                 else:
                     success = await step.run(context)
 
                 if not success:
+    pass
+    pass
                     self.print(failed(f"Incremental step {step_name} failed"))
                     return False
 
@@ -352,9 +425,15 @@ class DITrainingManager(InjectableBase):
         """Run hyperparameter optimization."""
         try:
             if not self.enable_hyperparameter_optimization:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info("Hyperparameter optimization disabled")
                 return True
 
+    except Exception as e:
+        pass
             # Execute optimization steps
             optimization_steps = [
                 "step07_hyperparameter_optimization",
@@ -362,18 +441,26 @@ class DITrainingManager(InjectableBase):
             ]
 
             for step_name in optimization_steps:
+    pass
+    pass
                 step = self.training_steps.get(step_name)
                 if not step:
+    pass
+    pass
                     continue
 
                 self.logger.info(f"Executing optimization {step_name}")
 
                 if hasattr(step, "execute"):
+    pass
+    pass
                     success = await step.execute(context)
                 else:
                     success = await step.run(context)
 
                 if not success:
+    pass
+    pass
                     self.print(failed(f"Optimization step {step_name} failed"))
                     return False
 
@@ -399,18 +486,26 @@ class DITrainingManager(InjectableBase):
                 "training_type": context.get("training_type"),
                 "success": success,
                 "duration": context.get("duration", 0),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             self.training_history.append(result)
 
             # Limit history size
             if len(self.training_history) > self.max_training_history:
+    pass
+    pass
                 self.training_history = self.training_history[
                     -self.max_training_history :
                 ]
 
             # Store in state manager
             if self.state_manager:
+    pass
+    pass
                 self.state_manager.set_state("last_training_result", result)
                 self.state_manager.set_state("training_history", self.training_history)
 
@@ -439,6 +534,8 @@ class DITrainingManager(InjectableBase):
     async def stop_training(self) -> None:
         """Stop any running training operations."""
         if self.is_training:
+    pass
+    pass
             self.logger.info("Stopping training operations")
             # Implementation would depend on how training steps handle cancellation
             # For now, we just set the flag

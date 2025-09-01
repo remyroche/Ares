@@ -17,12 +17,14 @@ import pandas as pd
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.training.steps.vectorized_advanced_feature_engineering import (
+import VectorizedAdvancedFeatureEngineering,
     VectorizedAdvancedFeatureEngineering,
 )
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 
 # Add src to path
+import sys.path.append
 sys.path.append(str(Path(__file__).parent.parent))
 
 
@@ -30,6 +32,8 @@ class StrengthWeightedSRPositionTester:
     """Test class for strength-weighted SR position calculation."""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("StrengthWeightedSRPositionTester")
 
         # Basic configuration
@@ -66,6 +70,8 @@ class StrengthWeightedSRPositionTester:
         return True
 
     def create_sample_price_data(self, periods: int = 1000) -> pd.DataFrame:
+    pass
+    pass
         """Create sample OHLCV price data for testing."""
         # Create realistic price data with trends and volatility
         np.random.seed(42)
@@ -76,6 +82,8 @@ class StrengthWeightedSRPositionTester:
 
         data: List[Dict[str, float]] = []
         for close in close_prices:
+    pass
+    pass
             high = close + abs(float(np.random.normal(0.0, 1.0)))
             low = close - abs(float(np.random.normal(0.0, 1.0)))
             open_price = close + float(np.random.normal(0.0, 0.5))
@@ -94,6 +102,8 @@ class StrengthWeightedSRPositionTester:
         return df
 
     def create_sample_sr_levels(self, price_data: pd.DataFrame) -> Dict[str, List[Dict[str, float]]]:
+    pass
+    pass
         """Create sample SR levels with different strengths for testing."""
         close = price_data["close"]
         current_price = float(close.iloc[-1])
@@ -116,6 +126,8 @@ class StrengthWeightedSRPositionTester:
         return {"support_levels": support_levels, "resistance_levels": resistance_levels}
 
     def calculate_simple_position(self, price: float, sr_levels: Dict[str, List[Dict[str, float]]]) -> float:
+    pass
+    pass
         """Calculate simple position using nearest support and resistance."""
         support_levels = sr_levels.get("support_levels", [])
         resistance_levels = sr_levels.get("resistance_levels", [])
@@ -124,19 +136,35 @@ class StrengthWeightedSRPositionTester:
         nearest_resistance: float | None = None
 
         for level in support_levels:
+    pass
+    pass
             level_price = float(level.get("price", 0.0))
             if level_price > 0.0 and level_price < price:
+    pass
+    pass
                 if nearest_support is None or abs(price - level_price) < abs(price - nearest_support):
+    pass
+    pass
                     nearest_support = level_price
 
         for level in resistance_levels:
+    pass
+    pass
             level_price = float(level.get("price", 0.0))
             if level_price > 0.0 and level_price > price:
+    pass
+    pass
                 if nearest_resistance is None or abs(price - level_price) < abs(price - nearest_resistance):
+    pass
+    pass
                     nearest_resistance = level_price
 
         if nearest_support is not None and nearest_resistance is not None:
+    pass
+    pass
             if nearest_resistance == nearest_support:
+    pass
+    pass
                 return 0.5
             position = (price - nearest_support) / (nearest_resistance - nearest_support)
             return float(max(0.0, min(1.0, position)))
@@ -144,14 +172,20 @@ class StrengthWeightedSRPositionTester:
         return 0.5
 
     def calculate_strength_weighted_position(self, price: float, sr_levels: Dict[str, List[Dict[str, float]]]) -> Tuple[float, Dict[str, float]]:
+    pass
+    pass
         """Calculate a strength-weighted SR position and return position plus details."""
         support_scores: List[Tuple[float, float]] = []
         resistance_scores: List[Tuple[float, float]] = []
 
         # Support scores
         for level in sr_levels.get("support_levels", []):
+    pass
+    pass
             level_price = float(level["price"])
             if level_price < price:
+    pass
+    pass
                 distance = (price - level_price) / price
                 proximity_factor = float(np.exp(-50.0 * distance))
                 final_score = float(level.get("strength", 0.5)) * proximity_factor
@@ -159,8 +193,12 @@ class StrengthWeightedSRPositionTester:
 
         # Resistance scores
         for level in sr_levels.get("resistance_levels", []):
+    pass
+    pass
             level_price = float(level["price"])
             if level_price > price:
+    pass
+    pass
                 distance = (level_price - price) / price
                 proximity_factor = float(np.exp(-50.0 * distance))
                 final_score = float(level.get("strength", 0.5)) * proximity_factor
@@ -171,9 +209,13 @@ class StrengthWeightedSRPositionTester:
 
         details: Dict[str, float] = {}
         if effective_support and effective_resistance:
+    pass
+    pass
             support_price, support_score = effective_support
             resistance_price, resistance_score = effective_resistance
             if resistance_price == support_price:
+    pass
+    pass
                 return 0.5, {"support_price": support_price, "support_score": support_score, "resistance_price": resistance_price, "resistance_score": resistance_score}
             strength_position = (price - support_price) / (resistance_price - support_price)
             strength_position = float(max(0.0, min(1.0, strength_position)))
@@ -194,12 +236,16 @@ class StrengthWeightedSRPositionTester:
         # Create sample data
         price_data = self.create_sample_price_data(100)
         if price_data.empty:
+    pass
+    pass
             self.logger.warning("Empty price data")
             return False
 
         # Create sample SR levels
         sr_levels = self.create_sample_sr_levels(price_data)
         if not sr_levels:
+    pass
+    pass
             self.logger.warning("No SR levels available")
             return False
 
@@ -217,6 +263,8 @@ class StrengthWeightedSRPositionTester:
         self.logger.info("=" * 80)
 
         for i, test_price in enumerate(test_prices, start=1):
+    pass
+    pass
             self.logger.info(f"Test Price {i}: ${test_price:.2f}")
 
             # Calculate simple position
@@ -228,6 +276,8 @@ class StrengthWeightedSRPositionTester:
             self.logger.info(f"   Simple Position: {simple_position:.3f}")
             self.logger.info(f"   Strength Position: {strength_position:.3f}")
             if details:
+    pass
+    pass
                 self.logger.info(
                     f"   Effective Support: ${details['support_price']:.2f} (score: {details['support_score']:.3f})"
                 )
@@ -239,6 +289,8 @@ class StrengthWeightedSRPositionTester:
             position_diff = abs(strength_position - simple_position)
             self.logger.info(f"   Position Difference: {position_diff:.3f}")
             if position_diff > 0.1:
+    pass
+    pass
                 self.logger.info("   Significant difference detected!")
             else:
                 self.logger.info("   Positions are similar")
@@ -246,10 +298,18 @@ class StrengthWeightedSRPositionTester:
         # Show feature summary from predictor (optional)
         try:
             features = await self.sr_predictor.calculate_sr_features(price_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if isinstance(features, dict):
+    pass
+    pass
                 self.logger.info(f"Generated Features: {len(features)}")
                 self.logger.info("Feature names:")
                 for feature_name in sorted(features.keys()):
+    pass
+    pass
                     self.logger.info(f"   - {feature_name}")
         except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Feature generation skipped due to error: {e}")
@@ -262,10 +322,14 @@ class StrengthWeightedSRPositionTester:
 async def main() -> None:
     tester = StrengthWeightedSRPositionTester()
     if await tester.initialize():
+    pass
+    pass
         await tester.test_strength_weighted_position()
     else:
         print("Failed to initialize tester")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

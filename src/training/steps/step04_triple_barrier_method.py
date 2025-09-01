@@ -13,8 +13,13 @@ import time
 from datetime import datetime
 
 # Handle optional dependencies
+import try:
 try:
     import psutil
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     PSUTIL_AVAILABLE, True
 except ImportError:
     PSUTIL_AVAILABLE, False
@@ -22,6 +27,10 @@ except ImportError:
 
 try:
     import numpy as np
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     NUMPY_AVAILABLE, True
 except ImportError:
     NUMPY_AVAILABLE, False
@@ -29,6 +38,10 @@ except ImportError:
 
 try:
     import pandas as pd
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     PANDAS_AVAILABLE, True
 except ImportError:
     PANDAS_AVAILABLE, False
@@ -39,6 +52,7 @@ project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -52,6 +66,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -66,6 +81,8 @@ class TripleBarrierMethodStep:
     """Step 4: Triple Barrier Method with enhanced data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("TripleBarrierMethodStep")
         self.start_time, None
@@ -73,10 +90,18 @@ class TripleBarrierMethodStep:
         self._initialize_components()
 
     def _initialize_components(self) -> None:
+    pass
+    pass
         """Initialize triple barrier method components."""
         self.logger.info("🔧 Initializing triple barrier method components...")
         try:
             from .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import OptimizedTripleBarrierLabeling
                 OptimizedTripleBarrierLabeling
             )
         self.triple_barrier_labeler, OptimizedTripleBarrierLabeling()
@@ -98,6 +123,8 @@ class TripleBarrierMethodStep:
         self.logger.info("✅ Triple Barrier Method Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
+    pass
+    pass
         """Log timing information for a step."""
         elapsed, time.time() - start_time
         self.step_timings[step_name] = elapsed
@@ -142,13 +169,21 @@ class TripleBarrierMethodStep:
         try:
         # Load data from previous steps
             unified_data_path, Path(data_dir) / "unified" / exchange / symbol / timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not unified_data_path.exists():
+    pass
+    pass
         self.logger.error(f"❌ Unified data not found at {unified_data_path}")
         return False
 
         # Load the unified data
             data_files, list(unified_data_path.glob("*.parquet"))
         if not data_files:
+    pass
+    pass
         self.logger.error(f"❌ No parquet files found in {unified_data_path}")
         return False
 
@@ -161,6 +196,8 @@ class TripleBarrierMethodStep:
 
         # Apply triple barrier method
         if self.triple_barrier_labeler:
+    pass
+    pass
         # Use optimized triple barrier labeling
                 labeled_data, await self._apply_optimized_triple_barrier(data)
             else:
@@ -168,6 +205,8 @@ class TripleBarrierMethodStep:
                 labeled_data, await self._apply_basic_triple_barrier(data)
 
         if labeled_data is None:
+    pass
+    pass
         self.logger.error("❌ Failed to generate triple barrier labels")
         return False
 
@@ -222,6 +261,10 @@ class TripleBarrierMethodStep:
                 "processing_efficiency": 1.0,
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Collect artifacts generated
             artifacts_generated = [
                 str(output_path),
@@ -245,7 +288,7 @@ class TripleBarrierMethodStep:
             ,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1.00"),  # Default version
             }
 
         # Create step data for report
@@ -278,13 +321,15 @@ class TripleBarrierMethodStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
         self.logger.info(f"✅ Logged triple barrier method report: {report_name}")
 
         # Log triple barrier labels DataFrame
         if result_data is not None:
+    pass
+    pass
                 artifact_name, log_step_dataframe_with_standardized_name(
                     config = self.config,
                     step_name="step04_triple_barrier_method",
@@ -296,7 +341,7 @@ class TripleBarrierMethodStep:
                         "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 },
                         "timeframe": timeframe,
                     }
@@ -314,7 +359,7 @@ class TripleBarrierMethodStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
 
@@ -333,8 +378,13 @@ class TripleBarrierMethodStep:
             time_barrier_minutes, self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
             max_lookahead, self.config.get("triple_barrier", {}).get("max_lookahead", 100)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create triple barrier labeler with configuration
             from .step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+import OptimizedTripleBarrierLabeling
                 OptimizedTripleBarrierLabeling
             )
 
@@ -360,6 +410,8 @@ class TripleBarrierMethodStep:
 
         # Log profit statistics
         if len(labeled_data) > 0:
+    pass
+    pass
                 long_profits, labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
                 short_profits, labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
 
@@ -379,6 +431,10 @@ class TripleBarrierMethodStep:
         try:
         self.logger.warning("⚠️ Using basic triple barrier implementation with profit tracking")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Simple triple barrier implementation with profit tracking
             close_prices, data['close'].values
             high_prices, data['high'].values
@@ -392,13 +448,19 @@ class TripleBarrierMethodStep:
             profit_pcts, np.zeros(len(close_prices), dtype = np.float64)
 
         for i in range(len(close_prices) - 1):
+    pass
+    pass
                 entry_price, close_prices[i]
                 profit_barrier, entry_price * (1 + profit_take_multiplier)
                 stop_barrier, entry_price * (1 - stop_loss_multiplier)
 
         # Look ahead for barrier hits
         for j in range(i + 1, min(i + max_lookahead, len(close_prices))):
+    pass
+    pass
         if high_prices[j] >= profit_barrier:
+    pass
+    pass
                         labels[i] = 1  # LONG position - price moved up, take profit
                         profit_pcts[i] = profit_take_multiplier  # Profit take hit
                         break
@@ -429,6 +491,8 @@ class TripleBarrierMethodStep:
 
         # Log profit statistics
         if len(result_data) > 0:
+    pass
+    pass
                 long_profits, result_data[result_data['label'] == 1]['potential_profit_pct']
                 short_profits, result_data[result_data['label'] == -1]['potential_profit_pct']
 
@@ -444,6 +508,8 @@ class TripleBarrierMethodStep:
         return None
 
     def _create_enhanced_labels(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Create enhanced labels that include profit information alongside direction labels.
 
         This method creates additional columns that combine direction and profit information
@@ -458,6 +524,10 @@ class TripleBarrierMethodStep:
         try:
             enhanced_data, data.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create profit - binned labels (categorize profits into bins)
             profit_bins = [-np.inf, -0.005, -0.002, 0, 0.002, 0.005, np.inf]
             profit_labels = ['Large Loss', 'Medium Loss', 'Small Loss', 'No Profit', 'Small Profit', 'Large Profit']
@@ -484,6 +554,8 @@ class TripleBarrierMethodStep:
         # Create confidence scores based on profit magnitude
             max_profit, enhanced_data['potential_profit_pct'].abs().max()
         if max_profit > 0:
+    pass
+    pass
                 enhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
             else:
                 enhanced_data['signal_confidence'] = 0.0
@@ -523,6 +595,8 @@ async def run_step(
         True if successful, False otherwise
     """
     if config is None:
+    pass
+    pass
         config = {}
 
     # Add step - specific configuration
@@ -552,6 +626,8 @@ async def run_step(
     )
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test():
         success, await run_step(

@@ -18,7 +18,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from optimize_hmm_regime_parameters import HMMRegimeOptimizer, identify_market_condition_columns
 
 
+import def create_sample_market_data
 def create_sample_market_data(n_samples: int = 10000) -> pd.DataFrame:
+    pass
+    pass
     """Create sample market data with distinct market conditions."""
     print(f"🔧 Creating sample market data with {n_samples} samples...")
 
@@ -39,6 +42,8 @@ def create_sample_market_data(n_samples: int = 10000) -> pd.DataFrame:
     regime_length = n_samples // 8  # 8 different regimes
 
     for i in range(n_samples):
+    pass
+    pass
         regime = i // regime_length
 
         if regime == 0:  # Low volatility, low momentum
@@ -120,6 +125,8 @@ def create_sample_market_data(n_samples: int = 10000) -> pd.DataFrame:
 
 
 def run_basic_optimization_example():
+    pass
+    pass
     """Run a basic optimization example."""
     print("="*60)
     print("BASIC HMM OPTIMIZATION EXAMPLE")
@@ -133,7 +140,7 @@ def run_basic_optimization_example():
                       if col not in ['timestamp', 'composite_cluster_id']]
     market_condition_columns = identify_market_condition_columns(data)
 
-    print(f"\n🔧 Features: {len(feature_columns)}")
+    print(f"\\\n🔧 Features: {len(feature_columns)}")
     print(f"📈 Market conditions: {len(market_condition_columns)}")
     print(f"📈 Market condition columns: {market_condition_columns}")
 
@@ -141,7 +148,7 @@ def run_basic_optimization_example():
     optimizer = HMMRegimeOptimizer()
 
     # Run optimization with fewer trials for demonstration
-    print(f"\n🚀 Running optimization with 20 trials...")
+    print(f"\\\n🚀 Running optimization with 20 trials...")
     results = optimizer.optimize(
         data=data,
         feature_columns=feature_columns,
@@ -151,18 +158,22 @@ def run_basic_optimization_example():
     )
 
     # Print results
-    print(f"\n📊 Optimization Results:")
+    print(f"\\\n📊 Optimization Results:")
     print(f"Best Score: {results['best_score']:.4f}")
     print(f"Best Parameters:")
     for param, value in results['best_params'].items():
+    pass
+    pass
         print(f"  {param}: {value}")
 
     return results
 
 
 def run_advanced_optimization_example():
+    pass
+    pass
     """Run an advanced optimization example with custom configuration."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("ADVANCED HMM OPTIMIZATION EXAMPLE")
     print("="*60)
 
@@ -194,7 +205,7 @@ def run_advanced_optimization_example():
     optimizer = HMMRegimeOptimizer(config)
 
     # Run optimization
-    print(f"\n🚀 Running advanced optimization with 50 trials...")
+    print(f"\\\n🚀 Running advanced optimization with 50 trials...")
     results = optimizer.optimize(
         data=data,
         feature_columns=feature_columns,
@@ -204,20 +215,22 @@ def run_advanced_optimization_example():
     )
 
     # Generate detailed report
-    print(f"\n📄 Generating detailed report...")
+    print(f"\\\n📄 Generating detailed report...")
     report = optimizer.generate_optimization_report()
     print(report)
 
     # Create visualizations
-    print(f"\n📊 Creating visualizations...")
+    print(f"\\\n📊 Creating visualizations...")
     optimizer.create_optimization_visualizations()
 
     return results
 
 
 def run_comparison_optimization_example():
+    pass
+    pass
     """Run optimization with different evaluation strategies."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("OPTIMIZATION STRATEGY COMPARISON")
     print("="*60)
 
@@ -257,7 +270,9 @@ def run_comparison_optimization_example():
     results_comparison = {}
 
     for strategy_name, weights in strategies.items():
-        print(f"\n🔍 Testing {strategy_name} strategy...")
+    pass
+    pass
+        print(f"\\\n🔍 Testing {strategy_name} strategy...")
 
         # Create config with custom weights
         config = {
@@ -287,26 +302,30 @@ def run_comparison_optimization_example():
         }
 
     # Print comparison results
-    print(f"\n📊 Strategy Comparison Results:")
+    print(f"\\\n📊 Strategy Comparison Results:")
     print(f"{'Strategy':<15} {'Score':<10} {'Key Parameters'}")
     print("-" * 50)
 
     for strategy_name, result in results_comparison.items():
+    pass
+    pass
         params = result['best_params']
-        key_params = f"n_components={params.get('n_components', 'N/A')}, " \
+        key_params = f"n_components={params.get('n_components', 'N/A')}, " \\\
                     f"clustering_method={params.get('clustering_method', 'N/A')}"
         print(f"{strategy_name:<15} {result['best_score']:<10.4f} {key_params}")
 
     # Find best strategy
     best_strategy = max(results_comparison.items(), key=lambda x: x[1]['best_score'])
-    print(f"\n🏆 Best strategy: {best_strategy[0]} (score: {best_strategy[1]['best_score']:.4f})")
+    print(f"\\\n🏆 Best strategy: {best_strategy[0]} (score: {best_strategy[1]['best_score']:.4f})")
 
     return results_comparison
 
 
 def demonstrate_parameter_application():
+    pass
+    pass
     """Demonstrate how to apply optimized parameters."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("PARAMETER APPLICATION DEMONSTRATION")
     print("="*60)
 
@@ -332,10 +351,12 @@ def demonstrate_parameter_application():
 
     print(f"🔧 Best parameters found:")
     for param, value in best_params.items():
+    pass
+    pass
         print(f"  {param}: {value}")
 
     # Demonstrate how to apply these parameters
-    print(f"\n📋 How to apply these parameters to your Step 3 HMM regime discovery:")
+    print(f"\\\n📋 How to apply these parameters to your Step 3 HMM regime discovery:")
     print(f"1. Update your configuration file with the best parameters")
     print(f"2. Modify your step3_hmm_regime_discovery.py to use these parameters")
     print(f"3. Run the validation script to confirm improved cluster quality")
@@ -359,19 +380,25 @@ def demonstrate_parameter_application():
         }
     }
 
-    print(f"\n📄 Sample configuration snippet:")
+    print(f"\\\n📄 Sample configuration snippet:")
     print(json.dumps(config_snippet, indent=2))
 
     return best_params
 
 
 def main():
+    pass
+    pass
     """Main function to run all optimization examples."""
     print("🚀 HMM Regime Parameter Optimization Examples")
     print("This script demonstrates how to optimize HMM parameters for capturing distinct market conditions.")
 
     try:
         # Run basic example
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         basic_results = run_basic_optimization_example()
 
         # Run advanced example
@@ -383,7 +410,7 @@ def main():
         # Demonstrate parameter application
         best_params = demonstrate_parameter_application()
 
-        print("\n" + "="*60)
+        print("\\\n" + "="*60)
         print("ALL EXAMPLES COMPLETED SUCCESSFULLY")
         print("="*60)
         print("💡 Key takeaways:")
@@ -401,4 +428,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

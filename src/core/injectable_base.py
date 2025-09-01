@@ -13,8 +13,10 @@ from typing import TYPE_CHECKING, Any
 
 from src.utils.logger import system_logger
 
+import if TYPE_CHECKING:  # only for type checking; avoids runtime import cost
 if TYPE_CHECKING:  # only for type checking; avoids runtime import cost
     from src.interfaces.base_interfaces import (
+import IEventBus,
         IEventBus,
         IExchangeClient,
         IStateManager,
@@ -29,14 +31,24 @@ class InjectableBase:
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
+    pass
+    pass
         self.config: dict[str, Any] = config or {}
         self.logger = system_logger.getChild(self.__class__.__name__)
         self._initialized: bool = False
         # Provide a safe print shim so subclasses can call self.print
         if not hasattr(self, "print"):
+    pass
+    pass
             def _shim_print(message: str) -> None:
+    pass
+    pass
                 try:
                     self.logger.error(str(message))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except Exception as e:  # noqa: BLE001 - fallback safety
                     print(
                         f"Logger failed in shim_print: {e}",
@@ -47,6 +59,8 @@ class InjectableBase:
             self.print = _shim_print  # type: ignore[attr-defined]
 
     def configure(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Configure the component with provided configuration."""
         self.config.update(config)
         self.logger.debug(
@@ -60,6 +74,8 @@ class InjectableBase:
         Override in subclasses for custom initialization.
         """
         if self._initialized:
+    pass
+    pass
             return True
 
         self.logger.info(f"Initializing {self.__class__.__name__}")
@@ -73,6 +89,8 @@ class InjectableBase:
 
     @property
     def is_initialized(self) -> bool:
+    pass
+    pass
         """Check if component is initialized."""
         return self._initialized
 
@@ -106,6 +124,8 @@ class TradingComponentBase(InjectableBase):
     async def start(self) -> None:
         """Start the trading component."""
         if self.is_running:
+    pass
+    pass
             return
 
         self.logger.info(f"Starting {self.__class__.__name__}")
@@ -114,6 +134,8 @@ class TradingComponentBase(InjectableBase):
     async def stop(self) -> None:
         """Stop the trading component."""
         if not self.is_running:
+    pass
+    pass
             return
 
         self.logger.info(f"Stopping {self.__class__.__name__}")
@@ -121,5 +143,7 @@ class TradingComponentBase(InjectableBase):
 
     @property
     def is_active(self) -> bool:
+    pass
+    pass
         """Check if component is active and running."""
         return self.is_running and self.is_initialized

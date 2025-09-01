@@ -12,6 +12,7 @@ import joblib
 import numpy as np
 
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     missing,
@@ -24,10 +25,13 @@ sys.path.insert(0, str(project_root))
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
+import class Step6HMMBasedEnhancementValidator
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM - Based Enhancement."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step06_hmm_based_enhancement", config)
 
     async def validate(
@@ -75,9 +79,15 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info("🔍 Phase 1: Validating error absence...")
         try:
             error_passed, error_metrics, self.validate_error_absence(step_result)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.validation_results["error_absence"] = error_metrics
 
         if error_passed:
+    pass
+    pass
         self.logger.info("✅ Error absence validation passed")
                 validation_phases["error_absence"] = True
             else:
@@ -95,8 +105,14 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 symbol,
                 exchange,
                 data_dir,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
         if model_files_passed:
+    pass
+    pass
         self.logger.info("✅ Enhanced model files validation passed")
                 validation_phases["model_files"] = True
             else:
@@ -116,8 +132,14 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 symbol,
                 exchange,
                 data_dir,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
         if improvement_passed:
+    pass
+    pass
         self.logger.info("✅ Performance improvement validation passed")
                 validation_phases["performance_improvement"] = True
             else:
@@ -137,8 +159,14 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 symbol,
                 exchange,
                 data_dir,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
         if quality_passed:
+    pass
+    pass
         self.logger.info("✅ Enhancement quality validation passed")
                 validation_phases["enhancement_quality"] = True
             else:
@@ -156,10 +184,16 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         try:
             outcome_passed, outcome_metrics, self.validate_outcome_favorability(
                 step_result,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if outcome_passed:
+    pass
+    pass
         self.logger.info("✅ Outcome favorability validation passed")
                 validation_phases["outcome_favorability"] = True
             else:
@@ -183,6 +217,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         self.logger.info(f"Successful phases: {successful_phases}/{total_phases}")
         self.logger.info("Phase status:")
         for phase, status in validation_phases.items():
+    pass
+    pass
             status_emoji = "✅" if status else "❌"
         self.logger.info(
                 f"   {status_emoji} {phase}: {'PASSED' if status else 'FAILED'}",
@@ -220,15 +256,25 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         """
         try:
             enhanced_models_dir, f"{data_dir}/enhanced_hmm_models"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             summary_file, f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
 
             missing_paths: list[str] = []
         if not os.path.isdir(enhanced_models_dir):
+    pass
+    pass
                 missing_paths.append(enhanced_models_dir)
         if not os.path.isfile(summary_file):
+    pass
+    pass
                 missing_paths.append(summary_file)
 
         if missing_paths:
+    pass
+    pass
         self.print(
                     missing(
                         f"❌ Missing Step 6 HMM artifacts. Expected paths: {missing_paths}",
@@ -244,15 +290,25 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
             found_any_model, False
         for timeframe_models in summary.values():
+    pass
+    pass
         for model_info in timeframe_models.values():
+    pass
+    pass
                     model_path, model_info.get("model_path")
         if model_path and os.path.isfile(model_path):
+    pass
+    pass
                         found_any_model, True
                         break
         if found_any_model:
+    pass
+    pass
                     break
 
         if not found_any_model:
+    pass
+    pass
         self.print(
                     failed(
                         f"❌ No valid HMM model files referenced in summary: {summary_file}",
@@ -293,7 +349,13 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
             )
             original_metrics: dict[str, Any] = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(original_history_file):
+    pass
+    pass
         with open(original_history_file) as f:
                     original_data, json.load(f)
                     original_metrics, original_data.get("metrics", {})
@@ -303,6 +365,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             )
         if not os.path.exists(summary_file):
+    pass
+    pass
         self.print(
                     missing(f"❌ HMM enhancement summary not found: {summary_file}"),
                 )
@@ -314,9 +378,15 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Aggregate enhanced accuracies
             enhanced_accuracies: list[float] = []
         for timeframe_models in enhanced_summary.values():
+    pass
+    pass
         for model_info in timeframe_models.values():
+    pass
+    pass
                     acc, model_info.get("accuracy")
         if isinstance(acc, (int, float)):
+    pass
+    pass
                         enhanced_accuracies.append(float(acc))
 
             improvements: list[tuple[str, float]] = []
@@ -324,6 +394,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             total_improvements, 0
 
         if enhanced_accuracies and "accuracy" in original_metrics:
+    pass
+    pass
                 original_acc, float(original_metrics.get("accuracy") or 0.0)
                 best_enhanced_acc, max(enhanced_accuracies)
                 avg_enhanced_acc, sum(enhanced_accuracies) / len(enhanced_accuracies)
@@ -333,6 +405,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 total_improvements, len(improvements)
 
         if best_enhanced_acc < original_acc:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Best enhanced HMM accuracy decreased: {original_acc:.3f} -> {best_enhanced_acc:.3f}",
                     )
@@ -376,7 +450,13 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             summary_file = (
                 f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(summary_file):
+    pass
+    pass
         self.print(
                     missing(f"❌ HMM enhancement summary not found: {summary_file}"),
                 )
@@ -388,15 +468,25 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Find the first available model path
             model_path: str | None, None
         for timeframe_models in summary.values():
+    pass
+    pass
         for model_info in timeframe_models.values():
+    pass
+    pass
                     candidate, model_info.get("model_path")
         if candidate and os.path.isfile(candidate):
+    pass
+    pass
                         model_path, candidate
                         break
         if model_path:
+    pass
+    pass
                     break
 
         if not model_path:
+    pass
+    pass
         self.print(
                     failed("❌ No valid HMM model paths found in enhancement summary"),
                 )
@@ -405,8 +495,14 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         # Load the model (supports joblib and pickle)
         try:
         if model_path.endswith(".joblib"):
+    pass
+    except Exception as e:
+        pass
+    pass
                     model_artifact, joblib.load(model_path)
                 else:
+    except Exception as e:
+        pass
         with open(model_path, "rb") as f:
                         model_artifact, pickle.load(f)
         except Exception as e:
@@ -420,6 +516,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         # Basic model validation
         if hasattr(model, "predict"):
+    pass
+    pass
         self.logger.info(
                     f"✅ Enhanced HMM model has predict method (loaded from: {model_path})",
                 )
@@ -433,20 +531,32 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         # Check for enhancement - specific attributes
         if hasattr(model, "feature_importances_"):
+    pass
+    pass
                 importances, getattr(model, "feature_importances_", [])
         try:
                     non_zero_features, int(np.sum(np.array(importances) > 0))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
                     non_zero_features, 0
         if non_zero_features < 10:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Enhanced HMM model has few non - zero features: {non_zero_features}",
                     )
 
         # Check for HMM - specific attributes
         if hasattr(model, "n_components"):
+    pass
+    pass
                 n_components, getattr(model, "n_components", 0)
         if n_components < 2:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Enhanced HMM model has few components: {n_components}",
                     )
@@ -461,33 +571,61 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         return False
 
     def _extract_estimator_from_artifact(self, artifact: Any) -> Any:
+    pass
+    pass
         """Unwrap saved artifacts to get the underlying estimator (adapted from Step 5)."""
         try:
             predict_attr, getattr(artifact, "predict", None)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if callable(predict_attr):
+    pass
+    pass
         return artifact
 
         if isinstance(artifact, dict):
+    pass
+    pass
         for key in ("model", "estimator", "clf", "pipeline"):
+    pass
+    pass
         if key in artifact:
+    pass
+    pass
                         inner, artifact[key]
         if callable(getattr(inner, "predict", None)):
+    pass
+    pass
         return inner
         if isinstance(inner, dict):
+    pass
+    pass
         for inner_key in ("model", "estimator", "clf"):
+    pass
+    pass
         if inner_key in inner and callable(
                                     getattr(inner[inner_key], "predict", None),
                                 ):
         return inner[inner_key]
 
         if hasattr(artifact, "best_estimator_"):
+    pass
+    pass
                 inner, getattr(artifact, "best_estimator_", None)
         if callable(getattr(inner, "predict", None)):
+    pass
+    pass
         return inner
 
         if isinstance(artifact, (list, tuple)) and artifact:
+    pass
+    pass
                 first, artifact[0]
         if callable(getattr(first, "predict", None)):
+    pass
+    pass
         return first
 
         return artifact
@@ -519,6 +657,8 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio as _asyncio
 
     # Example usage

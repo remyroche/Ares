@@ -4,15 +4,18 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.trading_decorators import (
+import comprehensive_model_decorator,
     comprehensive_model_decorator,
     get_trade_tracker,
 )
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     invalid,
@@ -26,6 +29,8 @@ class EnsembleManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize ensemble manager.
 
         Args:
@@ -76,8 +81,14 @@ class EnsembleManager:
         try:
             self.logger.info("Initializing Ensemble Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(invalid("Invalid configuration for ensemble manager"))
                 return False
 
@@ -99,6 +110,8 @@ class EnsembleManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate ensemble manager configuration.
 
         Returns:
@@ -107,6 +120,10 @@ class EnsembleManager:
         """
         try:
             # Validate ensemble manager specific settings
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not any(
                 [self.enable_analyst_ensembles, self.enable_tactician_ensembles],
             ):
@@ -130,13 +147,20 @@ class EnsembleManager:
         """Initialize ensemble components."""
         try:
             # Initialize ensemble creator
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.training.ensemble_creator import EnsembleCreator
 
+import self.ensemble_creator = EnsembleCreator
             self.ensemble_creator = EnsembleCreator(self.config)
             await self.ensemble_creator.initialize()
 
             # Initialize ensemble optimization components
             if self.enable_ensemble_optimization:
+    pass
+    pass
                 self.logger.info("✅ Ensemble optimization components initialized")
 
             self.logger.info("✅ All ensemble components initialized")
@@ -176,15 +200,23 @@ class EnsembleManager:
         """
         try:
             self.logger.info("🎯 Starting ensemble creation...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_creating_ensembles = True
 
             # Validate inputs
             if not self._validate_ensemble_inputs(optimization_results, training_input):
+    pass
+    pass
                 return None
 
             # Create analyst ensembles
             analyst_ensembles = None
             if self.enable_analyst_ensembles:
+    pass
+    pass
                 analyst_ensembles = await self._create_analyst_ensembles(
                     optimization_results,
                     training_input,
@@ -193,6 +225,8 @@ class EnsembleManager:
             # Create tactician ensembles
             tactician_ensembles = None
             if self.enable_tactician_ensembles:
+    pass
+    pass
                 tactician_ensembles = await self._create_tactician_ensembles(
                     optimization_results,
                     training_input,
@@ -200,12 +234,18 @@ class EnsembleManager:
 
             # Optimize ensembles if enabled
             if self.enable_ensemble_optimization:
+    pass
+    pass
                 if analyst_ensembles:
+    pass
+    pass
                     analyst_ensembles = await self._optimize_ensembles(
                         analyst_ensembles,
                         "analyst",
                     )
                 if tactician_ensembles:
+    pass
+    pass
                     tactician_ensembles = await self._optimize_ensembles(
                         tactician_ensembles,
                         "tactician",
@@ -255,17 +295,27 @@ class EnsembleManager:
         """
         try:
             # Validate optimization results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not optimization_results:
+    pass
+    pass
                 self.print(error("Optimization results are empty"))
                 return False
 
             # Validate training input
             if not training_input:
+    pass
+    pass
                 self.print(error("Training input is empty"))
                 return False
 
             # Check for required optimization results
             if not optimization_results.get("optimized_models"):
+    pass
+    pass
                 self.print(error("No optimized models found in results"))
                 return False
 
@@ -300,6 +350,10 @@ class EnsembleManager:
         try:
             self.logger.info("🧠 Creating analyst ensembles...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             analyst_ensembles = {}
 
             # Get optimized analyst models
@@ -309,6 +363,8 @@ class EnsembleManager:
             }
 
             if not analyst_models:
+    pass
+    pass
                 self.print(warning("No analyst models found for ensemble creation"))
                 return None
 
@@ -318,20 +374,28 @@ class EnsembleManager:
                 training_input,
             )
             if multi_timeframe_ensemble:
+    pass
+    pass
                 analyst_ensembles["multi_timeframe"] = multi_timeframe_ensemble
 
             # Create individual timeframe ensembles
             for timeframe in ["1h", "15m", "5m", "1m"]:
+    pass
+    pass
                 timeframe_models = {
                     k: v for k, v in analyst_models.items() if timeframe in k
                 }
                 if timeframe_models:
+    pass
+    pass
                     timeframe_ensemble = await self._create_timeframe_ensemble(
                         timeframe_models,
                         timeframe,
                         training_input,
                     )
                     if timeframe_ensemble:
+    pass
+    pass
                         analyst_ensembles[f"timeframe_{timeframe}"] = timeframe_ensemble
 
             self.logger.info(f"✅ Created {len(analyst_ensembles)} analyst ensembles")
@@ -366,6 +430,10 @@ class EnsembleManager:
         try:
             self.logger.info("🎯 Creating tactician ensembles...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             tactician_ensembles = {}
 
             # Get optimized tactician models
@@ -375,6 +443,8 @@ class EnsembleManager:
             }
 
             if not tactician_models:
+    pass
+    pass
                 self.print(warning("No tactician models found for ensemble creation"))
                 return None
 
@@ -384,6 +454,8 @@ class EnsembleManager:
                 training_input,
             )
             if tactician_ensemble:
+    pass
+    pass
                 tactician_ensembles["single_timeframe"] = tactician_ensemble
 
             self.logger.info(
@@ -420,6 +492,10 @@ class EnsembleManager:
         try:
             self.logger.info("🧠 Creating multi-timeframe analyst ensemble...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # This would implement actual multi-timeframe ensemble creation logic
             # For now, return a placeholder result
             return {
@@ -470,6 +546,10 @@ class EnsembleManager:
         try:
             self.logger.info(f"🧠 Creating {timeframe} timeframe ensemble...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # This would implement actual timeframe ensemble creation logic
             # For now, return a placeholder result
             return {
@@ -518,6 +598,10 @@ class EnsembleManager:
         try:
             self.logger.info("🎯 Creating tactician single ensemble...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # This would implement actual tactician ensemble creation logic
             # For now, return a placeholder result
             return {
@@ -566,15 +650,23 @@ class EnsembleManager:
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensembles...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             optimized_ensembles = {}
 
             for ensemble_name, ensemble in ensembles.items():
+    pass
+    pass
                 optimized_ensemble = await self._optimize_single_ensemble(
                     ensemble,
                     ensemble_name,
                     ensemble_type,
                 )
                 if optimized_ensemble:
+    pass
+    pass
                     optimized_ensembles[ensemble_name] = optimized_ensemble
 
             self.logger.info(
@@ -613,6 +705,10 @@ class EnsembleManager:
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensemble: {ensemble_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # This would implement actual ensemble optimization logic
             # For now, return a placeholder result
             return {
@@ -646,6 +742,10 @@ class EnsembleManager:
         try:
             self.logger.info("📁 Storing ensemble results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Store ensemble results in memory for now
             # In practice, this would store to database or file system
             self.ensemble_results = ensemble_results.copy()
@@ -658,6 +758,8 @@ class EnsembleManager:
             self.print(failed(error_msg))
 
     def get_ensemble_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get current ensemble status.
 
         Returns:
@@ -673,6 +775,8 @@ class EnsembleManager:
         }
 
     def get_ensemble_results(self) -> dict[str, Any]:
+    pass
+    pass
         """Get the latest ensemble results.
 
         Returns:
@@ -690,6 +794,10 @@ class EnsembleManager:
         """Stop the ensemble manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Ensemble Manager...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_creating_ensembles = False
             self.logger.info("✅ Ensemble Manager stopped successfully")
         except Exception as e:
@@ -717,7 +825,13 @@ async def setup_ensemble_manager(
     """
     try:
         manager = EnsembleManager(config or {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if await manager.initialize():
+    pass
+    pass
             return manager
         return None
     except Exception as e:

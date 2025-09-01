@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -21,6 +22,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
+import REQUIRED_MODULES = [
 REQUIRED_MODULES = [
     "pandas",
     "numpy",
@@ -41,20 +43,30 @@ numpy, PipelineStandards.safe_import("numpy", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
 # Initialize fallbacks
 if system_logger is None:
+    pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
+    pass
     comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
@@ -76,6 +88,8 @@ else:
     monitor_feature_engineering, centralized_decorators.monitor_feature_engineering
 
 if enhanced_mlflow is None:
+    pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_report, lambda * args, **kwargs: "fallback_report"
     create_detailed_step_report, lambda * args, **kwargs: {}
@@ -96,6 +110,8 @@ class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("RegimeDataSplittingStep")
         self.standards, pipeline_standards
@@ -106,11 +122,15 @@ class RegimeDataSplittingStep:
         self._validate_environment()
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
+    pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
@@ -127,6 +147,8 @@ class RegimeDataSplittingStep:
         self.logger.info("✅ Regime Data Splitting Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
+    pass
+    pass
         """Log timing information for a step."""
         elapsed, time.time() - start_time
         self.step_timings[step_name] = elapsed
@@ -154,7 +176,13 @@ class RegimeDataSplittingStep:
         try:
         # Load HMM regime data
             regime_data, await self._load_regime_data(symbol, exchange, timeframe, data_dir)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if regime_data is None:
+    pass
+    pass
         return False
 
         # Get unique regime IDs
@@ -165,10 +193,14 @@ class RegimeDataSplittingStep:
 
         # Validate regime count
         if num_regimes < 3:
+    pass
+    pass
         self.logger.error(f"❌ Too few regimes: {num_regimes} (minimum 3 required)")
         return False
 
         if num_regimes > 20:
+    pass
+    pass
         self.logger.warning(f"⚠️ Many regimes detected: {num_regimes} (maximum 20 supported)")
         # Continue but with memory optimization
 
@@ -178,6 +210,8 @@ class RegimeDataSplittingStep:
             )
 
         if success:
+    pass
+    pass
         self._log_step_timing("Regime Data Splitting", step_start)
         self.logger.info(f"✅ Successfully created unified dataset with {num_regimes} regime labels")
 
@@ -204,25 +238,37 @@ class RegimeDataSplittingStep:
         try:
         # Use standardized path construction
             unified_data_path, Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not unified_data_path.exists():
+    pass
+    pass
         self.logger.error(f"❌ Unified data path not found: {unified_data_path}")
         return None
 
         # Load regime clusters using standardized naming
             regime_file, Path(data_dir) / "hmm_regimes" / f"{exchange}_{symbol}_{timeframe}_composite_clusters.parquet"
         if not regime_file.exists():
+    pass
+    pass
         self.logger.error(f"❌ Regime file not found: {regime_file}")
         return None
 
         # Load data
             unified_files, list(unified_data_path.glob("**/*.parquet"))
         if not unified_files:
+    pass
+    pass
         self.logger.error(f"❌ No unified data files found in {unified_data_path}")
         return None
 
         # Load and concatenate unified data
             unified_data = []
         for file_path in sorted(unified_files):
+    pass
+    pass
                 df, pd.read_parquet(file_path)
 
         # Standardize timestamps and validate schema
@@ -266,6 +312,10 @@ class RegimeDataSplittingStep:
         # Ensure data is sorted by timestamp for proper lookback
             data, data.sort_values('timestamp').reset_index(drop = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create training directory
             training_dir, Path(data_dir) / "training"
             training_dir.mkdir(parents = True, exist_ok = True)
@@ -334,13 +384,21 @@ class RegimeDataSplittingStep:
                         "max": float(data['close'].max()) if 'close' in data.columns else None
                     }
                 }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         # Calculate statistics for each regime
         for regime_id in regime_ids:
+    pass
+    pass
                 regime_data, data[data['composite_cluster_id'] == regime_id]
 
         if len(regime_data) > 0:
+    pass
+    pass
                     regime_stats = {
                         "data_points": len(regime_data),
                         "percentage": len(regime_data) / len(data) * 100,
@@ -352,6 +410,8 @@ class RegimeDataSplittingStep:
 
         # Add price statistics if available
         if 'close' in regime_data.columns:
+    pass
+    pass
                         regime_stats["price_stats"] = {
                             "mean": float(regime_data['close'].mean()),
                             "std": float(regime_data['close'].std()),
@@ -391,6 +451,10 @@ class RegimeDataSplittingStep:
                         "Enables regime - aware processing with single dataset"
                     ]
                 }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             metadata_file, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
@@ -441,10 +505,16 @@ async def run_step(
 
     # Use standardized path construction
     if data_dir is None:
+    pass
+    pass
         data_dir, pipeline_standards.build_path("processed_data", exchange, symbol)
 
     try:
         # Initialize step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step, RegimeDataSplittingStep(config or {})
         await step.initialize()
 
@@ -452,6 +522,8 @@ async def run_step(
         success, await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
 
         if success:
+    pass
+    pass
             logger.info("✅ Step 4: Regime Data Splitting completed successfully")
         else:
             logger.error("❌ Step 4: Regime Data Splitting failed")
@@ -463,6 +535,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test():
         test_config = {

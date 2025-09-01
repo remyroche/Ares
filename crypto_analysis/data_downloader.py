@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 class BinanceDataDownloader:
     def __init__(self):
+    pass
+    pass
         self.base_url = "https://api.binance.com/api/v3"
         self.session = requests.Session()
         self.session.headers.update({
@@ -33,6 +35,8 @@ class BinanceDataDownloader:
         })
 
     def get_klines(self, symbol, interval, start_time, end_time, limit=1000):
+    pass
+    pass
         """
         Fetch klines data from Binance API
 
@@ -57,6 +61,10 @@ class BinanceDataDownloader:
 
         try:
             response = self.session.get(url, params=params)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -64,6 +72,8 @@ class BinanceDataDownloader:
             return []
 
     def download_asset_data(self, symbol, start_date, end_date, interval='15m'):
+    pass
+    pass
         """
         Download complete data for a single asset
 
@@ -91,6 +101,8 @@ class BinanceDataDownloader:
             klines = self.get_klines(symbol, interval, current_start, current_end)
 
             if not klines:
+    pass
+    pass
                 logger.warning(f"No data received for {symbol} at {datetime.fromtimestamp(current_start/1000)}")
                 current_start = current_end
                 continue
@@ -103,9 +115,13 @@ class BinanceDataDownloader:
 
             # Progress logging
             if len(all_data) % 10000 == 0:
+    pass
+    pass
                 logger.info(f"Downloaded {len(all_data)} klines for {symbol}")
 
         if not all_data:
+    pass
+    pass
             logger.error(f"No data downloaded for {symbol}")
             return pd.DataFrame()
 
@@ -121,6 +137,8 @@ class BinanceDataDownloader:
                           'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
 
         for col in numeric_columns:
+    pass
+    pass
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         # Convert timestamps
@@ -141,12 +159,16 @@ class BinanceDataDownloader:
 
         # Ensure all numeric columns are float64 for optimal Parquet storage
         for col in ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume']:
+    pass
+    pass
             df[col] = df[col].astype('float64')
 
         logger.info(f"Successfully downloaded {len(df)} klines for {symbol}")
         return df
 
     def download_multiple_assets(self, symbols, start_date, end_date, interval='15m'):
+    pass
+    pass
         """
         Download data for multiple assets
 
@@ -162,9 +184,17 @@ class BinanceDataDownloader:
         all_data = []
 
         for symbol in symbols:
+    pass
+    pass
             try:
                 df = self.download_asset_data(symbol, start_date, end_date, interval)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if not df.empty:
+    pass
+    pass
                     all_data.append(df)
                 else:
                     logger.warning(f"Skipping {symbol} due to empty data")
@@ -173,6 +203,8 @@ class BinanceDataDownloader:
                 continue
 
         if not all_data:
+    pass
+    pass
             logger.error("No data downloaded for any asset")
             return pd.DataFrame()
 
@@ -184,6 +216,8 @@ class BinanceDataDownloader:
         return combined_df
 
 def verify_parquet_file(parquet_file, original_df):
+    pass
+    pass
     """
     Verify that the Parquet file was created correctly and contains the expected data
 
@@ -193,14 +227,22 @@ def verify_parquet_file(parquet_file, original_df):
     """
     try:
         # Read the Parquet file back
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         loaded_df = pd.read_parquet(parquet_file)
 
         # Basic verification
         if len(loaded_df) != len(original_df):
+    pass
+    pass
             logger.error(f"Data length mismatch: Original {len(original_df)}, Loaded {len(loaded_df)}")
             return False
 
         if loaded_df.columns.tolist() != original_df.columns.tolist():
+    pass
+    pass
             logger.error(f"Column mismatch: Original {original_df.columns.tolist()}, Loaded {loaded_df.columns.tolist()}")
             return False
 
@@ -209,11 +251,17 @@ def verify_parquet_file(parquet_file, original_df):
         sample_indices = original_df.sample(n=sample_size).index
 
         for idx in sample_indices:
+    pass
+    pass
             if idx in loaded_df.index:
+    pass
+    pass
                 original_row = original_df.loc[idx]
                 loaded_row = loaded_df.loc[idx]
 
                 if not original_row.equals(loaded_row):
+    pass
+    pass
                     logger.warning(f"Data mismatch at index {idx}")
                     return False
 
@@ -232,6 +280,8 @@ def verify_parquet_file(parquet_file, original_df):
         return False
 
 def main():
+    pass
+    pass
     """Main function to download cryptocurrency data"""
 
     # Define assets to download
@@ -254,6 +304,8 @@ def main():
     df = downloader.download_multiple_assets(assets, start_date, end_date, interval='15m')
 
     if df.empty:
+    pass
+    pass
         logger.error("No data downloaded. Exiting.")
         return
 
@@ -266,6 +318,10 @@ def main():
 
     try:
         # Save with optimal Parquet settings
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df.to_parquet(
             output_file,
             compression='snappy',
@@ -287,7 +343,7 @@ def main():
         return
 
     # Print summary statistics
-    print("\n" + "="*50)
+    print("\\\n" + "="*50)
     print("DOWNLOAD SUMMARY")
     print("="*50)
     print(f"Total klines: {len(df):,}")
@@ -296,12 +352,16 @@ def main():
     print(f"File size: {output_file.stat().st_size / (1024*1024):.2f} MB")
 
     # Per-asset summary
-    print("\nPer-asset summary:")
+    print("\\\nPer-asset summary:")
     print("-" * 30)
     for symbol in sorted(df['symbol'].unique()):
+    pass
+    pass
         asset_data = df[df['symbol'] == symbol]
         print(f"{symbol:10} | {len(asset_data):8,} klines | "
               f"Volume: {asset_data['volume'].sum():12.0f}")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

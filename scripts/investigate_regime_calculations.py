@@ -17,6 +17,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 
+import warnings.filterwarnings
 warnings.filterwarnings("ignore")
 
 # Add src to path
@@ -27,9 +28,13 @@ class RegimeCalculationInvestigator:
     """Investigates regime calculation issues causing zero variance."""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("RegimeCalculationInvestigator")
 
     def investigate_regime_calculations(self, data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Investigate regime calculation issues."""
         self.logger.info("Investigating regime calculation issues...")
 
@@ -42,7 +47,11 @@ class RegimeCalculationInvestigator:
         # Check regime features specifically
         regime_features = ["trend_regime", "volatility_regime", "volume_regime"]
         for feature in regime_features:
+    pass
+    pass
             if feature in data.columns:
+    pass
+    pass
                 results["regime_features"][feature] = self._analyze_regime_feature(
                     data[feature], feature
                 )
@@ -61,6 +70,8 @@ class RegimeCalculationInvestigator:
         return results
 
     def _analyze_regime_feature(self, series: pd.Series, feature_name: str) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze a specific regime feature."""
         series = pd.to_numeric(series, errors="coerce")
         analysis: Dict[str, Any] = {
@@ -76,24 +87,34 @@ class RegimeCalculationInvestigator:
 
         # Check for issues
         if analysis["unique_values"] <= 1:
+    pass
+    pass
             analysis["issues"].append("Only one unique value - zero variance")
 
         if analysis["unique_values"] < 3:
+    pass
+    pass
             analysis["issues"].append(
                 f"Low variability: only {analysis['unique_values']} unique values",
             )
 
         if analysis["zero_count"] > len(series) * 0.8:
+    pass
+    pass
             analysis["issues"].append(
                 f"Too many zeros: {analysis['zero_count']} out of {len(series)}",
             )
 
         if analysis["nan_count"] > 0:
+    pass
+    pass
             analysis["issues"].append(f"Has {analysis['nan_count']} NaN values")
 
         return analysis
 
     def _identify_calculation_issues(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Identify specific calculation issues."""
         issues: List[Dict[str, Any]] = []
 
@@ -101,6 +122,8 @@ class RegimeCalculationInvestigator:
         required_columns = ["close", "volume"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
+    pass
+    pass
             issues.append(
                 {
                     "type": "missing_raw_data",
@@ -111,8 +134,12 @@ class RegimeCalculationInvestigator:
 
         # Trend
         if "trend_regime" in data.columns:
+    pass
+    pass
             trend_analysis = self._analyze_trend_calculation(data)
             if trend_analysis["issues"]:
+    pass
+    pass
                 issues.append(
                     {
                         "type": "trend_regime_issue",
@@ -123,8 +150,12 @@ class RegimeCalculationInvestigator:
 
         # Volatility
         if "volatility_regime" in data.columns:
+    pass
+    pass
             vol_analysis = self._analyze_volatility_calculation(data)
             if vol_analysis["issues"]:
+    pass
+    pass
                 issues.append(
                     {
                         "type": "volatility_regime_issue",
@@ -135,8 +166,12 @@ class RegimeCalculationInvestigator:
 
         # Volume
         if "volume_regime" in data.columns:
+    pass
+    pass
             volume_analysis = self._analyze_volume_calculation(data)
             if volume_analysis["issues"]:
+    pass
+    pass
                 issues.append(
                     {
                         "type": "volume_regime_issue",
@@ -148,10 +183,14 @@ class RegimeCalculationInvestigator:
         return issues
 
     def _analyze_trend_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze trend regime calculation."""
         analysis: Dict[str, Any] = {"issues": []}
 
         if "close" not in data.columns:
+    pass
+    pass
             analysis["issues"].append("Missing 'close' column for trend calculation")
             return analysis
 
@@ -164,14 +203,20 @@ class RegimeCalculationInvestigator:
 
         # Checks
         if trend_strength.isna().all():
+    pass
+    pass
             analysis["issues"].append("Trend strength is all NaN")
 
         if trend_strength.nunique() < 5:
+    pass
+    pass
             analysis["issues"].append(
                 f"Trend strength has only {int(trend_strength.nunique())} unique values",
             )
 
         if float(trend_strength.std()) == 0.0:
+    pass
+    pass
             analysis["issues"].append("Trend strength has zero variance")
 
         analysis["trend_strength_stats"] = {
@@ -185,10 +230,14 @@ class RegimeCalculationInvestigator:
         return analysis
 
     def _analyze_volatility_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze volatility regime calculation."""
         analysis: Dict[str, Any] = {"issues": []}
 
         if "close" not in data.columns:
+    pass
+    pass
             analysis["issues"].append(
                 "Missing 'close' column for volatility calculation",
             )
@@ -201,14 +250,20 @@ class RegimeCalculationInvestigator:
 
         # Checks
         if vol.isna().all():
+    pass
+    pass
             analysis["issues"].append("Volatility is all NaN")
 
         if vol.nunique() < 5:
+    pass
+    pass
             analysis["issues"].append(
                 f"Volatility has only {int(vol.nunique())} unique values",
             )
 
         if float(vol.std()) == 0.0:
+    pass
+    pass
             analysis["issues"].append("Volatility has zero variance")
 
         analysis["volatility_stats"] = {
@@ -222,10 +277,14 @@ class RegimeCalculationInvestigator:
         return analysis
 
     def _analyze_volume_calculation(self, data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze volume regime calculation."""
         analysis: Dict[str, Any] = {"issues": []}
 
         if "volume" not in data.columns:
+    pass
+    pass
             analysis["issues"].append("Missing 'volume' column for volume calculation")
             return analysis
 
@@ -238,14 +297,20 @@ class RegimeCalculationInvestigator:
 
         # Checks
         if volume_ratio.isna().all():
+    pass
+    pass
             analysis["issues"].append("Volume ratio is all NaN")
 
         if volume_ratio.nunique() < 5:
+    pass
+    pass
             analysis["issues"].append(
                 f"Volume ratio has only {int(volume_ratio.nunique())} unique values",
             )
 
         if float(volume_ratio.std()) == 0.0:
+    pass
+    pass
             analysis["issues"].append("Volume ratio has zero variance")
 
         analysis["volume_ratio_stats"] = {
@@ -259,12 +324,18 @@ class RegimeCalculationInvestigator:
         return analysis
 
     def _generate_recommendations(self, results: Dict[str, Any]) -> List[str]:
+    pass
+    pass
         """Generate recommendations based on findings."""
         recommendations: List[str] = []
 
         # Analyze regime features
         for feature_name, analysis in results.get("regime_features", {}).items():
+    pass
+    pass
             if analysis.get("issues"):
+    pass
+    pass
                 recommendations.append(
                     f"Fix {feature_name}: {', '.join(analysis['issues'])}",
                 )
@@ -284,6 +355,8 @@ class RegimeCalculationInvestigator:
         return recommendations
 
     def generate_fixed_regime_calculations(self) -> Dict[str, str]:
+    pass
+    pass
         """Generate fixed regime calculation code as reference (strings)."""
         return {
             "trend_regime": (
@@ -292,6 +365,8 @@ import numpy as np
 import pandas as pd
 
 def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
     """Calculate trend regime with improved logic."""
     close = pd.to_numeric(price_data["close"], errors="coerce")
     sma_short = close.rolling(window=10, min_periods=10).mean()
@@ -299,11 +374,19 @@ def calculate_trend_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
     trend_strength = (sma_short - sma_long).fillna(0)
 
     if trend_strength.isna().all() or float(trend_strength.std()) == 0.0:
+    pass
+    pass
         return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
 
     try:
         trend_bins = pd.qcut(trend_strength, q=5, labels=False, duplicates="drop")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if int(pd.Series(trend_bins).nunique()) < 3:
+    pass
+    pass
             trend_bins = pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
     except Exception:
         trend_bins = pd.cut(trend_strength, bins=5, labels=False, include_lowest=True)
@@ -317,16 +400,26 @@ import numpy as np
 import pandas as pd
 
 def calculate_volatility_regime_fixed(price_data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
     """Calculate volatility regime with improved logic."""
     close = pd.to_numeric(price_data["close"], errors="coerce")
     vol = close.pct_change().rolling(window=20, min_periods=20).std().fillna(0)
 
     if vol.isna().all() or float(vol.std()) == 0.0:
+    pass
+    pass
         return pd.Series(np.zeros(len(close), dtype=int), index=price_data.index)
 
     try:
         vol_bins = pd.qcut(vol, q=5, labels=False, duplicates="drop")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if int(pd.Series(vol_bins).nunique()) < 3:
+    pass
+    pass
             vol_bins = pd.cut(vol, bins=5, labels=False, include_lowest=True)
     except Exception:
         vol_bins = pd.cut(vol, bins=5, labels=False, include_lowest=True)
@@ -340,6 +433,8 @@ import numpy as np
 import pandas as pd
 
 def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
     """Calculate volume regime with improved logic."""
     volume = pd.to_numeric(volume_data["volume"], errors="coerce")
     vol_ma = volume.rolling(window=20, min_periods=20).mean()
@@ -347,11 +442,19 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         volume_ratio = (volume / vol_ma.replace(0, np.nan)).fillna(0)
 
     if volume_ratio.isna().all() or float(volume_ratio.std()) == 0.0:
+    pass
+    pass
         return pd.Series(np.zeros(len(volume), dtype=int), index=volume_data.index)
 
     try:
         volreg_bins = pd.qcut(volume_ratio, q=5, labels=False, duplicates="drop")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if int(pd.Series(volreg_bins).nunique()) < 3:
+    pass
+    pass
             volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
     except Exception:
         volreg_bins = pd.cut(volume_ratio, bins=5, labels=False, include_lowest=True)
@@ -362,6 +465,8 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         }
 
     def generate_report(self, results: Dict[str, Any]) -> str:
+    pass
+    pass
         """Generate a comprehensive investigation report."""
         report: List[str] = []
         report.append("=" * 80)
@@ -373,11 +478,15 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         report.append("Regime Feature Analysis:")
         report.append("-" * 40)
         for feature_name, analysis in results.get("regime_features", {}).items():
+    pass
+    pass
             report.append(f"{feature_name.upper()}:")
             report.append(f"   - Unique values: {analysis['unique_values']}")
             report.append(f"   - Variance: {analysis['variance']:.6f}")
             report.append(f"   - Value counts: {analysis['value_counts']}")
             if analysis.get("issues"):
+    pass
+    pass
                 report.append(f"   - Issues: {', '.join(analysis['issues'])}")
             else:
                 report.append("   - No issues detected")
@@ -385,23 +494,35 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
 
         # Calculation issues
         if results.get("calculation_issues"):
+    pass
+    pass
             report.append("Calculation Issues:")
             report.append("-" * 40)
             for issue in results["calculation_issues"]:
+    pass
+    pass
                 report.append(f"- {issue['type']}: {issue['description']}")
                 if "details" in issue:
+    pass
+    pass
                     details = issue["details"]
                     if "trend_strength_stats" in details:
+    pass
+    pass
                         stats = details["trend_strength_stats"]
                         report.append(
                             f"   - Trend strength: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
                         )
                     if "volatility_stats" in details:
+    pass
+    pass
                         stats = details["volatility_stats"]
                         report.append(
                             f"   - Volatility: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
                         )
                     if "volume_ratio_stats" in details:
+    pass
+    pass
                         stats = details["volume_ratio_stats"]
                         report.append(
                             f"   - Volume ratio: mean={stats['mean']:.6f}, std={stats['std']:.6f}, unique={stats['unique_count']}"
@@ -410,9 +531,13 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
 
         # Recommendations
         if results.get("recommendations"):
+    pass
+    pass
             report.append("Recommendations:")
             report.append("-" * 40)
             for i, rec in enumerate(results["recommendations"], 1):
+    pass
+    pass
                 report.append(f"{i}. {rec}")
             report.append("")
 
@@ -421,20 +546,28 @@ def calculate_volume_regime_fixed(volume_data: pd.DataFrame) -> pd.Series:
         report.append("-" * 40)
         fixed_code = self.generate_fixed_regime_calculations()
         for regime_type, code in fixed_code.items():
+    pass
+    pass
             report.append(f"# {regime_type.upper()} FIX:")
             report.append(code)
             report.append("")
 
-        return "\n".join(report)
+        return "\\\n".join(report)
 
 
 @handle_errors(default_return=None, context="investigate_regime_main")
 def main() -> None:
+    pass
+    pass
     """Main investigation function."""
     investigator = RegimeCalculationInvestigator()
 
     try:
         # Try to find feature data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         possible_paths = [
             "data_cache/features_15m.parquet",
             "data_cache/features_15m.csv",
@@ -444,11 +577,17 @@ def main() -> None:
 
         data_path: str | None = None
         for path in possible_paths:
+    pass
+    pass
             if Path(path).exists():
+    pass
+    pass
                 data_path = path
                 break
 
         if data_path is None:
+    pass
+    pass
             print("No feature data found. Creating sample analysis...")
 
             # Create sample data for demonstration
@@ -501,4 +640,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

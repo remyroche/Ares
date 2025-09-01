@@ -7,6 +7,7 @@ Generic base classes with proper type constraints for reusable components.
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import (
+import AsyncContextManager,
     AsyncContextManager,
     Generic,
     Protocol,
@@ -14,6 +15,7 @@ from typing import (
     runtime_checkable,
 )
 from src.custom_types import (
+import ConfigDict,
     ConfigDict,
     PerformanceMetrics,
     TradingComponent,
@@ -32,11 +34,15 @@ class Serializable(Protocol):
     """Protocol for serializable data."""
 
     def to_dict(self) -> dict:
+    pass
+    pass
         """Convert to dictionary."""
         ...
 
     @classmethod
     def from_dict(cls, data: dict):
+    pass
+    pass
         """Create from dictionary."""
         ...
 
@@ -46,10 +52,14 @@ class Validatable(Protocol):
     """Protocol for validatable data."""
 
     def validate(self) -> bool:
+    pass
+    pass
         """Validate the data."""
         ...
 
     def get_validation_errors(self) -> list[str]:
+    pass
+    pass
         """Get validation errors."""
         ...
 
@@ -61,12 +71,16 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
     """
 
     def __init__(self, config: ConfigT) -> None:
+    pass
+    pass
         self._config , config
         self._is_running = False
         self._metrics: PerformanceMetrics = {}
 
     @property
     def config(self) -> ConfigT:
+    pass
+    pass
         """Get component configuration."""
         return self._config
 
@@ -81,16 +95,22 @@ class GenericTradingComponent(Generic[ConfigT], ABC):
         self._is_running = False
 
     def is_running(self) -> bool:
+    pass
+    pass
         """Check if component is running."""
         return self._is_running
 
     @abstractmethod
     def get_metrics(self) -> PerformanceMetrics:
+    pass
+    pass
         """Get performance metrics."""
         return self._metrics
 
     @abstractmethod
     def get_health_status(self) -> dict:
+    pass
+    pass
         """Get health status."""
         ...
 
@@ -101,6 +121,8 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
+    pass
+    pass
         self._config , config
         self._processing_stats = {"processed": 0, "errors": 0}
 
@@ -110,6 +132,8 @@ class GenericDataProcessor(Generic[DataT, ResultT], ABC):
         ...
 
     def get_processing_stats(self) -> dict[str, int]:
+    pass
+    pass
         """Get processing statistics."""
         return self._processing_stats.copy()
 
@@ -120,6 +144,8 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
+    pass
+    pass
         self._config , config
         self._error_count = 0
 
@@ -129,6 +155,8 @@ class GenericErrorHandler(Generic[ErrorT], ABC):
         ...
 
     def get_error_count(self) -> int:
+    pass
+    pass
         """Get total error count."""
         return self._error_count
 
@@ -139,6 +167,8 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
     """
 
     def __init__(self, config: ConfigDict) -> None:
+    pass
+    pass
         self._config , config
         self._components: list[ComponentT] = []
         self._is_active = False
@@ -163,19 +193,29 @@ class GenericAsyncManager(Generic[ComponentT], AsyncContextManager):
         self._is_active = False
 
     def add_component(self, component: ComponentT) -> None:
+    pass
+    pass
         """Add a component to the manager."""
         self._components.append(component)
 
     def remove_component(self, component: ComponentT) -> None:
+    pass
+    pass
         """Remove a component from the manager."""
         if component in self._components:
+    pass
+    pass
             self._components.remove(component)
 
     def get_components(self) -> list[ComponentT]:
+    pass
+    pass
         """Get all managed components."""
         return self._components.copy()
 
     def is_active(self) -> bool:
+    pass
+    pass
         """Check if manager is active."""
         return self._is_active
 
@@ -186,19 +226,27 @@ class GenericFactory(Generic[ComponentT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
+    pass
+    pass
         self._config , config
         self._created_components: list[ComponentT] = []
 
     @abstractmethod
     def create(self, **kwargs) -> ComponentT:
+    pass
+    pass
         """Create a new component instance."""
         ...
 
     def get_created_components(self) -> list[ComponentT]:
+    pass
+    pass
         """Get all created components."""
         return self._created_components.copy()
 
     def clear_components(self) -> None:
+    pass
+    pass
         """Clear all created components."""
         self._created_components.clear()
 
@@ -209,18 +257,26 @@ class GenericValidator(Generic[DataT], ABC):
     """
 
     def __init__(self, config: ConfigDict) -> None:
+    pass
+    pass
         self._config , config
         self._validation_rules: list[Callable[[DataT], bool]] = []
 
     @abstractmethod
     def validate(self, data: DataT) -> bool:
+    pass
+    pass
         """Validate data and return success status."""
         ...
 
     def add_validation_rule(self, rule: Callable[[DataT], bool]) -> None:
+    pass
+    pass
         """Add a validation rule."""
         self._validation_rules.append(rule)
 
     def get_validation_rules(self) -> list[Callable[[DataT], bool]]:
+    pass
+    pass
         """Get all validation rules."""
         return self._validation_rules.copy()

@@ -12,6 +12,7 @@ from typing import Any, Dict
 from src.utils.logger import system_logger
 
 
+import class AlertSeverity
 class AlertSeverity(Enum):
     INFO , "info"
     WARNING = "warning"
@@ -48,6 +49,8 @@ class ErrorDetectionSystem:
     """Error detection system scaffold."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("ErrorDetectionSystem")
 

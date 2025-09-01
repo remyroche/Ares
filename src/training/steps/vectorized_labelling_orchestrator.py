@@ -29,11 +29,18 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
 # -----------------------------------------------------------------------------
 # Warnings logging setup
 # -----------------------------------------------------------------------------
+import warnings.simplefilter
 warnings.simplefilter("default")
 _warning_logger, logging.getLogger("Ares.Warnings")
 if not _warning_logger.handlers:
+    pass
+    pass
     try:
         fh, logging.FileHandler("log / python_warnings.log")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         fh.setLevel(logging.WARNING)
         fmt, logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         fh.setFormatter(fmt)
@@ -64,12 +71,20 @@ class VectorizedLabellingOrchestrator:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("VectorizedLabellingOrchestrator")
         self.feature_error_logger, logging.getLogger("Ares.FeatureError")
         if not self.feature_error_logger.handlers:
+    pass
+    pass
         try:
                 fh, logging.FileHandler("log / feature_errors.log")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 fh.setLevel(logging.INFO)
                 fmt, logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
                 fh.setFormatter(fmt)
@@ -169,20 +184,38 @@ class VectorizedLabellingOrchestrator:
         self._context_columns: list[str] = []
 
     def _log_feature_sample(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
+    pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ts, datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage, stage.replace(" ", "_")
             fname, f"log / features_samples/{ts}_{step_no}_{safe_stage}.log"
         # Merge raw / returns for visibility when available
             sample, df.copy()
         if self._debug_raw_ohlcv is not None:
+    pass
+    pass
         for c in ["open", "high", "low", "close", "volume"]:
+    pass
+    pass
         if c in self._debug_raw_ohlcv.columns and c not in sample.columns:
+    pass
+    pass
                         sample[c] = self._debug_raw_ohlcv[c]
         if self._debug_price_returns is not None:
+    pass
+    pass
         for c in self._debug_price_returns.columns:
+    pass
+    pass
         if c not in sample.columns:
+    pass
+    pass
                         sample[c] = self._debug_price_returns[c]
         # Reorder: raw, returns, then features
             cols_raw = [c for c in ["open", "high", "low", "close", "volume"] if c in sample.columns]
@@ -190,20 +223,28 @@ class VectorizedLabellingOrchestrator:
             other = [c for c in sample.columns if c not in cols_raw + cols_ret]
             sample, sample[cols_raw + cols_ret + other]
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Shape: {sample.shape}\n")
+                f.write(f"Stage: {stage} | Step: {step_no} | Shape: {sample.shape}\\\n")
                 f.write(sample.head(50).to_string())
         self.logger.info(f"Feature sample written: {fname}")
         except Exception as e:
         self.logger.warning(f"Failed to write feature sample for {stage}: {e}")
 
     def _log_feature_errors(self, stage: str, df: pd.DataFrame) -> None:
+    pass
+    pass
         try:
             numeric, df.select_dtypes(include=[np.number])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             nan_counts, numeric.isna().sum()
             inf_counts, np.isinf(numeric).sum()
             any_nan, int(nan_counts.sum())
             any_inf, int(inf_counts.sum())
         if any_nan or any_inf:
+    pass
+    pass
         self.feature_error_logger.info(
                     f"Stage={stage} | NaN_total={any_nan} | Inf_total={any_inf} | "
                     f"NaN_cols={nan_counts[nan_counts>0].to_dict()} | Inf_cols={inf_counts[inf_counts>0].to_dict()}"
@@ -221,8 +262,13 @@ class VectorizedLabellingOrchestrator:
         try:
         self.logger.info("🚀 Initializing vectorized labeling orchestrator...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Initialize triple barrier labeler using the proper implementation
             from src.training.steps.step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (  # noqa: E501
+import OptimizedTripleBarrierLabeling,
                 OptimizedTripleBarrierLabeling,
             )
 
@@ -242,6 +288,12 @@ class VectorizedLabellingOrchestrator:
         # Initialize advanced feature engineer with error handling
         try:
                 from src.training.steps.vectorized_advanced_feature_engineering import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import VectorizedAdvancedFeatureEngineering,
                     VectorizedAdvancedFeatureEngineering,
                 )
 
@@ -258,6 +310,12 @@ class VectorizedLabellingOrchestrator:
         # Initialize autoencoder generator with error handling
         try:
                 from src.analyst.autoencoder_feature_generator import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import AutoencoderFeatureGenerator,
                     AutoencoderFeatureGenerator,
                 )
 
@@ -287,6 +345,7 @@ class VectorizedLabellingOrchestrator:
             )
         # Set basic components even if advanced ones fail
             from src.training.steps.step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (  # noqa: E501
+import OptimizedTripleBarrierLabeling,
                 OptimizedTripleBarrierLabeling,
             )
 
@@ -325,6 +384,12 @@ class VectorizedLabellingOrchestrator:
         """
         try:
         if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         self.logger.error("Vectorized labeling orchestrator not initialized")
         return {}
 
@@ -336,14 +401,24 @@ class VectorizedLabellingOrchestrator:
             baseline_cols: set[str] = set(price_data.columns)
         try:
         if volume_data is not None:
+    pass
+    except Exception as e:
+        pass
+    pass
                     baseline_cols |= set(getattr(volume_data, "columns", []))
+    except Exception as e:
+        pass
         if order_flow_data is not None:
+    pass
+    pass
                     baseline_cols |= set(getattr(order_flow_data, "columns", []))
         except Exception:
                 pass
 
         # 1. Stationary checks
         if self.enable_stationary_checks and self.stationarity_checker is not None:
+    pass
+    pass
         self.logger.info("📊 Performing stationary checks...")
                 stationary_data, await self.stationarity_checker.check_and_transform_stationarity(  # noqa: E501
                     price_data,
@@ -360,18 +435,30 @@ class VectorizedLabellingOrchestrator:
             selected_volume_col, self._choose_volume_context_column(volume_data)
             context_cols: list[str] = []
         if self.keep_close_returns and "close_returns" in price_data.columns:
+    pass
+    pass
                 context_cols.append("close_returns")
         if selected_volume_col in volume_data.columns:
+    pass
+    pass
                 context_cols.append(selected_volume_col)
         self._context_columns, context_cols
 
         # Capture raw and returns for logging
         try:
         self._debug_raw_ohlcv, price_data[["open", "high", "low", "close", "volume"]].copy()  # noqa: E501
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
         self._debug_raw_ohlcv, None
         try:
                 ret_cols = [c for c in price_data.columns if c.endswith("_returns")]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self._debug_price_returns, price_data[ret_cols].copy() if ret_cols else None
         except Exception:
         self._debug_price_returns, None
@@ -388,6 +475,8 @@ class VectorizedLabellingOrchestrator:
             )
 
         if self.advanced_feature_engineer is not None:
+    pass
+    pass
         if (
                     not hasattr(self.advanced_feature_engineer, "is_initialized")
                     or not getattr(self.advanced_feature_engineer, "is_initialized")
@@ -397,6 +486,10 @@ class VectorizedLabellingOrchestrator:
                     )
         try:
         await self.advanced_feature_engineer.initialize()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.exception(
                             f"Failed to initialize advanced feature engineer: {e}",
@@ -414,6 +507,8 @@ class VectorizedLabellingOrchestrator:
                     f"🔧 Generated {len(advanced_features)} advanced features",
                 )
         if len(advanced_features) < 10:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Very few features generated: {list(advanced_features.keys())}",
                     )
@@ -428,6 +523,12 @@ class VectorizedLabellingOrchestrator:
             labeled_data, None
         try:
         if self.auto_recalculate_hmm_barriers and self.hmm_barrier_regime_column in price_data.columns:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         self.logger.info(
                         f"🔁 Auto - recalculating HMM regime barriers using column '{self.hmm_barrier_regime_column}'..."
                     )
@@ -451,6 +552,8 @@ class VectorizedLabellingOrchestrator:
                     )
                 else:
         if self.auto_recalculate_hmm_barriers:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ auto_recalculate_hmm_barriers enabled but regime column '{self.hmm_barrier_regime_column}' not found; falling back to default labeling."
                         )
@@ -482,6 +585,8 @@ class VectorizedLabellingOrchestrator:
 
         # 5. Feature selection
         if self.enable_feature_selection and self.feature_selector is not None:
+    pass
+    pass
         self.logger.info("🎯 Performing feature selection...")
                 context_cols, self._get_present_context_columns(combined_data)
                 selection_input, combined_data.drop(
@@ -492,6 +597,8 @@ class VectorizedLabellingOrchestrator:
                     labeled_data["label"] if "label" in labeled_data.columns else None,
                 )
         if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
+    pass
+    pass
                     preserved, combined_data[[c for c in context_cols if c in combined_data.columns]].copy()  # noqa: E501
         if (
                         "label" in combined_data.columns
@@ -513,6 +620,8 @@ class VectorizedLabellingOrchestrator:
 
         # 6. Data normalization
         if self.enable_data_normalization and self.data_normalizer is not None:
+    pass
+    pass
         self.logger.info("📏 Starting data normalization...")
         self.logger.info(
                     f"📊 Pre - normalization data shape: {combined_data.shape}",
@@ -539,6 +648,10 @@ class VectorizedLabellingOrchestrator:
         try:
         self._run_mutual_information_analysis(combined_data)
                 mi_analysis_time, time.time() - t0_mi_analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(
                     f"✅ Mutual information analysis completed in {mi_analysis_time:.2f}s",
                 )
@@ -553,8 +666,12 @@ class VectorizedLabellingOrchestrator:
             t0_autoencoder, time.time()
 
         if self.autoencoder_generator is not None:
+    pass
+    pass
                 autoencoder_input_data, combined_data.copy()
         if "label" in autoencoder_input_data.columns:
+    pass
+    pass
                     autoencoder_input_data, autoencoder_input_data.drop(columns=["label"])
         self.logger.info(
                         "🗑️ Removed 'label' column from autoencoder input to prevent data leakage",
@@ -578,6 +695,8 @@ class VectorizedLabellingOrchestrator:
                 )
 
         if isinstance(autoencoder_features, pd.DataFrame):
+    pass
+    pass
         self.logger.info(
                         f"📊 Autoencoder output shape: {autoencoder_features.shape}",
                     )
@@ -595,6 +714,10 @@ class VectorizedLabellingOrchestrator:
         try:
                 ae_df = (
                     autoencoder_features
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if isinstance(autoencoder_features, pd.DataFrame)
                     else combined_data
                 )
@@ -634,8 +757,14 @@ class VectorizedLabellingOrchestrator:
             context_cols, self._get_present_context_columns(final_data)
         self.logger.info(f"📊 Context columns found: {context_cols}")
         for c in context_cols:
+    pass
+    pass
         if c not in final_data.columns and c in combined_data.columns:
+    pass
+    pass
         if c not in {"open", "high", "low", "close", "volume"}:
+    pass
+    pass
                         final_data[c] = combined_data[c]
         self.logger.info(f"📊 Added context column: {c}")
                     else:
@@ -659,9 +788,15 @@ class VectorizedLabellingOrchestrator:
                     "max_price",
                     "funding_rate",
                     "volume_ratio",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 }
                 to_drop = [c for c in final_data.columns if c in baseline_raw and c != "label"]
         if to_drop:
+    pass
+    pass
         self.logger.warning(
                         f"🚨 Removing baseline / raw columns at final stage: {to_drop[:20]}"
                         + (" ..." if len(to_drop) > 20 else ""),
@@ -683,6 +818,10 @@ class VectorizedLabellingOrchestrator:
         self._log_feature_errors("FinalData", final_data)
         try:
         self._log_dataframe_columns("FinalData", final_data, "04_07")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(f"⚠️ Failed to log dataframe columns: {e}")
 
@@ -690,8 +829,14 @@ class VectorizedLabellingOrchestrator:
         try:
                 drop_baseline = [
                     c for c in final_data.columns if c in baseline_cols and c != "label"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 ]
         if drop_baseline:
+    pass
+    pass
         self.logger.warning(
                         f"🚨 Removing baseline / raw columns carried into features: {drop_baseline[:20]}"
                         + (" ..." if len(drop_baseline) > 20 else ""),
@@ -702,11 +847,15 @@ class VectorizedLabellingOrchestrator:
 
         # 9. Memory optimization
         if self.enable_memory_efficient_types:
+    pass
+    pass
         self.logger.info("💾 Optimizing memory usage...")
                 final_data, self._optimize_memory_usage_vectorized(final_data)
 
         # 10. Save data
         if self.enable_parquet_saving:
+    pass
+    pass
         self.logger.info("💾 Saving data as Parquet...")
         self._save_data_as_parquet(final_data)
 
@@ -717,6 +866,10 @@ class VectorizedLabellingOrchestrator:
         # Return with metadata
         try:
                 ctx_cols, self._get_present_context_columns(final_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 context_stats = {c: int(final_data[c].nunique()) for c in ctx_cols if c in final_data.columns}  # noqa: E501
         except Exception:
                 context_stats = {}
@@ -742,6 +895,10 @@ class VectorizedLabellingOrchestrator:
         except Exception as e:
         try:
         self.logger.exception(f"Error in vectorized labeling orchestration: {e}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         finally:
         # Ensure we always return a consistent structure
         return {}
@@ -756,6 +913,10 @@ class VectorizedLabellingOrchestrator:
         # Ensure OHLCV data is present first
             labeled_data, self._ensure_ohlcv_data(labeled_data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Remove metadata columns first
             labeled_data, self._remove_metadata_columns(labeled_data)
 
@@ -765,6 +926,10 @@ class VectorizedLabellingOrchestrator:
         # Attach context columns from stationarity stage if missing
         try:
                 _, self._get_present_context_columns(labeled_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if (
         self.keep_close_returns
                     and "close_returns" in (self._debug_price_returns.columns if isinstance(self._debug_price_returns, pd.DataFrame) else [])  # noqa: E501
@@ -776,6 +941,8 @@ class VectorizedLabellingOrchestrator:
 
         # If no advanced features, return labeled data as is
         if not advanced_features:
+    pass
+    pass
         return labeled_data
 
         # Build a features DataFrame aligned to labeled_data index
@@ -784,52 +951,106 @@ class VectorizedLabellingOrchestrator:
             features_df, pd.DataFrame(index = target_index)
 
             def _as_1d_array(value: Any) -> np.ndarray | None:
+    pass
+    pass
         if isinstance(value, pd.Series):
+    pass
+    pass
         return value.values.reshape(-1)
         if isinstance(value, np.ndarray):
+    pass
+    pass
         if value.ndim == 1:
+    pass
+    pass
         return value
         if value.ndim == 2:
+    pass
+    pass
         if value.shape[0] == 1 or value.shape[1] == 1:
+    pass
+    pass
         return value.reshape(-1)
         return value[:, 0] if value.shape[1] > 0 else None
         if value.ndim > 2:
+    pass
+    pass
         try:
         return value.reshape(-1)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
         return value.reshape(value.shape[0], -1)[:, 0] if value.shape[0] > 0 else None  # noqa: E501
         if isinstance(value, list):
+    pass
+    pass
         try:
                         arr, np.asarray(value)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if arr.ndim == 1:
+    pass
+    pass
         return arr
         if arr.ndim == 2:
+    pass
+    pass
         if arr.shape[0] == 1 or arr.shape[1] == 1:
+    pass
+    pass
         return arr.reshape(-1)
         return arr[:, 0] if arr.shape[1] > 0 else None
         if arr.ndim > 2:
+    pass
+    pass
         return arr.reshape(-1)
         return None
         except Exception:
         return None
         if isinstance(value, (int, float)):
+    pass
+    pass
         try:
         if np.isnan(value) or np.isinf(value):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return None
         except Exception:
                         pass
         # Skip numeric scalars entirely to avoid constant / leaky columns.
         return None
         if isinstance(value, (str, bool)):
+    pass
+    pass
         return None
         try:
         if hasattr(value, "__len__") and len(value) > 1:
+    pass
+    except Exception as e:
+        pass
+    pass
                         arr2, np.asarray(value)
+    except Exception as e:
+        pass
         if arr2.ndim == 1:
+    pass
+    pass
         return arr2
         if arr2.ndim == 2:
+    pass
+    pass
         return arr2[:, 0] if arr2.shape[1] > 0 else None
         if arr2.ndim > 2:
+    pass
+    pass
         return arr2.reshape(-1)
         return None
         except Exception:
@@ -843,11 +1064,17 @@ class VectorizedLabellingOrchestrator:
             padded_aligned: list[str] = []
 
         for feature_name, feature_value in advanced_features.items():
+    pass
+    pass
                 arr, _as_1d_array(feature_value)
         if arr is None:
+    pass
+    pass
                     skipped_scalars.append(feature_name)
                     scalar_offenders.append(feature_name)
         if len(skipped_scalars) <= 5:
+    pass
+    pass
         self.logger.debug(
                             f"Skipping feature '{feature_name}': type={type(feature_value)}, "
                             f"shape={getattr(feature_value, 'shape', 'N / A') if hasattr(feature_value, 'shape') else 'N / A'}"
@@ -856,6 +1083,8 @@ class VectorizedLabellingOrchestrator:
 
         # Align array length to labeled_data length
         if len(arr) > num_rows:
+    pass
+    pass
                     arr, arr[-num_rows:]
                     trimmed_aligned.append(feature_name)
                 elif len(arr) < num_rows:
@@ -866,19 +1095,29 @@ class VectorizedLabellingOrchestrator:
         # Add to DataFrame
         try:
                     features_df[feature_name] = pd.to_numeric(arr, errors="coerce")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     added_columns.append(feature_name)
         except Exception:
                     continue
 
         if not features_df.empty:
+    pass
+    pass
         # Drop columns that are entirely NaN
                 features_df, features_df.dropna(axis = 1, how="all")
 
         if not features_df.empty:
+    pass
+    pass
         # Remove constant columns
                 nunique, features_df.nunique(dropna = True)
                 constant_cols, nunique[nunique <= 1].index.tolist()
         if constant_cols:
+    pass
+    pass
         self.logger.warning(
                         f"Dropping {len(constant_cols)} constant features",
                     )
@@ -910,11 +1149,17 @@ class VectorizedLabellingOrchestrator:
                     "max_price",
                     "funding_rate",
                     "volume_ratio",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 }
                 drop_baseline = [
                     c for c in combined_data.columns if c in baseline_cols and c != "label"
                 ]
         if drop_baseline:
+    pass
+    pass
         self.logger.warning(
                         f"🚨 Removing baseline / raw columns carried into features: {drop_baseline[:20]}"
                         + (" ..." if len(drop_baseline) > 20 else ""),
@@ -931,12 +1176,20 @@ class VectorizedLabellingOrchestrator:
                 )
                 total_attempted, max(1, len(advanced_features))
                 skip_ratio, len(skipped_scalars) / total_attempted
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if skip_ratio > 0.05:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Scalar skip ratio ({skip_ratio:.1%}). Some providers may return non - array features; "
                         f"review feature generators. Sample skipped: {skipped_scalars[:10]}",
                     )
         if self.strict_feature_shapes and scalar_offenders:
+    pass
+    pass
         self.logger.warning(
                         f"Strict feature shape check: scalar features detected and skipped: {scalar_offenders[:20]}",
                     )
@@ -951,33 +1204,55 @@ class VectorizedLabellingOrchestrator:
                     f"Error combining features and labels: {e}. "
                     f"labeled_data.shape={labeled_data.shape if isinstance(labeled_data, pd.DataFrame) else 'n / a'}"
                 )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
         self.logger.exception(f"Error combining features and labels: {e}")
         return labeled_data
 
     def _ensure_ohlcv_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Ensure OHLCV data is present in the dataset."""
         required_ohlcv = ["open", "high", "low", "close", "volume"]
         missing_ohlcv = [col for col in required_ohlcv if col not in data.columns]
 
         if missing_ohlcv:
+    pass
+    pass
         self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_ohlcv}")
         if "avg_price" in data.columns:
+    pass
+    pass
         if "open" not in data.columns:
+    pass
+    pass
                     data["open"] = data["avg_price"]
         if "high" not in data.columns:
+    pass
+    pass
                     data["high"] = data["avg_price"]
         if "low" not in data.columns:
+    pass
+    pass
                     data["low"] = data["avg_price"]
         if "close" not in data.columns:
+    pass
+    pass
                     data["close"] = data["avg_price"]
 
         if "trade_volume" in data.columns and "volume" not in data.columns:
+    pass
+    pass
                 data["volume"] = data["trade_volume"]
 
         return data
 
     def _remove_metadata_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Remove metadata columns that are not actual features."""
         metadata_columns = [
             "year",
@@ -992,31 +1267,49 @@ class VectorizedLabellingOrchestrator:
         columns_to_remove = [col for col in metadata_columns if col in data.columns]
 
         if columns_to_remove:
+    pass
+    pass
         self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
             data, data.drop(columns = columns_to_remove)
 
         return data
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Remove datetime columns to prevent dtype conflicts in ML training."""
         try:
             datetime_columns: list[str] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
+    pass
         try:
         if hasattr(data[col], "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
                         datetime_columns.append(col)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
+    pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data, data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
+    pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data, data.drop(columns = timestamp_columns)
 
@@ -1033,8 +1326,14 @@ class VectorizedLabellingOrchestrator:
         try:
             features: dict[str, Any] = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Basic price features
         if "close" in price_data.columns:
+    pass
+    pass
                 close, price_data["close"]
                 features["close_returns"] = close.pct_change().fillna(0)
                 features["close_log_returns"] = np.log(close / close.shift(1)).fillna(0)
@@ -1056,6 +1355,8 @@ class VectorizedLabellingOrchestrator:
 
         # Basic volume features
         if "volume" in volume_data.columns:
+    pass
+    pass
                 volume, volume_data["volume"]
                 features["volume_ma_5"] = volume.rolling(5).mean()
                 features["volume_ma_20"] = volume.rolling(20).mean()
@@ -1064,6 +1365,8 @@ class VectorizedLabellingOrchestrator:
 
         # OHLCV features if available
         if all(col in price_data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
                 high, price_data["high"]
                 low, price_data["low"]
                 open_price, price_data["open"]
@@ -1078,6 +1381,8 @@ class VectorizedLabellingOrchestrator:
 
         # Technical indicators
         if "close" in price_data.columns:
+    pass
+    pass
                 close, price_data["close"]
 
         # RSI
@@ -1096,7 +1401,11 @@ class VectorizedLabellingOrchestrator:
 
         # Fill NaN values
         for key in list(features.keys()):
+    pass
+    pass
         if isinstance(features[key], pd.Series):
+    pass
+    pass
                     features[key] = (
                         features[key].fillna(method="ffill").fillna(method="bfill").fillna(0)
                     )
@@ -1109,6 +1418,8 @@ class VectorizedLabellingOrchestrator:
         return {}
 
     def _remove_raw_ohlcv_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
         try:
             raw_ohlcv_columns = {
@@ -1122,6 +1433,10 @@ class VectorizedLabellingOrchestrator:
                 "avg_price",
                 "min_price",
                 "max_price",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Treat these as context inputs; engineered variants should be used instead
                 "funding_rate",
                 "volume_ratio",
@@ -1132,6 +1447,8 @@ class VectorizedLabellingOrchestrator:
 
             ohlcv_columns_found = [col for col in data.columns if col in raw_ohlcv_columns]
         if ohlcv_columns_found:
+    pass
+    pass
         self.logger.warning(
                     f"🚨 CRITICAL: Found raw OHLCV columns in features: {ohlcv_columns_found}",
                 )
@@ -1147,14 +1464,24 @@ class VectorizedLabellingOrchestrator:
         return data
 
     def _remove_stationarity_transform_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Remove intermediate stationarity helper columns that are not final engineered features."""
         try:
         # Preserve configured context columns (e.g., close_returns and selected volume rep)
             preserve: set[str] = set()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if self.keep_close_returns and "close_returns" in data.columns:
+    pass
+    pass
                 preserve.add("close_returns")
             chosen_vol, self._choose_volume_context_column(data)
         if chosen_vol in data.columns:
+    pass
+    pass
                 preserve.add(chosen_vol)
             to_drop = [
                 c
@@ -1165,6 +1492,8 @@ class VectorizedLabellingOrchestrator:
                 and c not in preserve
             ]
         if to_drop:
+    pass
+    pass
         self.logger.info(
                     f"Removing stationarity helper columns: {to_drop[:20]}"
                     + (" ..." if len(to_drop) > 20 else ""),
@@ -1181,9 +1510,15 @@ class VectorizedLabellingOrchestrator:
         """Prepare final data using vectorized operations."""
         try:
             final_data, pd.concat([autoencoder_features, labeled_data], axis = 1)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             final_data, final_data.loc[:, ~final_data.columns.duplicated()]
 
         if "label" not in final_data.columns and "label" in labeled_data.columns:
+    pass
+    pass
                 final_data["label"] = labeled_data["label"]
 
             final_data, final_data.replace([np.inf, -np.inf], np.nan)
@@ -1192,6 +1527,8 @@ class VectorizedLabellingOrchestrator:
 
         # Drop stationarity helper columns (keep engineered features only)
         if "label" in final_data.columns:
+    pass
+    pass
                 features_only, final_data.drop(columns=["label"])  # type: ignore[call - overload]
                 features_only, self._remove_stationarity_transform_columns(features_only)
                 final_data, pd.concat([features_only, final_data[["label"]]], axis = 1)
@@ -1205,15 +1542,27 @@ class VectorizedLabellingOrchestrator:
         return autoencoder_features
 
     def _optimize_memory_usage_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize memory usage using efficient data types."""
         try:
             optimized_data, data.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in optimized_data.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
                 col_min, optimized_data[col].min()
                 col_max, optimized_data[col].max()
         try:
         if col_min >= 0 and col_max <= 255:
+    pass
+    except Exception as e:
+        pass
+    pass
                         optimized_data[col] = optimized_data[col].astype(np.uint8)
                     elif col_min >= -32768 and col_max <= 32767:
                         optimized_data[col] = optimized_data[col].astype(np.int16)
@@ -1221,11 +1570,17 @@ class VectorizedLabellingOrchestrator:
                         optimized_data[col] = optimized_data[col].astype(np.int32)
                     else:
                         optimized_data[col] = optimized_data[col].astype(np.float32)
+    except Exception as e:
+        pass
         except Exception:
                     optimized_data[col] = pd.to_numeric(optimized_data[col], errors="coerce").astype(np.float32)  # noqa: E501
 
         for col in optimized_data.select_dtypes(include=["object"]).columns:
+    pass
+    pass
         if optimized_data[col].nunique(dropna = True) < 255:
+    pass
+    pass
                     optimized_data[col] = optimized_data[col].astype("category")
 
         return optimized_data
@@ -1235,9 +1590,15 @@ class VectorizedLabellingOrchestrator:
         return data
 
     def _save_data_as_parquet(self, data: pd.DataFrame) -> None:
+    pass
+    pass
         """Save data as Parquet file."""
         try:
             output_dir = "data / vectorized_features"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             os.makedirs(output_dir, exist_ok = True)
 
             timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1250,8 +1611,14 @@ class VectorizedLabellingOrchestrator:
         self.logger.exception(f"Error saving data as Parquet: {e}")
 
     def _log_feature_dict_summary(self, stage: str, features: dict[str, Any], step_no: str) -> None:
+    pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ts, datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage, stage.replace(" ", "_")
             fname, f"log / features_samples/{ts}_{step_no}_{safe_stage}_Features.txt"
@@ -1259,11 +1626,17 @@ class VectorizedLabellingOrchestrator:
             type_counts: dict[str, int] = {}
             lines: list[str] = []
         for k, v in features.items():
+    pass
+    pass
                 t, type(v).__name__
                 type_counts[t] = type_counts.get(t, 0) + 1
                 summary = ""
         try:
         if isinstance(v, (int, float, np.integer, np.floating)):
+    pass
+    except Exception as e:
+        pass
+    pass
                         summary, f"value={float(v):.6g}"
                     elif isinstance(v, pd.Series):
                         summary, f"series(len={len(v)}, nan={int(v.isna().sum())})"
@@ -1274,28 +1647,40 @@ class VectorizedLabellingOrchestrator:
                     else:
                         s, str(v)
                         summary = (s[:80] + "...") if len(s) > 80 else s
+    except Exception as e:
+        pass
         except Exception:
                     summary = "<unavailable>"
                 lines.append(f"{k}: type={t} {summary}")
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\n")
+                f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\\\n")
         if type_counts:
+    pass
+    pass
                     f.write(
                         "Type counts: "
                         + ", ".join([f"{k}={v}" for k, v in sorted(type_counts.items())])
-                        + "\n"
+                        + "\\\n"
                     )
                 cap, 1000
-                f.writelines(line + "\n" for line in lines[:cap])
+                f.writelines(line + "\\\n" for line in lines[:cap])
         if len(lines) > cap:
-                    f.write(f"... ({len(lines) - cap} more)\n")
+    pass
+    pass
+                    f.write(f"... ({len(lines) - cap} more)\\\n")
         self.logger.info(f"Feature list written: {fname}")
         except Exception as e:
         self.logger.warning(f"Failed to write feature list for {stage}: {e}")
 
     def _log_dataframe_columns(self, stage: str, df: pd.DataFrame, step_no: str) -> None:
+    pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ts, datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage, stage.replace(" ", "_")
             fname, f"log / features_samples/{ts}_{step_no}_{safe_stage}_Columns.txt"
@@ -1305,14 +1690,16 @@ class VectorizedLabellingOrchestrator:
             nan_total, int(numeric.isna().sum().sum()) if not numeric.empty else 0
             inf_total, int(np.isinf(numeric).sum().sum()) if not numeric.empty else 0
         with open(fname, "w") as f:
-                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\n")
-                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\n")
-                f.writelines(f"{c}: {dtypes.get(c, 'unknown')}\n" for c in cols)
+                f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\\\n")
+                f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\\\n")
+                f.writelines(f"{c}: {dtypes.get(c, 'unknown')}\\\n" for c in cols)
         self.logger.info(f"Column inventory written: {fname}")
         except Exception as e:
         self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
 
     def _categorize_features(self, features: dict[str, Any]) -> dict[str, int]:
+    pass
+    pass
         categories: dict[str, int] = {
             "wavelet": 0,
             "momentum": 0,
@@ -1325,6 +1712,8 @@ class VectorizedLabellingOrchestrator:
             "other": 0,
         }
         for name in features:
+    pass
+    pass
             lname, name.lower()
         if any(
                 x in lname
@@ -1388,8 +1777,12 @@ class VectorizedLabellingOrchestrator:
         return categories
 
     def _list_other_features(self, features: dict[str, Any]) -> list[str]:
+    pass
+    pass
         other: list[str] = []
         for name in features:
+    pass
+    pass
             lname, name.lower()
         if any(
                 x in lname
@@ -1408,12 +1801,20 @@ class VectorizedLabellingOrchestrator:
             ):
                 continue
         if any(x in lname for x in ["momentum", "roc"]):
+    pass
+    pass
                 continue
         if "volatility" in lname:
+    pass
+    pass
                 continue
         if any(x in lname for x in ["corr", "correlation"]):
+    pass
+    pass
                 continue
         if any(x in lname for x in ["liquidity", "depth", "spread", "imbalance"]):
+    pass
+    pass
                 continue
         if any(
                 x in lname
@@ -1469,9 +1870,17 @@ class VectorizedLabellingOrchestrator:
         }
         num_rows, len(target_index)
         for name, value in features.items():
+    pass
+    pass
         try:
                 series: pd.Series | None, None
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if isinstance(value, pd.Series):
+    pass
+    pass
                     series, value.copy()
                 elif isinstance(value, (np.ndarray, list)):
                     series, pd.Series(value)
@@ -1480,6 +1889,8 @@ class VectorizedLabellingOrchestrator:
                     continue
 
         if len(series) > num_rows:
+    pass
+    pass
                     series, series.iloc[-num_rows:]
                     report["trimmed"] += 1
                 elif len(series) < num_rows:
@@ -1491,6 +1902,8 @@ class VectorizedLabellingOrchestrator:
                 series, pd.to_numeric(series, errors="coerce")
                 before_nan, int(series.isna().sum())
         if before_nan:
+    pass
+    pass
                     series, series.fillna(method="ffill").fillna(method="bfill").fillna(0)
                     report["filled_nan"] += before_nan
                 series, series.astype(np.float32)
@@ -1501,8 +1914,14 @@ class VectorizedLabellingOrchestrator:
         return formatted, report
 
     def _log_feature_format_report(self, stage: str, report: dict[str, Any], step_no: str) -> None:
+    pass
+    pass
         try:
             os.makedirs("log / features_samples", exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ts, datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage, stage.replace(" ", "_")
             fname, f"log / features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
@@ -1513,6 +1932,8 @@ class VectorizedLabellingOrchestrator:
         self.logger.warning(f"Failed to write feature format report: {e}")
 
     def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+    pass
+    pass
         """Local helper to choose volume context column consistent with settings."""
         available, set(df.columns)
         pref, self.volume_representation
@@ -1547,7 +1968,11 @@ class VectorizedLabellingOrchestrator:
             ],
         }
         for c in order_map.get(pref, []) or []:
+    pass
+    pass
         if c in available:
+    pass
+    pass
         return c
         for c in [
             "volume_returns",
@@ -1557,13 +1982,19 @@ class VectorizedLabellingOrchestrator:
             "volume",
         ]:
         if c in available:
+    pass
+    pass
         return c
         return "volume"
 
     def _get_present_context_columns(self, df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Return the list of context columns present in a given DataFrame, according to config."""
         cols: list[str] = []
         if self.keep_close_returns and "close_returns" in df.columns:
+    pass
+    pass
             cols.append("close_returns")
         for c in [
             "volume_returns",
@@ -1573,25 +2004,42 @@ class VectorizedLabellingOrchestrator:
             "volume",
         ]:
         if c in df.columns:
+    pass
+    pass
                 chosen, self._choose_volume_context_column(df)
         if c == chosen:
+    pass
+    pass
                     cols.append(c)
                     break
         cols.extend([c for c in self.context_non_feature_columns if c in df.columns])
         if "label" in df.columns:
+    pass
+    pass
             cols.append("label")
         return list(dict.fromkeys(cols))
 
     def _run_mutual_information_analysis(self, df: pd.DataFrame) -> None:
+    pass
+    pass
         """Compute mutual information diagnostics (best - effort)."""
         try:
             from sklearn.feature_selection import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import mutual_info_classif,
                 mutual_info_classif,
                 mutual_info_regression,
             )
             from sklearn.preprocessing import KBinsDiscretizer
 
+import if df is None or df.empty:
         if df is None or df.empty:
+    pass
+    pass
                 return
 
             os.makedirs("log / mi", exist_ok = True)
@@ -1608,12 +2056,20 @@ class VectorizedLabellingOrchestrator:
             X_full, X_full.replace([np.inf, -np.inf], np.nan).fillna(0)
             feature_names, X_full.columns.tolist()
         if len(feature_names) == 0:
+    pass
+    pass
         self.logger.warning("MI: no numeric features available after exclusions")
                 return
 
             def discretize_features(X: np.ndarray, bins: int) -> np.ndarray:
+    pass
+    pass
         try:
                     disc, KBinsDiscretizer(n_bins = bins, encode="ordinal", strategy="quantile")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return disc.fit_transform(X)
         except Exception as e:
         self.logger.warning(
@@ -1624,13 +2080,23 @@ class VectorizedLabellingOrchestrator:
         # Classification MI for meta - labels
             classif_reports: dict[str, dict[str, Any]] = {}
         for meta_col in meta_label_cols:
+    pass
+    pass
         try:
                     y, df[meta_col].shift(1).fillna(0).astype(int).values
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if np.unique(y).size < 2:
+    pass
+    pass
         self.logger.info(f"MI(classif): skip {meta_col} (single class)")
                         continue
                     per_bins: dict[str, list[float]] = {}
         for bins in [5, 10, 20]:
+    pass
+    pass
                         Xd, discretize_features(X_full.values, bins)
                         mi, mutual_info_classif(Xd, y, discrete_features = True, random_state = 42)
                         per_bins[str(bins)] = [float(v) for v in mi]
@@ -1648,27 +2114,45 @@ class VectorizedLabellingOrchestrator:
         self.logger.warning(f"MI(classif) failed for {meta_col}: {e}")
 
         if classif_reports:
+    pass
+    pass
         with open(f"log / mi/{ts}_mi_classif_meta_labels.json", "w") as f:
                     f.write(json.dumps(classif_reports, indent = 2))
 
         # Regression - like MI for label / returns
             regression_reports: dict[str, dict[str, Any]] = {}
         if "label" in df.columns and df["label"].nunique() > 1:
+    pass
+    pass
                 y_name = "label"
             else:
                 y_name, next((c for c in df.columns if c == "close_returns"), None)
 
         if y_name is not None:
+    pass
+    pass
         try:
                     y_series, df[y_name].shift(1).replace([np.inf, -np.inf], np.nan).fillna(0)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if y_series.empty or y_series.isna().all():
+    pass
+    pass
         self.logger.warning(f"MI(regress) {y_name}: No valid data available")
                         return
                     y, y_series.values
         try:
                         is_empty, X_full.empty
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         is_all_nan, X_full.isna().all().all()
         if is_empty or is_all_nan:
+    pass
+    pass
         self.logger.warning(
                                 f"MI(regress) {y_name}: No valid feature data available",
                             )
@@ -1681,15 +2165,25 @@ class VectorizedLabellingOrchestrator:
 
                     per_bins_r: dict[str, list[float]] = {}
         for bins in [5, 10, 20]:
+    pass
+    pass
         try:
                             Xd, discretize_features(X_full.values, bins)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if Xd.shape[0] != len(y):
+    pass
+    pass
                                 min_len, min(Xd.shape[0], len(y))
                                 Xd, Xd[:min_len]
                                 y_aligned, y[:min_len]
                             else:
                                 y_aligned, y
         if Xd.size == 0 or len(y_aligned) == 0:
+    pass
+    pass
         self.logger.warning(
                                     f"MI(regress) {y_name}: Empty data after discretization for bins={bins}"
                                 )
@@ -1703,6 +2197,8 @@ class VectorizedLabellingOrchestrator:
                             continue
 
         if not per_bins_r:
+    pass
+    pass
         self.logger.warning(
                             f"MI(regress) {y_name}: No successful discretization bins",
                         )
@@ -1710,6 +2206,10 @@ class VectorizedLabellingOrchestrator:
 
         try:
                         agg_r, np.mean(np.vstack([per_bins_r[b] for b in per_bins_r]), axis = 0)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         ranking_r, sorted(zip(feature_names, agg_r), key = lambda t: t[1], reverse = True)
                         top10_r, ranking_r[:10]
         self.logger.info(f"MI(regress) {y_name}: top5={[n for n, _ in top10_r[:5]]}")
@@ -1727,6 +2227,8 @@ class VectorizedLabellingOrchestrator:
         self.logger.warning(f"MI(regress) failed for {y_name}: {e}")
 
         if regression_reports:
+    pass
+    pass
         with open(f"log / mi/{ts}_mi_regression.json", "w") as f:
                     f.write(json.dumps(regression_reports, indent = 2))
 
@@ -1740,6 +2242,8 @@ class VectorizedStationarityChecker:
     """Check and transform data for stationarity using vectorized operations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("VectorizedStationarityChecker")
 
@@ -1754,19 +2258,31 @@ class VectorizedStationarityChecker:
         self.logger.info("🔍 Checking data stationarity...")
 
             price_stationary, self._check_price_stationarity_vectorized(price_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not price_stationary:
+    pass
+    pass
         self.logger.info("📈 Transforming price data for stationarity...")
                 price_data, self._transform_price_stationarity_vectorized(price_data)
 
             volume_stationary, self._check_volume_stationarity_vectorized(volume_data)
         if not volume_stationary:
+    pass
+    pass
         self.logger.info("📊 Transforming volume data for stationarity...")
                 volume_data, self._transform_volume_stationarity_vectorized(volume_data)
 
             order_flow_stationary, True
         if order_flow_data is not None:
+    pass
+    pass
                 order_flow_stationary, self._check_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
         if not order_flow_stationary:
+    pass
+    pass
         self.logger.info("🔄 Transforming order flow data for stationarity...")
                     order_flow_data, self._transform_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
 
@@ -1791,8 +2307,14 @@ class VectorizedStationarityChecker:
             }
 
     def _check_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> bool:
+    pass
+    pass
         try:
             returns, price_data["close"].pct_change().dropna()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             trend, np.polyfit(range(len(returns)), returns, 1)[0]
             trend_threshold, 0.001
             autocorr, returns.autocorr()
@@ -1812,10 +2334,18 @@ class VectorizedStationarityChecker:
         return False
 
     def _transform_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             transformed_data, price_data.copy()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_columns = ["open", "high", "low", "close", "volume"]
         if not all(col in transformed_data.columns for col in required_columns):
+    pass
+    pass
         self.logger.warning(
                     f"Missing required OHLCV columns. Available: {transformed_data.columns.tolist()}",
                 )
@@ -1829,6 +2359,8 @@ class VectorizedStationarityChecker:
 
         # Log
         for c in ["close", "open", "high", "low"]:
+    pass
+    pass
                 transformed_data[f"{c}_log"] = np.log(transformed_data[c].replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)  # noqa: E501
 
         # Detrend
@@ -1846,8 +2378,16 @@ class VectorizedStationarityChecker:
         return price_data
 
     def _check_volume_stationarity_vectorized(self, volume_data: pd.DataFrame) -> bool:
+    pass
+    pass
         try:
         if "volume" not in volume_data.columns:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return True
             volume, volume_data["volume"]
             trend, np.polyfit(range(len(volume)), volume, 1)[0]
@@ -1869,9 +2409,17 @@ class VectorizedStationarityChecker:
         return False
 
     def _transform_volume_stationarity_vectorized(self, volume_data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             transformed_data, volume_data.copy()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if "volume" not in transformed_data.columns:
+    pass
+    pass
         self.logger.warning(
                     f"Missing volume column. Available: {transformed_data.columns.tolist()}",
                 )
@@ -1899,9 +2447,17 @@ class VectorizedStationarityChecker:
         return volume_data
 
     def _check_order_flow_stationarity_vectorized(self, order_flow_data: pd.DataFrame) -> bool:
+    pass
+    pass
         try:
             numeric_cols, order_flow_data.select_dtypes(include=[np.number]).columns
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(numeric_cols) == 0:
+    pass
+    pass
         return True
             first_col, numeric_cols[0]
             data, order_flow_data[first_col]
@@ -1915,11 +2471,21 @@ class VectorizedStationarityChecker:
         return False
 
     def _transform_order_flow_stationarity_vectorized(self, order_flow_data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             transformed_data, order_flow_data.copy()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             numeric_cols, transformed_data.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
+    pass
+    pass
         if (transformed_data[col] > 0).all():
+    pass
+    pass
                     transformed_data[f"{col}_log"] = np.log(transformed_data[col])
                 window, 20
                 transformed_data[f"{col}_detrended"] = (
@@ -1940,6 +2506,8 @@ class VectorizedFeatureSelector:
     """Vectorized feature selector using multiple selection methods."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("VectorizedFeatureSelector")
 
@@ -1988,24 +2556,40 @@ class VectorizedFeatureSelector:
         )
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             datetime_columns: list[str] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
+    pass
         try:
         if hasattr(data[col], "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
                         datetime_columns.append(col)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
+    pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data, data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
+    pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data, data.drop(columns = timestamp_columns)
 
@@ -2024,12 +2608,20 @@ class VectorizedFeatureSelector:
 
             data, self._remove_datetime_columns(data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(
                 f"🔍 Analyzing {len(data.columns)} features before selection...",
             )
             feature_analysis: dict[str, dict[str, Any]] = {}
         for col in data.columns:
+    pass
+    pass
         if col in data.columns:
+    pass
+    pass
                     feature_analysis[col] = {
                         "dtype": str(data[col].dtype),
                         "nunique": int(data[col].nunique()),
@@ -2058,10 +2650,14 @@ class VectorizedFeatureSelector:
             nan_counts, data.isnull().sum()
             nan_features, nan_counts[nan_counts > 0]
         if len(nan_features) > 0:
+    pass
+    pass
         self.logger.info(
                     f"📊 Found NaN values in {len(nan_features)} features:",
                 )
         for feature, count in nan_features.items():
+    pass
+    pass
                     percentage = (int(count) / max(1, len(data))) * 100
         self.logger.info(
                         f"   {feature}: {int(count):,} NaN values ({percentage:.2f}%)",
@@ -2072,15 +2668,25 @@ class VectorizedFeatureSelector:
             data, data.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
         if self.enable_constant_removal:
+    pass
+    pass
                 constant_to_drop: list[str] = []
         for col in data.columns:
+    pass
+    pass
         if data[col].nunique() <= 1:
+    pass
+    pass
                         constant_to_drop.append(col)
                     elif data[col].dtype in ["float64", "float32", "int64", "int32"]:
                         variance, float(data[col].var())
         if variance < 1e - 10:
+    pass
+    pass
                             constant_to_drop.append(col)
         if constant_to_drop:
+    pass
+    pass
         self.logger.info(
                         f"Removed {len(constant_to_drop)} constant / low - variance features: {constant_to_drop[:20]}"
                         + (" ..." if len(constant_to_drop) > 20 else ""),
@@ -2088,6 +2694,8 @@ class VectorizedFeatureSelector:
                     data, data.drop(columns = constant_to_drop)
 
         if self.enable_safety_checks and len(data.columns) < self.min_features_to_keep:
+    pass
+    pass
         self.logger.warning(
                     f"Too few features after constant removal ({len(data.columns)}). Skipping further selection.",
                 )
@@ -2100,17 +2708,25 @@ class VectorizedFeatureSelector:
             ):
                 correlated_features, self._remove_correlated_features_vectorized(data)
         if correlated_features:
+    pass
+    pass
                     removal_percentage, len(correlated_features) / max(1, len(data.columns))
                     should_remove, False
         if removal_percentage <= self.max_removal_percentage:
+    pass
+    pass
                         should_remove, True
                     elif removal_percentage <= self.small_removal_allowance:
         if len(data.columns) - len(correlated_features) >= self.min_features_to_keep:
+    pass
+    pass
                             should_remove, True
         self.logger.info(
                                 f"✅ Allowing small correlated feature removal ({removal_percentage:.2f}%) despite being above threshold",
                             )
         if should_remove and len(data.columns) - len(correlated_features) >= self.min_features_to_keep:
+    pass
+    pass
         self.logger.info(
                             f"Removed {len(correlated_features)} highly correlated features",
                         )
@@ -2137,9 +2753,13 @@ class VectorizedFeatureSelector:
             ):
                 all_low_mi_features, self._remove_low_mutual_info_features_vectorized(data, labels)
         if all_low_mi_features:
+    pass
+    pass
                     max_features_to_remove, int(len(data.columns) * self.max_removal_percentage)
                     low_mi_features, all_low_mi_features[:max_features_to_remove]
         if len(data.columns) - len(low_mi_features) >= self.min_features_to_keep:
+    pass
+    pass
         self.logger.info(
                             f"Removed {len(low_mi_features)} low mutual information features (limited to {len(low_mi_features) / max(1, len(data.columns)):.2f}% of total features)",
                         )
@@ -2168,9 +2788,13 @@ class VectorizedFeatureSelector:
             ):
                 all_low_importance_features, self._remove_low_importance_features_vectorized(data, labels)
         if all_low_importance_features:
+    pass
+    pass
                     max_features_to_remove, int(len(data.columns) * self.max_removal_percentage)
                     low_importance_features, all_low_importance_features[:max_features_to_remove]
         if len(data.columns) - len(low_importance_features) >= self.min_features_to_keep:
+    pass
+    pass
         self.logger.info(
                             f"Removed {len(low_importance_features)} low importance features (limited to {len(low_importance_features) / max(1, len(data.columns)):.2f}% of total features)",
                         )
@@ -2193,8 +2817,12 @@ class VectorizedFeatureSelector:
             )
 
         if final_features == 0:
+    pass
+    pass
         self.logger.error("No features remaining after selection!")
         if self.return_original_on_failure:
+    pass
+    pass
         self.logger.info("Returning original data as fallback.")
         return self._remove_datetime_columns(original_data)
                 raise ValueError("No features remaining after selection and fallback disabled")
@@ -2204,14 +2832,24 @@ class VectorizedFeatureSelector:
         except Exception as e:
         self.logger.exception(f"Error in feature selection: {e}")
         if self.return_original_on_failure:
+    pass
+    pass
         self.logger.info("Returning original data as fallback due to error.")
         return self._remove_datetime_columns(original_data)
             raise
 
     def _remove_correlated_features_vectorized(self, data: pd.DataFrame) -> list[str]:
+    pass
+    pass
         try:
             from sklearn.impute import SimpleImputer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import imputer, SimpleImputer
             imputer, SimpleImputer(strategy="median")
             data_imputed, pd.DataFrame(
                 imputer.fit_transform(data), columns = data.columns, index = data.index
@@ -2223,8 +2861,14 @@ class VectorizedFeatureSelector:
 
             to_drop: list[str] = []
         for i in range(len(correlation_matrix.columns)):
+    pass
+    pass
         for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
+    pass
         if bool(high_correlation.iloc[i, j]):
+    pass
+    pass
                         to_drop.append(correlation_matrix.columns[j])
 
         return list(set(to_drop))
@@ -2237,8 +2881,14 @@ class VectorizedFeatureSelector:
     ) -> list[str]:
         try:
             from sklearn.feature_selection import mutual_info_classif
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             from sklearn.impute import SimpleImputer
 
+import imputer, SimpleImputer
             imputer, SimpleImputer(strategy="median")
             data_imputed, pd.DataFrame(
                 imputer.fit_transform(data), columns = data.columns, index = data.index
@@ -2250,6 +2900,8 @@ class VectorizedFeatureSelector:
             low_mi_features = [col for col, score in feature_importance.items() if score < self.mutual_info_threshold]  # noqa: E501
 
         if max_removal_percentage is not None:
+    pass
+    pass
                 max_features_to_remove, int(len(data.columns) * max_removal_percentage)
         return [col for col, _ in sorted_features[:max_features_to_remove]]
 
@@ -2263,8 +2915,13 @@ class VectorizedFeatureSelector:
     ) -> list[str]:
         try:
             import lightgbm as lgb
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sklearn.impute import SimpleImputer
 
+import imputer, SimpleImputer
             imputer, SimpleImputer(strategy="median")
             data_imputed, pd.DataFrame(
                 imputer.fit_transform(data), columns = data.columns, index = data.index
@@ -2292,6 +2949,8 @@ class VectorizedFeatureSelector:
             ]
 
         if max_removal_percentage is not None:
+    pass
+    pass
                 max_features_to_remove, int(len(data.columns) * max_removal_percentage)
         return [col for col, _ in sorted_features[:max_features_to_remove]]
 
@@ -2307,6 +2966,8 @@ class VectorizedDataNormalizer:
     """Normalize data using various scaling methods with vectorized operations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("VectorizedDataNormalizer")
 
@@ -2337,6 +2998,10 @@ class VectorizedDataNormalizer:
             data, self._remove_datetime_columns(data)
             data, self._clip_outliers_vectorized(data)
             data, self._apply_robust_scaling_vectorized(data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Data normalization completed")
         return data
         except Exception as e:
@@ -2344,24 +3009,40 @@ class VectorizedDataNormalizer:
         return data
 
     def _remove_datetime_columns(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             datetime_columns: list[str] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in data.columns:
+    pass
+    pass
         try:
         if hasattr(data[col], "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
                         datetime_columns.append(col)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except (AttributeError, TypeError):
                     continue
 
         if datetime_columns:
+    pass
+    pass
         self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data, data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
+    pass
+    pass
         self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data, data.drop(columns = timestamp_columns)
 
@@ -2372,11 +3053,23 @@ class VectorizedDataNormalizer:
         return data
 
     def _clip_outliers_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             clipped_data, data.copy()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in clipped_data.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
         try:
                     Q1, clipped_data[col].quantile(0.25)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     Q3, clipped_data[col].quantile(0.75)
                     IQR, Q3 - Q1
                     lower_bound, Q1 - 1.5 * IQR
@@ -2391,20 +3084,34 @@ class VectorizedDataNormalizer:
         return data
 
     def _apply_robust_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             from sklearn.preprocessing import RobustScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import scaler, RobustScaler
             scaler, RobustScaler()
             numeric_cols, list(data.select_dtypes(include=[np.number]).columns)
             exclude: set[str] = {"label"}
         if self.keep_close_returns and "close_returns" in data.columns:
+    pass
+    pass
                 exclude.add("close_returns")
             chosen_vol_col, self._choose_volume_context_column(data)
         if chosen_vol_col in data.columns:
+    pass
+    pass
                 exclude.add(chosen_vol_col)
             exclude |= {c for c in self.context_non_feature_columns if c in data.columns}
             scale_cols = [c for c in numeric_cols if c not in exclude]
         if scale_cols:
+    pass
+    pass
                 data[scale_cols] = scaler.fit_transform(data[scale_cols])
         return data
         except Exception as e:
@@ -2412,12 +3119,22 @@ class VectorizedDataNormalizer:
         return data
 
     def _apply_standard_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             from sklearn.preprocessing import StandardScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import scaler, StandardScaler
             scaler, StandardScaler()
             numeric_data, data.select_dtypes(include=[np.number])
         if len(numeric_data.columns) > 0:
+    pass
+    pass
                 scaled_data, scaler.fit_transform(numeric_data)
                 data[numeric_data.columns] = scaled_data
         return data
@@ -2426,12 +3143,22 @@ class VectorizedDataNormalizer:
         return data
 
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         try:
             from sklearn.preprocessing import MinMaxScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import scaler, MinMaxScaler
             scaler, MinMaxScaler()
             numeric_data, data.select_dtypes(include=[np.number])
         if len(numeric_data.columns) > 0:
+    pass
+    pass
                 scaled_data, scaler.fit_transform(numeric_data)
                 data[numeric_data.columns] = scaled_data
         return data
@@ -2440,6 +3167,8 @@ class VectorizedDataNormalizer:
         return data
 
     def _choose_volume_context_column(self, df: pd.DataFrame) -> str:
+    pass
+    pass
         available, set(df.columns)
         pref, self.volume_representation
         order_map = {
@@ -2473,7 +3202,11 @@ class VectorizedDataNormalizer:
             ],
         }
         for c in order_map.get(pref, []) or []:
+    pass
+    pass
         if c in available:
+    pass
+    pass
         return c
         for c in [
             "volume_returns",
@@ -2483,5 +3216,7 @@ class VectorizedDataNormalizer:
             "volume",
         ]:
         if c in available:
+    pass
+    pass
         return c
         return "volume"

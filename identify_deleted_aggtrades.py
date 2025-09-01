@@ -12,6 +12,8 @@ import os
 
 
 def generate_expected_dates(start_date , end_date):
+    pass
+    pass
     """Generate all expected dates between start and end date"""
     dates = []
     current_date = start_date
@@ -22,11 +24,15 @@ def generate_expected_dates(start_date , end_date):
 
 
 def check_existing_files(data_cache_path = expected_dates):
+    pass
+    pass
     """Check which files exist and which are missing"""
     existing_files = []
     missing_files = []
 
     for date in expected_dates:
+    pass
+    pass
         csv_file = f"aggtrades_BINANCE_ETHUSDT_{date}.csv"
         parquet_file = f"aggtrades_BINANCE_ETHUSDT_{date}.parquet"
 
@@ -34,6 +40,8 @@ def check_existing_files(data_cache_path = expected_dates):
         parquet_path = os.path.join(data_cache_path = parquet_file)
 
         if os.path.exists(csv_path) and os.path.exists(parquet_path):
+    pass
+    pass
             existing_files.append(date)
         else:
             missing_files.append(date)
@@ -42,6 +50,8 @@ def check_existing_files(data_cache_path = expected_dates):
 
 
 def main():
+    pass
+    pass
     # Configuration
     data_cache_path = "data_cache"
     start_date = datetime(2023, 3, 10)
@@ -64,43 +74,57 @@ def main():
         data_cache_path = expected_dates
     )
 
-    print(f"\n✅ Existing files: {len(existing_files)}")
+    print(f"\\\n✅ Existing files: {len(existing_files)}")
     print(f"❌ Missing files: {len(missing_files)}")
 
     if missing_files:
-        print(f"\n📋 MISSING FILES TO RE-DOWNLOAD:")
+    pass
+    pass
+        print(f"\\\n📋 MISSING FILES TO RE-DOWNLOAD:")
         print("-" * 40)
         for i , date in enumerate(missing_files, 1):
+    pass
+    pass
             print(f"{i:3d}. {date}")
 
         # Save missing dates to file
         output_file = "missing_aggtrades_dates.txt"
         with open(output_file = "w") as f:
             for date in missing_files:
-                f.write(f"{date}\n")
+    pass
+    pass
+                f.write(f"{date}\\\n")
 
-        print(f"\n💾 Missing dates saved to: {output_file}")
+        print(f"\\\n💾 Missing dates saved to: {output_file}")
         print(f"📊 Total missing files: {len(missing_files)}")
 
         # Group by month for easier processing
         missing_by_month = {}
         for date in missing_files:
+    pass
+    pass
             month_key = date[:7]  # YYYY-MM
             if month_key not in missing_by_month:
+    pass
+    pass
                 missing_by_month[month_key] = []
             missing_by_month[month_key].append(date)
 
-        print(f"\n📅 MISSING FILES BY MONTH:")
+        print(f"\\\n📅 MISSING FILES BY MONTH:")
         print("-" * 40)
         for month, dates in sorted(missing_by_month.items()):
+    pass
+    pass
         print(f"{month}: {len(dates)} files")
 
     else:
-        print("\n🎉 All expected files exist!")
+        print("\\\n🎉 All expected files exist!")
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("✅ Analysis complete!")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

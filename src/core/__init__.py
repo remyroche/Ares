@@ -1,6 +1,7 @@
 # src/core/__init__.py
 
 from .dependency_injection import (
+import ComponentFactory,
     ComponentFactory,
     DependencyContainer,
     ModularTradingSystem,

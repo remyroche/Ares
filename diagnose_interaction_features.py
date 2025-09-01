@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def diagnose_interaction_features():
+    pass
+    pass
     """Diagnose why interaction features are being filtered out"""
     print("🔍 Diagnosing interaction features filtering issue...")
 
@@ -28,15 +30,23 @@ def diagnose_interaction_features():
 
     class MockLogger:
         def info(self, msg):
+    pass
+    pass
             print(f"INFO: {msg}")
 
         def warning(self, msg):
+    pass
+    pass
             print(f"WARNING: {msg}")
 
         def error(self, msg):
+    pass
+    pass
             print(f"ERROR: {msg}")
 
         def debug(self, msg):
+    pass
+    pass
             print(f"DEBUG: {msg}")
 
     feature_eng = VectorizedAdvancedFeatureEngineering(config)
@@ -73,11 +83,11 @@ def diagnose_interaction_features():
         "volume_x_macd_norm": pd.Series([0.05, 0.15, 0.25, 0.35, 0.45]),
     }
 
-    print(f"\n📊 Initial features: {len(mock_features)}")
+    print(f"\\\n📊 Initial features: {len(mock_features)}")
     print("Feature names:", list(mock_features.keys()))
 
     # Test the feature capping logic
-    print("\n🔧 Testing feature capping logic...")
+    print("\\\n🔧 Testing feature capping logic...")
 
     # Identify RAW-only keys in each category (normalized variants handled separately)
     accel_raw = [k for k in mock_features if "_accel_" in k and not k.endswith("_norm")]
@@ -128,9 +138,17 @@ def diagnose_interaction_features():
     ]
 
     def rank_keys(keys = patterns):
+    pass
+    pass
         def score(k: str) -> int:
+    pass
+    pass
             for idx , p in enumerate(patterns):
+    pass
+    pass
                 if p in k:
+    pass
+    pass
                     return idx
             return len(patterns) + 1
 
@@ -160,9 +178,13 @@ def diagnose_interaction_features():
     # Include normalized counterparts for kept raw keys (do not count against caps)
     kept_keys = set()
     for raw_key in list(kept_accel_raw) + list(kept_cross_raw) + list(kept_diff_raw):
+    pass
+    pass
         kept_keys.add(raw_key)
         norm_key = f"{raw_key}_norm"
         if norm_key in mock_features:
+    pass
+    pass
             kept_keys.add(norm_key)
 
     print(f"Total kept keys (including norms): {kept_keys}")
@@ -170,8 +192,12 @@ def diagnose_interaction_features():
     # Rebuild final features with caps applied
     capped_features = {}
     for k , v in mock_features.items():
+    pass
+    pass
         # Keep capped categories (raw+their norms)
         if k in kept_keys:
+    pass
+    pass
             capped_features[k] = v
             continue
         # Pass-through for non-targeted categories (e.g., interactions) untouched
@@ -180,6 +206,8 @@ def diagnose_interaction_features():
         is_cross = is_diff and ("m_" in k or "h_" in k)
         # If not accel/diff/cross-timeframe = keep
         if not is_accel and not is_diff and not is_cross:
+    pass
+    pass
             capped_features[k] = v
             print(f"✅ Kept non-targeted feature: {k}")
         else:
@@ -187,17 +215,17 @@ def diagnose_interaction_features():
                 f"❌ Filtered out feature: {k} (is_accel={is_accel}, is_diff={is_diff}, is_cross={is_cross})"
             )
 
-    print(f"\n📊 Final features after capping: {len(capped_features)}")
+    print(f"\\\n📊 Final features after capping: {len(capped_features)}")
     print("Final feature names:", list(capped_features.keys()))
 
     # Test the interaction feature detection logic
-    print("\n🔍 Testing interaction feature detection...")
+    print("\\\n🔍 Testing interaction feature detection...")
     interaction_features = [f for f in capped_features if "_x_" in f]
     print(f"Interaction features found: {interaction_features}")
     print(f"Interaction feature count: {len(interaction_features)}")
 
     # Test the summary logging logic
-    print("\n📊 Testing summary logging logic...")
+    print("\\\n📊 Testing summary logging logic...")
     diff_features = [f for f in capped_features if "_diff_" in f]
     accel_features = [f for f in capped_features if "_accel_" in f]
     norm_features = [f for f in capped_features if "_norm" in f]
@@ -213,4 +241,6 @@ def diagnose_interaction_features():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     diagnose_interaction_features()

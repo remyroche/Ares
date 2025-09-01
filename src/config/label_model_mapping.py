@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 
 # Constants
+import DEFAULT_PROBA_THRESHOLD = 0.5
 DEFAULT_PROBA_THRESHOLD = 0.5
 
 # Model identifiers used by builder
@@ -196,10 +197,16 @@ HIGH_TF = {"15m", "30m"}
 
 
 def _tf_band(timeframe: str) -> str:
+    pass
+    pass
     tf = timeframe.strip().lower()
     if tf in ("1m", "5m"):
+    pass
+    pass
         return "low"
     if tf in ("15m", "30m"):
+    pass
+    pass
         return "high"
     # default to high for unknown intraday
     return "high"
@@ -216,12 +223,16 @@ def get_model_choice_for_label(
     band = _tf_band(timeframe)
     cfg = LABEL_GROUPS.get(base)
     if not cfg:
+    pass
+    pass
         return "lightgbm", {"num_leaves": 48}
     key, params = cfg.get(band, cfg.get("high"))
     return key, dict(params or {})
 
 
 def build_model(model_key: str, params: dict[str, Any]) -> Any:
+    pass
+    pass
     """Instantiate a model from a key and params. Returns a fitted-ready estimator.
 
     Supported keys: 'xgboost', 'lightgbm', 'catboost', 'random_forest',
@@ -299,12 +310,22 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                 max_iter=1000,
                 random_state=42,
             ),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         }
 
         if key == "hmm_gaussian":
+    pass
+    pass
             try:
                 class HMMWrapper:
                     def __init__(self, n_states: int = 4):
+    pass
+    except Exception as e:
+        pass
+    pass
                         self.hmm = GaussianHMM(
                             n_components=n_states,
                             covariance_type="diag",
@@ -317,7 +338,11 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                         self._fitted = False
 
                     def fit(self, x: Any, y: Any) -> HMMWrapper:
+    pass
+    pass
                         if isinstance(x, pd.DataFrame | pd.Series):
+    pass
+    pass
                             x_arr = x.to_numpy()
                         else:
                             x_arr = np.asarray(x)
@@ -328,14 +353,20 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                         return self
 
                     def predict_proba(self, x: Any) -> np.ndarray:
+    pass
+    pass
                         x_arr = x.values if hasattr(x, "values") else np.asarray(x)
                         states = self.hmm.predict(x_arr)
                         return self.decoder.predict_proba(states.reshape(-1, 1))
 
                     def predict(self, x: Any) -> np.ndarray:
+    pass
+    pass
                         proba = self.predict_proba(x)
                         return (proba[:, -1] > DEFAULT_PROBA_THRESHOLD).astype(int)
 
+    except Exception as e:
+        pass
                 return HMMWrapper(n_states=int(params.get("n_states", 4)))
             except Exception:  # noqa: BLE001 - optional dependency fallback
                 return mapping["lightgbm"]
@@ -359,5 +390,7 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
 
 
 def select_model_for_label_timeframe(label: str, timeframe: str):
+    pass
+    pass
     key, params = get_model_choice_for_label(label, timeframe)
     return build_model(key, params)

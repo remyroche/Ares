@@ -11,6 +11,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def create_simple_test_data(n_samples: int = 100) -> pd.DataFrame:
+    pass
+    pass
     """Create simple test data."""
     dates = pd.date_range("2024-01-01", periods=n_samples, freq="1min")
 
@@ -26,6 +28,8 @@ def create_simple_test_data(n_samples: int = 100) -> pd.DataFrame:
     return data
 
 def test_basic_features():
+    pass
+    pass
     """Test basic profit features."""
     print("🧪 Testing Basic Profit Features")
     print("=" * 40)
@@ -50,8 +54,10 @@ def test_basic_features():
     return test_data
 
 def test_categorical_features():
+    pass
+    pass
     """Test categorical profit features."""
-    print("\n🧪 Testing Categorical Profit Features")
+    print("\\\n🧪 Testing Categorical Profit Features")
     print("=" * 40)
 
     # Create test data
@@ -91,8 +97,10 @@ def test_categorical_features():
     return test_data
 
 def test_risk_reward_features():
+    pass
+    pass
     """Test risk-reward features."""
-    print("\n🧪 Testing Risk-Reward Features")
+    print("\\\n🧪 Testing Risk-Reward Features")
     print("=" * 40)
 
     # Create test data
@@ -151,12 +159,14 @@ def test_risk_reward_features():
     return test_data
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test each feature category separately
     basic_data = test_basic_features()
     cat_data = test_categorical_features()
     risk_data = test_risk_reward_features()
 
-    print("\n🎉 All tests completed successfully!")
+    print("\\\n🎉 All tests completed successfully!")
     print(f"Basic features: {len([col for col in basic_data.columns if 'potential_profit_pct' in col])}")
     print(f"Categorical features: {len([col for col in cat_data.columns if 'potential_profit_pct' in col])}")
     print(f"Risk-reward features: {len([col for col in risk_data.columns if 'potential_profit_pct' in col])}")

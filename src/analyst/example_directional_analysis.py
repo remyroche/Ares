@@ -33,6 +33,8 @@ async def create_sample_market_data() -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
@@ -91,6 +93,10 @@ async def demonstrate_directional_analysis():
         result = await predictor.predict_directional_with_adversarial_analysis(
             market_data,
             current_price
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         print("✅ Analysis completed successfully!")
@@ -111,12 +117,16 @@ async def demonstrate_directional_analysis():
         adversarial = result["adversarial_analysis"]
 
         for magnitude, analysis in adversarial.items():
-            print(f"\n   For {magnitude} movement:")
+    pass
+    pass
+            print(f"\\\n   For {magnitude} movement:")
             print(f"     Risk Score: {analysis['risk_score']:.2%}")
             print(f"     Recommended Stop Loss: {analysis['recommended_stop_loss']:.1f}%")
             print("     Adverse Probabilities:")
 
             for level, prob in analysis['adverse_probabilities'].items():
+    pass
+    pass
                 if prob > 0.1:  # Only show significant probabilities
                     print(f"       {level}: {prob:.1%}")
 
@@ -133,6 +143,8 @@ async def demonstrate_directional_analysis():
         # Display risk levels breakdown
         print("📊 RISK LEVELS BREAKDOWN:")
         for level_info in risk['risk_levels']:
+    pass
+    pass
             print(f"   {level_info['magnitude']}: Risk {level_info['risk_score']:.2%}, Stop Loss {level_info['stop_loss']:.1f}%")
 
         print()
@@ -150,6 +162,8 @@ async def demonstrate_directional_analysis():
     await predictor.stop()
 
 def print_usage_example():
+    pass
+    pass
     """
     Print usage example for the new functionality.
     """
@@ -188,6 +202,8 @@ if (primary_direction["direction"] == "up" and
 """)
 
 if __name__ == "__main__":
+    pass
+    pass
     print("🎯 ML Directional Prediction with Adversarial Analysis")
     print("=" * 70)
     print()

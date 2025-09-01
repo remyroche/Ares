@@ -12,6 +12,7 @@ from typing import Any, Dict
 from src.utils.logger import system_logger
 
 
+import class RegimeType
 class RegimeType(Enum):
     BULL_TREND , "bull_trend"
     BEAR_TREND = "bear_trend"
@@ -24,6 +25,8 @@ class RegimeSRTracker:
     """Regime and S/R tracker scaffold."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("RegimeSRTracker")
 

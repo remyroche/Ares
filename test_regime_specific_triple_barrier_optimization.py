@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 # Import the regime-specific optimizer
 try:
         RegimeSpecificTripleBarrierOptimizer,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         create_regime_specific_triple_barrier_optimizer
     )
     logger.info("✅ Successfully imported regime-specific triple barrier optimizer")
@@ -29,6 +33,8 @@ except ImportError as e:
 
 
 def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFrame]:
+    pass
+    pass
     """Create test data for different market regimes."""
 
     dates = pd.date_range(start="2024-01-01", periods=periods, freq="1min")
@@ -41,6 +47,8 @@ def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFr
     bull_returns = np.random.normal(0.0002, 0.015, periods)  # Positive trend
     bull_prices = [100.0]
     for i in range(1, periods):
+    pass
+    pass
         new_price = bull_prices[-1] * (1 + bull_returns[i])
         bull_prices.append(new_price)
 
@@ -63,6 +71,8 @@ def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFr
     bear_returns = np.random.normal(-0.0001, 0.018, periods)  # Negative trend
     bear_prices = [100.0]
     for i in range(1, periods):
+    pass
+    pass
         new_price = bear_prices[-1] * (1 + bear_returns[i])
         bear_prices.append(new_price)
 
@@ -84,6 +94,8 @@ def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFr
     sideways_returns = np.random.normal(0, 0.012, periods)  # No trend
     sideways_prices = [100.0]
     for i in range(1, periods):
+    pass
+    pass
         # Add mean reversion
         mean_reversion = -0.001 * (sideways_prices[-1] - 100.0) / 100.0
         new_price = sideways_prices[-1] * (1 + sideways_returns[i] + mean_reversion)
@@ -107,6 +119,8 @@ def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFr
     volatile_returns = np.random.normal(0, 0.025, periods)  # High volatility
     volatile_prices = [100.0]
     for i in range(1, periods):
+    pass
+    pass
         # Add volatility clustering
         vol_multiplier = 1 + 0.8 * np.sin(i / 50)  # High volatility variation
         new_price = volatile_prices[-1] * (1 + volatile_returns[i] * vol_multiplier)
@@ -130,6 +144,8 @@ def create_regime_specific_test_data(periods: int = 1000) -> Dict[str, pd.DataFr
     trending_returns = np.random.normal(0.0003, 0.014, periods)  # Strong trend
     trending_prices = [100.0]
     for i in range(1, periods):
+    pass
+    pass
         # Add trend persistence
         trend_strength = 0.8 + 0.2 * np.sin(i / 100)  # Varying trend strength
         new_price = trending_prices[-1] * (1 + trending_returns[i] * trend_strength)
@@ -174,32 +190,44 @@ async def test_regime_specific_optimization():
     logger.info(f"Total regimes supported: {len(optimizer.regime_configs)}")
 
     for regime_name, regime_config in optimizer.regime_configs.items():
-        logger.info(f"\n{regime_name}:")
+    pass
+    pass
+        logger.info(f"\\\n{regime_name}:")
         logger.info(f"  Description: {regime_config['description']}")
         total_params = sum(len(category) for category in regime_config.values() if isinstance(category, dict))
         logger.info(f"  Total parameters: {total_params}")
 
     # Create test data for different regimes
-    logger.info("\n📊 Creating test data for different regimes...")
+    logger.info("\\\n📊 Creating test data for different regimes...")
     regime_data = create_regime_specific_test_data(500)  # Reduced for testing
 
     for regime_name, data in regime_data.items():
+    pass
+    pass
         logger.info(f"  {regime_name}: {len(data)} data points")
 
     # Run regime-specific optimization
-    logger.info("\n🚀 Running regime-specific optimization...")
+    logger.info("\\\n🚀 Running regime-specific optimization...")
     try:
         optimization_results = await optimizer.optimize_regime_specific_parameters(
             regime_data,
             config["regime_optimization"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         logger.info("✅ Regime-specific optimization completed successfully!")
 
         # Show results
         for regime_name, result in optimization_results.items():
+    pass
+    pass
             if "error" not in result:
-                logger.info(f"\n📈 {regime_name} results:")
+    pass
+    pass
+                logger.info(f"\\\n📈 {regime_name} results:")
                 logger.info(f"  Best value: {result.get('best_value', 0):.4f}")
                 logger.info(f"  Total trials: {result.get('total_trials', 0)}")
                 logger.info(f"  Best trial: {result.get('best_trial', 0)}")
@@ -207,6 +235,8 @@ async def test_regime_specific_optimization():
                 # Show some key parameters
                 best_params = result.get('best_params', {})
                 if 'barrier_settings' in best_params:
+    pass
+    pass
                     barrier_params = best_params['barrier_settings']
                     logger.info(f"  Upper barrier: {barrier_params.get('upper_barrier_multiplier', 'N/A')}")
                     logger.info(f"  Lower barrier: {barrier_params.get('lower_barrier_multiplier', 'N/A')}")
@@ -224,7 +254,7 @@ async def test_regime_specific_optimization():
 async def test_regime_parameter_application():
     """Test applying regime-specific parameters."""
 
-    logger.info("\n🧪 Testing Regime Parameter Application")
+    logger.info("\\\n🧪 Testing Regime Parameter Application")
     logger.info("=" * 80)
 
     # Create optimizer
@@ -236,6 +266,10 @@ async def test_regime_parameter_application():
 
     try:
         # Run quick optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         results = await optimizer.optimize_regime_specific_parameters(
             regime_data,
             {"n_trials": 5, "timeout": 300}
@@ -243,12 +277,18 @@ async def test_regime_parameter_application():
 
         # Test parameter application
         for regime_name in results.keys():
+    pass
+    pass
             if "error" not in results[regime_name]:
-                logger.info(f"\n🔧 Applying parameters for {regime_name}...")
+    pass
+    pass
+                logger.info(f"\\\n🔧 Applying parameters for {regime_name}...")
 
                 application_result = await optimizer.apply_regime_parameters(regime_name)
 
                 if "error" not in application_result:
+    pass
+    pass
                     logger.info(f"  ✅ Parameters applied successfully")
                     logger.info(f"  Parameters applied: {application_result.get('parameters_applied', 0)}")
                 else:
@@ -264,7 +304,7 @@ async def test_regime_parameter_application():
 async def test_optimization_recommendations():
     """Test optimization recommendations."""
 
-    logger.info("\n🧪 Testing Optimization Recommendations")
+    logger.info("\\\n🧪 Testing Optimization Recommendations")
     logger.info("=" * 80)
 
     # Create optimizer
@@ -276,6 +316,10 @@ async def test_optimization_recommendations():
 
     try:
         # Run quick optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await optimizer.optimize_regime_specific_parameters(
             regime_data,
             {"n_trials": 5, "timeout": 300}
@@ -286,6 +330,8 @@ async def test_optimization_recommendations():
 
         logger.info("💡 Optimization recommendations:")
         for i, recommendation in enumerate(recommendations, 1):
+    pass
+    pass
             logger.info(f"  {i}. {recommendation}")
 
         return True
@@ -304,7 +350,7 @@ async def run_comprehensive_regime_test():
     test_results = {}
 
     # Test 1: Basic regime-specific optimization
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 1: Regime-Specific Optimization")
     logger.info("="*50)
 
@@ -312,7 +358,7 @@ async def run_comprehensive_regime_test():
     test_results["regime_optimization"] = optimization_results is not None
 
     # Test 2: Parameter application
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 2: Parameter Application")
     logger.info("="*50)
 
@@ -320,7 +366,7 @@ async def run_comprehensive_regime_test():
     test_results["parameter_application"] = parameter_application
 
     # Test 3: Optimization recommendations
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 3: Optimization Recommendations")
     logger.info("="*50)
 
@@ -328,7 +374,7 @@ async def run_comprehensive_regime_test():
     test_results["recommendations"] = recommendations
 
     # Summary
-    logger.info("\n" + "="*100)
+    logger.info("\\\n" + "="*100)
     logger.info("🎯 REGIME-SPECIFIC OPTIMIZATION TEST SUMMARY")
     logger.info("="*100)
 
@@ -342,18 +388,20 @@ async def run_comprehensive_regime_test():
 
     # Show individual test results
     for test_name, result in test_results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         logger.info(f"  {test_name}: {status}")
 
     # Generate recommendations
-    logger.info("\n💡 REGIME-SPECIFIC OPTIMIZATION FEATURES:")
+    logger.info("\\\n💡 REGIME-SPECIFIC OPTIMIZATION FEATURES:")
     logger.info("  🎯 5 different market regimes supported")
     logger.info("  🔧 Regime-specific parameter optimization")
     logger.info("  📊 Separate optimization for each regime")
     logger.info("  🚀 MLflow integration for tracking")
     logger.info("  📈 Performance-based recommendations")
 
-    logger.info("\n🔮 NEXT STEPS:")
+    logger.info("\\\n🔮 NEXT STEPS:")
     logger.info("  1. Integrate with your actual HMM regime detection")
     logger.info("  2. Connect with your triple barrier implementation")
     logger.info("  3. Run full optimization for all regimes")
@@ -369,11 +417,17 @@ async def main():
     try:
         results = await run_comprehensive_regime_test()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if all(results.values()):
-            logger.info("\n🎉 REGIME-SPECIFIC OPTIMIZATION TEST COMPLETED SUCCESSFULLY!")
+    pass
+    pass
+            logger.info("\\\n🎉 REGIME-SPECIFIC OPTIMIZATION TEST COMPLETED SUCCESSFULLY!")
             logger.info("Your triple barrier method now has regime-specific optimization!")
         else:
-            logger.info("\n⚠️ SOME TESTS FAILED - Review and fix issues before production use")
+            logger.info("\\\n⚠️ SOME TESTS FAILED - Review and fix issues before production use")
 
     except Exception as e:
         logger.error(f"❌ Comprehensive regime test failed: {e}")
@@ -381,5 +435,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the comprehensive regime test
     asyncio.run(main())

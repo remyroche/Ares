@@ -12,6 +12,7 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -37,6 +38,8 @@ class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation - Combines multiple models into ensemble predictions."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.standards, pipeline_standards
         self.logger, logger
@@ -45,8 +48,12 @@ class AnalystEnsembleCreationStep:
         self._validate_environment()
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
@@ -72,7 +79,13 @@ class AnalystEnsembleCreationStep:
         try:
         # Check if enhanced HMM models exist from Step 6
             enhanced_models_dir, os.path.join(data_dir, "enhanced_hmm_models")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(enhanced_models_dir):
+    pass
+    pass
                 logger.warning(
                     f"⚠️ Enhanced HMM models directory not found: {enhanced_models_dir}",
                 )
@@ -85,6 +98,8 @@ class AnalystEnsembleCreationStep:
             ensemble_models, self._load_enhanced_models(enhanced_models_dir)
 
         if not ensemble_models:
+    pass
+    pass
                 logger.warning(
                     "⚠️ No enhanced models found, creating placeholder ensemble",
                 )
@@ -108,24 +123,44 @@ class AnalystEnsembleCreationStep:
         return False
 
     def _load_enhanced_models(self, enhanced_models_dir: str) -> dict[str, Any]:
+    pass
+    pass
         """Load enhanced models from Step 6."""
         try:
             ensemble_models: dict[str, Any] = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(enhanced_models_dir):
+    pass
+    pass
         return ensemble_models
 
         # Look for model files in the enhanced models directory
         for regime_dir in os.listdir(enhanced_models_dir):
+    pass
+    pass
                 regime_path, os.path.join(enhanced_models_dir, regime_dir)
         if os.path.isdir(regime_path):
+    pass
+    pass
                     ensemble_models[regime_dir] = {}
 
         for model_file in os.listdir(regime_path):
+    pass
+    pass
         if model_file.endswith(".joblib"):
+    pass
+    pass
                             model_path, os.path.join(regime_path, model_file)
         try:
                                 model, joblib.load(model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                 model_name, model_file.replace(".joblib", "")
                                 ensemble_models[regime_dir][model_name] = model
                                 logger.info(
@@ -148,8 +183,18 @@ class AnalystEnsembleCreationStep:
         """Create ensemble from loaded models."""
         try:
         # Apply optimized feature selection for ensemble creation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         try:
                 from src.training.optimized_feature_selection_manager import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import OptimizedFeatureSelectionManager,
                     OptimizedFeatureSelectionManager,
                 )
 
@@ -158,6 +203,8 @@ class AnalystEnsembleCreationStep:
         # Get sample data for feature selection (if available)
                 sample, self._get_sample_data_for_feature_selection(data_dir, symbol, exchange)
         if sample is not None:
+    pass
+    pass
                     features_df, target, sample
 
                     optimized_features, selection_metadata = (
@@ -172,6 +219,8 @@ class AnalystEnsembleCreationStep:
 
         # Log performance metrics
         if "performance_metrics" in selection_metadata:
+    pass
+    pass
                         perf_metrics, selection_metadata["performance_metrics"]
                         logger.info("📊 Ensemble feature selection performance:")
                         logger.info(f"   - VIF calculation: {perf_metrics.get('vif_calculation_time', 0):.2f}s")
@@ -223,7 +272,11 @@ class AnalystEnsembleCreationStep:
 
         # Assign equal weights to all models for now
         for regime, models in ensemble_models.items():
+    pass
+    pass
         if models:
+    pass
+    pass
                     ensemble_result["ensemble_weights"][regime] = {
                         model_name: 1.0 / max(1, len(models)) for model_name in models
                     }
@@ -238,24 +291,40 @@ class AnalystEnsembleCreationStep:
         return {}
 
     def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
+    pass
+    pass
         """Get sample data for feature selection from existing features."""
         try:
         # Try to load sample features and labels from Step 2 artifacts
             features_file, f"{data_dir}/{exchange}_{symbol}_features_train.parquet"
             labels_file, f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet"
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(features_file) and os.path.exists(labels_file):
+    pass
+    pass
                 features_df, pd.read_parquet(features_file)
                 labels_df, pd.read_parquet(labels_file)
 
         # Align and extract target series
         # This assumes 'target' is the target column and they share an index (e.g., timestamp)
         if "target" in labels_df.columns:
+    pass
+    pass
         # Ensure indices are aligned before extracting the target
         if not features_df.index.equals(labels_df.index):
+    pass
+    pass
         if "timestamp" in labels_df.columns and "timestamp" not in labels_df.index.names:
+    pass
+    pass
                             labels_df, labels_df.set_index("timestamp")
         if "timestamp" in features_df.columns and "timestamp" not in features_df.index.names:
+    pass
+    pass
                             features_df, features_df.set_index("timestamp")
                         labels_df, labels_df.reindex(features_df.index)
 
@@ -277,6 +346,10 @@ class AnalystEnsembleCreationStep:
         try:
             logger.info("📝 Creating placeholder ensemble for Step 7")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create placeholder ensemble structure
             placeholder_ensemble: dict[str, Any] = {
                 "ensemble_models": {"placeholder_regime": {"placeholder_model": None}},
@@ -311,6 +384,10 @@ class AnalystEnsembleCreationStep:
             ensemble_dir, os.path.join(data_dir, "analyst_ensemble")
             os.makedirs(ensemble_dir, exist_ok = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Save ensemble summary
             summary_file, os.path.join(
                 ensemble_dir, f"{exchange}_{symbol}_analyst_ensemble_summary.json",
@@ -319,6 +396,8 @@ class AnalystEnsembleCreationStep:
         # Convert to serializable format
             serializable_result, ensemble_result.copy()
         if "ensemble_models" in serializable_result:
+    pass
+    pass
                 serializable_result["ensemble_models"] = {
                     regime: list(models.keys())
         for regime, models in ensemble_result["ensemble_models"].items()

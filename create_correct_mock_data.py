@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 
 def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
+    pass
+    pass
     """Create klines data that matches step1 output format."""
     print(f"📊 Creating klines data for {exchange}_{symbol}_{timeframe}")
 
@@ -51,6 +53,8 @@ def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 3
     klines_data = []
 
     for i, timestamp in enumerate(timestamps):
+    pass
+    pass
         # Realistic price movement
         price_change = np.random.normal(0, 0.002)  # 0.2% volatility
         price = max(price * (1 + price_change), 100)
@@ -84,6 +88,8 @@ def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int = 3
     return df
 
 def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
+    pass
+    pass
     """Create aggtrades data that matches step1 output format."""
     print(f"📊 Creating aggtrades data for {exchange}_{symbol}")
 
@@ -101,10 +107,14 @@ def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
     aggtrades_data = []
 
     for timestamp in timestamps:
+    pass
+    pass
         # Generate multiple trades per timestamp
         num_trades = np.random.randint(1, 5)
 
         for _ in range(num_trades):
+    pass
+    pass
             trade_price = base_price + np.random.normal(0, 50)
             quantity = np.random.uniform(0.1, 10.0)
 
@@ -123,6 +133,8 @@ def create_aggtrades_data(symbol: str, exchange: str, days: int = 30):
     return df
 
 def create_futures_data(symbol: str, exchange: str, days: int = 30):
+    pass
+    pass
     """Create futures data that matches step1 output format (8h funding rate data)."""
     print(f"📊 Creating futures data for {exchange}_{symbol}")
 
@@ -139,6 +151,8 @@ def create_futures_data(symbol: str, exchange: str, days: int = 30):
     futures_data = []
 
     for timestamp in timestamps:
+    pass
+    pass
         # Generate futures data
         mark_price = base_price + np.random.normal(0, 100)
         index_price = mark_price + np.random.normal(0, 10)
@@ -159,6 +173,8 @@ def create_futures_data(symbol: str, exchange: str, days: int = 30):
     return df
 
 def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
+    pass
+    pass
     """Create unified data that step1_5 produces."""
     print(f"📊 Creating unified data for {exchange}_{symbol}_{timeframe}")
 
@@ -166,6 +182,8 @@ def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int = 
     klines_file = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
     if os.path.exists(klines_file):
+    pass
+    pass
         klines_df = pd.read_parquet(klines_file)
 
         # Create unified format
@@ -190,6 +208,8 @@ def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int = 
         return None
 
 def create_features_data(symbol: str, exchange: str, timeframe: str, days: int = 30):
+    pass
+    pass
     """Create features data that step2 produces."""
     print(f"📊 Creating features data for {exchange}_{symbol}_{timeframe}")
 
@@ -197,6 +217,8 @@ def create_features_data(symbol: str, exchange: str, timeframe: str, days: int =
     unified_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}.parquet"
 
     if os.path.exists(unified_file):
+    pass
+    pass
         unified_df = pd.read_parquet(unified_file)
 
         # Create features dataset
@@ -223,6 +245,8 @@ def create_features_data(symbol: str, exchange: str, timeframe: str, days: int =
         return None
 
 def calculate_rsi(prices, period=14):
+    pass
+    pass
     """Calculate RSI indicator."""
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -232,6 +256,8 @@ def calculate_rsi(prices, period=14):
     return rsi
 
 def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", days: int = 30):
+    pass
+    pass
     """Create all required mock data for the pipeline."""
     print("🚀 Creating Complete Mock Data Set")
     print("=" * 60)
@@ -244,7 +270,9 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
     timeframes = ["1m", "3m", "5m", "15m", "30m"]
 
     for timeframe in timeframes:
-        print(f"\n📊 Processing timeframe: {timeframe}")
+    pass
+    pass
+        print(f"\\\n📊 Processing timeframe: {timeframe}")
         print("-" * 40)
 
         # 1. Create klines data (step1 output)
@@ -270,6 +298,8 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
         # 4. Create unified data (step1_5 output)
         unified_df = create_unified_data(symbol, exchange, timeframe, days)
         if unified_df is not None:
+    pass
+    pass
             unified_file = f"data_cache/unified_{exchange}_{symbol}_{timeframe}.parquet"
             unified_df.to_parquet(unified_file, index=False)
             print(f"💾 Saved unified: {unified_file}")
@@ -294,6 +324,8 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
         # 5. Create features data (step2 output)
         features_df = create_features_data(symbol, exchange, timeframe, days)
         if features_df is not None:
+    pass
+    pass
             # Split into train/val/test
             total_rows = len(features_df)
             train_size = int(total_rows * 0.7)
@@ -316,24 +348,30 @@ def create_all_mock_data(symbol: str = "ETHUSDT", exchange: str = "BINANCE", day
             print(f"💾 Saved features val: {val_file} ({len(val_df)} records)")
             print(f"💾 Saved features test: {test_file} ({len(test_df)} records)")
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("✅ All mock data created successfully!")
     print("=" * 60)
 
     # List all created files
-    print("\n📁 Created files:")
+    print("\\\n📁 Created files:")
     data_cache_files = list(Path("data_cache").glob("*.parquet"))
     training_files = list(Path("data/training").glob("*.parquet"))
 
     for file in data_cache_files:
+    pass
+    pass
         size = file.stat().st_size
         print(f"   📊 {file}: {size:,} bytes")
 
     for file in training_files:
+    pass
+    pass
         size = file.stat().st_size
         print(f"   📊 {file}: {size:,} bytes")
 
 def main():
+    pass
+    pass
     """Main function to create mock data."""
     print("🎯 Creating Correct Mock Data for Enhanced Training Manager")
     print("=" * 80)
@@ -346,8 +384,10 @@ def main():
 
     create_all_mock_data("ETHUSDT", "BINANCE", days=30)
 
-    print("\n🎉 Mock data creation completed!")
+    print("\\\n🎉 Mock data creation completed!")
     print("The enhanced_training_manager can now use this data for steps 1_5, 2, 3, and 4.")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

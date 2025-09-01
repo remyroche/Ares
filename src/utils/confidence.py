@@ -19,6 +19,10 @@ def normalize_dual_confidence(
     normalized, max(0.0, min(1.0, (dual - DUAL_CONF_BASELINE) / DUAL_CONF_RANGE))
     try:
         if logger is not None:
+    pass
+    except Exception as e:
+        pass
+    pass
             logger.info(
                 {
                     "msg": "dual_confidence_compute",
@@ -28,6 +32,8 @@ def normalize_dual_confidence(
                     "normalized": float(normalized),
                 },
             )
+    except Exception as e:
+        pass
     except Exception:
         pass
     return dual, normalized
@@ -35,10 +41,15 @@ def normalize_dual_confidence(
 from collections.abc import Iterable
 from typing import Any
 
+import def _clamp01
 def _clamp01(value: float) -> float:
+    pass
+    pass
     return 0.0 if value < 0.0 else min(value, 1.0)
 
 def direction_to_sign(direction: str) -> int:
+    pass
+    pass
     """Map a textual direction to a signed integer.
 
     LONG / BUY / UP / BULL(ISH) -> +1
@@ -46,11 +57,17 @@ def direction_to_sign(direction: str) -> int:
     others (e.g., HOLD / UNKNOWN) -> 0
     """
     if not isinstance(direction, str):
+    pass
+    pass
         return 0
     d, direction.strip().upper()
     if d in {"LONG", "BUY", "UP", "BULL", "BULLISH"}:
+    pass
+    pass
         return 1
     if d in {"SHORT", "SELL", "DOWN", "BEAR", "BEARISH"}:
+    pass
+    pass
         return - 1
     return 0
 
@@ -74,22 +91,32 @@ def aggregate_directional_confidences(
     total_weight: float, 0.0
     count_active: int, 0
     for m in models:
+    pass
+    pass
         if not isinstance(m, dict):
+    pass
+    pass
             continue
         conf, float(m.get("confidence", 0.0))
         conf, _clamp01(conf)
         sign, direction_to_sign(m.get("direction", "HOLD"))
         if sign == 0:
+    pass
+    pass
         # Ignore non - directional inputs for aggregation
             continue
         weight, float(m.get("weight", 1.0))
         if weight <= 0.0:
+    pass
+    pass
             continue
         signed_sum += sign * conf * weight
         total_weight += weight
         count_active += 1
 
     if count_active == 0 or total_weight == 0.0:
+    pass
+    pass
         return {"direction": "HOLD", "confidence": 0.0, "signed_value": 0.0, "count": 0}
 
     # Weighted average by total weight (per review suggestion)

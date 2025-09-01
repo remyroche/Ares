@@ -8,14 +8,20 @@ import sys
 from pathlib import Path
 
 # Add src to path
+import sys.path.insert
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 async def main():
     """Run step2_feature_engineering directly."""
     try:
         # Import the step function
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from src.training.steps.step2_feature_engineering import run_step
 
+import print
         print("🚀 Running step2_feature_engineering directly...")
 
         # Run the step
@@ -28,6 +34,8 @@ async def main():
         )
 
         if result:
+    pass
+    pass
             print("✅ Step2 feature engineering completed successfully!")
         else:
             print("❌ Step2 feature engineering failed!")
@@ -38,4 +46,6 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

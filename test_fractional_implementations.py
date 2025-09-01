@@ -6,9 +6,11 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
+import FractionalTripleBarrierLabeling
     FractionalTripleBarrierLabeling
 )
 from src.training.steps.fractional_differentiation import (
+import FractionalDifferentiation,
     FractionalDifferentiation,
     FractionalFeatureGenerator
 )
@@ -18,6 +20,8 @@ class TestFractionalTripleBarrierLabeling:
     """Test suite for fractional triple barrier labeling."""
 
     def setup_method(self):
+    pass
+    pass
         """Set up test data."""
         # Create synthetic OHLCV data
         np.random.seed(42)
@@ -29,6 +33,8 @@ class TestFractionalTripleBarrierLabeling:
         prices = [base_price]
 
         for ret in returns[1:]:
+    pass
+    pass
             prices.append(prices[-1] * (1 + ret))
 
         # Create OHLCV data
@@ -54,6 +60,8 @@ class TestFractionalTripleBarrierLabeling:
         )
 
     def test_fractional_labeling_initialization(self):
+    pass
+    pass
         """Test fractional labeling initialization."""
         labeler = FractionalTripleBarrierLabeling()
 
@@ -64,6 +72,8 @@ class TestFractionalTripleBarrierLabeling:
         assert "enable_volatility_normalization" in labeler.fractional_config
 
     def test_fractional_labeling_basic(self):
+    pass
+    pass
         """Test basic fractional labeling functionality."""
         labeler = FractionalTripleBarrierLabeling()
 
@@ -76,6 +86,8 @@ class TestFractionalTripleBarrierLabeling:
         ]
 
         for col in expected_columns:
+    pass
+    pass
             assert col in result.columns, f"Missing column: {col}"
 
         # Check that fractional labels are in expected range
@@ -87,6 +99,8 @@ class TestFractionalTripleBarrierLabeling:
         assert result['confidence_score'].max() <= 1
 
     def test_fractional_labeling_with_regime_labels(self):
+    pass
+    pass
         """Test fractional labeling with regime labels."""
         labeler = FractionalTripleBarrierLabeling()
 
@@ -99,6 +113,8 @@ class TestFractionalTripleBarrierLabeling:
         assert 'fractional_label' in result.columns
 
     def test_fractional_labeling_with_volatility(self):
+    pass
+    pass
         """Test fractional labeling with volatility series."""
         labeler = FractionalTripleBarrierLabeling()
 
@@ -111,6 +127,8 @@ class TestFractionalTripleBarrierLabeling:
         assert 'volatility_score' in result.columns
 
     def test_fractional_labeling_statistics(self):
+    pass
+    pass
         """Test fractional labeling statistics."""
         labeler = FractionalTripleBarrierLabeling()
 
@@ -124,12 +142,16 @@ class TestFractionalTripleBarrierLabeling:
         ]
 
         for key in expected_keys:
+    pass
+    pass
             assert key in stats, f"Missing statistic: {key}"
 
         assert stats['total_samples'] > 0
         assert stats['fractional_label_mean'] >= -1 and stats['fractional_label_mean'] <= 1
 
     def test_fractional_labeling_configuration(self):
+    pass
+    pass
         """Test fractional labeling with custom configuration."""
         custom_config = {
             "enable_distance_scaling": True,
@@ -156,6 +178,8 @@ class TestFractionalDifferentiation:
     """Test suite for fractional differentiation."""
 
     def setup_method(self):
+    pass
+    pass
         """Set up test data."""
         np.random.seed(42)
         n_samples = 500
@@ -173,6 +197,8 @@ class TestFractionalDifferentiation:
         )
 
     def test_fractional_differentiation_initialization(self):
+    pass
+    pass
         """Test fractional differentiation initialization."""
         frac_diff = FractionalDifferentiation(d=0.5, window=50)
 
@@ -182,6 +208,8 @@ class TestFractionalDifferentiation:
         assert frac_diff.weights[0] == -0.5  # First weight should be -d
 
     def test_fractional_differentiation_basic(self):
+    pass
+    pass
         """Test basic fractional differentiation."""
         frac_diff = FractionalDifferentiation(d=0.5, window=20)
 
@@ -192,6 +220,8 @@ class TestFractionalDifferentiation:
         assert result.name == 'test_series_frac_diff_0.5'
 
     def test_fractional_differentiation_short_series(self):
+    pass
+    pass
         """Test fractional differentiation with short series."""
         short_series = self.test_series.iloc[:10]  # Less than window size
         frac_diff = FractionalDifferentiation(d=0.5, window=20)
@@ -203,6 +233,8 @@ class TestFractionalDifferentiation:
         assert result.name == 'test_series_frac_diff_0.5'
 
     def test_fractional_differentiation_order_optimization(self):
+    pass
+    pass
         """Test fractional order optimization."""
         frac_diff = FractionalDifferentiation(d=0.5, window=20, optimize_order=True)
 
@@ -213,6 +245,8 @@ class TestFractionalDifferentiation:
         assert result.name == f'price_frac_diff_{optimal_d:.3f}'
 
     def test_batch_fractional_differentiation(self):
+    pass
+    pass
         """Test batch fractional differentiation."""
         # Create test DataFrame
         test_df = pd.DataFrame({
@@ -231,6 +265,8 @@ class TestFractionalDifferentiation:
         # Check that new columns were added
         expected_columns = ['price1_frac_diff_0.500', 'price2_frac_diff_0.500']
         for col in expected_columns:
+    pass
+    pass
             assert col in result_df.columns
 
         # Check optimization results
@@ -243,6 +279,8 @@ class TestFractionalFeatureGenerator:
     """Test suite for fractional feature generator."""
 
     def setup_method(self):
+    pass
+    pass
         """Set up test data."""
         np.random.seed(42)
         n_samples = 300
@@ -257,6 +295,8 @@ class TestFractionalFeatureGenerator:
         })
 
     def test_fractional_feature_generator_initialization(self):
+    pass
+    pass
         """Test fractional feature generator initialization."""
         generator = FractionalFeatureGenerator()
 
@@ -265,6 +305,8 @@ class TestFractionalFeatureGenerator:
         assert generator.config["enable_fractional_diff"] is True
 
     def test_fractional_feature_generation(self):
+    pass
+    pass
         """Test fractional feature generation."""
         generator = FractionalFeatureGenerator()
 
@@ -273,6 +315,8 @@ class TestFractionalFeatureGenerator:
         # Check that original columns are preserved
         original_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in original_columns:
+    pass
+    pass
             assert col in result.columns
 
         # Check that fractional differentiation features were added
@@ -280,6 +324,8 @@ class TestFractionalFeatureGenerator:
         assert len(frac_diff_columns) > 0
 
     def test_fractional_feature_generator_disabled(self):
+    pass
+    pass
         """Test fractional feature generator when disabled."""
         config = {"enable_fractional_diff": False}
         generator = FractionalFeatureGenerator(config)
@@ -291,6 +337,8 @@ class TestFractionalFeatureGenerator:
         assert all(col in result.columns for col in self.test_data.columns)
 
     def test_fractional_feature_statistics(self):
+    pass
+    pass
         """Test fractional feature statistics."""
         generator = FractionalFeatureGenerator()
 
@@ -306,6 +354,8 @@ class TestFractionalFeatureGenerator:
 
 
 def test_integration_fractional_labeling_and_differentiation():
+    pass
+    pass
     """Integration test for fractional labeling and differentiation."""
     # Create test data
     np.random.seed(42)
@@ -341,11 +391,13 @@ def test_integration_fractional_labeling_and_differentiation():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run tests
     print("🧪 Running fractional implementation tests...")
 
     # Test fractional labeling
-    print("\n📊 Testing Fractional Triple Barrier Labeling...")
+    print("\\\n📊 Testing Fractional Triple Barrier Labeling...")
     test_labeling = TestFractionalTripleBarrierLabeling()
     test_labeling.setup_method()
 
@@ -359,7 +411,7 @@ if __name__ == "__main__":
     print("✅ Fractional labeling tests passed!")
 
     # Test fractional differentiation
-    print("\n📈 Testing Fractional Differentiation...")
+    print("\\\n📈 Testing Fractional Differentiation...")
     test_diff = TestFractionalDifferentiation()
     test_diff.setup_method()
 
@@ -372,7 +424,7 @@ if __name__ == "__main__":
     print("✅ Fractional differentiation tests passed!")
 
     # Test fractional feature generator
-    print("\n🔧 Testing Fractional Feature Generator...")
+    print("\\\n🔧 Testing Fractional Feature Generator...")
     test_generator = TestFractionalFeatureGenerator()
     test_generator.setup_method()
 
@@ -384,8 +436,8 @@ if __name__ == "__main__":
     print("✅ Fractional feature generator tests passed!")
 
     # Integration test
-    print("\n🔗 Testing Integration...")
+    print("\\\n🔗 Testing Integration...")
     test_integration_fractional_labeling_and_differentiation()
 
     print("✅ Integration test passed!")
-    print("\n🎉 All fractional implementation tests completed successfully!")
+    print("\\\n🎉 All fractional implementation tests completed successfully!")

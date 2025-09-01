@@ -15,6 +15,7 @@ from src.utils.comprehensive_logger import get_comprehensive_logger
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -23,21 +24,26 @@ from src.utils.warning_symbols import (
 )
 from src.paper_trader import PaperTrader, setup_paper_trader
 from src.utils.advanced_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
     comprehensive_validation,
 )
 from src.utils.centralized_decorators_simple import secure_data_processing
 
+import if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from src.reports.paper_trading_reporter import PaperTradingReporter
 
+import class PaperTradingIntegration:
 class PaperTradingIntegration:
     """
     Integration module for paper trading with enhanced reporting.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize paper trading integration.
 
@@ -86,21 +92,37 @@ class PaperTradingIntegration:
         try:
             self.logger.info("Initializing Paper Trading Integration...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize paper trader
             self.paper_trader = await setup_paper_trader(self.config)
             if not self.paper_trader:
+    pass
+    pass
                 self.logger.error(failed("Failed to initialize paper trader"))
                 return False
 
             # Initialize detailed reporter
             if self.enable_detailed_reporting:
+    pass
+    pass
                 try:
                     from src.reports.paper_trading_reporter import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import setup_paper_trading_reporter as _setup_reporter,
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:
+    pass
+    pass
                         self.logger.warning(
                             "Failed to initialize detailed reporter, continuing without detailed reporting",
                         )
@@ -115,6 +137,8 @@ class PaperTradingIntegration:
 
             # Validate integration
             if not self._validate_integration():
+    pass
+    pass
                 self.logger.error(failed("Integration validation failed"))
                 return False
 
@@ -134,14 +158,24 @@ class PaperTradingIntegration:
         context="integration validation",
     )
     def _validate_integration(self) -> bool:
+    pass
+    pass
         """Validate integration components."""
         try:
             if not self.paper_trader:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(initialization_error("Paper trader not initialized"))
                 return False
 
+    except Exception as e:
+        pass
             # If reporter failed to initialize, degrade gracefully (don't block integration)
             if self.enable_detailed_reporting and not self.reporter:
+    pass
+    pass
                 self.logger.warning(
                     warning(
                         "Detailed reporter not initialized; proceeding without detailed reporting",
@@ -191,11 +225,19 @@ class PaperTradingIntegration:
         """
         try:
             if not self.is_initialized or not self.paper_trader:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(initialization_error("Integration not initialized"))
                 return False
 
+    except Exception as e:
+        pass
             # Prepare trade metadata
             if trade_metadata is None:
+    pass
+    pass
                 trade_metadata = {}
 
             # Add default metadata
@@ -222,6 +264,8 @@ class PaperTradingIntegration:
             # Execute trade
             side_lower = side.lower()
             if side_lower == "buy":
+    pass
+    pass
                 success = await self.paper_trader.execute_buy_order(
                     symbol=symbol,
                     quantity=quantity,
@@ -240,6 +284,8 @@ class PaperTradingIntegration:
                 return False
 
             if success:
+    pass
+    pass
                 self.logger.info(
                     f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}",
                 )
@@ -247,7 +293,13 @@ class PaperTradingIntegration:
                 # Also write to dedicated trades log (optional)
                 try:
                     cl = get_comprehensive_logger()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if cl:
+    pass
+    pass
                         cl.log_trade(
                             f"{side.upper()} {quantity} {symbol} @ ${price:.4f} ts={timestamp.isoformat()}",
                         )
@@ -257,6 +309,8 @@ class PaperTradingIntegration:
 
                 # Generate real-time report if enabled
                 if self.enable_real_time_reporting and self.reporter:
+    pass
+    pass
                     await self._generate_real_time_report()
 
             return success
@@ -275,15 +329,27 @@ class PaperTradingIntegration:
         """Generate real-time performance report."""
         try:
             if self.reporter:
+    pass
+    except Exception as e:
+        pass
+    pass
                 await self.reporter.generate_detailed_report("real_time", ["json"])
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(error(f"Error generating real-time report: {e}"))
 
     def get_performance_metrics(self) -> dict[str, Any]:
+    pass
+    pass
         """Get comprehensive performance metrics."""
         try:
             # Get basic performance metrics
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             basic_metrics = (
                 self.paper_trader.calculate_performance() if self.paper_trader else {}
             )
@@ -291,6 +357,8 @@ class PaperTradingIntegration:
             # Get detailed metrics if reporter is available
             detailed_metrics: dict[str, Any] = {}
             if self.reporter:
+    pass
+    pass
                 detailed_metrics = self.reporter.get_performance_metrics()
                 portfolio_summary = self.reporter.get_portfolio_summary()
                 detailed_metrics["portfolio_summary"] = portfolio_summary
@@ -317,10 +385,18 @@ class PaperTradingIntegration:
             return {}
 
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         """Get trade history with optional filtering."""
         try:
             if self.paper_trader:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.paper_trader.get_trade_history(symbol)
+    except Exception as e:
+        pass
             return []
 
         except Exception as e:
@@ -328,11 +404,21 @@ class PaperTradingIntegration:
             return []
 
     def get_portfolio_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """Get portfolio summary."""
         try:
             if self.reporter:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.reporter.get_portfolio_summary()
+    except Exception as e:
+        pass
             if self.paper_trader:
+    pass
+    pass
                 positions = self.paper_trader.get_all_positions()
                 balance = self.paper_trader.get_balance()
                 return {
@@ -358,9 +444,17 @@ class PaperTradingIntegration:
         """Generate comprehensive trading report."""
         try:
             if export_formats is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 export_formats = ["json", "csv", "html"]
 
+    except Exception as e:
+        pass
             if self.reporter:
+    pass
+    pass
                 return await self.reporter.generate_detailed_report(
                     report_type,
                     export_formats,
@@ -386,6 +480,10 @@ class PaperTradingIntegration:
         """Generate basic report when detailed reporter is not available."""
         try:
             # Get basic data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             performance_metrics = self.get_performance_metrics()
             trade_history = self.get_trade_history()
             portfolio_summary = self.get_portfolio_summary()
@@ -408,7 +506,11 @@ class PaperTradingIntegration:
             os.makedirs(report_dir, exist_ok=True)
 
             for format_type in export_formats:
+    pass
+    pass
                 if format_type == "json":
+    pass
+    pass
                     filename = f"basic_paper_trading_report_{timestamp}.json"
                     filepath = os.path.join(report_dir, filename)
                     with open(filepath, "w", encoding="utf-8") as f:
@@ -422,6 +524,8 @@ class PaperTradingIntegration:
             return {}
 
     def get_integration_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get integration status."""
         return {
             "is_initialized": self.is_initialized,
@@ -443,8 +547,14 @@ class PaperTradingIntegration:
         try:
             self.is_running = False
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Stop paper trader
             if self.paper_trader:
+    pass
+    pass
                 await self.paper_trader.stop()
 
             # Generate final report
@@ -474,12 +584,20 @@ async def setup_paper_trading_integration(
     """
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         integration = PaperTradingIntegration(config)
         success = await integration.initialize()
 
         if success:
+    pass
+    pass
             return integration
         return None
 

@@ -26,6 +26,8 @@ class LiveWaveletDemo:
     """
 
     def __init__(self, config_path: str = "src/config/live_wavelet_config.yaml"):
+    pass
+    pass
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("LiveWaveletDemo")
@@ -38,10 +40,16 @@ class LiveWaveletDemo:
         self.demo_data = []
 
     def _load_config(self) -> dict:
+    pass
+    pass
         """Load configuration from YAML file."""
         try:
             with open(self.config_path) as f:
                 return yaml.safe_load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error loading config: {e}")
             return {}
@@ -51,9 +59,15 @@ class LiveWaveletDemo:
         try:
             self.logger.info("🚀 Initializing Live Wavelet Demo...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize wavelet integration
             success = await self.wavelet_integration.initialize()
             if not success:
+    pass
+    pass
                 self.logger.error("Failed to initialize wavelet integration")
                 return False
 
@@ -68,9 +82,15 @@ class LiveWaveletDemo:
             return False
 
     def _generate_demo_data(self) -> None:
+    pass
+    pass
         """Generate realistic demo market data."""
         try:
             # Generate 1000 data points of realistic price data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             np.random.seed(42)
             n_points = 1000
 
@@ -94,6 +114,8 @@ class LiveWaveletDemo:
             # Create OHLCV data
             self.demo_data = []
             for i in range(n_points):
+    pass
+    pass
                 price = prices[i]
                 high = price * (1 + abs(np.random.normal(0, 0.01)))
                 low = price * (1 - abs(np.random.normal(0, 0.01)))
@@ -125,6 +147,10 @@ class LiveWaveletDemo:
         """
         try:
             self.logger.info(f"🎬 Starting Live Wavelet Demo (duration: {duration}s)")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_running = True
 
             start_time = time.time()
@@ -133,6 +159,8 @@ class LiveWaveletDemo:
             while self.is_running and (time.time() - start_time) < duration:
                 # Get next data point
                 if data_index >= len(self.demo_data):
+    pass
+    pass
                     data_index = 0  # Loop back to start
 
                 market_data = self._create_market_data(data_index)
@@ -143,14 +171,20 @@ class LiveWaveletDemo:
                 )
 
                 if results:
+    pass
+    pass
                     self._log_signal_results(results)
 
                 # Update performance stats periodically
                 if data_index % 50 == 0:
+    pass
+    pass
                     self._log_performance_stats()
 
                 # Check health
                 if data_index % 100 == 0:
+    pass
+    pass
                     self._check_health()
 
                 data_index += 1
@@ -165,11 +199,19 @@ class LiveWaveletDemo:
             self.is_running = False
 
     def _create_market_data(self, index: int) -> dict:
+    pass
+    pass
         """Create market data for demo."""
         try:
             if index >= len(self.demo_data):
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             data_point = self.demo_data[index]
 
             return {
@@ -185,15 +227,23 @@ class LiveWaveletDemo:
             return {}
 
     def _log_signal_results(self, results: dict) -> None:
+    pass
+    pass
         """Log signal results."""
         try:
             signal = results.get("wavelet_signal", "hold")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = results.get("wavelet_confidence", 0.0)
             energy = results.get("wavelet_energy", 0.0)
             entropy = results.get("wavelet_entropy", 0.0)
             comp_time = results.get("wavelet_computation_time", 0.0)
 
             if signal != "hold":
+    pass
+    pass
                 self.logger.info(
                     f"📊 Signal: {signal.upper()} "
                     f"(confidence: {confidence:.2f}, "
@@ -206,11 +256,19 @@ class LiveWaveletDemo:
             self.logger.error(f"Error logging signal results: {e}")
 
     def _log_performance_stats(self) -> None:
+    pass
+    pass
         """Log performance statistics."""
         try:
             stats = self.wavelet_integration.get_performance_stats()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if stats:
+    pass
+    pass
                 recent = stats.get("recent_signals", {})
                 buy_count = recent.get("buy_count", 0)
                 sell_count = recent.get("sell_count", 0)
@@ -229,11 +287,19 @@ class LiveWaveletDemo:
             self.logger.error(f"Error logging performance stats: {e}")
 
     def _check_health(self) -> None:
+    pass
+    pass
         """Check system health."""
         try:
             is_healthy = self.wavelet_integration.is_healthy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not is_healthy:
+    pass
+    pass
                 self.logger.error("⚠️ Wavelet integration health check failed")
             else:
                 self.logger.info("✅ Wavelet integration healthy")
@@ -242,15 +308,23 @@ class LiveWaveletDemo:
             self.logger.error(f"Error checking health: {e}")
 
     def _log_final_stats(self) -> None:
+    pass
+    pass
         """Log final statistics."""
         try:
             stats = self.wavelet_integration.get_performance_stats()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("📊 Final Statistics:")
             self.logger.info(f"  Total signals: {stats.get('signal_history_count', 0)}")
 
             recent = stats.get("recent_signals", {})
             if recent:
+    pass
+    pass
                 self.logger.info(f"  Buy signals: {recent.get('buy_count', 0)}")
                 self.logger.info(f"  Sell signals: {recent.get('sell_count', 0)}")
                 self.logger.info(f"  Hold signals: {recent.get('hold_count', 0)}")
@@ -264,6 +338,8 @@ class LiveWaveletDemo:
             # Performance stats from analyzer
             perf_stats = stats.get("performance_stats", {})
             if perf_stats:
+    pass
+    pass
                 self.logger.info(f"  Window size: {perf_stats.get('window_size', 0)}")
                 self.logger.info(
                     f"  Wavelet type: {perf_stats.get('wavelet_type', 'unknown')}",
@@ -276,6 +352,8 @@ class LiveWaveletDemo:
             self.logger.error(f"Error logging final stats: {e}")
 
     def stop_demo(self) -> None:
+    pass
+    pass
         """Stop the demo."""
         self.is_running = False
         self.logger.info("🛑 Demo stopped by user")
@@ -284,10 +362,16 @@ async def main():
     """Main demo function."""
     try:
         # Create and initialize demo
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         demo = LiveWaveletDemo()
 
         success = await demo.initialize()
         if not success:
+    pass
+    pass
             print("Failed to initialize demo")
             return
 
@@ -295,9 +379,11 @@ async def main():
         await demo.run_demo(duration=60)
 
     except KeyboardInterrupt:
-        print("\n🛑 Demo interrupted by user")
+        print("\\\n🛑 Demo interrupted by user")
     except Exception as e:
         print(f"Error in demo: {e}")
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

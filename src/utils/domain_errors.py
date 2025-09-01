@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import class DomainError
 class DomainError(Exception):
     """Base class for domain - specific errors raised by decorators.
 
@@ -22,32 +23,48 @@ class DomainError(Exception):
 
 class DataValidationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="data_validation_error", context = context)
 
 class SchemaValidationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="schema_validation_error", context = context)
 
 class VectorizationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="vectorization_error", context = context)
 
 class ExternalServiceError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="external_service_error", context = context)
 
 class OperationTimeoutError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="operation_timeout", context = context)
 
 class AuthenticationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="authentication_error", context = context)
 
 class AuthorizationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="authorization_error", context = context)
 
 class NotFoundError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         super().__init__(message, code="not_found", context = context)

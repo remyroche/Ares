@@ -17,6 +17,7 @@ from datetime import datetime
 
 # Import the multi-output training components
 from src.training.multi_output_probability_trainer import (
+import MultiOutputProbabilityTrainer,
     MultiOutputProbabilityTrainer,
     ProbabilityTargetGenerator
 )
@@ -24,6 +25,7 @@ from src.training.multi_output_probability_trainer import (
     MultiOutputModelConfig
 )
 from src.training.model_saving_utils import (
+import save_multi_output_model_with_probabilities,
     save_multi_output_model_with_probabilities,
     load_multi_output_model_with_probabilities,
     validate_model_probabilities
@@ -31,6 +33,8 @@ from src.training.model_saving_utils import (
 
 
 def test_probability_target_generation():
+    pass
+    pass
     """Test probability target generation."""
     print("🧪 Testing probability target generation...")
 
@@ -68,6 +72,8 @@ def test_probability_target_generation():
 
     expected_keys = ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']
     for key in expected_keys:
+    pass
+    pass
         assert key in targets, f"Missing target: {key}"
         assert len(targets[key]) == n_samples, f"Target {key} has wrong length"
         assert np.all((targets[key] >= 0) & (targets[key] <= 1)), f"Target {key} has values outside [0,1]"
@@ -77,6 +83,8 @@ def test_probability_target_generation():
 
 
 def test_multi_output_probability_trainer():
+    pass
+    pass
     """Test the complete multi-output probability trainer."""
     print("🧪 Testing multi-output probability trainer...")
 
@@ -133,6 +141,8 @@ def test_multi_output_probability_trainer():
     ]
 
     for key in required_keys:
+    pass
+    pass
         assert key in probabilities, f"Missing probability: {key}"
         assert 0.0 <= probabilities[key] <= 1.0, f"Invalid probability for {key}: {probabilities[key]}"
 
@@ -141,6 +151,8 @@ def test_multi_output_probability_trainer():
 
 
 def test_multi_output_model_trainer():
+    pass
+    pass
     """Test the enhanced multi-output model trainer."""
     print("🧪 Testing enhanced multi-output model trainer...")
 
@@ -207,6 +219,8 @@ def test_multi_output_model_trainer():
     ]
 
     for prob_type in expected_prob_types:
+    pass
+    pass
         assert prob_type in trained_models, f"Missing trained model for {prob_type}"
         assert prob_type in probability_outputs, f"Missing probability output for {prob_type}"
         assert 0.0 <= probability_outputs[prob_type] <= 1.0, f"Invalid probability for {prob_type}"
@@ -216,6 +230,8 @@ def test_multi_output_model_trainer():
 
 
 def test_model_saving_and_loading():
+    pass
+    pass
     """Test model saving and loading functionality."""
     print("🧪 Testing model saving and loading...")
 
@@ -244,6 +260,10 @@ def test_model_saving_and_loading():
         try:
             saved_data = save_multi_output_model_with_probabilities(
                 model_data, model_path, save_format="joblib"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             print(f"✅ Model saved successfully to {model_path}")
         except Exception as e:
@@ -253,6 +273,10 @@ def test_model_saving_and_loading():
         # Load model
         try:
             loaded_data = load_multi_output_model_with_probabilities(model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print(f"✅ Model loaded successfully from {model_path}")
         except Exception as e:
             print(f"❌ Failed to load model: {e}")
@@ -261,6 +285,8 @@ def test_model_saving_and_loading():
         # Validate loaded model
         is_valid = validate_model_probabilities(loaded_data)
         if is_valid:
+    pass
+    pass
             print("✅ Loaded model validation passed")
         else:
             print("❌ Loaded model validation failed")
@@ -277,6 +303,8 @@ def test_model_saving_and_loading():
 
 
 def test_integration_with_existing_models():
+    pass
+    pass
     """Test integration with existing model architectures."""
     print("🧪 Testing integration with existing models...")
 
@@ -286,13 +314,23 @@ def test_integration_with_existing_models():
     # Add neural network models if available
     try:
         from src.training.multi_output_model_trainer import EXISTING_MODELS_AVAILABLE
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import if EXISTING_MODELS_AVAILABLE:
         if EXISTING_MODELS_AVAILABLE:
+    pass
+    pass
             model_types.extend(["CNN", "TCN", "Transformer"])
             print("  Neural network models available for testing")
     except ImportError:
         print("  Neural network models not available for testing")
 
     for model_type in model_types:
+    pass
+    pass
         print(f"  Testing {model_type} (using existing architecture)...")
 
         # Generate synthetic data
@@ -343,6 +381,8 @@ def test_integration_with_existing_models():
 
 
 def run_comprehensive_test():
+    pass
+    pass
     """Run all tests."""
     print("🚀 Starting comprehensive multi-output training tests...")
     print("=" * 60)
@@ -352,6 +392,10 @@ def run_comprehensive_test():
     # Test 1: Probability target generation
     try:
         targets = test_probability_target_generation()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results.append(("Probability Target Generation", True))
     except Exception as e:
         print(f"❌ Probability target generation test failed: {e}")
@@ -360,6 +404,10 @@ def run_comprehensive_test():
     # Test 2: Multi-output probability trainer
     try:
         trainer, probabilities = test_multi_output_probability_trainer()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results.append(("Multi-Output Probability Trainer", True))
     except Exception as e:
         print(f"❌ Multi-output probability trainer test failed: {e}")
@@ -368,6 +416,10 @@ def run_comprehensive_test():
     # Test 3: Enhanced multi-output model trainer
     try:
         trainer, training_result = test_multi_output_model_trainer()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results.append(("Enhanced Multi-Output Model Trainer", True))
     except Exception as e:
         print(f"❌ Enhanced multi-output model trainer test failed: {e}")
@@ -376,6 +428,10 @@ def run_comprehensive_test():
     # Test 4: Model saving and loading
     try:
         success = test_model_saving_and_loading()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results.append(("Model Saving and Loading", success))
     except Exception as e:
         print(f"❌ Model saving and loading test failed: {e}")
@@ -384,13 +440,17 @@ def run_comprehensive_test():
     # Test 5: Integration with existing models
     try:
         success = test_integration_with_existing_models()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results.append(("Integration with Existing Models", success))
     except Exception as e:
         print(f"❌ Integration test failed: {e}")
         test_results.append(("Integration with Existing Models", False))
 
     # Print summary
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("📊 TEST SUMMARY")
     print("=" * 60)
 
@@ -398,15 +458,21 @@ def run_comprehensive_test():
     total = len(test_results)
 
     for test_name, result in test_results:
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         print(f"{test_name:<35} {status}")
         if result:
+    pass
+    pass
             passed += 1
 
     print("=" * 60)
     print(f"Overall: {passed}/{total} tests passed")
 
     if passed == total:
+    pass
+    pass
         print("🎉 All tests passed! Multi-output training implementation is working correctly.")
         return True
     else:
@@ -415,5 +481,7 @@ def run_comprehensive_test():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = run_comprehensive_test()
     exit(0 if success else 1)

@@ -21,6 +21,7 @@ from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import get_logger
 
 # Component logger
+import logger = get_logger
 logger = get_logger("TpSlOptimizer")
 
 # Suppress Optuna's informational messages for a cleaner log
@@ -52,8 +53,12 @@ def _numba_backtest(
     TRADE_FEE = 0.0008  # Assumed 0.08% fee per trade (buy + sell)
 
     for i in range(1, len(close_prices)):
+    pass
+    pass
         # Entry Conditions
         if position_direction == 0:
+    pass
+    pass
             if signals[i - 1] == 1:  # Go Long
                 position_direction = 1
                 entry_price = close_prices[i - 1]
@@ -63,19 +68,27 @@ def _numba_backtest(
 
         # Exit Conditions for an OPEN LONG position
         if position_direction == 1:
+    pass
+    pass
             # ML Early Exit
             if enable_ml_early_exit and ml_sell_confidence[i] > early_exit_confidence:
+    pass
+    pass
                 pnl = (close_prices[i] - entry_price) / entry_price - TRADE_FEE
                 trades.append((pnl, 1))
                 position_direction = 0
                 continue
             # Take Profit
             if high_prices[i] >= entry_price * (1 + tp_long):
+    pass
+    pass
                 trades.append((tp_long - TRADE_FEE, 1))
                 position_direction = 0
                 continue
             # Stop Loss
             if low_prices[i] <= entry_price * (1 - sl_long):
+    pass
+    pass
                 trades.append((-sl_long - TRADE_FEE, 1))
                 position_direction = 0
 
@@ -83,21 +96,29 @@ def _numba_backtest(
         elif position_direction == -1:
             # ML Early Exit
             if enable_ml_early_exit and ml_buy_confidence[i] > early_exit_confidence:
+    pass
+    pass
                 pnl = (entry_price - close_prices[i]) / entry_price - TRADE_FEE
                 trades.append((pnl, -1))
                 position_direction = 0
                 continue
             # Take Profit
             if low_prices[i] <= entry_price * (1 - tp_short):
+    pass
+    pass
                 trades.append((tp_short - TRADE_FEE, -1))
                 position_direction = 0
                 continue
             # Stop Loss
             if high_prices[i] >= entry_price * (1 + sl_short):
+    pass
+    pass
                 trades.append((-sl_short - TRADE_FEE, -1))
                 position_direction = 0
 
     if not trades:
+    pass
+    pass
         return np.empty((0, 2), dtype=np.float64)
     return np.array(trades, dtype=np.float64)
 
@@ -108,6 +129,8 @@ class TpSlOptimizer:
     """
 
     def __init__(self, db_manager: SQLiteManager, symbol: str, timeframe: str) -> None:
+    pass
+    pass
         self.db_manager = db_manager
         self.symbol = symbol
         self.timeframe = timeframe
@@ -115,24 +138,42 @@ class TpSlOptimizer:
         self._prepare_data_and_signals()
 
     def _prepare_data_and_signals(self) -> None:
+    pass
+    pass
         logger.info("Preparing data and generating signals for optimization...")
 
         table_name = f"{self.symbol}_{self.timeframe}"
         self.data = self.db_manager.get_all_data(table_name)
         if self.data.empty:
+    pass
+    pass
             msg = f"No data for {table_name}."
             raise ValueError(msg)
 
         # Ensure a 'timestamp' column exists and is datetime
         try:
             if "timestamp" not in self.data.columns:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Common alternatives
                 for candidate in ("time", "datetime", "date", "Timestamp"):
+    pass
+    pass
                     if candidate in self.data.columns:
+    pass
+    pass
                         self.data = self.data.rename(columns={candidate: "timestamp"})
                         break
+    except Exception as e:
+        pass
             if "timestamp" not in self.data.columns:
+    pass
+    pass
                 if isinstance(self.data.index, pd.DatetimeIndex):
+    pass
+    pass
                     self.data["timestamp"] = self.data.index
                 else:
                     # Best-effort: generate a datetime index if none present
@@ -157,10 +198,18 @@ class TpSlOptimizer:
                 c: c.capitalize()
                 for c in ("open", "high", "low", "close", "volume")
                 if c in self.data.columns
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
             # Also handle uppercase variants to consistent capitalized form
             for c in ("OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"):
+    pass
+    pass
                 if c in self.data.columns:
+    pass
+    pass
                     rename_map[c] = c.capitalize()
             self.data = self.data.rename(columns=rename_map)
         except Exception as e:
@@ -169,6 +218,10 @@ class TpSlOptimizer:
         # Feature Engineering (requires pandas_ta accessor to be registered)
         try:
             self.data.ta.rsi(length=14, append=True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data.ta.macd(append=True)
             self.data.ta.bbands(length=20, append=True)
             self.data.ta.atr(length=14, append=True)
@@ -196,6 +249,8 @@ class TpSlOptimizer:
         features = ["RSI_14", "MACD_12_26_9", "BBU_20_2.0", "ATRr_14", "ADX_14"]
         features_in_data = [f for f in features if f in self.data.columns]
         if not features_in_data:
+    pass
+    pass
             msg = "No features available for model training."
             raise ValueError(msg)
 
@@ -218,6 +273,8 @@ class TpSlOptimizer:
         )
 
     def _prepare_ml_exit_data(self) -> None:
+    pass
+    pass
         logger.info("Generating ML confidence scores for early exit analysis...")
         momentum = self.data["Close"].pct_change(5).fillna(0)
 
@@ -248,11 +305,17 @@ class TpSlOptimizer:
             early_exit_confidence,
         )
         if pnl_array.shape[0] == 0:
+    pass
+    pass
             return pd.DataFrame(columns=["pnl", "direction"])
         return pd.DataFrame(pnl_array, columns=["pnl", "direction"])
 
     def _calculate_max_drawdown(self, pnl_series: pd.Series) -> float:
+    pass
+    pass
         if pnl_series.empty:
+    pass
+    pass
             return 0.0
         cumulative = (1 + pnl_series).cumprod()
         running_max = cumulative.expanding().max()
@@ -260,7 +323,11 @@ class TpSlOptimizer:
         return abs(drawdown.min())
 
     def _calculate_performance_metrics(self, pnl_series: pd.Series) -> dict:
+    pass
+    pass
         if pnl_series.empty:
+    pass
+    pass
             return {
                 "gross_profit": 0,
                 "gross_loss": 0,
@@ -283,6 +350,8 @@ class TpSlOptimizer:
         }
 
     def objective(self, trial: optuna.trial.Trial) -> float:
+    pass
+    pass
         tp_long = trial.suggest_float("tp_long", 0.005, 0.1, log=True)
         sl_long = trial.suggest_float("sl_long", 0.005, 0.1, log=True)
         tp_short = trial.suggest_float("tp_short", 0.005, 0.1, log=True)
@@ -304,6 +373,8 @@ class TpSlOptimizer:
         )
 
         if len(results_df) < 25:
+    pass
+    pass
             return -1.0
 
         # Calculate metrics for longs, shorts, and total
@@ -340,6 +411,8 @@ class TpSlOptimizer:
 
         ACCEPTABLE_DRAWDOWN = 0.25
         if max_drawdown > ACCEPTABLE_DRAWDOWN:
+    pass
+    pass
             return profit_factor - (max_drawdown * 10) - balance_penalty
 
         final_score = profit_factor * np.log1p(trade_count) - balance_penalty
@@ -347,6 +420,8 @@ class TpSlOptimizer:
         return final_score if pd.notna(final_score) else -1.0
 
     def run_optimization(self, n_trials: int = 250) -> dict:
+    pass
+    pass
         logger.info(
             f"Starting asymmetrical TP/SL optimization for {n_trials} trials...",
         )
@@ -357,6 +432,8 @@ class TpSlOptimizer:
 
         best_trial = study.best_trial
         if not best_trial or best_trial.value < 0:
+    pass
+    pass
             logger.warning(
                 "Optuna could not find a profitable parameter set. Returning defaults.",
             )
@@ -375,9 +452,13 @@ class TpSlOptimizer:
         # Log detailed performance metrics for the best trial
         logger.info("--- Best Trial Performance Breakdown ---")
         for category in ["total", "long", "short"]:
+    pass
+    pass
             attrs = best_trial.user_attrs.get(category, {})
             # Check if there were any trades in this category before logging
             if attrs.get("trade_count", 0) > 0:
+    pass
+    pass
                 logger.info(f"  {category.upper()} Trades ({attrs['trade_count']}):")
                 logger.info(f"    - Profit Factor: {attrs.get('profit_factor', 0):.2f}")
                 logger.info(f"    - Gross Profit: {attrs.get('gross_profit', 0):.4f}")
@@ -393,6 +474,10 @@ class TpSlOptimizer:
                 sl_short=best_trial.params.get("sl_short"),
                 enable_ml_early_exit=best_trial.params.get("enable_ml_early_exit"),
                 early_exit_confidence=best_trial.params.get("early_exit_confidence"),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             # Compute profit factor and theoretical final equity when starting with 100 USDT
             pnl_series = (

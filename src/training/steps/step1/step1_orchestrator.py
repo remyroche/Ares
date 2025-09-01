@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.utils.centralized_decorators import (
+import handle_errors,
     handle_errors,
     with_tracing_span,
 )
@@ -29,6 +30,7 @@ from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -38,6 +40,8 @@ class Step1Orchestrator:
     """Orchestrates step1 data collection processes with proper decorators and security."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -110,7 +114,13 @@ class Step1Orchestrator:
 
         try:
             gap_filling_results, await self.comprehensive_gap_filler.process_all_data_types(symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if gap_filling_results:
+    pass
+    pass
                 results["gap_filling"] = gap_filling_results
                 logger.info(f"✅ Gap filling completed: {gap_filling_results.get('gaps_filled', 0)} gaps filled")
             else:
@@ -131,6 +141,10 @@ class Step1Orchestrator:
             )
             results["missing_data"] = missing_data
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check for critical missing data
             total_missing = (
                 len(missing_data["missing_aggtrades_days"])
@@ -139,6 +153,8 @@ class Step1Orchestrator:
             )
 
         if total_missing > 0:
+    pass
+    pass
                 results["warnings"].append(
                     f"Found {total_missing} missing data periods",
                 )
@@ -146,6 +162,8 @@ class Step1Orchestrator:
 
         # Step 2: Download missing data and fill gaps
         if total_missing > 0 or len(missing_data.get("aggtrades_gaps", [])) > 0:
+    pass
+    pass
                 logger.info("📊 STEP 1.2: DOWNLOADING MISSING DATA AND FILLING GAPS")
                 logger.info("-" * 60)
 
@@ -156,6 +174,8 @@ class Step1Orchestrator:
                 results["download_results"] = download_results
 
         if download_results["success"]:
+    pass
+    pass
                     logger.info("✅ Missing data download completed successfully")
                 else:
                     logger.warning("⚠️ Missing data download encountered issues")
@@ -169,6 +189,8 @@ class Step1Orchestrator:
             results["aggtrades_gaps"] = aggtrades_gaps
 
         if aggtrades_gaps:
+    pass
+    pass
                 results["warnings"].append(
                     f"Found {len(aggtrades_gaps)} gaps in aggtrades data",
                 )
@@ -184,7 +206,11 @@ class Step1Orchestrator:
             results["aggtrades_validation"] = aggtrades_validation
 
         if aggtrades_validation["invalid_files"] > 0:
+    pass
+    pass
         if auto_fix:
+    pass
+    pass
                     logger.info(
                         f"🔧 Auto - fixed {aggtrades_validation['fixed_files']} aggtrades files",
                     )
@@ -203,12 +229,14 @@ class Step1Orchestrator:
             results["parquet_conversion"] = conversion_results
 
         if conversion_results["converted_files"] > 0:
+    pass
+    pass
                 logger.info(
                     f"✅ Converted {conversion_results['converted_files']} files to parquet",
                 )
 
         # Step 5.5: Create 1m consolidated data
-            logger.info("📊 STEP 1.5.5: CREATING 1M CONSOLIDATED DATA")
+            logger.info("📊 STEP 1.55: CREATING 1M CONSOLIDATED DATA")
             logger.info("-" * 60)
 
             consolidation_results, self.data_preparation.create_1m_consolidated_data(
@@ -217,6 +245,8 @@ class Step1Orchestrator:
             results["1m_consolidation"] = consolidation_results
 
         if consolidation_results["success"]:
+    pass
+    pass
                 logger.info("✅ 1m consolidated data created successfully")
             else:
                 logger.warning("⚠️ 1m consolidation encountered issues")
@@ -237,6 +267,8 @@ class Step1Orchestrator:
             results["resampling"] = resampling_results
 
         if resampling_results["success"]:
+    pass
+    pass
                 logger.info(
                     f"✅ Resampling completed: {len(resampling_results['resampled_files'])} timeframes",
                 )
@@ -245,7 +277,7 @@ class Step1Orchestrator:
                 results["warnings"].append("Resampling incomplete")
 
         # Step 6.5: Prepare data for step01_5 processing
-            logger.info("📊 STEP 1.6.5: PREPARING DATA FOR STEP1_5 PROCESSING")
+            logger.info("📊 STEP 1.65: PREPARING DATA FOR STEP1_5 PROCESSING")
             logger.info("-" * 60)
 
             preparation_results, self.data_preparation.prepare_for_step01_5(
@@ -254,6 +286,8 @@ class Step1Orchestrator:
             results["data_preparation"] = preparation_results
 
         if preparation_results["ready"]:
+    pass
+    pass
                 logger.info("✅ Data preparation completed successfully")
             else:
                 logger.warning("⚠️ Data preparation encountered issues")
@@ -268,6 +302,8 @@ class Step1Orchestrator:
             results["step01_5_ready"] = step01_5_readiness["ready"]
 
         if not step01_5_readiness["ready"]:
+    pass
+    pass
                 results["warnings"].append("Step1_5 data preparation incomplete")
                 logger.warning("⚠️ Data not fully ready for step01_5 processing")
 
@@ -293,16 +329,26 @@ class Step1Orchestrator:
             logger.info(f"🎯 Step1_5 ready: {results['step01_5_ready']}")
 
         if results["errors"]:
+    pass
+    pass
                 logger.error("❌ ERRORS ENCOUNTERED:")
         for i, error in enumerate(results["errors"], 1):
+    pass
+    pass
                     logger.error(f"  {i}. {error}")
 
         if results["warnings"]:
+    pass
+    pass
                 logger.warning("⚠️  WARNINGS ENCOUNTERED:")
         for i, warning in enumerate(results["warnings"], 1):
+    pass
+    pass
                     logger.warning(f"  {i}. {warning}")
 
         if results["success"]:
+    pass
+    pass
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
                 logger.info(f"📈 Ready for step01_5: {'Yes' if results['step01_5_ready'] else 'No'}")
             else:
@@ -338,6 +384,8 @@ class Step1Orchestrator:
         context="step1_orchestrator.validate_step01_5_readiness"
     )
     def validate_step01_5_readiness(self, symbol: str, exchange: str) -> dict:
+    pass
+    pass
         """Validate that the data is ready for step01_5_data_converter.py processing.
 
         Args:
@@ -360,6 +408,8 @@ class Step1Orchestrator:
         # Check for required aggtrades files
         aggtrades_files, self.aggtrades_validator.get_aggtrades_files(symbol, exchange)
         if not aggtrades_files:
+    pass
+    pass
             readiness_result["ready"] = False
             readiness_result["issues"].append("No aggtrades files found")
             readiness_result["missing_files"].append("aggtrades files")
@@ -369,6 +419,8 @@ class Step1Orchestrator:
         # Check for required klines files
         klines_files, self.data_preparation.get_klines_files(symbol, exchange)
         if not klines_files:
+    pass
+    pass
             readiness_result["ready"] = False
             readiness_result["issues"].append("No klines files found")
             readiness_result["missing_files"].append("klines files")
@@ -378,8 +430,12 @@ class Step1Orchestrator:
         # Check for basic data quality (step01_5 will handle resampling)
         # We only need to ensure raw data is available and properly formatted
         for file_path in aggtrades_files:
+    pass
+    pass
             validation_result, self.aggtrades_validator.validate_file_format(file_path)
         if not validation_result["valid"]:
+    pass
+    pass
                 readiness_result["ready"] = False
                 readiness_result["issues"].append(f"Invalid format: {file_path.name}")
 
@@ -390,6 +446,8 @@ class Step1Orchestrator:
         )
 
         if not consolidated_1m_path.exists():
+    pass
+    pass
             readiness_result["ready"] = False
             readiness_result["issues"].append("1m consolidated data not found")
             readiness_result["missing_files"].append("1m consolidated data")
@@ -397,10 +455,14 @@ class Step1Orchestrator:
             readiness_result["required_files"].append(consolidated_1m_path.name)
 
         if readiness_result["ready"]:
+    pass
+    pass
             logger.info("✅ Step1_5 readiness check passed")
         else:
             logger.warning("⚠️ Step1_5 readiness check found issues")
         for issue in readiness_result["issues"]:
+    pass
+    pass
                 logger.warning(f"  - {issue}")
 
         return readiness_result
@@ -447,8 +509,12 @@ class Step1Orchestrator:
 
         # Add download results if available
         if results.get("download_results"):
+    pass
+    pass
             download_data, results["download_results"]
         if "aggtrades" in download_data.get("download_results", {}):
+    pass
+    pass
                 aggtrades, download_data["download_results"]["aggtrades"]
                 report += f"""
 • Aggtrades Downloads:
@@ -458,6 +524,8 @@ class Step1Orchestrator:
 """
 
         if "klines" in download_data.get("download_results", {}):
+    pass
+    pass
                 klines, download_data["download_results"]["klines"]
                 report += f"""
 • Klines Downloads:
@@ -467,6 +535,8 @@ class Step1Orchestrator:
 """
 
         if "futures" in download_data.get("download_results", {}):
+    pass
+    pass
                 futures, download_data["download_results"]["futures"]
                 report += f"""
 • Futures Downloads:
@@ -476,6 +546,8 @@ class Step1Orchestrator:
 """
 
         if "gap_filling_results" in download_data:
+    pass
+    pass
                 gaps, download_data["gap_filling_results"]
                 report += f"""
 • Gap Filling:
@@ -513,6 +585,8 @@ class Step1Orchestrator:
 
         # Add errors and warnings
         if results["errors"]:
+    pass
+    pass
             report += f"""
 ❌ ERRORS:
     pass
@@ -520,6 +594,8 @@ class Step1Orchestrator:
 """
 
         if results["warnings"]:
+    pass
+    pass
             report += f"""
 ⚠️ WARNINGS:
     pass
@@ -528,6 +604,8 @@ class Step1Orchestrator:
 
         # Add detailed missing data
         if results["missing_data"]["missing_aggtrades_days"]:
+    pass
+    pass
             report += f"""
 📅 MISSING AGGTRADES DAYS (first 10):
     pass
@@ -537,6 +615,8 @@ class Step1Orchestrator:
 
         # Add data gaps
         if results["aggtrades_gaps"]:
+    pass
+    pass
             report += f"""
 ⚠️ DATA GAPS (first 5):
     pass
@@ -557,6 +637,8 @@ class Step1Orchestrator:
         context="step1_orchestrator.quick_health_check"
     )
     def quick_health_check(self, symbol: str, exchange: str) -> dict:
+    pass
+    pass
         """Perform a quick health check of the data.
 
         Args:
@@ -576,37 +658,51 @@ class Step1Orchestrator:
         klines_files, self.data_preparation.get_klines_files(symbol, exchange)
 
         if not aggtrades_files:
+    pass
+    pass
             health_result["healthy"] = False
             health_result["issues"].append("No aggtrades files found")
             health_result["recommendations"].append("Download missing aggtrades data")
 
         if not klines_files:
+    pass
+    pass
             health_result["healthy"] = False
             health_result["issues"].append("No klines files found")
             health_result["recommendations"].append("Download missing klines data")
 
         # Check for resampled data
         for timeframe in ["5m", "15m", "30m"]:
+    pass
+    pass
             output_dir, self.data_cache_path / "resampled" / exchange / symbol
             filename, f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path, output_dir / filename
 
         if not file_path.exists():
+    pass
+    pass
                 health_result["issues"].append(f"Missing resampled {timeframe} data")
                 health_result["recommendations"].append(
                     f"Run resampling for {timeframe} timeframe",
                 )
 
         if health_result["healthy"]:
+    pass
+    pass
             logger.info("✅ Health check passed")
         else:
             logger.warning("⚠️ Health check found issues")
         for issue in health_result["issues"]:
+    pass
+    pass
                 logger.warning(f"  - {issue}")
 
         return health_result
 
     def get_step1_status(self, symbol: str, exchange: str) -> dict:
+    pass
+    pass
         """Get current status of step1 data.
 
         Args:
@@ -637,6 +733,8 @@ class Step1Orchestrator:
 
         # Check resampled data
         for timeframe in ["5m", "15m", "30m"]:
+    pass
+    pass
             output_dir, self.data_cache_path / "resampled" / exchange / symbol
             filename, f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path, output_dir / filename

@@ -15,16 +15,21 @@ import pandas as pd
 # Add the project root to the Python path (only if not present)
 project_root, Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
+import class Step1_5DataConverterValidator
 class Step1_5DataConverterValidator(BaseValidator):
     """Validator for Step 1.5: Data Converter."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step01_5_data_converter", config)
         self.logger, system_logger.getChild("Validator.Step1_5")
         # Fine - tuned parameters for ML training
@@ -65,6 +70,8 @@ class Step1_5DataConverterValidator(BaseValidator):
         # Check pipeline_state presence first
         unified_data, pipeline_state.get("unified_data") or {}
         if isinstance(unified_data, dict) and unified_data.get("status") == "SUCCESS":
+    pass
+    pass
         self.logger.info("✅ Unified data present in pipeline state")
         return True
 
@@ -74,6 +81,8 @@ class Step1_5DataConverterValidator(BaseValidator):
         )
 
         if unified_structure["found"]:
+    pass
+    pass
         self.logger.info(f"✅ Found unified data structure: {unified_structure['base_path']}")
 
         # Validate the unified data files
@@ -87,6 +96,8 @@ class Step1_5DataConverterValidator(BaseValidator):
             )
 
         if files_validation and config_validation:
+    pass
+    pass
         self.logger.info("✅ Unified data validation passed")
         return True
             else:
@@ -116,6 +127,8 @@ class Step1_5DataConverterValidator(BaseValidator):
         )
 
         if os.path.exists(unified_base) and os.path.isdir(unified_base):
+    pass
+    pass
         # Check for parquet files in the directory
             parquet_files, glob.glob(os.path.join(unified_base, "*.parquet"), recursive = True)
 
@@ -151,7 +164,13 @@ class Step1_5DataConverterValidator(BaseValidator):
         # Find all parquet files
             parquet_files, glob.glob(os.path.join(base_path, "*.parquet"), recursive = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not parquet_files:
+    pass
+    pass
         self.logger.error(f"❌ No parquet files found in {base_path}")
         return False
 
@@ -162,8 +181,12 @@ class Step1_5DataConverterValidator(BaseValidator):
             total_records, 0
 
         for file_path in parquet_files:
+    pass
+    pass
                 file_validation, await self._validate_single_unified_file(file_path)
         if file_validation["valid"]:
+    pass
+    pass
                     valid_files += 1
                     total_records += file_validation["records"]
         self.logger.info(f"✅ {os.path.basename(file_path)}: {file_validation['records']} records")
@@ -171,10 +194,14 @@ class Step1_5DataConverterValidator(BaseValidator):
         self.logger.warning(f"⚠️ {os.path.basename(file_path)}: {file_validation['error']}")
 
         if valid_files < self.min_files:
+    pass
+    pass
         self.logger.error(f"❌ Insufficient valid files: {valid_files} (minimum: {self.min_files})")
         return False
 
         if total_records < self.min_records:
+    pass
+    pass
         self.logger.warning(f"⚠️ Low total records: {total_records} (minimum: {self.min_records})")
 
         self.logger.info(f"✅ Unified files validation: {valid_files}/{len(parquet_files)} files, {total_records} total records")
@@ -197,8 +224,14 @@ class Step1_5DataConverterValidator(BaseValidator):
         # Load the file
             df, pd.read_parquet(file_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check minimum records
         if len(df) < self.min_records:
+    pass
+    pass
         return {
                     "valid": False,
                     "records": len(df),
@@ -208,6 +241,8 @@ class Step1_5DataConverterValidator(BaseValidator):
         # Check required columns
             missing_columns = [col for col in self.required_columns if col not in df.columns]
         if missing_columns:
+    pass
+    pass
         return {
                     "valid": False,
                     "records": len(df),
@@ -216,6 +251,8 @@ class Step1_5DataConverterValidator(BaseValidator):
 
         # Check data types
         if "timestamp" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
+    pass
         return {
                     "valid": False,
                     "records": len(df),
@@ -225,8 +262,14 @@ class Step1_5DataConverterValidator(BaseValidator):
         # Check for reasonable data ranges
             price_columns = ["open", "high", "low", "close"]
         for col in price_columns:
+    pass
+    pass
         if col in df.columns:
+    pass
+    pass
         if pd.api.types.is_numeric_dtype(df[col]) and df[col].min() < 0:
+    pass
+    pass
         return {
                             "valid": False,
                             "records": len(df),
@@ -234,6 +277,8 @@ class Step1_5DataConverterValidator(BaseValidator):
                         }
 
         if "volume" in df.columns and pd.api.types.is_numeric_dtype(df["volume"]) and df["volume"].min() < 0:
+    pass
+    pass
         return {
                     "valid": False,
                     "records": len(df),
@@ -273,7 +318,13 @@ class Step1_5DataConverterValidator(BaseValidator):
                 data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(config_path):
+    pass
+    pass
         self.logger.warning(f"⚠️ Config file not found: {config_path}")
         return False
 
@@ -286,19 +337,27 @@ class Step1_5DataConverterValidator(BaseValidator):
             missing_fields = [field for field in required_fields if field not in config]
 
         if missing_fields:
+    pass
+    pass
         self.logger.warning(f"⚠️ Missing config fields: {missing_fields}")
         return False
 
         # Validate config values
         if str(config.get("symbol")) != symbol:
+    pass
+    pass
         self.logger.warning(f"⚠️ Symbol mismatch in config: {config.get('symbol')} != {symbol}")
         return False
 
         if str(config.get("exchange")).upper() != exchange.upper():
+    pass
+    pass
         self.logger.warning(f"⚠️ Exchange mismatch in config: {config.get('exchange')} != {exchange}")
         return False
 
         if str(config.get("timeframe")) != timeframe:
+    pass
+    pass
         self.logger.warning(f"⚠️ Timeframe mismatch in config: {config.get('timeframe')} != {timeframe}")
         return False
 
@@ -334,6 +393,8 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio as _asyncio
 
     # Example usage

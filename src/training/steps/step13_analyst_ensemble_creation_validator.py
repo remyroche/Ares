@@ -8,12 +8,15 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, missing, success, warning
 
+import logger, system_logger
 logger, system_logger
 
 class Step7AnalystEnsembleCreationValidator:
     """Validator for Step 7: Analyst Ensemble Creation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, logger
         self.validation_results = {}
@@ -40,6 +43,10 @@ class Step7AnalystEnsembleCreationValidator:
             ensemble_files_passed, self._validate_ensemble_files(
                 symbol = exchange, data_dir = data_dir,
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.validation_results["ensemble_files"] = ensemble_files_passed
 
         # Validate ensemble structure
@@ -52,6 +59,8 @@ class Step7AnalystEnsembleCreationValidator:
             overall_passed, ensemble_files_passed and ensemble_structure_passed
 
         if overall_passed:
+    pass
+    pass
                 logger.info("✅ Step 7: Analyst Ensemble Creation validation passed")
         self.print(
                     success("✅ Step 7: Analyst Ensemble Creation validation passed"),
@@ -81,15 +90,25 @@ class Step7AnalystEnsembleCreationValidator:
 
             missing_files = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if ensemble directory exists
         if not os.path.isdir(ensemble_dir):
+    pass
+    pass
                 missing_files.append(ensemble_dir)
 
         # Check if summary file exists
         if not os.path.isfile(summary_file):
+    pass
+    pass
                 missing_files.append(summary_file)
 
         if missing_files:
+    pass
+    pass
         self.logger.error(
                     missing(f"❌ Missing ensemble files: {missing_files}"),
                 )
@@ -111,9 +130,15 @@ class Step7AnalystEnsembleCreationValidator:
                 data_dir,
                 "analyst_ensemble",
                 f"{exchange}_{symbol}_analyst_ensemble_summary.json",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
         if not os.path.exists(summary_file):
+    pass
+    pass
         self.logger.error(
                     missing(f"❌ Ensemble summary file not found: {summary_file}"),
                 )
@@ -134,6 +159,8 @@ class Step7AnalystEnsembleCreationValidator:
             ]
 
         if missing_fields:
+    pass
+    pass
         self.logger.error(
                     failed(
                         f"❌ Missing required fields in ensemble summary: {missing_fields}",
@@ -149,6 +176,8 @@ class Step7AnalystEnsembleCreationValidator:
         # Validate metadata
             metadata, summary["ensemble_metadata"]
         if metadata.get("symbol") != symbol or metadata.get("exchange") != exchange:
+    pass
+    pass
         self.logger.error(
                     failed(
                         f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
@@ -163,6 +192,8 @@ class Step7AnalystEnsembleCreationValidator:
 
         # Check if it's a placeholder ensemble
         if metadata.get("is_placeholder", False):
+    pass
+    pass
         self.logger.warning(
                     warning(
                         "⚠️ Ensemble is a placeholder (no enhanced models from Step 6)",
@@ -182,10 +213,14 @@ class Step7AnalystEnsembleCreationValidator:
         return False
 
     def print(self, message: str) -> None:
+    pass
+    pass
         """Print validation message."""
         self.logger.info(message)
 
 def step07_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
+    pass
+    pass
     """Step 7: Analyst Ensemble Creation Validator.
 
     Args:

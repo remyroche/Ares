@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -27,10 +28,13 @@ from src.utils.enhanced_missing_value_handler import enhanced_missing_value_hand
 from src.utils.logger import system_logger
 
 
+import class EnhancedMissingValueHandlerTester:
 class EnhancedMissingValueHandlerTester:
     """Comprehensive tester for enhanced missing value handler."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize tester."""
         self.logger = system_logger.getChild("EnhancedMissingValueHandlerTester")
         self.handler = enhanced_missing_value_handler
@@ -38,6 +42,8 @@ class EnhancedMissingValueHandlerTester:
         self.start_time = time.time()
 
     def run_all_tests(self) -> Dict[str, Any]:
+    pass
+    pass
         """Run all enhanced missing value handler tests."""
         self.logger.info("🔍 Starting Enhanced Missing Value Handler Tests")
 
@@ -55,8 +61,14 @@ class EnhancedMissingValueHandlerTester:
         ]
 
         for test_name, test_func in test_suite:
+    pass
+    pass
             try:
                 self.logger.info(f"Running {test_name}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 result = test_func()
                 self.test_results[test_name] = {
                     "status": "PASSED" if result else "FAILED",
@@ -73,6 +85,8 @@ class EnhancedMissingValueHandlerTester:
         return self.generate_test_report()
 
     def test_gap_analysis(self) -> bool:
+    pass
+    pass
         """Test gap analysis functionality."""
         self.logger.info("Testing gap analysis...")
 
@@ -84,20 +98,30 @@ class EnhancedMissingValueHandlerTester:
 
         # Check that gaps were detected
         if len(gaps) == 0:
+    pass
+    pass
             self.logger.error("No gaps detected in test data")
             return False
 
         # Check gap properties
         for gap in gaps:
+    pass
+    pass
             if not isinstance(gap, GapInfo):
+    pass
+    pass
                 self.logger.error("Gap is not GapInfo instance")
                 return False
 
             if gap.start_time >= gap.end_time:
+    pass
+    pass
                 self.logger.error("Invalid gap time range")
                 return False
 
             if gap.gap_size <= 0:
+    pass
+    pass
                 self.logger.error("Invalid gap size")
                 return False
 
@@ -105,6 +129,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_gap_classification(self) -> bool:
+    pass
+    pass
         """Test gap classification functionality."""
         self.logger.info("Testing gap classification...")
 
@@ -117,8 +143,12 @@ class EnhancedMissingValueHandlerTester:
         ]
 
         for gap_size, expected_type in test_cases:
+    pass
+    pass
             classified_type = self.handler._classify_gap(gap_size)
             if classified_type != expected_type:
+    pass
+    pass
                 self.logger.error(f"Gap classification failed: {gap_size}s classified as {classified_type}, expected {expected_type}")
                 return False
 
@@ -126,6 +156,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_small_gap_handling(self) -> bool:
+    pass
+    pass
         """Test small gap handling with forward fill."""
         self.logger.info("Testing small gap handling...")
 
@@ -144,11 +176,15 @@ class EnhancedMissingValueHandlerTester:
         final_gap_count = len(final_gaps)
 
         if final_gap_count >= initial_gap_count:
+    pass
+    pass
             self.logger.error("Small gap was not filled")
             return False
 
         # Check that data was forward filled
         if len(filled_data) <= len(test_data):
+    pass
+    pass
             self.logger.error("No new rows were added during forward fill")
             return False
 
@@ -156,6 +192,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_large_gap_handling(self) -> bool:
+    pass
+    pass
         """Test large gap handling with fallback strategy."""
         self.logger.info("Testing large gap handling...")
 
@@ -175,12 +213,16 @@ class EnhancedMissingValueHandlerTester:
 
         # Check that gap was handled
         if len(filled_data) <= len(test_data):
+    pass
+    pass
             self.logger.error("No new rows were added during large gap handling")
             return False
 
         # Check that interpolation was used
         gap.filled = True
         if gap.fill_method != "interpolation_fallback":
+    pass
+    pass
             self.logger.error("Fallback strategy was not used")
             return False
 
@@ -188,6 +230,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_critical_gap_handling(self) -> bool:
+    pass
+    pass
         """Test critical gap handling."""
         self.logger.info("Testing critical gap handling...")
 
@@ -207,6 +251,8 @@ class EnhancedMissingValueHandlerTester:
 
         # Check that gap was handled (should use fallback)
         if len(filled_data) <= len(test_data):
+    pass
+    pass
             self.logger.error("No new rows were added during critical gap handling")
             return False
 
@@ -214,6 +260,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_intelligent_missing_value_handling(self) -> bool:
+    pass
+    pass
         """Test intelligent missing value handling."""
         self.logger.info("Testing intelligent missing value handling...")
 
@@ -234,6 +282,8 @@ class EnhancedMissingValueHandlerTester:
         final_gap_count = len(final_gaps)
 
         if final_gap_count >= initial_gap_count:
+    pass
+    pass
             self.logger.error("Intelligent missing value handling did not reduce gaps")
             return False
 
@@ -241,6 +291,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_data_continuity_validation(self) -> bool:
+    pass
+    pass
         """Test data continuity validation."""
         self.logger.info("Testing data continuity validation...")
 
@@ -251,10 +303,14 @@ class EnhancedMissingValueHandlerTester:
         continuity_report = self.handler.validate_data_continuity(continuous_data, "timestamp", 60)
 
         if not continuity_report["valid"]:
+    pass
+    pass
             self.logger.error("Continuous data failed continuity validation")
             return False
 
         if continuity_report["continuity_score"] < 0.99:
+    pass
+    pass
             self.logger.error("Continuous data has low continuity score")
             return False
 
@@ -265,10 +321,14 @@ class EnhancedMissingValueHandlerTester:
         discontinuity_report = self.handler.validate_data_continuity(discontinuous_data, "timestamp", 60)
 
         if discontinuity_report["valid"]:
+    pass
+    pass
             self.logger.error("Discontinuous data passed continuity validation")
             return False
 
         if discontinuity_report["issues_count"] == 0:
+    pass
+    pass
             self.logger.error("No issues detected in discontinuous data")
             return False
 
@@ -276,6 +336,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_gap_reporting(self) -> bool:
+    pass
+    pass
         """Test gap reporting functionality."""
         self.logger.info("Testing gap reporting...")
 
@@ -288,17 +350,25 @@ class EnhancedMissingValueHandlerTester:
         # Check report structure
         required_keys = ["timestamp", "total_gaps", "gap_summary", "gap_details"]
         for key in required_keys:
+    pass
+    pass
             if key not in gap_report:
+    pass
+    pass
                 self.logger.error(f"Missing key in gap report: {key}")
                 return False
 
         # Check that gaps were reported
         if gap_report["total_gaps"] == 0:
+    pass
+    pass
             self.logger.error("No gaps reported in test data")
             return False
 
         # Check gap summary
         if not gap_report["gap_summary"]:
+    pass
+    pass
             self.logger.error("Empty gap summary")
             return False
 
@@ -306,6 +376,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_fallback_strategies(self) -> bool:
+    pass
+    pass
         """Test fallback strategies."""
         self.logger.info("Testing fallback strategies...")
 
@@ -325,15 +397,21 @@ class EnhancedMissingValueHandlerTester:
 
         # Check that fallback was used
         if not gap.filled:
+    pass
+    pass
             self.logger.error("Gap was not marked as filled")
             return False
 
         if gap.fill_method != "interpolation_fallback":
+    pass
+    pass
             self.logger.error("Fallback method was not used")
             return False
 
         # Check that data was interpolated
         if len(filled_data) <= len(test_data):
+    pass
+    pass
             self.logger.error("No interpolation occurred")
             return False
 
@@ -341,6 +419,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def test_integration_with_formatting(self) -> bool:
+    pass
+    pass
         """Test integration with data formatting framework."""
         self.logger.info("Testing integration with formatting framework...")
 
@@ -348,6 +428,7 @@ class EnhancedMissingValueHandlerTester:
         from src.utils.data_formatting_framework import data_formatting_framework
 
         # Create test data with gaps
+import test_data = self._create_test_data_with_gaps
         test_data = self._create_test_data_with_gaps()
 
         # Use intelligent missing value handling through formatting framework
@@ -360,6 +441,8 @@ class EnhancedMissingValueHandlerTester:
         final_gaps = self.handler._analyze_gaps(filled_data, "timestamp")
 
         if len(final_gaps) >= len(initial_gaps):
+    pass
+    pass
             self.logger.error("Integration with formatting framework did not handle gaps")
             return False
 
@@ -367,6 +450,8 @@ class EnhancedMissingValueHandlerTester:
         return True
 
     def _create_test_data_with_gaps(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with various gaps."""
         base_time = int(time.time()) - 3600  # 1 hour ago
 
@@ -380,6 +465,8 @@ class EnhancedMissingValueHandlerTester:
         # Create data with gaps
         current_time = base_time
         for i in range(100):
+    pass
+    pass
             if i == 20:  # Small gap
                 current_time += 120  # 2 minutes gap
             elif i == 40:  # Medium gap
@@ -406,11 +493,15 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_test_data_with_small_gap(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with small gap."""
         base_time = int(time.time()) - 3600
 
         timestamps = []
         for i in range(50):
+    pass
+    pass
             if i == 25:  # Small gap
                 timestamps.append(base_time + i * 60 + 120)  # 2 minute gap
             else:
@@ -426,11 +517,15 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_test_data_with_large_gap(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with large gap."""
         base_time = int(time.time()) - 3600
 
         timestamps = []
         for i in range(50):
+    pass
+    pass
             if i == 25:  # Large gap
                 timestamps.append(base_time + i * 60 + 1800)  # 30 minute gap
             else:
@@ -446,11 +541,15 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_test_data_with_critical_gap(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with critical gap."""
         base_time = int(time.time()) - 3600
 
         timestamps = []
         for i in range(50):
+    pass
+    pass
             if i == 25:  # Critical gap
                 timestamps.append(base_time + i * 60 + 3600)  # 1 hour gap
             else:
@@ -466,11 +565,15 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_test_data_with_mixed_gaps(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with mixed gap types."""
         base_time = int(time.time()) - 3600
 
         timestamps = []
         for i in range(100):
+    pass
+    pass
             if i == 20:  # Small gap
                 timestamps.append(base_time + i * 60 + 120)
             elif i == 40:  # Medium gap
@@ -490,6 +593,8 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_continuous_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with continuous timestamps."""
         base_time = int(time.time()) - 3600
 
@@ -505,11 +610,15 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def _create_discontinuous_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with discontinuous timestamps."""
         base_time = int(time.time()) - 3600
 
         timestamps = []
         for i in range(100):
+    pass
+    pass
             if i % 10 == 0:  # Create gaps every 10th entry
                 timestamps.append(base_time + i * 60 + 300)  # 5 minute gap
             else:
@@ -525,6 +634,8 @@ class EnhancedMissingValueHandlerTester:
         })
 
     def generate_test_report(self) -> Dict[str, Any]:
+    pass
+    pass
         """Generate comprehensive test report."""
         end_time = time.time()
         duration = end_time - self.start_time
@@ -561,6 +672,8 @@ class EnhancedMissingValueHandlerTester:
         return report
 
     def _generate_recommendations(self) -> List[str]:
+    pass
+    pass
         """Generate recommendations based on test results."""
         recommendations = []
 
@@ -568,26 +681,38 @@ class EnhancedMissingValueHandlerTester:
         error_tests = [name for name, result in self.test_results.items() if result["status"] == "ERROR"]
 
         if failed_tests:
+    pass
+    pass
             recommendations.append(f"Fix failed tests: {', '.join(failed_tests)}")
 
         if error_tests:
+    pass
+    pass
             recommendations.append(f"Investigate test errors: {', '.join(error_tests)}")
 
         # Check handler configuration
         if self.handler.max_forward_fill_gap != 5:
+    pass
+    pass
             recommendations.append("Consider adjusting max_forward_fill_gap to 5 seconds for optimal performance")
 
         if self.handler.download_threshold != 5:
+    pass
+    pass
             recommendations.append("Consider adjusting download_threshold to 5 seconds for optimal performance")
 
         # Check test coverage
         if len(self.test_results) < 10:
+    pass
+    pass
             recommendations.append("Add more comprehensive tests for edge cases")
 
         return recommendations
 
 
 def main():
+    pass
+    pass
     """Main function to run enhanced missing value handler tests."""
     print("🔍 Enhanced Missing Value Handler Test Framework")
     print("=" * 60)
@@ -597,7 +722,7 @@ def main():
 
     # Print summary
     summary = report["test_summary"]
-    print(f"\n📊 Test Summary:")
+    print(f"\\\n📊 Test Summary:")
     print(f"  Total Tests: {summary['total_tests']}")
     print(f"  Passed: {summary['passed_tests']}")
     print(f"  Failed: {summary['failed_tests']}")
@@ -607,20 +732,24 @@ def main():
 
     # Print handler configuration
     config = report["handler_configuration"]
-    print(f"\n🔧 Handler Configuration:")
+    print(f"\\\n🔧 Handler Configuration:")
     print(f"  Max Forward Fill Gap: {config['max_forward_fill_gap']} seconds")
     print(f"  Download Threshold: {config['download_threshold']} seconds")
     print(f"  Gap Thresholds: {config['gap_thresholds']}")
     print(f"  Fill Strategies: {config['fill_strategies']}")
 
     # Print gap types
-    print(f"\n📈 Gap Types:")
+    print(f"\\\n📈 Gap Types:")
     for gap_type in report["gap_types"]:
+    pass
+    pass
         print(f"  • {gap_type}")
 
     # Print recommendations
-    print(f"\n💡 Recommendations:")
+    print(f"\\\n💡 Recommendations:")
     for rec in report["recommendations"]:
+    pass
+    pass
         print(f"  • {rec}")
 
     # Save detailed report
@@ -628,12 +757,14 @@ def main():
     with open(report_file, 'w') as f:
         json.dump(report, f, indent=2)
 
-    print(f"\n📄 Detailed report saved to: {report_file}")
+    print(f"\\\n📄 Detailed report saved to: {report_file}")
 
     # Return success if most tests passed
     return summary['success_rate'] >= 0.8
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

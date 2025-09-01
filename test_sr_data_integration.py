@@ -26,6 +26,7 @@ from tactician.sr_backtesting_validator import SRBacktestingValidator
 from tactician.sr_detection_optimization import SRDetectionOptimizer
 
 # Configure logging
+import logging.basicConfig
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -33,6 +34,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def generate_test_market_data(n_periods: int = 1000, base_price: float = 50000.0) -> pd.DataFrame:
+    pass
+    pass
     """Generate realistic test market data."""
     logger.info(f"📊 Generating {n_periods} periods of test market data...")
 
@@ -52,6 +55,8 @@ def generate_test_market_data(n_periods: int = 1000, base_price: float = 50000.0
     # Generate OHLC data
     data = []
     for i, (timestamp, price) in enumerate(zip(timestamps, prices)):
+    pass
+    pass
         # Add some intra-period volatility
         intra_volatility = np.random.normal(0, 0.001)
         high = price * (1 + abs(intra_volatility))
@@ -87,9 +92,15 @@ async def test_data_integration_initialization():
     training_modes = ["light", "blank", "full"]
 
     for mode in training_modes:
+    pass
+    pass
         try:
             logger.info(f"📋 Testing {mode} training mode...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create data integration with training mode
             data_integration = await create_sr_data_integration_simple(
                 symbol="BTCUSDT",
@@ -99,6 +110,8 @@ async def test_data_integration_initialization():
             )
 
             if data_integration:
+    pass
+    pass
                 logger.info(f"✅ {mode} mode initialized successfully")
                 logger.info(f"   - Lookback days: {data_integration.lookback_days}")
                 logger.info(f"   - Timeframes: {data_integration.timeframes}")
@@ -118,6 +131,10 @@ async def test_market_data_loading():
 
     try:
         # Create data integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_integration = await create_sr_data_integration_simple(
             symbol="BTCUSDT",
             exchange="binance",
@@ -126,11 +143,15 @@ async def test_market_data_loading():
         )
 
         if not data_integration:
+    pass
+    pass
             logger.error("❌ Failed to create data integration")
             return False
 
         # Test loading data for each timeframe
         for timeframe in ["1m", "5m", "15m", "30m"]:
+    pass
+    pass
             logger.info(f"📊 Loading data for {timeframe}...")
 
             # Get appropriate lookback period for timeframe
@@ -144,11 +165,15 @@ async def test_market_data_loading():
             )
 
             if market_data is not None and len(market_data) > 0:
+    pass
+    pass
                 logger.info(f"✅ Loaded {len(market_data)} data points for {timeframe}")
 
                 # Validate data quality
                 quality_ok = await data_integration.validate_data_quality(market_data, timeframe)
                 if quality_ok:
+    pass
+    pass
                     logger.info(f"✅ Data quality validation passed for {timeframe}")
                 else:
                     logger.warning(f"⚠️ Data quality issues detected for {timeframe}")
@@ -162,8 +187,12 @@ async def test_market_data_loading():
         multi_tf_data = await data_integration.get_multi_timeframe_data()
 
         if multi_tf_data:
+    pass
+    pass
             logger.info(f"✅ Loaded data for {len(multi_tf_data)} timeframes")
             for tf, data in multi_tf_data.items():
+    pass
+    pass
                 logger.info(f"   - {tf}: {len(data)} data points")
         else:
             logger.warning("⚠️ No multi-timeframe data available, using test data")
@@ -187,6 +216,10 @@ async def test_sr_level_detection_with_data_integration():
 
     try:
         # Create data integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_integration = await create_sr_data_integration_simple(
             symbol="BTCUSDT",
             exchange="binance",
@@ -195,6 +228,8 @@ async def test_sr_level_detection_with_data_integration():
         )
 
         if not data_integration:
+    pass
+    pass
             logger.error("❌ Failed to create data integration")
             return False
 
@@ -202,6 +237,8 @@ async def test_sr_level_detection_with_data_integration():
         market_data = await data_integration.get_market_data("15m", lookback_days=30)
 
         if market_data is None or len(market_data) == 0:
+    pass
+    pass
             logger.warning("⚠️ No real data available, using test data")
             market_data = generate_test_market_data(1000)
 
@@ -227,6 +264,8 @@ async def test_sr_level_detection_with_data_integration():
         sr_levels = await sr_predictor.detect_sr_levels(market_data)
 
         if sr_levels and len(sr_levels) > 0:
+    pass
+    pass
             logger.info(f"✅ Detected {len(sr_levels)} S/R levels")
 
             # Analyze level distribution
@@ -255,6 +294,10 @@ async def test_backtesting_validation_with_data_integration():
 
     try:
         # Create data integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_integration = await create_sr_data_integration_simple(
             symbol="BTCUSDT",
             exchange="binance",
@@ -263,6 +306,8 @@ async def test_backtesting_validation_with_data_integration():
         )
 
         if not data_integration:
+    pass
+    pass
             logger.error("❌ Failed to create data integration")
             return False
 
@@ -270,6 +315,8 @@ async def test_backtesting_validation_with_data_integration():
         market_data = await data_integration.get_market_data("15m", lookback_days=60)
 
         if market_data is None or len(market_data) == 0:
+    pass
+    pass
             logger.warning("⚠️ No real data available, using test data")
             market_data = generate_test_market_data(2000)  # More data for backtesting
 
@@ -309,6 +356,8 @@ async def test_backtesting_validation_with_data_integration():
         sr_levels = await sr_predictor.detect_sr_levels(market_data)
 
         if not sr_levels or len(sr_levels) == 0:
+    pass
+    pass
             logger.warning("⚠️ No S/R levels detected, creating test levels")
             # Create some test levels
             current_price = market_data['close'].iloc[-1]
@@ -341,6 +390,8 @@ async def test_backtesting_validation_with_data_integration():
         )
 
         if validation_result:
+    pass
+    pass
             logger.info("✅ Backtesting validation completed successfully")
             logger.info(f"   - Overall validation score: {validation_result.sr_validation_score:.3f}")
             logger.info(f"   - Bounce rate: {validation_result.bounce_rate:.3f}")
@@ -365,6 +416,10 @@ async def test_optimization_with_data_integration():
 
     try:
         # Create data integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_integration = await create_sr_data_integration_simple(
             symbol="BTCUSDT",
             exchange="binance",
@@ -373,6 +428,8 @@ async def test_optimization_with_data_integration():
         )
 
         if not data_integration:
+    pass
+    pass
             logger.error("❌ Failed to create data integration")
             return False
 
@@ -380,6 +437,8 @@ async def test_optimization_with_data_integration():
         market_data = await data_integration.get_market_data("15m", lookback_days=30)
 
         if market_data is None or len(market_data) == 0:
+    pass
+    pass
             logger.warning("⚠️ No real data available, using test data")
             market_data = generate_test_market_data(1500)
 
@@ -454,6 +513,8 @@ async def test_optimization_with_data_integration():
 
         # Initialize the optimizer
         if not await optimizer.initialize():
+    pass
+    pass
             logger.error("❌ Failed to initialize optimizer")
             return False
 
@@ -465,6 +526,8 @@ async def test_optimization_with_data_integration():
         )
 
         if result:
+    pass
+    pass
             logger.info("✅ Optimization completed successfully")
             logger.info(f"   - Optimization score: {result.optimization_score:.3f}")
             logger.info(f"   - S/R validation score: {result.sr_validation_score:.3f}")
@@ -477,8 +540,12 @@ async def test_optimization_with_data_integration():
 
             # Show some optimized parameters
             if result.method_weights:
+    pass
+    pass
                 logger.info("   - Method weights:")
                 for method, weight in result.method_weights.items():
+    pass
+    pass
                     logger.info(f"     * {method}: {weight:.3f}")
 
             return True
@@ -496,6 +563,10 @@ async def test_comprehensive_integration():
 
     try:
         # Test all components in sequence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         tests = [
             ("Data Integration Initialization", test_data_integration_initialization),
             ("Market Data Loading", test_market_data_loading),
@@ -506,15 +577,23 @@ async def test_comprehensive_integration():
 
         results = {}
         for test_name, test_func in tests:
-            logger.info(f"\n{'='*60}")
+    pass
+    pass
+            logger.info(f"\\\n{'='*60}")
             logger.info(f"Running: {test_name}")
             logger.info(f"{'='*60}")
 
             try:
                 result = await test_func()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 results[test_name] = result
 
                 if result:
+    pass
+    pass
                     logger.info(f"✅ {test_name} PASSED")
                 else:
                     logger.error(f"❌ {test_name} FAILED")
@@ -524,7 +603,7 @@ async def test_comprehensive_integration():
                 results[test_name] = False
 
         # Summary
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\\\n{'='*60}")
         logger.info("COMPREHENSIVE INTEGRATION TEST SUMMARY")
         logger.info(f"{'='*60}")
 
@@ -532,12 +611,16 @@ async def test_comprehensive_integration():
         total_tests = len(results)
 
         for test_name, result in results.items():
+    pass
+    pass
             status = "✅ PASSED" if result else "❌ FAILED"
             logger.info(f"{test_name}: {status}")
 
-        logger.info(f"\nOverall Result: {passed_tests}/{total_tests} tests passed")
+        logger.info(f"\\\nOverall Result: {passed_tests}/{total_tests} tests passed")
 
         if passed_tests == total_tests:
+    pass
+    pass
             logger.info("🎉 ALL TESTS PASSED! S/R system is fully functional with proper data integration.")
         else:
             logger.warning(f"⚠️ {total_tests - passed_tests} tests failed. Some components may need attention.")
@@ -555,10 +638,16 @@ async def main():
 
     try:
         # Run comprehensive integration test
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await test_comprehensive_integration()
 
         if success:
-            logger.info("\n🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
+    pass
+    pass
+            logger.info("\\\n🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
             logger.info("The S/R backtesting validation system is now fully functional with:")
             logger.info("✅ Proper data access patterns from ares_launcher")
             logger.info("✅ Lookback period management from training modes")
@@ -567,7 +656,7 @@ async def main():
             logger.info("✅ S/R level detection and validation")
             logger.info("✅ Parameter optimization with real data")
         else:
-            logger.error("\n❌ SOME TESTS FAILED!")
+            logger.error("\\\n❌ SOME TESTS FAILED!")
             logger.error("Please review the error messages above and fix any issues.")
 
         return success
@@ -577,6 +666,8 @@ async def main():
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the tests
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

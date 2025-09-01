@@ -11,6 +11,7 @@ NOTE: 1m timeframe has been replaced with 1h for better signal quality and reduc
 from pathlib import Path
 from typing import Dict, List
 from src.training.steps.multi_timeframe_hmm_ensemble import (
+import MultiTimeframeHMMEnsemble,
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
@@ -26,6 +27,8 @@ import pandas as pd
 # Add project root to path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("MultiTimeframeHMMTraining")
@@ -34,6 +37,8 @@ logger = system_logger.getChild("MultiTimeframeHMMTraining")
 @handle_errors(default_return=pd.DataFrame(), context="load_timeframe_data")
 @validate_dataframe_operation("load_timeframe", validate_before=False, validate_after=True)
 def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
+    pass
+    pass
     """Load HMM cluster data for a specific timeframe."""
     # Look for HMM composite cluster data
     hmm_data_path = os.path.join(
@@ -42,6 +47,8 @@ def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: st
     )
 
     if os.path.exists(hmm_data_path):
+    pass
+    pass
         logger.info(f"📂 Loading HMM data from {hmm_data_path}")
         data = pd.read_parquet(hmm_data_path)
         logger.info(f"📊 Loaded {len(data)} rows for {timeframe}")
@@ -52,6 +59,8 @@ def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: st
 
 
 def create_ensemble_config() -> EnsembleConfig:
+    pass
+    pass
     """Create ensemble configuration with specified timeframes."""
     timeframes = [
         TimeframeConfig(
@@ -96,11 +105,17 @@ def create_ensemble_config() -> EnsembleConfig:
 
 @handle_errors(default_return=False, context="validate_data_quality")
 def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
+    pass
+    pass
     """Validate data quality across all timeframes."""
     logger.info("🔍 Validating data quality...")
 
     for timeframe, data in timeframe_data.items():
+    pass
+    pass
         if data.empty:
+    pass
+    pass
             logger.error(f"❌ Empty data for {timeframe}")
             return False
 
@@ -108,6 +123,8 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
         required_cols = ["close", "volume"]
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
+    pass
+    pass
             logger.error(
                 f"❌ Missing required columns for {timeframe}: {missing_cols}",
             )
@@ -116,10 +133,14 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
         # Check for cluster columns
         cluster_cols = [col for col in data.columns if "cluster" in col.lower()]
         if not cluster_cols:
+    pass
+    pass
             logger.warning(f"⚠️ No cluster columns found for {timeframe}")
 
         # Check for sufficient data
         if len(data) < 100:
+    pass
+    pass
             logger.warning(f"⚠️ Limited data for {timeframe}: {len(data)} rows")
 
         logger.info(
@@ -131,6 +152,8 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
 
 @handle_errors(default_return=False, context="main_training")
 def main() -> bool:
+    pass
+    pass
     """Main training function."""
     parser = argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
     parser.add_argument(
@@ -194,6 +217,8 @@ def main() -> bool:
     # Load data for all timeframes
     timeframe_data: Dict[str, pd.DataFrame] = {}
     for timeframe in timeframes:
+    pass
+    pass
         logger.info(f"📂 Loading data for {timeframe}...")
         data = load_timeframe_data(
             symbol=args.symbol,
@@ -202,16 +227,22 @@ def main() -> bool:
             data_dir=args.data_dir,
         )
         if not data.empty:
+    pass
+    pass
             timeframe_data[timeframe] = data
         else:
             logger.warning(f"⚠️ Skipping {timeframe} due to missing data")
 
     if not timeframe_data:
+    pass
+    pass
         logger.error("❌ No valid data found for any timeframe")
         return False
 
     # Validate data quality
     if not validate_data_quality(timeframe_data):
+    pass
+    pass
         logger.error("❌ Data quality validation failed")
         return False
 
@@ -226,7 +257,11 @@ def main() -> bool:
     available_timeframes: List[str] = list(timeframe_data.keys())
     equal_weight = 1.0 / len(available_timeframes)
     for tf_config in config.timeframes:
+    pass
+    pass
         if tf_config.timeframe in available_timeframes:
+    pass
+    pass
             tf_config.weight = equal_weight
         else:
             tf_config.weight = 0.0
@@ -242,6 +277,8 @@ def main() -> bool:
     success = ensemble.train_ensemble(timeframe_data)
 
     if success:
+    pass
+    pass
         logger.info(
             "✅ Multi-timeframe HMM ensemble training completed successfully!",
         )
@@ -261,10 +298,16 @@ def main() -> bool:
         logger.info("🧪 Testing ensemble prediction...")
         test_data: Dict[str, pd.DataFrame] = {}
         for tf, data in timeframe_data.items():
+    pass
+    pass
             if not data.empty:
+    pass
+    pass
                 test_data[tf] = data.tail(10)  # Use last 10 rows for testing
 
         if test_data:
+    pass
+    pass
             prediction = ensemble.predict(test_data)
             logger.info(
                 f"🎯 Test prediction: {prediction.get('prediction')} (confidence: {prediction.get('confidence', 0.0):.3f})",
@@ -280,5 +323,7 @@ def main() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

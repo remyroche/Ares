@@ -8,11 +8,18 @@ import ast
 import sys
 from pathlib import Path
 
+import def check_file_syntax
 def check_file_syntax(file_path: str) -> bool:
+    pass
+    pass
     """Check if a Python file has valid syntax."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             ast.parse(f.read())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return True
     except SyntaxError as e:
         print(f"❌ Syntax error in {file_path}: {e}")
@@ -22,6 +29,8 @@ def check_file_syntax(file_path: str) -> bool:
         return False
 
 def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
+    pass
+    pass
     """Find S/R method calls in a Python file."""
     sr_methods = {
         'get_sr_context': [],
@@ -39,11 +48,21 @@ def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            lines = content.split('\n')
+            lines = content.split('\\\n')
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for line_num, line in enumerate(lines, 1):
+    pass
+    pass
             for method in sr_methods.keys():
+    pass
+    pass
                 if method in line:
+    pass
+    pass
                     sr_methods[method].append(line_num)
 
     except Exception as e:
@@ -52,11 +71,17 @@ def find_sr_method_calls(file_path: str) -> Dict[str, List[int]]:
     return sr_methods
 
 def check_sr_imports(file_path: str) -> bool:
+    pass
+    pass
     """Check if file imports SRBreakoutPredictor."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check for import statements
         import_patterns = [
             'from src.tactician.sr_breakout_predictor import SRBreakoutPredictor',
@@ -66,7 +91,11 @@ def check_sr_imports(file_path: str) -> bool:
         ]
 
         for pattern in import_patterns:
+    pass
+    pass
             if pattern in content:
+    pass
+    pass
                 return True
 
         return False
@@ -76,19 +105,31 @@ def check_sr_imports(file_path: str) -> bool:
         return False
 
 def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
+    pass
+    pass
     """Check if S/R method calls use correct parameter signatures."""
     compatibility_results = {}
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            lines = content.split('\n')
+            lines = content.split('\\\n')
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check get_sr_context calls
         for line_num, line in enumerate(lines, 1):
+    pass
+    pass
             if 'get_sr_context(' in line and '=' in line:
+    pass
+    pass
                 # Should have market_data= and current_price= parameters
                 if 'market_data=' in line and 'current_price=' in line:
+    pass
+    pass
                     compatibility_results[f'get_sr_context_line_{line_num}'] = True
                 else:
                     compatibility_results[f'get_sr_context_line_{line_num}'] = False
@@ -96,6 +137,8 @@ def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
             elif 'predict_sr_outcome(' in line and '=' in line:
                 # Should have market_data=, current_price=, and sr_context= parameters
                 if 'market_data=' in line and 'current_price=' in line and 'sr_context=' in line:
+    pass
+    pass
                     compatibility_results[f'predict_sr_outcome_line_{line_num}'] = True
                 else:
                     compatibility_results[f'predict_sr_outcome_line_{line_num}'] = False
@@ -103,6 +146,8 @@ def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
             elif 'is_near_sr_level(' in line and '=' in line:
                 # Should have current_price= and sr_context= parameters
                 if 'current_price=' in line and 'sr_context=' in line:
+    pass
+    pass
                     compatibility_results[f'is_near_sr_level_line_{line_num}'] = True
                 else:
                     compatibility_results[f'is_near_sr_level_line_{line_num}'] = False
@@ -110,6 +155,8 @@ def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
             elif 'get_sr_proximity_details(' in line and '=' in line:
                 # Should have current_price= and sr_context= parameters
                 if 'current_price=' in line and 'sr_context=' in line:
+    pass
+    pass
                     compatibility_results[f'get_sr_proximity_details_line_{line_num}'] = True
                 else:
                     compatibility_results[f'get_sr_proximity_details_line_{line_num}'] = False
@@ -120,6 +167,8 @@ def check_method_parameter_compatibility(file_path: str) -> Dict[str, bool]:
     return compatibility_results
 
 def validate_sr_integration():
+    pass
+    pass
     """Validate S/R integration across strategist and analyst files."""
     print("🚀 Starting S/R Strategist/Analyst Integration Validation")
     print("=" * 70)
@@ -144,9 +193,13 @@ def validate_sr_integration():
     parameter_compatibility_results = {}
 
     for file_path in target_files:
-        print(f"\n📁 Checking {file_path}...")
+    pass
+    pass
+        print(f"\\\n📁 Checking {file_path}...")
 
         if not Path(file_path).exists():
+    pass
+    pass
             print(f"❌ File not found: {file_path}")
             validation_results[file_path] = False
             continue
@@ -154,6 +207,8 @@ def validate_sr_integration():
         # Check syntax
         syntax_ok = check_file_syntax(file_path)
         if not syntax_ok:
+    pass
+    pass
             validation_results[file_path] = False
             continue
 
@@ -171,13 +226,19 @@ def validate_sr_integration():
         has_sr_usage = any(len(calls) > 0 for calls in method_calls.values())
 
         if has_import and has_sr_usage:
+    pass
+    pass
             print(f"✅ {file_path} - Valid S/R integration")
             print(f"   Methods used: {[method for method, calls in method_calls.items() if calls]}")
 
             # Check parameter compatibility
             if param_compatibility:
+    pass
+    pass
                 incompatible_calls = [k for k, v in param_compatibility.items() if not v]
                 if incompatible_calls:
+    pass
+    pass
                     print(f"   ⚠️  Parameter compatibility issues: {incompatible_calls}")
                 else:
                     print(f"   ✅ All method calls use correct parameters")
@@ -191,7 +252,7 @@ def validate_sr_integration():
             validation_results[file_path] = True  # Not all files need S/R
 
     # Print summary
-    print("\n" + "=" * 70)
+    print("\\\n" + "=" * 70)
     print("📊 S/R STRATEGIST/ANALYST INTEGRATION VALIDATION SUMMARY")
     print("=" * 70)
 
@@ -199,6 +260,8 @@ def validate_sr_integration():
     total = len(validation_results)
 
     for file_path, result in validation_results.items():
+    pass
+    pass
         status = "✅ PASS" if result else "❌ FAIL"
         print(f"{file_path:<60} {status}")
 
@@ -209,36 +272,50 @@ def validate_sr_integration():
     print(f"Success Rate: {passed/total*100:.1f}%")
 
     # Check parameter compatibility
-    print("\n🔍 Parameter Compatibility Analysis:")
+    print("\\\n🔍 Parameter Compatibility Analysis:")
     for file_path, compatibility in parameter_compatibility_results.items():
+    pass
+    pass
         if compatibility:
+    pass
+    pass
             incompatible = [k for k, v in compatibility.items() if not v]
             if incompatible:
+    pass
+    pass
                 print(f"   ⚠️ {file_path}: {len(incompatible)} incompatible calls")
             else:
                 print(f"   ✅ {file_path}: All calls compatible")
 
     if passed == total:
-        print("\n🎉 ALL S/R STRATEGIST/ANALYST INTEGRATION VALIDATIONS PASSED!")
+    pass
+    pass
+        print("\\\n🎉 ALL S/R STRATEGIST/ANALYST INTEGRATION VALIDATIONS PASSED!")
         print("The cleaned up S/R implementation is properly integrated across strategist and analyst files.")
         return True
     else:
-        print(f"\n⚠️ {total - passed} VALIDATIONS FAILED")
+        print(f"\\\n⚠️ {total - passed} VALIDATIONS FAILED")
         print("Some S/R integrations need attention.")
         return False
 
 def check_sr_predictor_file():
+    pass
+    pass
     """Check the main S/R predictor file."""
-    print("\n🔍 Checking main S/R predictor file...")
+    print("\\\n🔍 Checking main S/R predictor file...")
 
     sr_file = "src/tactician/sr_breakout_predictor.py"
 
     if not Path(sr_file).exists():
+    pass
+    pass
         print(f"❌ S/R predictor file not found: {sr_file}")
         return False
 
     # Check syntax
     if not check_file_syntax(sr_file):
+    pass
+    pass
         print("❌ S/R predictor file has syntax errors")
         return False
 
@@ -258,10 +335,16 @@ def check_sr_predictor_file():
 
     missing_methods = []
     for method in required_methods:
+    pass
+    pass
         if not method_calls.get(method):
+    pass
+    pass
             missing_methods.append(method)
 
     if missing_methods:
+    pass
+    pass
         print(f"❌ Missing required methods: {missing_methods}")
         return False
     else:
@@ -269,8 +352,10 @@ def check_sr_predictor_file():
         return True
 
 def analyze_sr_usage_patterns():
+    pass
+    pass
     """Analyze S/R usage patterns across files."""
-    print("\n📈 S/R Usage Pattern Analysis")
+    print("\\\n📈 S/R Usage Pattern Analysis")
     print("=" * 50)
 
     # Files that use S/R
@@ -281,30 +366,50 @@ def analyze_sr_usage_patterns():
     usage_patterns = {}
 
     for file_path in sr_files:
+    pass
+    pass
         if Path(file_path).exists():
+    pass
+    pass
             method_calls = find_sr_method_calls(file_path)
             usage_patterns[file_path] = method_calls
 
     # Analyze patterns
-    print("\n🔍 S/R Method Usage Analysis:")
+    print("\\\n🔍 S/R Method Usage Analysis:")
     for file_path, methods in usage_patterns.items():
-        print(f"\n📁 {file_path}:")
+    pass
+    pass
+        print(f"\\\n📁 {file_path}:")
         for method, lines in methods.items():
+    pass
+    pass
             if lines:
+    pass
+    pass
                 print(f"   {method}: {len(lines)} calls at lines {lines}")
 
     # Summary
-    print("\n📊 Usage Summary:")
+    print("\\\n📊 Usage Summary:")
     method_totals = {}
     for methods in usage_patterns.values():
+    pass
+    pass
         for method, lines in methods.items():
+    pass
+    pass
             if lines:
+    pass
+    pass
                 method_totals[method] = method_totals.get(method, 0) + len(lines)
 
     for method, total in sorted(method_totals.items()):
+    pass
+    pass
         print(f"   {method}: {total} total calls")
 
 if __name__ == "__main__":
+    pass
+    pass
     # Check main S/R file
     sr_ok = check_sr_predictor_file()
 
@@ -316,8 +421,10 @@ if __name__ == "__main__":
 
     # Overall result
     if sr_ok and integration_ok:
-        print("\n🎉 ALL VALIDATIONS PASSED!")
+    pass
+    pass
+        print("\\\n🎉 ALL VALIDATIONS PASSED!")
         sys.exit(0)
     else:
-        print("\n⚠️ SOME VALIDATIONS FAILED!")
+        print("\\\n⚠️ SOME VALIDATIONS FAILED!")
         sys.exit(1)

@@ -50,6 +50,10 @@ async def main():
 
     try:
         # Execute from step03 onwards
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await orchestrator.execute_from_step(
             start_step=start_step,
             config=config,
@@ -57,6 +61,8 @@ async def main():
         )
 
         if success:
+    pass
+    pass
             print("✅ Pipeline completed successfully from step03 onwards!")
         else:
             print("❌ Pipeline failed from step03 onwards")
@@ -71,6 +77,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the async main function
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

@@ -5,29 +5,34 @@ import sys
 from pathlib import Path
 
 
+import def apply_fixes
 def apply_fixes(text: str) -> str:
+    pass
+    pass
     original = text
     # 1) Remove double parentheses in function defs
-    text = re.sub(r"(def\s+[A-Za-z_]\w*\s*)\(\(", r"\1(", text)
-    text = re.sub(r"(async\s+def\s+[A-Za-z_]\w*\s*)\(\(", r"\1(", text)
-    text = re.sub(r"\)\)\s*->", r") ->", text)
-    text = re.sub(r"\)\)\s*:", r"):", text)
-    text = re.sub(r"\(\,\s*", r"(", text)  # def f(, x: int) -> def f(x: int)
+    text = re.sub(r"(def\\\s+[A-Za-z_]\\\w*\\\s*)\\\(\\\(", r"\\\1(", text)
+    text = re.sub(r"(async\\\s+def\\\s+[A-Za-z_]\\\w*\\\s*)\\\(\\\(", r"\\\1(", text)
+    text = re.sub(r"\\\)\\\)\\\s*->", r") ->", text)
+    text = re.sub(r"\\\)\\\)\\\s*:", r"):", text)
+    text = re.sub(r"\\\(\\\,\\\s*", r"(", text)  # def f(, x: int) -> def f(x: int)
 
     # 2) Fix dict/list/tuple type brackets having ' = '
     def fix_brackets(m: re.Match[str]) -> str:
+    pass
+    pass
         head = m.group(1)
         inside = m.group(2)
         fixed = inside.replace(" = ", ", ")
         return f"{head}[{fixed}]"
 
-    text = re.sub(r"\b(dict|list|tuple)\[([^\]]+)\]", fix_brackets, text)
+    text = re.sub(r"\\\b(dict|list|tuple)\\\[([^\\\]]+)\\\]", fix_brackets, text)
 
     # 3) Fix typed variable annotations using comma instead of equals
     # name: Type, value -> name: Type = value
     text = re.sub(
-        r"^(\s*)([A-Za-z_][\w\.]*)\s*:\s*([^=,\n]+?)\s*,\s*(.+)$",
-        r"\1\2: \3 = \4",
+        r"^(\\\s*)([A-Za-z_][\\\w\\\.]*)\\\s*:\\\s*([^=,\\\n]+?)\\\s*,\\\s*(.+)$",
+        r"\\\1\\\2: \\\3 = \\\4",
         text,
         flags=re.MULTILINE,
     )
@@ -36,9 +41,13 @@ def apply_fixes(text: str) -> str:
 
 
 def process(path: Path) -> bool:
+    pass
+    pass
     s = path.read_text(encoding="utf-8")
     ns = apply_fixes(s)
     if ns != s:
+    pass
+    pass
         path.write_text(ns, encoding="utf-8")
         print(f"surgical {path}")
         return True
@@ -46,15 +55,27 @@ def process(path: Path) -> bool:
 
 
 def main() -> int:
+    pass
+    pass
     if len(sys.argv) != 2:
+    pass
+    pass
         print("Usage: surgical_pass2.py <target_dir>")
         return 1
     target = Path(sys.argv[1])
     n = 0
     for p in target.rglob("*.py"):
+    pass
+    pass
         try:
             if process(p):
+    pass
+    except Exception as e:
+        pass
+    pass
                 n += 1
+    except Exception as e:
+        pass
         except Exception as e:
             print(f"err {p}: {e}")
     print(f"surgical-modified {n} files")
@@ -62,5 +83,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     raise SystemExit(main())
 

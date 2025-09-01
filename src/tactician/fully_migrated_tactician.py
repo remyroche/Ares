@@ -14,14 +14,23 @@ import logging
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
 
 # Simple logger setup
+import logger = logging.getLogger
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
 def handle_errors(func):
+    pass
+    pass
     """Simple error handling decorator."""
     def wrapper(*args, **kwargs):
+    pass
+    pass
         try:
             return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
             return None
@@ -40,6 +49,8 @@ class FullyMigratedTactician:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize fully migrated Tactician.
 
@@ -106,16 +117,24 @@ class FullyMigratedTactician:
         try:
             self.logger.info("Initializing Fully Migrated Tactician...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize enhanced scenario predictor
             self.scenario_predictor = EnhancedScenarioBasedPredictor(self.config)
             success = await self.scenario_predictor.initialize()
 
             if not success:
+    pass
+    pass
                 self.logger.error("Failed to initialize enhanced scenario predictor")
                 return False
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.logger.error("Invalid configuration for fully migrated Tactician")
                 return False
 
@@ -128,6 +147,8 @@ class FullyMigratedTactician:
             return False
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate fully migrated Tactician configuration.
 
@@ -136,17 +157,29 @@ class FullyMigratedTactician:
         """
         try:
             # Validate decision thresholds
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for threshold_name, threshold in self.decision_thresholds.items():
+    pass
+    pass
                 if threshold < 0 or threshold > 1:
+    pass
+    pass
                     self.logger.error(f"Invalid threshold for {threshold_name}")
                     return False
 
             # Validate risk management parameters
             if self.risk_management["max_position_size"] <= 0:
+    pass
+    pass
                 self.logger.error("Invalid max_position_size")
                 return False
 
             if self.risk_management["max_leverage"] <= 0:
+    pass
+    pass
                 self.logger.error("Invalid max_leverage")
                 return False
 
@@ -180,9 +213,15 @@ class FullyMigratedTactician:
         """
         try:
             if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Tactician not initialized")
                 return self._generate_error_predictions(symbol, timeframe)
 
+    except Exception as e:
+        pass
             # Extract comprehensive features
             features = self.scenario_predictor.extract_comprehensive_features(market_data)
             features = features.reshape(1, -1)  # Reshape for single prediction
@@ -242,6 +281,10 @@ class FullyMigratedTactician:
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = scenario_predictions.get("confidence", 0.0)
 
             # Extract key metrics
@@ -267,6 +310,8 @@ class FullyMigratedTactician:
             # Exit decision logic (for existing positions)
             exit_signal = False
             if self.current_position:
+    pass
+    pass
                 exit_conditions = [
                     risk_zone_prob > self.decision_thresholds["exit_risk_threshold"],
                     confidence < (self.current_position.get("entry_confidence", 0.0) - self.decision_thresholds["exit_confidence_drop"]),
@@ -277,6 +322,8 @@ class FullyMigratedTactician:
             # Direction decision
             direction = "LONG" if entry_signal and dominant_zone == "profit" else "NEUTRAL"
             if exit_signal:
+    pass
+    pass
                 direction = "EXIT"
 
             # Confidence scoring
@@ -336,6 +383,10 @@ class FullyMigratedTactician:
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = scenario_predictions.get("confidence", 0.0)
 
             # Base position size from confidence
@@ -406,6 +457,10 @@ class FullyMigratedTactician:
         """
         try:
             # Base confidence from model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_confidence = model_confidence
 
             # Boost from scenario dominance
@@ -452,7 +507,13 @@ class FullyMigratedTactician:
         try:
             reasoning_parts = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if entry_signal:
+    pass
+    pass
                 reasoning_parts.append("ENTRY SIGNAL: Strong scenario analysis indicates favorable conditions")
 
                 profit_prob = scenario_analysis.get("profit_zone_probability", 0.0)
@@ -484,6 +545,8 @@ class FullyMigratedTactician:
             return f"Error generating reasoning: {e}"
 
     def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
+    pass
+    pass
         """
         Generate error predictions when something goes wrong.
 
@@ -540,6 +603,8 @@ class FullyMigratedTactician:
         }
 
     def update_position(self, position_data: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Update current position information.
 
@@ -548,6 +613,10 @@ class FullyMigratedTactician:
         """
         try:
             self.current_position = position_data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.position_history.append({
                 **position_data,
                 "timestamp": datetime.now().isoformat()
@@ -555,12 +624,16 @@ class FullyMigratedTactician:
 
             # Keep only last 100 positions
             if len(self.position_history) > 100:
+    pass
+    pass
                 self.position_history = self.position_history[-100:]
 
         except Exception as e:
             self.logger.error(f"❌ Position update failed: {e}")
 
     def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Update performance metrics with trade result.
 
@@ -570,7 +643,13 @@ class FullyMigratedTactician:
         try:
             self.performance_metrics["total_trades"] += 1
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if trade_result.get("profit", 0) > 0:
+    pass
+    pass
                 self.performance_metrics["winning_trades"] += 1
                 self.performance_metrics["total_profit"] += trade_result["profit"]
             else:
@@ -588,6 +667,8 @@ class FullyMigratedTactician:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
 
     def get_performance_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """
         Get performance summary.
 
@@ -607,6 +688,8 @@ class FullyMigratedTactician:
         }
 
     def get_configuration_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """
         Get configuration summary for step17 optimization.
 

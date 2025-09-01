@@ -17,6 +17,7 @@ from src.utils.centralized_decorators import validate_data_quality
 from kelly_criterion_formula import calculate_kelly_multiplier
 
 
+import class PositionSizer:
 class PositionSizer:
     """
     Position Sizer component responsible for:
@@ -28,11 +29,17 @@ class PositionSizer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PositionSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
+    pass
+    pass
             def _shim_print(message: str) -> None:
+    pass
+    pass
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
 
@@ -84,6 +91,8 @@ class PositionSizer:
 
         # Validate configuration
         if not self._validate_configuration():
+    pass
+    pass
             return False
 
         self.is_initialized = True
@@ -97,25 +106,39 @@ class PositionSizer:
     )
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate position sizer configuration."""
         try:
             required_keys = [
                 "kelly_multiplier",
                 "max_position_size",
                 "min_position_size",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ]
             for key in required_keys:
+    pass
+    pass
                 if key not in self.sizing_config:
+    pass
+    pass
                     self.print(missing(f"Missing required configuration key: {key}"))
                     return False
 
             if self.max_position_size <= self.min_position_size:
+    pass
+    pass
                 self.logger.error(
                     "max_position_size must be greater than min_position_size",
                 )
                 return False
 
             if self.kelly_multiplier <= 0 or self.kelly_multiplier > 1:
+    pass
+    pass
                 self.print(error("kelly_multiplier must be between 0 and 1"))
                 return False
 
@@ -126,6 +149,8 @@ class PositionSizer:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -135,6 +160,10 @@ class PositionSizer:
         """
         try:
             if "position_sizing" in step17_results:
+    pass
+    except Exception as e:
+        pass
+    pass
                 position_sizing_optimization = step17_results["position_sizing"]
 
                 # Update position sizing parameters
@@ -151,6 +180,8 @@ class PositionSizer:
 
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -194,6 +225,8 @@ class PositionSizer:
             dict[str, Any]: Position sizing analysis
         """
         if not self.is_initialized:
+    pass
+    pass
             self.print(initialization_error("Position sizer not initialized"))
             return None
 
@@ -201,6 +234,10 @@ class PositionSizer:
 
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
             # Extract ML confidence scores (for backward compatibility)
@@ -213,6 +250,8 @@ class PositionSizer:
 
             # NEW: Use combined confidence for position sizing if available
             if combined_confidence >= self.positionsize_combined_threshold:
+    pass
+    pass
                 # Calculate base Kelly criterion position size
                 kelly_position_size = self._calculate_kelly_position_size(
                     price_target_confidences, adversarial_confidences,
@@ -287,6 +326,10 @@ class PositionSizer:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
             # Use the new Kelly criterion formula module
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             kelly_multiplier = calculate_kelly_multiplier(
                 price_target_confidences=price_target_confidences,
                 adversarial_confidences=adversarial_confidences,
@@ -321,10 +364,16 @@ class PositionSizer:
         """Calculate position size based on ML confidence scores."""
         try:
             # Get average confidence for target levels (0.5% to 2.0%)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
 
             for level in target_levels:
+    pass
+    pass
                 closest_level = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -338,6 +387,8 @@ class PositionSizer:
             # Get average adverse risk
             adverse_risks = []
             for level in target_levels:
+    pass
+    pass
                 closest_level = min(
                     adversarial_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -380,6 +431,10 @@ class PositionSizer:
         """Calculate weighted position size using Kelly criterion and ML confidence."""
         try:
             # Calculate weighted position size
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
 
@@ -404,8 +459,14 @@ class PositionSizer:
         try:
             adjusted = base_size
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Market health: downscale size under high volatility or stress; upscale when healthy
             if market_health_analysis:
+    pass
+    pass
                 vol = market_health_analysis.get("volatility_analysis", {})
                 stress = market_health_analysis.get("stress_analysis", {})
                 liq = market_health_analysis.get("liquidity_analysis", {})
@@ -417,12 +478,16 @@ class PositionSizer:
 
                 # Volatility adjustment
                 if vol_regime in ("high", "extreme") or current_vol > 0.03:
+    pass
+    pass
                     adjusted *= 0.6
                 elif vol_regime == "low" and current_vol < 0.015:
                     adjusted *= 1.1
 
                 # Stress adjustment
                 if stress_level >= 0.8:
+    pass
+    pass
                     adjusted *= 0.4
                 elif stress_level >= 0.6:
                     adjusted *= 0.6
@@ -431,12 +496,16 @@ class PositionSizer:
 
                 # Liquidity adjustment
                 if liquidity_score < 0.3:
+    pass
+    pass
                     adjusted *= 0.6
                 elif liquidity_score > 0.7:
                     adjusted *= 1.05
 
             # Strategist risk parameters: respect max risk caps without using fixed TP/SL distances
             if strategist_risk_parameters:
+    pass
+    pass
                 # Example: cap size based on max daily loss or risk per trade signals
                 max_position_risk = float(
                     strategist_risk_parameters.get("max_position_risk", 0.01),
@@ -446,6 +515,8 @@ class PositionSizer:
                 adjusted = min(adjusted, configured_max)
                 # If max_position_risk is very small, reduce size further
                 if max_position_risk <= 0.005:
+    pass
+    pass
                     adjusted *= 0.8
 
             # Dynamic confidence-based modulation (analyst and tactician)
@@ -474,11 +545,17 @@ class PositionSizer:
         """Generate reason for position sizing decision."""
         try:
             # Get average confidence and risk
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             key_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
             risks = []
 
             for level in key_levels:
+    pass
+    pass
                 closest_confidence = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -497,12 +574,20 @@ class PositionSizer:
 
             # NEW: Include combined confidence in sizing reason
             if final_position_size >= self.max_position_size * 0.8:
+    pass
+    pass
                 return f"Maximum position size due to high combined confidence ({combined_confidence:.2f}) and low risk ({avg_risk:.2f})"
             if final_position_size >= self.max_position_size * 0.5:
+    pass
+    pass
                 return f"Large position size based on combined confidence ({combined_confidence:.2f}) and Kelly criterion ({kelly_position_size:.3f})"
             if final_position_size >= self.min_position_size * 2:
+    pass
+    pass
                 return f"Moderate position size with combined confidence ({combined_confidence:.2f}) and balanced risk-reward profile"
             if combined_confidence < self.positionsize_combined_threshold:
+    pass
+    pass
                 return f"Minimum position size due to low combined confidence ({combined_confidence:.2f}) below threshold ({self.positionsize_combined_threshold:.2f})"
             return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
@@ -528,6 +613,10 @@ class PositionSizer:
                 f"(Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}) "
                 f"Analyst: {analyst_confidence:.2f}, Tactician: {tactician_confidence:.2f} "
                 f"Kelly: p_avg={p_avg:.2f}, b_avg={b_avg:.2f}, frac_kelly={fractional_kelly_pct:.3f}"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
         except Exception as e:
@@ -537,16 +626,26 @@ class PositionSizer:
             return f"Position size: {final_position_size:.4f} (Error generating reason)"
 
     def _get_historical_performance(self) -> tuple[float, float]:
+    pass
+    pass
         """Get historical performance data for Kelly criterion calculation."""
         try:
             # Use local sizing history as a proxy when available
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Expect entries with keys: {"pnl": float}
             history = self.position_sizing_history[-500:]  # recent window
             if not history:
+    pass
+    pass
                 return 0.5, 1.5
 
             pnls = [float(h.get("pnl", 0.0)) for h in history if "pnl" in h]
             if not pnls:
+    pass
+    pass
                 return 0.5, 1.5
 
             wins = [p for p in pnls if p > 0]
@@ -578,6 +677,8 @@ class PositionSizer:
     ) -> list[dict[str, Any]]:
         """Get position sizing history."""
         if limit:
+    pass
+    pass
             return self.position_sizing_history[-limit:]
         return self.position_sizing_history.copy()
 
@@ -590,6 +691,10 @@ class PositionSizer:
         """Stop the position sizer."""
         try:
             self.logger.info("Stopping position sizer...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_initialized = False
             self.logger.info("✅ Position sizer stopped successfully")
         except Exception as e:
@@ -604,6 +709,10 @@ class PositionSizer:
         """Cleanup position sizer resources."""
         try:
             self.logger.info("Cleaning up position sizer...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self.stop()
             self.position_sizing_history.clear()
             self.logger.info("✅ Position sizer cleanup completed")
@@ -630,11 +739,19 @@ async def setup_position_sizer(
     """
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         position_sizer = PositionSizer(config)
 
         if await position_sizer.initialize():
+    pass
+    pass
             return position_sizer
         return None
 

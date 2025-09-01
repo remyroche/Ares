@@ -5,23 +5,33 @@ from typing import Any
 
 from src.utils.warning_symbols import failed
 
+import logger = logging.getLogger
 logger = logging.getLogger(__name__)
 
 def init_sentry() -> None:
+    pass
+    pass
     """Initialize Sentry if SENTRY_DSN is provided.
 
     Set SENTRY_ENV and SENTRY_TRACES_SAMPLE_RATE as needed.
     """
     dsn, os.getenv("SENTRY_DSN")
     if not dsn:
+    pass
+    pass
         return
 
     try:
         import sentry_sdk
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
 
+import sentry_logging, LoggingIntegration
         sentry_logging, LoggingIntegration(
             level = logging.INFO,
             event_level = logging.ERROR,
@@ -39,19 +49,28 @@ def init_sentry() -> None:
         print(failed("Failed to initialize Sentry: {exc}"))
 
 def init_otlp_logging() -> None:
+    pass
+    pass
     """Initialize OpenTelemetry logging exporter if OTLP endpoint is provided."""
     endpoint, os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
+    pass
+    pass
         return
 
     try:
         # Minimal setup for OTLP logging exporter
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from opentelemetry import _logs as otel_logs
         from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
         from opentelemetry.sdk._logs import LoggerProvider
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
         from opentelemetry.sdk.resources import Resource
 
+import resource, Resource.create
         resource, Resource.create(
             {"service.name": os.getenv("OTEL_SERVICE_NAME", "ares - bot")},
         )
@@ -64,6 +83,8 @@ def init_otlp_logging() -> None:
         print(failed("Failed to initialize OTLP logging: {exc}"))
 
 def init_observability(_: dict[str, Any] | None = None) -> None:
+    pass
+    pass
     """Initialize production observability hooks: Sentry and OTLP if configured."""
     init_sentry()
     init_otlp_logging()

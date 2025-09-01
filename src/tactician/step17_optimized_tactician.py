@@ -12,14 +12,23 @@ import logging
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
 
 # Simple logger setup
+import logger = logging.getLogger
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
 def handle_errors(func):
+    pass
+    pass
     """Simple error handling decorator."""
     def wrapper(*args, **kwargs):
+    pass
+    pass
         try:
             return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
             return None
@@ -38,6 +47,8 @@ class Step17OptimizedTactician:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize step17 optimized Tactician.
 
@@ -163,16 +174,24 @@ class Step17OptimizedTactician:
         try:
             self.logger.info("Initializing Step17 Optimized Tactician...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize comprehensive scenario predictor
             self.scenario_predictor = ComprehensiveEnhancedScenarioPredictor(self.config)
             success = await self.scenario_predictor.initialize()
 
             if not success:
+    pass
+    pass
                 self.logger.error("Failed to initialize comprehensive scenario predictor")
                 return False
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.logger.error("Invalid configuration for step17 optimized Tactician")
                 return False
 
@@ -185,6 +204,8 @@ class Step17OptimizedTactician:
             return False
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate step17 optimized Tactician configuration.
 
@@ -193,17 +214,29 @@ class Step17OptimizedTactician:
         """
         try:
             # Validate decision thresholds
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for threshold_name, threshold in self.decision_thresholds.items():
+    pass
+    pass
                 if threshold < 0:
+    pass
+    pass
                     self.logger.error(f"Invalid threshold for {threshold_name}")
                     return False
 
             # Validate risk management parameters
             if self.risk_management["max_position_size"] <= 0:
+    pass
+    pass
                 self.logger.error("Invalid max_position_size")
                 return False
 
             if self.risk_management["max_leverage"] <= 0:
+    pass
+    pass
                 self.logger.error("Invalid max_leverage")
                 return False
 
@@ -237,9 +270,15 @@ class Step17OptimizedTactician:
         """
         try:
             if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Tactician not initialized")
                 return self._generate_error_predictions(symbol, timeframe)
 
+    except Exception as e:
+        pass
             # Extract comprehensive features
             features = self.scenario_predictor.extract_comprehensive_features(market_data)
             features = features.reshape(1, -1)  # Reshape for single prediction
@@ -300,6 +339,10 @@ class Step17OptimizedTactician:
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = scenario_predictions.get("confidence", 0.0)
 
             # Extract key metrics
@@ -333,6 +376,8 @@ class Step17OptimizedTactician:
             # Step17-optimized exit decision logic (ALL configurable)
             exit_signal = False
             if self.current_position:
+    pass
+    pass
                 exit_conditions = [
                     risk_zone_prob > self.decision_thresholds["exit_risk_threshold"],
                     confidence < (self.current_position.get("entry_confidence", 0.0) - self.decision_thresholds["exit_confidence_drop"]),
@@ -414,6 +459,10 @@ class Step17OptimizedTactician:
         """
         try:
             scenario_analysis = scenario_predictions.get("scenario_analysis", {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = scenario_predictions.get("confidence", 0.0)
 
             # Calculate volatility and volume metrics
@@ -518,7 +567,13 @@ class Step17OptimizedTactician:
         """
         try:
             # Step17-optimized direction calculation (ALL configurable)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if dominant_zone == "profit" and profit_zone_prob > self.decision_thresholds["direction_profit_bias"]:
+    pass
+    pass
                 return "LONG"
             elif dominant_zone == "risk" and risk_zone_prob > self.decision_thresholds["direction_risk_bias"]:
                 return "SHORT"
@@ -556,6 +611,10 @@ class Step17OptimizedTactician:
         """
         try:
             # Step17-optimized confidence calculation (ALL weights configurable)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = 0.0
 
             # Base confidence
@@ -591,18 +650,30 @@ class Step17OptimizedTactician:
             return 0.5
 
     def _calculate_volatility(self, market_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate volatility metric for step17 optimization."""
         try:
             returns = market_data['close'].pct_change().dropna()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return returns.std()
         except Exception as e:
             self.logger.error(f"❌ Volatility calculation failed: {e}")
             return 0.02
 
     def _calculate_volume_ratio(self, market_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate volume ratio metric for step17 optimization."""
         try:
             current_volume = market_data['volume'].iloc[-1]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             avg_volume = market_data['volume'].rolling(20).mean().iloc[-1]
             return current_volume / avg_volume if avg_volume > 0 else 1.0
         except Exception as e:
@@ -610,27 +681,47 @@ class Step17OptimizedTactician:
             return 1.0
 
     def _check_exit_time_threshold(self) -> bool:
+    pass
+    pass
         """Check if exit time threshold is met."""
         try:
             if self.current_position:
+    pass
+    except Exception as e:
+        pass
+    pass
                 entry_time = self.current_position.get("entry_time")
                 if entry_time:
+    pass
+    pass
                     elapsed_time = (datetime.now() - entry_time).total_seconds()
                     return elapsed_time > self.decision_thresholds["exit_time_threshold"]
+    except Exception as e:
+        pass
             return False
         except Exception as e:
             self.logger.error(f"❌ Exit time threshold check failed: {e}")
             return False
 
     def _check_exit_drawdown_threshold(self) -> bool:
+    pass
+    pass
         """Check if exit drawdown threshold is met."""
         try:
             if self.current_position:
+    pass
+    except Exception as e:
+        pass
+    pass
                 entry_price = self.current_position.get("entry_price", 0)
                 current_price = self.current_position.get("current_price", 0)
                 if entry_price > 0 and current_price > 0:
+    pass
+    pass
                     drawdown = (entry_price - current_price) / entry_price
                     return drawdown > self.decision_thresholds["exit_drawdown_threshold"]
+    except Exception as e:
+        pass
             return False
         except Exception as e:
             self.logger.error(f"❌ Exit drawdown threshold check failed: {e}")
@@ -664,7 +755,13 @@ class Step17OptimizedTactician:
         try:
             reasoning_parts = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if entry_signal:
+    pass
+    pass
                 reasoning_parts.append("ENTRY SIGNAL: Step17-optimized conditions met")
 
                 profit_prob = scenario_analysis.get("profit_zone_probability", 0.0)
@@ -698,6 +795,8 @@ class Step17OptimizedTactician:
             return f"Error generating step17 optimized reasoning: {e}"
 
     def _generate_error_predictions(self, symbol: str, timeframe: str) -> Dict[str, Any]:
+    pass
+    pass
         """Generate error predictions when something goes wrong."""
         return {
             "scenario_predictions": {
@@ -746,9 +845,15 @@ class Step17OptimizedTactician:
         }
 
     def update_position(self, position_data: Dict[str, Any]) -> None:
+    pass
+    pass
         """Update current position information."""
         try:
             self.current_position = position_data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.position_history.append({
                 **position_data,
                 "timestamp": datetime.now().isoformat()
@@ -756,17 +861,27 @@ class Step17OptimizedTactician:
 
             # Keep only last 100 positions
             if len(self.position_history) > 100:
+    pass
+    pass
                 self.position_history = self.position_history[-100:]
 
         except Exception as e:
             self.logger.error(f"❌ Position update failed: {e}")
 
     def update_performance_metrics(self, trade_result: Dict[str, Any]) -> None:
+    pass
+    pass
         """Update performance metrics with trade result."""
         try:
             self.performance_metrics["total_trades"] += 1
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if trade_result.get("profit", 0) > 0:
+    pass
+    pass
                 self.performance_metrics["winning_trades"] += 1
                 self.performance_metrics["total_profit"] += trade_result["profit"]
             else:
@@ -776,6 +891,8 @@ class Step17OptimizedTactician:
             # Calculate derived metrics
             total_trades = self.performance_metrics["total_trades"]
             if total_trades > 0:
+    pass
+    pass
                 self.performance_metrics["win_rate"] = self.performance_metrics["winning_trades"] / total_trades
                 self.performance_metrics["avg_profit_per_trade"] = self.performance_metrics["total_profit"] / self.performance_metrics["winning_trades"] if self.performance_metrics["winning_trades"] > 0 else 0.0
                 self.performance_metrics["avg_loss_per_trade"] = self.performance_metrics["total_loss"] / self.performance_metrics["losing_trades"] if self.performance_metrics["losing_trades"] > 0 else 0.0
@@ -785,6 +902,8 @@ class Step17OptimizedTactician:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
 
     def get_performance_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get performance summary."""
         return {
             "performance_metrics": self.performance_metrics,
@@ -799,6 +918,8 @@ class Step17OptimizedTactician:
         }
 
     def get_step17_configuration_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """
         Get step17 configuration summary with ALL parameters.
 

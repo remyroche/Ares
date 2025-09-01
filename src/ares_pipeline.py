@@ -21,6 +21,7 @@ from src.tactician.tactician import Tactician
 from src.utils.state_manager import StateManager
 from src.config import get_dual_model_config
 from src.interfaces.base_interfaces import (
+import IAnalyst,
     IAnalyst,
     IEventBus,
     IStateManager,
@@ -30,18 +31,22 @@ from src.interfaces.base_interfaces import (
 )
 from src.utils.observability import init_observability
 from src.monitoring.performance_dashboard import (
+import PerformanceDashboard,
     PerformanceDashboard,
     setup_performance_dashboard,
 )
 from src.monitoring.performance_monitor import (
+import PerformanceMonitor,
     PerformanceMonitor,
     setup_performance_monitor,
 )
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.warning_symbols import (
+import critical,
     critical,
     error,
     failed,
@@ -55,11 +60,16 @@ from src.core.config_service import ConfigurationService
 # Add the project root to the Python path for subprocess execution
 # Important: append instead of inserting at position 0 to avoid shadowing
 # standard library modules like 'types' with our internal 'src/types' package.
+import project_root = Path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.append(str(project_root))
 
 if TYPE_CHECKING:
+    pass
+    pass
     pass  # TODO: Add proper implementation
 class AresPipeline:
     """
@@ -67,6 +77,8 @@ class AresPipeline:
     """
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
+    pass
+    pass
         """
         Initialize Ares pipeline with enhanced type safety and DI.
 
@@ -119,6 +131,10 @@ class AresPipeline:
         try:
             self.logger.info("Initializing Ares Pipeline...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize configuration service
             await self._initialize_configuration_service()
 
@@ -155,6 +171,10 @@ class AresPipeline:
         """Initialize configuration service."""
         try:
             print("   ⚙️ Initializing ConfigurationService...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("   ⚙️ Initializing ConfigurationService...")
 
             # Register ConfigurationService via factory so it receives DI config
@@ -166,6 +186,8 @@ class AresPipeline:
 
             # Store current container config under a conventional key if missing
             if self.container.get_config("root_config") is None:
+    pass
+    pass
                 # The DependencyContainer already holds its config; expose it
                 self.container.set_config("root_config", self.container._config)
 
@@ -190,6 +212,10 @@ class AresPipeline:
         """Register core services in DI container with comprehensive logging."""
         try:
             print("🔧 Registering core services...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🔧 Registering core services...")
 
             # Register database manager
@@ -197,6 +223,10 @@ class AresPipeline:
             self.logger.info("   💾 Registering DatabaseManager...")
             try:
                 self.container.register("DatabaseManager", SQLiteManager)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 print("   ✅ DatabaseManager registered successfully")
                 self.logger.info("   ✅ DatabaseManager registered successfully")
             except Exception as e:
@@ -209,6 +239,10 @@ class AresPipeline:
             try:
                 # Use environment-configured exchange as default
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Build exchange instance via factory and register the instance
                 exchange_instance = RootExchangeFactory.get_exchange(
                     get_exchange_name().lower(),
@@ -225,6 +259,10 @@ class AresPipeline:
             self.logger.info("   📊 Registering Analyst...")
             try:
                 self.container.register("Analyst", Analyst, config={"analyst": {}})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 print("   ✅ Analyst registered successfully")
                 self.logger.info("   ✅ Analyst registered successfully")
             except Exception as e:
@@ -238,6 +276,10 @@ class AresPipeline:
                 self.container.register(
                     "Strategist",
                     Strategist, config={"strategist": {}},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 print("   ✅ Strategist registered successfully")
                 self.logger.info("   ✅ Strategist registered successfully")
@@ -252,6 +294,10 @@ class AresPipeline:
                 self.container.register(
                     "Tactician",
                     Tactician, config={"tactician": {}},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 print("   ✅ Tactician registered successfully")
                 self.logger.info("   ✅ Tactician registered successfully")
@@ -266,6 +312,10 @@ class AresPipeline:
                 self.container.register(
                     "Supervisor",
                     Supervisor, config={"supervisor": {}},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 print("   ✅ Supervisor registered successfully")
                 self.logger.info("   ✅ Supervisor registered successfully")
@@ -280,6 +330,10 @@ class AresPipeline:
                 self.container.register(
                     "StateManager",
                     StateManager, config={"state_manager": {}},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 print("   ✅ StateManager registered successfully")
                 self.logger.info("   ✅ StateManager registered successfully")
@@ -292,6 +346,10 @@ class AresPipeline:
             self.logger.info("   📡 Registering EventBus...")
             try:
                 self.container.register("EventBus", EventBus, config={"event_bus": {}})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 print("   ✅ EventBus registered successfully")
                 self.logger.info("   ✅ EventBus registered successfully")
             except Exception as e:
@@ -314,6 +372,10 @@ class AresPipeline:
         """Resolve pipeline components through DI container with comprehensive logging."""
         try:
             print("🔧 Resolving pipeline components...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🔧 Resolving pipeline components...")
 
             # Resolve all components
@@ -321,6 +383,8 @@ class AresPipeline:
             self.logger.info("   📊 Resolving Analyst component...")
             self.analyst = self.container.resolve("Analyst")
             if self.analyst:
+    pass
+    pass
                 print("   ✅ Analyst component resolved successfully")
                 self.logger.info("   ✅ Analyst component resolved successfully")
             else:
@@ -331,6 +395,8 @@ class AresPipeline:
             self.logger.info("   🧠 Resolving Strategist component...")
             self.strategist = self.container.resolve("Strategist")
             if self.strategist:
+    pass
+    pass
                 print("   ✅ Strategist component resolved successfully")
                 self.logger.info("   ✅ Strategist component resolved successfully")
             else:
@@ -341,6 +407,8 @@ class AresPipeline:
             self.logger.info("   🎯 Resolving Tactician component...")
             self.tactician = self.container.resolve("Tactician")
             if self.tactician:
+    pass
+    pass
                 print("   ✅ Tactician component resolved successfully")
                 self.logger.info("   ✅ Tactician component resolved successfully")
             else:
@@ -351,6 +419,8 @@ class AresPipeline:
             self.logger.info("   👁️ Resolving Supervisor component...")
             self.supervisor = self.container.resolve("Supervisor")
             if self.supervisor:
+    pass
+    pass
                 print("   ✅ Supervisor component resolved successfully")
                 self.logger.info("   ✅ Supervisor component resolved successfully")
             else:
@@ -361,6 +431,8 @@ class AresPipeline:
             self.logger.info("   💾 Resolving StateManager component...")
             self.state_manager = self.container.resolve("StateManager")
             if self.state_manager:
+    pass
+    pass
                 print("   ✅ StateManager component resolved successfully")
                 self.logger.info("   ✅ StateManager component resolved successfully")
             else:
@@ -371,6 +443,8 @@ class AresPipeline:
             self.logger.info("   📡 Resolving EventBus component...")
             self.event_bus = self.container.resolve("EventBus")
             if self.event_bus:
+    pass
+    pass
                 print("   ✅ EventBus component resolved successfully")
                 self.logger.info("   ✅ EventBus component resolved successfully")
             else:
@@ -393,22 +467,38 @@ class AresPipeline:
         """Initialize all pipeline components."""
         try:
             # Initialize components in dependency order
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.state_manager:
+    pass
+    pass
                 await self.state_manager.initialize()
 
             if self.event_bus:
+    pass
+    pass
                 await self.event_bus.initialize()
 
             if self.analyst:
+    pass
+    pass
                 await self.analyst.initialize()
 
             if self.strategist:
+    pass
+    pass
                 await self.strategist.initialize()
 
             if self.tactician:
+    pass
+    pass
                 await self.tactician.initialize()
 
             if self.supervisor:
+    pass
+    pass
                 await self.supervisor.initialize()
 
             self.logger.info("All pipeline components initialized successfully")
@@ -421,9 +511,15 @@ class AresPipeline:
         default_return=None, context="signal handler setup",
     )
     def _setup_signal_handlers(self) -> None:
+    pass
+    pass
         """Setup signal handlers for graceful shutdown."""
         try:
             signal.signal(signal.SIGINT, self._signal_handler)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             signal.signal(signal.SIGTERM, self._signal_handler)
 
             self.logger.info("Signal handlers configured")
@@ -432,6 +528,8 @@ class AresPipeline:
             self.logger.exception("Error setting up signal handlers")
 
     def _signal_handler(self, signum: int, _frame: Any) -> None:
+    pass
+    pass
         """Handle shutdown signals."""
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         asyncio.create_task(self.stop())
@@ -453,9 +551,15 @@ class AresPipeline:
         """
         try:
             print("🔄 Starting Ares Pipeline execution...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🔄 Starting Ares Pipeline execution...")
 
             if self.is_running:
+    pass
+    pass
                 print(warning("Pipeline already running"))
                 self.logger.warning("Pipeline already running")
                 return None
@@ -476,10 +580,16 @@ class AresPipeline:
             while self.is_running:
                 try:
                     # Check timeout conditions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     current_time = datetime.now()
                     elapsed_time = (current_time - self.start_time).total_seconds()
 
                     if self.cycle_count >= max_cycles:
+    pass
+    pass
                         print(
                             f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
                         )
@@ -489,6 +599,8 @@ class AresPipeline:
                         break
 
                     if elapsed_time >= max_duration:
+    pass
+    pass
                         print(
                             f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
                         )
@@ -516,6 +628,10 @@ class AresPipeline:
                     # Get cycle interval from configuration
                     try:
                         config_service = self.container.resolve("ConfigurationService")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         cycle_interval = config_service.get_value(
                             "pipeline.loop_interval_seconds",
                             10,
@@ -582,6 +698,10 @@ class AresPipeline:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
             cycle_start = datetime.now()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
             self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 
@@ -589,6 +709,8 @@ class AresPipeline:
             print("📊 Step 1: Market Analysis")
             self.logger.info("📊 Step 1: Market Analysis")
             if self.analyst:
+    pass
+    pass
                 print("   🔍 Executing market analysis...")
                 self.logger.info("   🔍 Executing market analysis...")
                 # Provide complete analysis input with all required fields
@@ -602,6 +724,8 @@ class AresPipeline:
                 }
                 analysis_result = await self.analyst.execute_analysis(analysis_input)
                 if analysis_result:
+    pass
+    pass
                     print("   ✅ Market analysis completed successfully")
                     self.logger.info("   ✅ Market analysis completed successfully")
                 else:
@@ -615,6 +739,8 @@ class AresPipeline:
             print("🧠 Step 2: Strategy Development")
             self.logger.info("🧠 Step 2: Strategy Development")
             if self.strategist:
+    pass
+    pass
                 print("   🎯 Developing trading strategy...")
                 self.logger.info("   🎯 Developing trading strategy...")
                 # Provide basic market context for strategist
@@ -632,6 +758,8 @@ class AresPipeline:
                     market_data=strategy_market_data, current_price=strategy_current_price,
                 )
                 if strategy_result:
+    pass
+    pass
                     print("   ✅ Strategy development completed successfully")
                     self.logger.info(
                         "   ✅ Strategy development completed successfully",
@@ -647,10 +775,14 @@ class AresPipeline:
             print("🎯 Step 3: Tactical Execution")
             self.logger.info("🎯 Step 3: Tactical Execution")
             if self.tactician:
+    pass
+    pass
                 print("   ⚡ Executing tactical decisions...")
                 self.logger.info("   ⚡ Executing tactical decisions...")
                 tactical_result = await self.tactician.run()
                 if tactical_result:
+    pass
+    pass
                     print("   ✅ Tactical execution completed successfully")
                     self.logger.info("   ✅ Tactical execution completed successfully")
                 else:
@@ -664,6 +796,8 @@ class AresPipeline:
             print("🤖 Step 4: Dual Model System Decision Making")
             self.logger.info("🤖 Step 4: Dual Model System Decision Making")
             if self.dual_model_system:
+    pass
+    pass
                 print("   🧠 Making trading decisions with dual model system...")
                 self.logger.info(
                     "   🧠 Making trading decisions with dual model system...",
@@ -687,6 +821,8 @@ class AresPipeline:
                 )
 
                 if decision_result:
+    pass
+    pass
                     print("   ✅ Dual model system decision completed successfully")
                     self.logger.info(
                         "   ✅ Dual model system decision completed successfully",
@@ -735,6 +871,8 @@ class AresPipeline:
 
                     # Check if model training should be triggered
                     if self.dual_model_system.should_trigger_training():
+    pass
+    pass
                         print(
                             "   🔄 Model training conditions met - triggering training...",
                         )
@@ -751,6 +889,8 @@ class AresPipeline:
                         )
 
                         if training_result.get("success", False):
+    pass
+    pass
                             print("   ✅ Model training completed successfully")
                             self.logger.info(
                                 "   ✅ Model training completed successfully",
@@ -773,11 +913,15 @@ class AresPipeline:
             print("👁️ Step 5: Supervision and Monitoring")
             self.logger.info("👁️ Step 5: Supervision and Monitoring")
             if self.supervisor:
+    pass
+    pass
                 print("   📊 Monitoring system performance...")
                 self.logger.info("   📊 Monitoring system performance...")
                 # Use a simple method that exists
                 supervision_result = True  # Assume success for now
                 if supervision_result:
+    pass
+    pass
                     print("   ✅ Supervision completed successfully")
                     self.logger.info("   ✅ Supervision completed successfully")
                 else:
@@ -813,8 +957,14 @@ class AresPipeline:
         """
         try:
             if not self.tactician or not dual_model_decision:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "Tactician or dual model decision not available"}
 
+    except Exception as e:
+        pass
             # Extract confidence scores from dual model decision
             analyst_confidence = dual_model_decision.get("analyst_confidence", 0.5)
             tactician_confidence = dual_model_decision.get("tactician_confidence", 0.5)
@@ -848,6 +998,8 @@ class AresPipeline:
             # Calculate position size using tactician
             position_sizer = getattr(self.tactician, "position_sizer", None)
             if position_sizer:
+    pass
+    pass
                 position_size_result = await position_sizer.calculate_position_size(
                     ml_predictions=ml_predictions, current_price=current_price,
                     account_balance=1000.0,  # Default balance
@@ -863,6 +1015,8 @@ class AresPipeline:
             # Calculate leverage using tactician
             leverage_sizer = getattr(self.tactician, "leverage_sizer", None)
             if leverage_sizer:
+    pass
+    pass
                 leverage_result = await leverage_sizer.calculate_leverage(
                     ml_predictions=ml_predictions, current_price=current_price,
                     target_direction=dual_model_decision.get("action", "HOLD"),
@@ -899,6 +1053,8 @@ class AresPipeline:
             }
 
     def get_pipeline_status(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get current pipeline status.
 
@@ -923,23 +1079,41 @@ class AresPipeline:
 
         # Add dual model system status if available
         if self.dual_model_system:
+    pass
+    pass
             try:
                 dual_model_status = self.dual_model_system.get_system_info()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 status["dual_model_system_status"] = dual_model_status
             except Exception as e:
                 status["dual_model_system_status"] = {"error": str(e)}
 
         # Add performance monitoring status if available
         if self.performance_monitor:
+    pass
+    pass
             try:
                 performance_status = self.performance_monitor.get_performance_summary()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 status["performance_monitoring_status"] = performance_status
             except Exception as e:
                 status["performance_monitoring_status"] = {"error": str(e)}
 
         if self.performance_dashboard:
+    pass
+    pass
             try:
                 dashboard_status = self.performance_dashboard.get_dashboard_summary()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 status["performance_dashboard_status"] = dashboard_status
             except Exception as e:
                 status["performance_dashboard_status"] = {"error": str(e)}
@@ -956,39 +1130,63 @@ class AresPipeline:
 
         try:
             # Stop pipeline loop
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_running = False
 
             # Stop components in reverse dependency order
             if self.dual_model_system:
+    pass
+    pass
                 await self.dual_model_system.stop()
 
             # Stop performance monitoring
             if self.performance_dashboard:
+    pass
+    pass
                 await self.performance_dashboard.stop()
             if self.performance_monitor:
+    pass
+    pass
                 await self.performance_monitor.stop()
 
             if self.supervisor:
+    pass
+    pass
                 await self.supervisor.stop()
 
             if self.tactician:
+    pass
+    pass
                 await self.tactician.stop()
 
             if self.strategist:
+    pass
+    pass
                 await self.strategist.stop()
 
             if self.analyst:
+    pass
+    pass
                 await self.analyst.stop()
 
             if self.event_bus:
+    pass
+    pass
                 await self.event_bus.stop()
 
             if self.state_manager:
+    pass
+    pass
                 await self.state_manager.stop()
 
             # Close database connections
             db_manager = self.container.resolve("DatabaseManager")
             if db_manager:
+    pass
+    pass
                 await db_manager.close()
 
             self.logger.info("✅ Ares Pipeline stopped successfully")
@@ -1000,10 +1198,16 @@ class AresPipeline:
         """Initialize dual model system."""
         try:
             # Get proper configuration for dual model system
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             dual_model_config = self._get_dual_model_config()
 
             self.dual_model_system = await setup_dual_model_system(dual_model_config)
             if self.dual_model_system:
+    pass
+    pass
                 self.logger.info("✅ Dual Model System initialized successfully")
 
                 # Log system information
@@ -1030,10 +1234,16 @@ class AresPipeline:
         try:
             self.logger.info("📊 Initializing Performance Monitoring...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Setup performance monitor
             self.performance_monitor = await setup_performance_monitor(self.config)
 
             if self.performance_monitor:
+    pass
+    pass
                 self.logger.info("✅ Performance Monitor initialized successfully")
 
                 # Setup performance dashboard
@@ -1043,6 +1253,8 @@ class AresPipeline:
                 )
 
                 if self.performance_dashboard:
+    pass
+    pass
                     self.logger.info(
                         "✅ Performance Dashboard initialized successfully",
                     )
@@ -1055,12 +1267,20 @@ class AresPipeline:
             self.logger.exception("Error initializing performance monitoring")
 
     def _get_dual_model_config(self) -> dict[str, Any]:
+    pass
+    pass
         """Get dual model system configuration."""
         try:
             # Get configuration from the centralized config system
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             dual_model_config = get_dual_model_config()
 
             if dual_model_config:
+    pass
+    pass
                 return {"dual_model_system": dual_model_config}
             # Fallback to default configuration
             return {
@@ -1130,7 +1350,13 @@ async def main():
 
     try:
         # Initialize pipeline
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not await pipeline.initialize():
+    pass
+    pass
             print(failed("❌ Failed to initialize pipeline"))
             sys.exit(1)
 
@@ -1138,6 +1364,8 @@ async def main():
         result = await pipeline.run()
 
         if result:
+    pass
+    pass
             logger.info("✅ Pipeline completed successfully")
         else:
             print(failed("❌ Pipeline failed"))
@@ -1153,4 +1381,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

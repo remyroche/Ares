@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+import class EnsembleMethod
 class EnsembleMethod(Enum):
     """Enum for ensemble gathering methods."""
     ALL_THRESHOLD , "all_threshold"
@@ -60,11 +61,15 @@ class EnsembleConfig:
 
 
 def get_ensemble_config() -> EnsembleConfig:
+    pass
+    pass
     """Get ensemble configuration."""
     return EnsembleConfig()
 
 
 def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for ensemble optimization."""
     return {
         "all_threshold_confidence": {"min": 0.7, "max": 0.95, "type": "float"},

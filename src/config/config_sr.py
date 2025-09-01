@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class SRConfig:
     """Optimizable S/R (Support/Resistance) parameters."""
@@ -66,10 +67,16 @@ class SRConfig:
     min_signal_clarity: float = 0.1
 
     def __post_init__(self):
+    pass
+    pass
         if self.objectives is None:
+    pass
+    pass
             self.objectives = ["sharpe_ratio", "win_rate", "signal_clarity"]
 
         if self.objective_weights is None:
+    pass
+    pass
             self.objective_weights = {
                 "sharpe_ratio": 0.4,
                 "win_rate": 0.3,
@@ -77,6 +84,8 @@ class SRConfig:
             }
 
     def get_strength_score_weights(self) -> dict[str, float]:
+    pass
+    pass
         """Get strength score weights as a dictionary."""
         return {
             "touch_count": self.touch_count_weight,
@@ -87,6 +96,8 @@ class SRConfig:
         }
 
     def get_level_detection_params(self) -> dict[str, Any]:
+    pass
+    pass
         """Get level detection parameters as a dictionary."""
         return {
             "min_touch_count": self.min_touch_count,
@@ -97,6 +108,8 @@ class SRConfig:
         }
 
     def get_breakout_thresholds(self) -> dict[str, float]:
+    pass
+    pass
         """Get breakout thresholds as a dictionary."""
         return {
             "breakout_threshold": self.breakout_threshold,
@@ -107,6 +120,8 @@ class SRConfig:
         }
 
     def get_zone_multipliers(self) -> dict[str, float]:
+    pass
+    pass
         """Get zone multipliers as a dictionary."""
         return {
             "support_zone_multiplier": self.support_zone_multiplier,
@@ -117,6 +132,8 @@ class SRConfig:
         }
 
     def get_confidence_thresholds(self) -> dict[str, float]:
+    pass
+    pass
         """Get confidence thresholds as a dictionary."""
         return {
             "min_sr_confidence": self.min_sr_confidence,
@@ -127,11 +144,15 @@ class SRConfig:
 
 
 def get_sr_config() -> SRConfig:
+    pass
+    pass
     """Get S/R configuration."""
     return SRConfig()
 
 
 def get_sr_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for S/R optimization."""
     return {
         # Strength score weights

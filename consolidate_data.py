@@ -15,6 +15,8 @@ import pandas as pd
 
 
 def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"):
+    pass
+    pass
     """
     Consolidate monthly klines data files into a single file.
 
@@ -32,6 +34,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     files = sorted(glob.glob(pattern))
 
     if not files:
+    pass
+    pass
         print(f"❌ No files found matching pattern: {pattern}")
         return False
 
@@ -39,6 +43,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     for file in files[:10]:  # Show first 10 files
         print(f"   - {os.path.basename(file)}")
     if len(files) > 10:
+    pass
+    pass
         print(f"   ... and {len(files) - 10} more files")
 
     # Read and concatenate all files
@@ -46,9 +52,17 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     total_rows = 0
 
     for file in files:
+    pass
+    pass
         try:
             df = pd.read_csv(file)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not df.empty:
+    pass
+    pass
                 dataframes.append(df)
                 total_rows += len(df)
                 print(f"   ✅ Loaded {os.path.basename(file)}: {len(df)} rows")
@@ -58,6 +72,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
             print(f"   ❌ Error loading {os.path.basename(file)}: {e}")
 
     if not dataframes:
+    pass
+    pass
         print("❌ No valid data found in any files")
         return False
 
@@ -68,6 +84,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     # Remove duplicates based on timestamp
     print("🔄 Removing duplicates...")
     if "timestamp" in consolidated_df.columns:
+    pass
+    pass
         consolidated_df = consolidated_df.drop_duplicates(subset=["timestamp"])
     elif "time" in consolidated_df.columns:
         consolidated_df = consolidated_df.drop_duplicates(subset=["time"])
@@ -75,6 +93,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     # Sort by timestamp
     print("🔄 Sorting by timestamp...")
     if "timestamp" in consolidated_df.columns:
+    pass
+    pass
         consolidated_df = consolidated_df.sort_values("timestamp")
     elif "time" in consolidated_df.columns:
         consolidated_df = consolidated_df.sort_values("time")
@@ -91,12 +111,16 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
 
     # Verify the file was created
     if os.path.exists(output_file):
+    pass
+    pass
         file_size = os.path.getsize(output_file)
         print(f"✅ Successfully created {output_file}")
         print(f"📊 File size: {file_size:,} bytes ({file_size/1024/1024:.1f} MB)")
 
         # Show date range
         if "timestamp" in consolidated_df.columns:
+    pass
+    pass
             # Check if timestamp is numeric (milliseconds) or string (datetime)
             sample_timestamp = consolidated_df["timestamp"].iloc[0]
             if (
@@ -121,6 +145,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
 
         # Calculate data span in days
         if isinstance(start_date , datetime) and isinstance(end_date, datetime):
+    pass
+    pass
             data_span = (end_date - start_date).days
             print(f"📊 Data span: {data_span} days")
 
@@ -130,6 +156,8 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
 
 
 def main():
+    pass
+    pass
     """Main function to consolidate data."""
     print("🚀 Starting data consolidation...")
 
@@ -137,13 +165,15 @@ def main():
     success = consolidate_klines_data("ETHUSDT", "BINANCE", "1m")
 
     if success:
+    pass
+    pass
         print("✅ Data consolidation completed successfully!")
-        print("\n📋 Next steps:")
+        print("\\\n📋 Next steps:")
         print("1. Run the training pipeline again:")
         print(
             "   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step1_7_hmm_regime_discovery --force",
         )
-        print("\n2. The consolidated file should now provide 180+ days of data")
+        print("\\\n2. The consolidated file should now provide 180+ days of data")
     else:
         print("❌ Data consolidation failed!")
         return 1
@@ -152,4 +182,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     sys.exit(main())

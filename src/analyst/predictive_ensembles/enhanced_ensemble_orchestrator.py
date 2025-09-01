@@ -13,15 +13,18 @@ from typing import Any
 import pandas as pd
 
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import RegimePredictiveEnsembles,
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.multi_timeframe_ensemble import (
+import MultiTimeframeEnsemble,
     MultiTimeframeEnsemble,
 )
 from src.config import CONFIG
 from src.utils.logger import system_logger
 
 
+import class EnhancedRegimePredictiveEnsembles
 class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     """
     Enhanced ensemble orchestrator that integrates multi-timeframe training.
@@ -30,6 +33,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     """
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         super().__init__(config)
         self.logger = system_logger.getChild("EnhancedRegimePredictiveEnsembles")
 
@@ -91,6 +96,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
 
         # Train each regime ensemble with multi-timeframe models
         for regime_idx, regime_key in enumerate(self.regime_ensembles.keys(), 1):
+    pass
+    pass
             self.logger.info(
                 f"🔄 [{regime_idx}/{len(self.regime_ensembles)}] Training enhanced ensemble for regime: {regime_key}",
             )
@@ -105,12 +112,18 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
 
             # Train each model type for this regime
             for model_idx, model_type in enumerate(self.model_types, 1):
+    pass
+    pass
                 self.logger.info(
                     f"🔧 [{regime_idx}.{model_idx}] Training {model_type} for regime: {regime_key}",
                 )
 
                 try:
                     # Create multi-timeframe ensemble for this model type
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     ensemble = MultiTimeframeEnsemble(
                         model_type=model_type,
                         timeframes=self.active_timeframes,
@@ -122,6 +135,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
 
                     # Store the trained ensemble
                     if regime_key not in self.enhanced_regime_ensembles:
+    pass
+    pass
                         self.enhanced_regime_ensembles[regime_key] = {}
                     self.enhanced_regime_ensembles[regime_key][model_type] = ensemble
 
@@ -167,11 +182,15 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         return training_stats
 
     def _initialize_enhanced_ensembles(self):
+    pass
+    pass
         """Initialize enhanced regime ensembles."""
         self.logger.info("🔧 Initializing enhanced regime ensembles...")
         self.enhanced_regime_ensembles = {}
 
     def predict(self, data: dict[str, pd.DataFrame]) -> dict[str, Any]:
+    pass
+    pass
         """
         Make predictions using all enhanced ensembles.
 
@@ -184,11 +203,19 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         predictions = {}
 
         for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
+    pass
+    pass
             regime_predictions = {}
 
             for model_type, ensemble in regime_ensembles.items():
+    pass
+    pass
                 try:
                     prediction = ensemble.predict(data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     regime_predictions[model_type] = prediction
                 except Exception as e:
                     self.logger.error(f"❌ Prediction failed for {model_type} in regime {regime_key}: {e}")
@@ -199,35 +226,59 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         return predictions
 
     def save_models(self, base_path: str):
+    pass
+    pass
         """Save all trained models."""
         self.logger.info(f"💾 Saving enhanced ensemble models to {base_path}")
 
         for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
+    pass
+    pass
             regime_path = os.path.join(base_path, f"regime_{regime_key}")
             os.makedirs(regime_path, exist_ok=True)
 
             for model_type, ensemble in regime_ensembles.items():
+    pass
+    pass
                 try:
                     model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     ensemble.save(model_path)
                     self.logger.info(f"✅ Saved {model_type} ensemble for regime {regime_key}")
                 except Exception as e:
                     self.logger.error(f"❌ Failed to save {model_type} ensemble for regime {regime_key}: {e}")
 
     def load_models(self, base_path: str):
+    pass
+    pass
         """Load all trained models."""
         self.logger.info(f"📂 Loading enhanced ensemble models from {base_path}")
 
         for regime_key in self.regime_ensembles.keys():
+    pass
+    pass
             regime_path = os.path.join(base_path, f"regime_{regime_key}")
 
             if regime_key not in self.enhanced_regime_ensembles:
+    pass
+    pass
                 self.enhanced_regime_ensembles[regime_key] = {}
 
             for model_type in self.model_types:
+    pass
+    pass
                 try:
                     model_path = os.path.join(regime_path, f"{model_type}_ensemble.pkl")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if os.path.exists(model_path):
+    pass
+    pass
                         ensemble = MultiTimeframeEnsemble.load(model_path)
                         self.enhanced_regime_ensembles[regime_key][model_type] = ensemble
                         self.logger.info(f"✅ Loaded {model_type} ensemble for regime {regime_key}")
@@ -237,6 +288,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
                     self.logger.error(f"❌ Failed to load {model_type} ensemble for regime {regime_key}: {e}")
 
     def get_ensemble_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """Get a summary of all ensembles."""
         summary = {
             "total_regimes": len(self.enhanced_regime_ensembles),
@@ -245,6 +298,8 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         }
 
         for regime_key, regime_ensembles in self.enhanced_regime_ensembles.items():
+    pass
+    pass
             regime_summary = {
                 "model_count": len(regime_ensembles),
                 "model_types": list(regime_ensembles.keys()),

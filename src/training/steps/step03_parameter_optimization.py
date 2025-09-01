@@ -17,10 +17,12 @@ import pandas as pd
 from datetime import datetime
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -37,12 +39,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("Step3ParameterOptimization")
 
 class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("ParameterOptimizationStep")
         self.start_time, None
@@ -51,10 +56,16 @@ class ParameterOptimizationStep:
 
     @secure_step_execution
     def _initialize_components(self) -> None:
+    pass
+    pass
         """Initialize parameter optimization components."""
         self.logger.info("🔧 Initializing parameter optimization components...")
         try:
         # Initialize optimization components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Parameter optimization components initialized successfully")
 
         except Exception as e:
@@ -72,6 +83,10 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("🚀 Initializing parameter optimization step...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Load optimization configuration
             optimization_config, self.config.get("parameter_optimization", {})
         self.logger.info(f"📋 Optimization configuration loaded: {len(optimization_config)} parameters")
@@ -95,11 +110,17 @@ class ParameterOptimizationStep:
         """Execute the parameter optimization step."""
         try:
         self.logger.info("🎯 Starting parameter optimization for HMM regime discovery...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.start_time, time.time()
 
         # Step 1: Load and validate data
             data_loaded, await self._load_and_validate_data()
         if not data_loaded.get("success", False):
+    pass
+    pass
         self.logger.error("Failed to load and validate data")
         return False
 
@@ -146,6 +167,10 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("📊 Loading and validating data for parameter optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get data parameters from config
             symbol, self.config.get("SYMBOL", "ETHUSDT")
             exchange, self.config.get("EXCHANGE", "BINANCE")
@@ -156,6 +181,8 @@ class ParameterOptimizationStep:
             klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
+    pass
+    pass
         self.logger.error(f"❌ Klines file not found: {klines_path}")
         return {
                     "success": False,
@@ -166,6 +193,8 @@ class ParameterOptimizationStep:
             df, pd.read_parquet(klines_path)
 
         if df.empty:
+    pass
+    pass
         self.logger.error("❌ Data is empty")
         return {
                     "success": False,
@@ -207,8 +236,14 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("🔧 Preparing features for parameter optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
+    pass
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
 
         # Sort by timestamp
@@ -271,11 +306,17 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Simple optimization based on data characteristics
             data_size, len(data)
 
         # Recommend number of components based on data size
         if data_size < 1000:
+    pass
+    pass
                 optimal_components, 3
             elif data_size < 5000:
                 optimal_components, 4
@@ -324,11 +365,17 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Simple optimization based on data characteristics
             data_size, len(data)
 
         # Recommend number of clusters based on data size
         if data_size < 1000:
+    pass
+    pass
                 optimal_clusters, 10
             elif data_size < 5000:
                 optimal_clusters, 15
@@ -378,11 +425,17 @@ class ParameterOptimizationStep:
                 "recommendations": []
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Simple optimization based on data characteristics
             data_size, len(data)
 
         # Recommend feature windows based on data size
         if data_size < 1000:
+    pass
+    pass
                 optimal_momentum, 10
                 optimal_volatility, 15
                 optimal_volume, 10
@@ -431,10 +484,16 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("🔗 Combining optimization results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Filter out empty results
             valid_results = [r for r in results if r]
 
         if not valid_results:
+    pass
+    pass
         self.logger.warning("No valid optimization results to combine")
         return {}
 
@@ -453,7 +512,11 @@ class ParameterOptimizationStep:
 
         # Extract results by type
         for result in valid_results:
+    pass
+    pass
         if "n_components_range" in result:
+    pass
+    pass
                     combined_result["hmm_optimization"] = result
                 elif "n_clusters_range" in result:
                     combined_result["clustering_optimization"] = result
@@ -464,12 +527,18 @@ class ParameterOptimizationStep:
             combined_params = {}
 
         if combined_result["hmm_optimization"]:
+    pass
+    pass
                 combined_params.update(combined_result["hmm_optimization"].get("best_parameters", {}))
 
         if combined_result["clustering_optimization"]:
+    pass
+    pass
                 combined_params.update(combined_result["clustering_optimization"].get("best_parameters", {}))
 
         if combined_result["feature_optimization"]:
+    pass
+    pass
                 combined_params.update(combined_result["feature_optimization"].get("best_parameters", {}))
 
             combined_result["combined_parameters"] = combined_params
@@ -477,7 +546,11 @@ class ParameterOptimizationStep:
         # Combine recommendations
             all_recommendations = []
         for result in valid_results:
+    pass
+    pass
         if "recommendations" in result:
+    pass
+    pass
                     all_recommendations.extend(result["recommendations"])
 
             combined_result["recommendations"] = all_recommendations
@@ -500,6 +573,10 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("💾 Saving optimization results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create optimization results directory
             results_dir, Path("data / optimization")
             results_dir.mkdir(parents = True, exist_ok = True)
@@ -528,6 +605,10 @@ class ParameterOptimizationStep:
         try:
         self.logger.info("📋 Generating optimization reports...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create reports directory
             reports_dir, Path("reports / parameter_optimization")
             reports_dir.mkdir(parents = True, exist_ok = True)
@@ -574,6 +655,8 @@ class ParameterOptimizationStep:
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series, window: int, 14) -> pd.Series:
+    pass
+    pass
         """Calculate Relative Strength Index."""
         delta, prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window = window).mean()
@@ -588,6 +671,8 @@ class ParameterOptimizationStep:
         context="calculate_macd"
     )
     def _calculate_macd(self, prices: pd.Series, fast: int, 12, slow: int, 26, signal: int, 9) -> pd.Series:
+    pass
+    pass
         """Calculate MACD."""
         ema_fast, prices.ewm(span = fast).mean()
         ema_slow, prices.ewm(span = slow).mean()
@@ -600,6 +685,8 @@ class ParameterOptimizationStep:
         context="calculate_atr"
     )
     def _calculate_atr(self, df: pd.DataFrame, window: int, 14) -> pd.Series:
+    pass
+    pass
         """Calculate Average True Range."""
         high, df["high"]
         low, df["low"]
@@ -623,6 +710,10 @@ class ParameterOptimizationStep:
         """Clean up resources after optimization."""
         try:
         self.logger.info("🧹 Cleaning up parameter optimization resources...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Parameter optimization cleanup completed")
         return True
 
@@ -641,11 +732,17 @@ async def run_step(config: dict[str, Any]) -> bool:
     try:
         logger.info("🚀 Starting Step 3: Parameter Optimization")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create and initialize the step
         step, ParameterOptimizationStep(config)
 
         # Initialize the step
         if not await step.initialize():
+    pass
+    pass
             logger.error("Failed to initialize parameter optimization step")
         return False
 
@@ -656,6 +753,8 @@ async def run_step(config: dict[str, Any]) -> bool:
         await step.cleanup()
 
         if success:
+    pass
+    pass
             logger.info("✅ Step 3: Parameter Optimization completed successfully")
         else:
             logger.error("❌ Step 3: Parameter Optimization failed")
@@ -667,6 +766,8 @@ async def run_step(config: dict[str, Any]) -> bool:
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     import asyncio
 

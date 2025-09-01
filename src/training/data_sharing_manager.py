@@ -13,6 +13,7 @@ from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
+import circuit_breaker_protection,
     circuit_breaker_protection,
     debug_training_step,
     memory_efficient,
@@ -33,6 +34,8 @@ class DataSharingManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataSharingManager")
 
@@ -71,16 +74,30 @@ class DataSharingManager:
         return f"{exchange}_{symbol}_{timeframe}_{lookback_days}_{data_type}"
 
     def _get_data_size_gb(self, data: pd.DataFrame | dict[str, Any]) -> float:
+    pass
+    pass
         """Estimate the size of data in GB."""
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Estimate DataFrame size
                 return data.memory_usage(deep=True).sum() / (1024**3)
+    except Exception as e:
+        pass
             if isinstance(data, dict):
+    pass
+    pass
                 # Estimate dict size (rough approximation)
                 total_size = 0
                 for value in data.values():
+    pass
+    pass
                     if isinstance(value, pd.DataFrame):
+    pass
+    pass
                         total_size += value.memory_usage(deep=True).sum()
                     elif isinstance(value, np.ndarray | list):
                         total_size += len(str(value)) * 8  # Rough estimate
@@ -90,21 +107,33 @@ class DataSharingManager:
             return 0.1  # Default fallback
 
     def _cleanup_expired_cache(self) -> None:
+    pass
+    pass
         """Remove expired cache entries."""
         current_time = time.time()
         expired_keys = []
 
         for key, metadata in self._cache_metadata.items():
+    pass
+    pass
             if current_time - metadata["timestamp"] > (self.cache_ttl_hours * 3600):
+    pass
+    pass
                 expired_keys.append(key)
 
         for key in expired_keys:
+    pass
+    pass
             self._remove_from_cache(key)
             self.logger.info(f"🧹 Removed expired cache entry: {key}")
 
     def _remove_from_cache(self, key: str) -> None:
+    pass
+    pass
         """Remove an entry from cache."""
         if key in self._data_cache:
+    pass
+    pass
             # Estimate size before removal
             data_size = self._get_data_size_gb(self._data_cache[key])
             self.stats["memory_saved_gb"] += data_size
@@ -112,9 +141,13 @@ class DataSharingManager:
             # Remove data and metadata
             del self._data_cache[key]
             if key in self._cache_metadata:
+    pass
+    pass
                 del self._cache_metadata[key]
 
     def to_dict(self) -> dict[str, Any]:
+    pass
+    pass
         """Convert DataSharingManager to a JSON-serializable dictionary."""
         return {
             "config": self.config,
@@ -128,21 +161,31 @@ class DataSharingManager:
         }
 
     def __repr__(self) -> str:
+    pass
+    pass
         """String representation for debugging."""
         return f"DataSharingManager(cache_size={len(self._data_cache)}, stats={self.stats})"
 
     def _force_garbage_collection(self) -> None:
+    pass
+    pass
         """Force garbage collection if memory optimization is enabled."""
         if self.enable_memory_optimization:
+    pass
+    pass
             gc.collect()
 
     def _evict_if_needed(self, required_size_gb: float) -> None:
+    pass
+    pass
         """Evict cache entries if needed to make space."""
         current_cache_size = sum(
             self._get_data_size_gb(data) for data in self._data_cache.values()
         )
 
         if current_cache_size + required_size_gb > self.max_cache_size_gb:
+    pass
+    pass
             self.logger.info(
                 f"⚠️ Cache full ({current_cache_size:.2f}GB), evicting old entries...",
             )
@@ -155,11 +198,15 @@ class DataSharingManager:
 
             # Remove oldest entries until we have enough space
             for key in sorted_keys:
+    pass
+    pass
                 self._remove_from_cache(key)
                 current_cache_size = sum(
                     self._get_data_size_gb(data) for data in self._data_cache.values()
                 )
                 if current_cache_size + required_size_gb <= self.max_cache_size_gb:
+    pass
+    pass
                     break
 
     @validate_step_prerequisites(
@@ -253,6 +300,8 @@ class DataSharingManager:
 
         # Check if data is already cached and not expired
         if not force_reload and cache_key in self._data_cache:
+    pass
+    pass
             metadata = self._cache_metadata.get(cache_key, {})
             current_time = time.time()
 
@@ -284,6 +333,8 @@ class DataSharingManager:
         )
 
         if data is None or data.empty:
+    pass
+    pass
             self.logger.error(f"❌ Failed to load unified data for {cache_key}")
             return None
 
@@ -332,6 +383,8 @@ class DataSharingManager:
         cache_key = self._generate_cache_key(symbol, exchange, timeframe, lookback_days)
 
         if cache_key in self._data_cache:
+    pass
+    pass
             metadata = self._cache_metadata.get(cache_key, {})
             current_time = time.time()
 
@@ -388,6 +441,8 @@ class DataSharingManager:
         )
 
     def clear_cache(self) -> None:
+    pass
+    pass
         """Clear all cached data."""
         cache_size = sum(
             self._get_data_size_gb(data) for data in self._data_cache.values()
@@ -397,11 +452,15 @@ class DataSharingManager:
         self._cache_metadata.clear()
 
         if self.enable_memory_optimization:
+    pass
+    pass
             gc.collect()
 
         self.logger.info(f"🧹 Cleared cache ({cache_size:.2f}GB freed)")
 
     def get_cache_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get cache statistics."""
         current_cache_size = sum(
             self._get_data_size_gb(data) for data in self._data_cache.values()
@@ -423,6 +482,8 @@ class DataSharingManager:
         }
 
     def log_cache_stats(self) -> None:
+    pass
+    pass
         """Log current cache statistics."""
         stats = self.get_cache_stats()
         self.logger.info("📊 Data Sharing Cache Statistics:")
@@ -441,16 +502,24 @@ _data_sharing_manager: DataSharingManager | None = None
 
 
 def get_data_sharing_manager(config: dict[str, Any]) -> DataSharingManager:
+    pass
+    pass
     """Get or create the global data sharing manager instance."""
     global _data_sharing_manager
     if _data_sharing_manager is None:
+    pass
+    pass
         _data_sharing_manager = DataSharingManager(config)
     return _data_sharing_manager
 
 
 def reset_data_sharing_manager() -> None:
+    pass
+    pass
     """Reset the global data sharing manager instance."""
     global _data_sharing_manager
     if _data_sharing_manager is not None:
+    pass
+    pass
         _data_sharing_manager.clear_cache()
     _data_sharing_manager = None

@@ -17,12 +17,19 @@ logger = logging.getLogger(__name__)
 # Import the VIF validation decorators and calculator
 try:
     from src.utils.vif_validation_decorators import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import validate_vif_inputs,
         validate_vif_inputs,
         validate_vif_outputs,
         safe_vif_calculation,
         comprehensive_vif_validation
     )
     from src.utils.vif_calculator import (
+import calculate_vif_robust,
         calculate_vif_robust,
         calculate_vif_simple,
         analyze_vif_issues,
@@ -35,6 +42,8 @@ except ImportError as e:
 
 
 def create_test_data_with_issues() -> pd.DataFrame:
+    pass
+    pass
     """Create test data with various issues for VIF testing."""
     np.random.seed(42)
 
@@ -72,11 +81,15 @@ def create_test_data_with_issues() -> pd.DataFrame:
 
 
 def test_vif_input_validation():
+    pass
+    pass
     """Test VIF input validation decorator."""
-    print("\n🧪 Testing VIF Input Validation Decorator")
+    print("\\\n🧪 Testing VIF Input Validation Decorator")
 
     @validate_vif_inputs(check_nan=True, check_infinite=True, check_zero_variance=True, check_duplicates=True)
     def dummy_function(data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         return data
 
     # Create test data with issues
@@ -92,18 +105,26 @@ def test_vif_input_validation():
 
 
 def test_vif_output_validation():
+    pass
+    pass
     """Test VIF output validation decorator."""
-    print("\n🧪 Testing VIF Output Validation Decorator")
+    print("\\\n🧪 Testing VIF Output Validation Decorator")
 
     @validate_vif_outputs(check_nan_vif=True, check_infinite_vif=True, check_zero_vif=True)
     def dummy_vif_calculation(data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         # Simulate VIF calculation with issues
         features = data.columns.tolist()
         vif_values = pd.Series(index=features)
 
         # Add some problematic VIF values
         for i, feature in enumerate(features):
+    pass
+    pass
             if i == 0:
+    pass
+    pass
                 vif_values[feature] = np.nan  # NaN VIF
             elif i == 1:
                 vif_values[feature] = np.inf  # Infinite VIF
@@ -125,11 +146,15 @@ def test_vif_output_validation():
 
 
 def test_safe_vif_calculation():
+    pass
+    pass
     """Test safe VIF calculation decorator."""
-    print("\n🧪 Testing Safe VIF Calculation Decorator")
+    print("\\\n🧪 Testing Safe VIF Calculation Decorator")
 
     @safe_vif_calculation(timeout_seconds=5, fallback_strategy="ones")
     def slow_vif_calculation(data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         # Simulate a slow VIF calculation
         import time
         time.sleep(10)  # This should timeout
@@ -144,8 +169,10 @@ def test_safe_vif_calculation():
 
 
 def test_comprehensive_vif_validation():
+    pass
+    pass
     """Test comprehensive VIF validation decorator."""
-    print("\n🧪 Testing Comprehensive VIF Validation Decorator")
+    print("\\\n🧪 Testing Comprehensive VIF Validation Decorator")
 
     @comprehensive_vif_validation(
         timeout_seconds=10,
@@ -153,6 +180,8 @@ def test_comprehensive_vif_validation():
         fallback_strategy="ones"
     )
     def comprehensive_vif_function(data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         # Simulate VIF calculation
         features = data.columns.tolist()
         vif_values = pd.Series([np.random.uniform(1.0, 5.0) for _ in features], index=features)
@@ -167,8 +196,10 @@ def test_comprehensive_vif_validation():
 
 
 def test_vif_calculator_functions():
+    pass
+    pass
     """Test the VIF calculator functions directly."""
-    print("\n🧪 Testing VIF Calculator Functions")
+    print("\\\n🧪 Testing VIF Calculator Functions")
 
     # Create test data
     test_data = create_test_data_with_issues()
@@ -197,14 +228,20 @@ def test_vif_calculator_functions():
 
 
 def test_edge_cases():
+    pass
+    pass
     """Test edge cases for VIF validation."""
-    print("\n🧪 Testing Edge Cases")
+    print("\\\n🧪 Testing Edge Cases")
 
     # Test with empty DataFrame
     print("📊 Testing empty DataFrame...")
     empty_df = pd.DataFrame()
     try:
         result = calculate_vif_robust(empty_df)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"Empty DataFrame result: {len(result)} features")
     except Exception as e:
         print(f"Empty DataFrame error: {e}")
@@ -214,6 +251,10 @@ def test_edge_cases():
     single_feature_df = pd.DataFrame({'feature': np.random.normal(0, 1, 100)})
     try:
         result = calculate_vif_robust(single_feature_df)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"Single feature result: {len(result)} features")
     except Exception as e:
         print(f"Single feature error: {e}")
@@ -226,6 +267,10 @@ def test_edge_cases():
     })
     try:
         result = calculate_vif_robust(nan_df)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"All NaN result: {len(result)} features")
     except Exception as e:
         print(f"All NaN error: {e}")
@@ -234,12 +279,18 @@ def test_edge_cases():
 
 
 def main():
+    pass
+    pass
     """Run all VIF validation tests."""
     print("🚀 Starting VIF Validation Tests")
     print("=" * 50)
 
     try:
         # Test individual decorators
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_vif_input_validation()
         test_vif_output_validation()
         test_safe_vif_calculation()
@@ -251,14 +302,16 @@ def main():
         # Test edge cases
         test_edge_cases()
 
-        print("\n" + "=" * 50)
+        print("\\\n" + "=" * 50)
         print("✅ All VIF validation tests completed successfully!")
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

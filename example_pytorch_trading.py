@@ -18,12 +18,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 # Add src to path
+import sys.path.insert
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 class TradingLSTMModel(nn.Module):
     """LSTM model for trading predictions."""
 
     def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout=0.2):
+    pass
+    pass
         super(TradingLSTMModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -34,6 +37,8 @@ class TradingLSTMModel(nn.Module):
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
+    pass
+    pass
         # x shape: (batch_size, sequence_length, input_size)
         lstm_out, _ = self.lstm(x)
 
@@ -49,6 +54,8 @@ class TradingTransformerModel(nn.Module):
     """Transformer model for trading predictions."""
 
     def __init__(self, input_size, d_model, nhead, num_layers, num_classes, dropout=0.1):
+    pass
+    pass
         super(TradingTransformerModel, self).__init__()
 
         self.input_projection = nn.Linear(input_size, d_model)
@@ -67,6 +74,8 @@ class TradingTransformerModel(nn.Module):
         self.fc = nn.Linear(d_model, num_classes)
 
     def forward(self, x):
+    pass
+    pass
         # x shape: (batch_size, sequence_length, input_size)
         x = self.input_projection(x)
         x = self.positional_encoding(x)
@@ -82,6 +91,8 @@ class PositionalEncoding(nn.Module):
     """Positional encoding for transformer."""
 
     def __init__(self, d_model, max_len=5000):
+    pass
+    pass
         super(PositionalEncoding, self).__init__()
 
         pe = torch.zeros(max_len, d_model)
@@ -95,9 +106,13 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
+    pass
+    pass
         return x + self.pe[:x.size(0), :]
 
 def generate_synthetic_trading_data(n_samples=10000, sequence_length=50):
+    pass
+    pass
     """Generate synthetic trading data for demonstration."""
     print("Generating synthetic trading data...")
 
@@ -114,6 +129,8 @@ def generate_synthetic_trading_data(n_samples=10000, sequence_length=50):
     labels = []
 
     for i in range(sequence_length, n_samples + sequence_length):
+    pass
+    pass
         # Price-based features
         price_window = prices[i-sequence_length:i]
         returns = np.diff(price_window) / price_window[:-1]
@@ -154,6 +171,8 @@ def generate_synthetic_trading_data(n_samples=10000, sequence_length=50):
     return np.array(features), np.array(labels)
 
 def calculate_rsi(returns, period=14):
+    pass
+    pass
     """Calculate RSI indicator."""
     gains = np.where(returns > 0, returns, 0)
     losses = np.where(returns < 0, -returns, 0)
@@ -162,6 +181,8 @@ def calculate_rsi(returns, period=14):
     avg_loss = np.mean(losses[-period:])
 
     if avg_loss == 0:
+    pass
+    pass
         return 100
 
     rs = avg_gain / avg_loss
@@ -169,6 +190,8 @@ def calculate_rsi(returns, period=14):
     return rsi
 
 def prepare_data_for_lstm(features, labels, sequence_length=20):
+    pass
+    pass
     """Prepare data for LSTM model."""
     print("Preparing data for LSTM...")
 
@@ -180,6 +203,8 @@ def prepare_data_for_lstm(features, labels, sequence_length=20):
     y_lstm = []
 
     for i in range(n_samples):
+    pass
+    pass
         # Take sequence_length consecutive feature vectors
         sequence = features[i:i+sequence_length]
 
@@ -191,6 +216,8 @@ def prepare_data_for_lstm(features, labels, sequence_length=20):
     return np.array(X_lstm), np.array(y_lstm)
 
 def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.001):
+    pass
+    pass
     """Train the PyTorch model."""
     print(f"Training {model.__class__.__name__}...")
 
@@ -207,6 +234,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.
     val_accuracies = []
 
     for epoch in range(num_epochs):
+    pass
+    pass
         # Training
         model.train()
         train_loss = 0
@@ -214,6 +243,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.
         train_total = 0
 
         for batch_X, batch_y in train_loader:
+    pass
+    pass
             batch_X, batch_y = batch_X.to(device), batch_y.to(device)
 
             optimizer.zero_grad()
@@ -235,6 +266,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.
 
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
+    pass
+    pass
                 batch_X, batch_y = batch_X.to(device), batch_y.to(device)
 
                 outputs = model(batch_X)
@@ -259,6 +292,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.
         scheduler.step(val_loss_avg)
 
         if (epoch + 1) % 10 == 0:
+    pass
+    pass
             print(f"Epoch {epoch+1}/{num_epochs}")
             print(f"  Train Loss: {train_loss_avg:.4f}, Train Acc: {train_acc:.2f}%")
             print(f"  Val Loss: {val_loss_avg:.4f}, Val Acc: {val_acc:.2f}%")
@@ -266,6 +301,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, learning_rate=0.
     return train_losses, val_losses, train_accuracies, val_accuracies
 
 def plot_training_results(train_losses, val_losses, train_accuracies, val_accuracies, model_name):
+    pass
+    pass
     """Plot training results."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
 
@@ -292,6 +329,8 @@ def plot_training_results(train_losses, val_losses, train_accuracies, val_accura
     plt.show()
 
 def evaluate_model(model, test_loader):
+    pass
+    pass
     """Evaluate the trained model."""
     print("Evaluating model...")
 
@@ -304,6 +343,8 @@ def evaluate_model(model, test_loader):
 
     with torch.no_grad():
         for batch_X, batch_y in test_loader:
+    pass
+    pass
             batch_X, batch_y = batch_X.to(device), batch_y.to(device)
 
             outputs = model(batch_X)
@@ -317,20 +358,23 @@ def evaluate_model(model, test_loader):
     # Calculate metrics
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
+import accuracy = accuracy_score
     accuracy = accuracy_score(all_labels, all_predictions)
     print(f"Test Accuracy: {accuracy:.4f}")
 
-    print("\nClassification Report:")
+    print("\\\nClassification Report:")
     print(classification_report(all_labels, all_predictions,
                               target_names=['Hold', 'Buy', 'Sell']))
 
-    print("\nConfusion Matrix:")
+    print("\\\nConfusion Matrix:")
     cm = confusion_matrix(all_labels, all_predictions)
     print(cm)
 
     return accuracy, all_probabilities, all_predictions, all_labels
 
 def main():
+    pass
+    pass
     """Main function to run the trading example."""
     print("PyTorch Trading Example")
     print("=" * 50)
@@ -412,7 +456,7 @@ def main():
     transformer_accuracy, transformer_probs, transformer_preds, transformer_labels = evaluate_model(transformer_model, test_loader)
 
     # Compare models
-    print("\n" + "=" * 50)
+    print("\\\n" + "=" * 50)
     print("MODEL COMPARISON")
     print("=" * 50)
     print(f"LSTM Model Accuracy: {lstm_accuracy:.4f}")
@@ -421,10 +465,12 @@ def main():
     # Save models
     torch.save(lstm_model.state_dict(), 'lstm_trading_model.pth')
     torch.save(transformer_model.state_dict(), 'transformer_trading_model.pth')
-    print("\nModels saved successfully!")
+    print("\\\nModels saved successfully!")
 
-    print("\nExample completed successfully!")
+    print("\\\nExample completed successfully!")
     print("You can now use these models for real trading predictions.")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

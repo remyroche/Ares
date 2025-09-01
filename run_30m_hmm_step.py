@@ -34,12 +34,18 @@ async def run_30m_hmm_step():
 
     try:
         # Run the enhanced step1_7 with artifact validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await run_step(
             symbol, symbol = exchange=exchange,
             data_dir, data_dir = timeframe=timeframe,
             lookback_days, lookback_days = )
 
         if success:
+    pass
+    pass
             logger.info(
                 "✅ Successfully completed step1_7_hmm_regime_discovery for 30m timeframe",
             )
@@ -58,6 +64,8 @@ async def run_30m_hmm_step():
             all_present = all(artifact_status.values())
 
             if all_present:
+    pass
+    pass
                 logger.info("✅ All required artifacts created successfully")
                 print("✅ All required artifacts created successfully")
             else:
@@ -87,16 +95,24 @@ async def run_30m_hmm_step():
     return True
 
 if __name__ == "__main__":
+    pass
+    pass
     try:
         success = asyncio.run(run_30m_hmm_step())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if success:
+    pass
+    pass
             print("✅ 30m HMM step completed successfully")
             sys.exit(0)
         else:
             print("❌ 30m HMM step failed")
             sys.exit(1)
     except KeyboardInterrupt:
-        print("\n⚠️ Process interrupted by user")
+        print("\\\n⚠️ Process interrupted by user")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

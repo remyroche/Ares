@@ -14,6 +14,7 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 
 
+import class TwoTierIntegration:
 class TwoTierIntegration:
     """
     Integrates two-tier decision logic into existing ensemble system.
@@ -23,6 +24,8 @@ class TwoTierIntegration:
     """
 
     def __init__(self):
+    pass
+    pass
         self.logger = system_logger.getChild("TwoTierIntegration")
 
         # Configuration
@@ -73,6 +76,8 @@ class TwoTierIntegration:
         start_time = time.time()
 
         if not self.config["enable_two_tier"]:
+    pass
+    pass
             self.logger.info(
                 "⚠️ Two-tier integration disabled, returning original prediction",
             )
@@ -106,6 +111,8 @@ class TwoTierIntegration:
 
         # Tier 2: Add precise timing from 1m+5m
         if tier1_result["should_trade"]:
+    pass
+    pass
             self.logger.info("⏰ Processing Tier 2 (precise timing)...")
             tier2_result = self._get_tier2_timing(
                 current_data,
@@ -180,6 +187,8 @@ class TwoTierIntegration:
         threshold = self.config["direction_threshold"]
 
         if base_confidence > threshold:
+    pass
+    pass
             direction = "LONG" if base_prediction == "BUY" else "SHORT"
             should_trade = True
             self.logger.debug(
@@ -239,11 +248,17 @@ class TwoTierIntegration:
 
         # Refine SR strategy based on price action
         if regime == "SR_ZONE_ACTION":
+    pass
+    pass
             price = current_data.get("price", 0)
             sr_levels = current_data.get("sr_levels", [])
             if sr_levels:
+    pass
+    pass
                 nearest_level = min(sr_levels, key=lambda x: abs(x - price))
                 if price > nearest_level:
+    pass
+    pass
                     base_strategy = (
                         "SR_BREAKOUT_UP" if prediction == "BUY" else "SR_BOUNCE_DOWN"
                     )
@@ -303,6 +318,8 @@ class TwoTierIntegration:
 
         # Adjust based on strategy
         if "SR_" in strategy:
+    pass
+    pass
             base_signal += 0.1  # SR strategies need stronger confirmation
             self.logger.debug("📊 SR strategy adjustment: +0.1")
         elif "MOMENTUM" in strategy:
@@ -327,6 +344,8 @@ class TwoTierIntegration:
         self.logger.debug(f"🔧 Getting strategy-specific timing for: {strategy}")
 
         if strategy == "SR_BREAKOUT_UP":
+    pass
+    pass
             should_execute = timing_signal > 0.8
             result = {
                 "should_execute": should_execute,
@@ -407,10 +426,14 @@ class TwoTierIntegration:
         self.logger.debug("🔧 Combining Tier 1 and Tier 2 decisions...")
 
         if not tier1_result["should_trade"]:
+    pass
+    pass
             self.logger.debug("📊 Tier 1 says no trade, final decision: HOLD")
             return "HOLD"
 
         if not tier2_result["should_execute"]:
+    pass
+    pass
             self.logger.debug(
                 "📊 Tier 2 says wait for timing, final decision: WAIT_FOR_TIMING",
             )
@@ -441,6 +464,8 @@ class TwoTierIntegration:
 
         # Adjust based on Tier 1 confidence
         if tier1_confidence > 0.8:
+    pass
+    pass
             tier1_multiplier = 1.2
         elif tier1_confidence > 0.6:
             tier1_multiplier = 1.0
@@ -449,6 +474,8 @@ class TwoTierIntegration:
 
         # Adjust based on Tier 2 timing
         if tier2_confidence > 0.9:
+    pass
+    pass
             tier2_multiplier = 1.3
         elif tier2_confidence > 0.8:
             tier2_multiplier = 1.1

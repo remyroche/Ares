@@ -24,6 +24,7 @@ from src.tactician.sr_levels_manager import create_sr_levels_manager, SRLevel
 from src.trading.sr_trading_intelligence import create_sr_trading_intelligence
 
 
+import async def test_sr_levels_system
 async def test_sr_levels_system():
     """Test the comprehensive SR levels system."""
     print("🚀 Testing Comprehensive SR Levels System")
@@ -53,18 +54,24 @@ async def test_sr_levels_system():
 
     try:
         # Test 1: Initialize SR Levels Manager
-        print("\n📋 Test 1: Initializing SR Levels Manager")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+        print("\\\n📋 Test 1: Initializing SR Levels Manager")
         print("-" * 40)
 
         sr_manager = await create_sr_levels_manager(config)
         if not sr_manager:
+    pass
+    pass
             print("❌ Failed to initialize SR Levels Manager")
             return False
 
         print("✅ SR Levels Manager initialized successfully")
 
         # Test 2: Generate sample market data
-        print("\n📊 Test 2: Generating Sample Market Data")
+        print("\\\n📊 Test 2: Generating Sample Market Data")
         print("-" * 40)
 
         sample_data = generate_sample_market_data()
@@ -73,7 +80,7 @@ async def test_sr_levels_system():
         print(f"   Volume range: {sample_data['volume'].min():.0f} - {sample_data['volume'].max():.0f}")
 
         # Test 3: Calculate SR levels from backtesting data
-        print("\n🔍 Test 3: Calculating SR Levels from Backtesting Data")
+        print("\\\n🔍 Test 3: Calculating SR Levels from Backtesting Data")
         print("-" * 40)
 
         sr_levels_result = await sr_manager.calculate_sr_levels_from_backtest(sample_data, "1m")
@@ -87,16 +94,22 @@ async def test_sr_levels_system():
         print(f"   Total levels: {support_count + resistance_count}")
 
         # Test 3.5: Test individual detection methods
-        print("\n🔍 Test 3.5: Testing Individual Detection Methods")
+        print("\\\n🔍 Test 3.5: Testing Individual Detection Methods")
         print("-" * 40)
 
         detection_methods = ["fractal", "volume", "pivot", "atr"]
         method_results = {}
 
         for method in detection_methods:
+    pass
+    pass
             try:
                 method_result = await sr_manager.calculate_sr_levels_with_method(
                     sample_data, method, "both"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
                 method_results[method] = method_result
 
@@ -112,15 +125,19 @@ async def test_sr_levels_system():
                 print(f"   {method.upper()} method: ❌ Failed - {e}")
 
         # Show method comparison
-        print(f"\n   Method Comparison:")
+        print(f"\\\n   Method Comparison:")
         for method, result in method_results.items():
+    pass
+    pass
             total_levels = len(result.get("support_levels", [])) + len(result.get("resistance_levels", []))
             print(f"     {method}: {total_levels} levels")
 
         # Display sample levels
         if support_count > 0:
+    pass
+    pass
             sample_support = sr_levels_result["support_levels"][0]
-            print(f"\n   Sample Support Level:")
+            print(f"\\\n   Sample Support Level:")
             print(f"     Price: {sample_support.price:.4f}")
             print(f"     Strength: {sample_support.strength:.3f}")
             print(f"     Method: {sample_support.method}")
@@ -128,8 +145,10 @@ async def test_sr_levels_system():
             print(f"     Quality Score: {sample_support.calculate_quality_score():.3f}")
 
         if resistance_count > 0:
+    pass
+    pass
             sample_resistance = sr_levels_result["resistance_levels"][0]
-            print(f"\n   Sample Resistance Level:")
+            print(f"\\\n   Sample Resistance Level:")
             print(f"     Price: {sample_resistance.price:.4f}")
             print(f"     Strength: {sample_resistance.strength:.3f}")
             print(f"     Method: {sample_resistance.method}")
@@ -137,7 +156,7 @@ async def test_sr_levels_system():
             print(f"     Quality Score: {sample_resistance.calculate_quality_score():.3f}")
 
         # Test 4: Test continuous updates with live data
-        print("\n🔄 Test 4: Testing Continuous Updates with Live Data")
+        print("\\\n🔄 Test 4: Testing Continuous Updates with Live Data")
         print("-" * 40)
 
         # Simulate live price updates
@@ -160,7 +179,7 @@ async def test_sr_levels_system():
         print(f"   Levels removed: {update_result.get('levels_removed', 0)}")
 
         # Test 5: Get SR levels for trading intelligence
-        print("\n🧠 Test 5: Getting SR Levels for Trading Intelligence")
+        print("\\\n🧠 Test 5: Getting SR Levels for Trading Intelligence")
         print("-" * 40)
 
         trading_levels = sr_manager.get_sr_levels_for_trading(current_price, include_metadata=True)
@@ -170,6 +189,8 @@ async def test_sr_levels_system():
 
         nearest_support = trading_levels.get("nearest_support")
         if nearest_support:
+    pass
+    pass
             print(f"   Nearest support: {nearest_support['price']:.4f}")
             print(f"     Strength: {nearest_support['strength']:.3f}")
             print(f"     Proximity: {nearest_support['proximity']:.4f}")
@@ -179,6 +200,8 @@ async def test_sr_levels_system():
 
         nearest_resistance = trading_levels.get("nearest_resistance")
         if nearest_resistance:
+    pass
+    pass
             print(f"   Nearest resistance: {nearest_resistance['price']:.4f}")
             print(f"     Strength: {nearest_resistance['strength']:.3f}")
             print(f"     Proximity: {nearest_resistance['proximity']:.4f}")
@@ -187,11 +210,13 @@ async def test_sr_levels_system():
             print(f"     Quality score: {nearest_resistance['quality_score']:.3f}")
 
         # Test 6: Test Trading Intelligence System
-        print("\n🎯 Test 6: Testing Trading Intelligence System")
+        print("\\\n🎯 Test 6: Testing Trading Intelligence System")
         print("-" * 40)
 
         trading_intelligence = await create_sr_trading_intelligence(config)
         if not trading_intelligence:
+    pass
+    pass
             print("❌ Failed to initialize Trading Intelligence")
             return False
 
@@ -214,6 +239,8 @@ async def test_sr_levels_system():
         print(f"   Overall risk: {risk.get('overall_risk', 'unknown')}")
         print(f"   Risk score: {risk.get('risk_score', 0):.3f}")
         if risk.get("risk_factors"):
+    pass
+    pass
             print(f"   Risk factors: {', '.join(risk['risk_factors'])}")
 
         # Position recommendations
@@ -225,7 +252,7 @@ async def test_sr_levels_system():
             print(f"        Reason: {rec.get('reason', 'No reason provided')}")
 
         # Test 7: Test Price vs VWAP Comparison
-        print("\n⚖️ Test 7: Testing Price vs VWAP Comparison")
+        print("\\\n⚖️ Test 7: Testing Price vs VWAP Comparison")
         print("-" * 40)
 
         # Create sample price and VWAP levels for comparison
@@ -256,12 +283,16 @@ async def test_sr_levels_system():
 
         # Recommendations
         if comparison.get('recommendations'):
+    pass
+    pass
             print(f"   Recommendations:")
             for rec in comparison['recommendations']:
+    pass
+    pass
                 print(f"     - {rec}")
 
         # Test 8: Test Persistent Storage
-        print("\n💾 Test 8: Testing Persistent Storage")
+        print("\\\n💾 Test 8: Testing Persistent Storage")
         print("-" * 40)
 
         # Save levels
@@ -271,6 +302,8 @@ async def test_sr_levels_system():
         # Create new manager instance to test loading
         new_sr_manager = await create_sr_levels_manager(config)
         if new_sr_manager:
+    pass
+    pass
             print("✅ New SR manager created and loaded existing levels")
             print(f"   Loaded {len(new_sr_manager.support_levels)} support levels")
             print(f"   Loaded {len(new_sr_manager.resistance_levels)} resistance levels")
@@ -278,7 +311,7 @@ async def test_sr_levels_system():
             print("❌ Failed to create new SR manager")
 
         # Test 9: Performance Summary
-        print("\n📈 Test 9: Performance Summary")
+        print("\\\n📈 Test 9: Performance Summary")
         print("-" * 40)
 
         print("✅ All tests completed successfully!")
@@ -290,7 +323,7 @@ async def test_sr_levels_system():
 
         # Cleanup
         await trading_intelligence.shutdown()
-        print("\n🧹 Cleanup completed")
+        print("\\\n🧹 Cleanup completed")
 
         return True
 
@@ -302,6 +335,8 @@ async def test_sr_levels_system():
 
 
 def generate_sample_market_data() -> pd.DataFrame:
+    pass
+    pass
     """Generate sample market data for testing."""
     # Generate 1000 data points
     np.random.seed(42)  # For reproducible results
@@ -319,6 +354,8 @@ def generate_sample_market_data() -> pd.DataFrame:
     # Generate OHLC data
     data = []
     for i in range(1000):
+    pass
+    pass
         close = close_prices[i]
         high = close + abs(np.random.normal(0, 0.01))
         low = close - abs(np.random.normal(0, 0.01))
@@ -356,12 +393,16 @@ async def main():
     success = await test_sr_levels_system()
 
     if success:
-        print("\n🎉 All tests passed! The SR levels system is working correctly.")
+    pass
+    pass
+        print("\\\n🎉 All tests passed! The SR levels system is working correctly.")
     else:
-        print("\n💥 Some tests failed. Please check the error messages above.")
+        print("\\\n💥 Some tests failed. Please check the error messages above.")
 
     return success
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

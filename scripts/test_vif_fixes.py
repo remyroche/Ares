@@ -14,6 +14,7 @@ import pandas as pd
 from functools import wraps
 from typing import Dict
 
+import warnings.filterwarnings
 warnings.filterwarnings("ignore")
 
 # Add src to path
@@ -21,14 +22,24 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 
 def _log_exceptions(logger_name: str):
+    pass
+    pass
     """Decorator to log exceptions and return False for test functions."""
 
     def decorator(func):
+    pass
+    pass
         @wraps(func)
         def wrapper(*args, **kwargs):
+    pass
+    pass
             logger = system_logger.getChild(logger_name)
             try:
                 return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception as e:  # noqa: BLE001
                 logger.exception(f"Error in {func.__name__}: {e}")
                 return False
@@ -40,6 +51,8 @@ def _log_exceptions(logger_name: str):
 
 @_log_exceptions("TestVIFFixes")
 def test_vif_fixes() -> bool:
+    pass
+    pass
     """Test that the VIF fixes are working correctly."""
     logger = system_logger.getChild("TestVIFFixes")
 
@@ -66,10 +79,10 @@ def test_vif_fixes() -> bool:
     _unused_volume_df = pd.DataFrame({"volume": price_data["volume"].copy()})
     del _unused_volume_df  # explicitly mark as unused to satisfy linters
 
-    print(f"\n📊 Test data created: {n_samples} samples")
+    print(f"\\\n📊 Test data created: {n_samples} samples")
 
     # Test 1: Moving Averages Fix
-    print("\n🧪 Test 1: Moving Averages Fix")
+    print("\\\n🧪 Test 1: Moving Averages Fix")
     close = price_data["close"]
 
     # Original approach (high correlation)
@@ -106,7 +119,7 @@ def test_vif_fixes() -> bool:
     print(f"   Improvement: {abs(corr_orig) - abs(corr_fixed):.3f}")
 
     # Test 2: Momentum Indicators Fix
-    print("\n🧪 Test 2: Momentum Indicators Fix")
+    print("\\\n🧪 Test 2: Momentum Indicators Fix")
     price_diff = close.diff()
 
     # Original approach (overlapping windows)
@@ -141,7 +154,7 @@ def test_vif_fixes() -> bool:
     print(f"   Improvement: {abs(corr_mom_orig) - abs(corr_mom_fixed):.3f}")
 
     # Test 3: Volatility Indicators Fix
-    print("\n🧪 Test 3: Volatility Indicators Fix")
+    print("\\\n🧪 Test 3: Volatility Indicators Fix")
     returns = close.pct_change()
 
     # Original approach (similar estimators)
@@ -181,7 +194,7 @@ def test_vif_fixes() -> bool:
     print(f"   Improvement: {abs(corr_vol_orig) - abs(corr_vol_fixed):.3f}")
 
     # Test 4: Feature Diversity
-    print("\n🧪 Test 4: Feature Diversity")
+    print("\\\n🧪 Test 4: Feature Diversity")
 
     # Calculate feature diversity metrics
     features_orig: Dict[str, pd.Series] = {
@@ -209,28 +222,46 @@ def test_vif_fixes() -> bool:
 
     # Helper functions inside the test for clarity
     def calculate_avg_correlation(features_dict: Dict[str, pd.Series]) -> float:
+    pass
+    pass
         correlations: list[float] = []
         feature_keys = list(features_dict.keys())
         for i in range(len(feature_keys)):
+    pass
+    pass
             for j in range(i + 1, len(feature_keys)):
+    pass
+    pass
                 s1 = pd.Series(features_dict[feature_keys[i]]).dropna()
                 s2 = pd.Series(features_dict[feature_keys[j]]).dropna()
                 joined = pd.concat([s1, s2], axis=1).dropna()
                 if len(joined) < 2:
+    pass
+    pass
                     continue
                 corr_val = float(joined.iloc[:, 0].corr(joined.iloc[:, 1]))
                 if not np.isnan(corr_val):
+    pass
+    pass
                     correlations.append(abs(corr_val))
         return float(np.mean(correlations)) if correlations else 0.0
 
     def calculate_feature_variance(features_dict: Dict[str, pd.Series]) -> float:
+    pass
+    pass
         variances: list[float] = []
         for feature in features_dict.values():
+    pass
+    pass
             s = pd.Series(feature).dropna()
             if len(s) == 0:
+    pass
+    pass
                 continue
             var = float(s.var())
             if not np.isnan(var):
+    pass
+    pass
                 variances.append(var)
         return float(np.mean(variances)) if variances else 0.0
 
@@ -242,7 +273,7 @@ def test_vif_fixes() -> bool:
     print(f"   Correlation reduction: {avg_corr_orig - avg_corr_fixed:.3f}")
 
     # Test 5: Feature Count and Diversity
-    print("\n🧪 Test 5: Feature Count and Diversity")
+    print("\\\n🧪 Test 5: Feature Count and Diversity")
 
     print(f"   Original feature count: {len(features_orig)}")
     print(f"   Fixed feature count: {len(features_fixed)}")
@@ -256,7 +287,7 @@ def test_vif_fixes() -> bool:
     print(f"   Variance improvement: {var_fixed - var_orig:.6f}")
 
     # Summary
-    print("\n" + "=" * 80)
+    print("\\\n" + "=" * 80)
     print("SUMMARY OF VIF FIXES:")
     print("=" * 80)
 
@@ -276,17 +307,19 @@ def test_vif_fixes() -> bool:
     print(f"   Feature count increase: {len(features_fixed) - len(features_orig)}")
     print(f"   Variance improvement: {var_fixed - var_orig:.6f}")
 
-    print(f"\n   Total improvement score: {total_improvement:.3f}")
+    print(f"\\\n   Total improvement score: {total_improvement:.3f}")
 
     if total_improvement > 1.0 and avg_corr_fixed < 0.5:
-        print("\n✅ VIF FIXES SUCCESSFUL!")
+    pass
+    pass
+        print("\\\n✅ VIF FIXES SUCCESSFUL!")
         print("   - Significant reduction in multicollinearity")
         print("   - Better feature diversity")
         print("   - More informative features")
         print("   - Lower VIF values expected")
         return True
 
-    print("\n⚠️ VIF FIXES NEED IMPROVEMENT")
+    print("\\\n⚠️ VIF FIXES NEED IMPROVEMENT")
     print("   - Limited reduction in multicollinearity")
     print("   - Consider additional feature engineering")
     print("=" * 80)
@@ -295,5 +328,7 @@ def test_vif_fixes() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = test_vif_fixes()
     sys.exit(0 if success else 1)

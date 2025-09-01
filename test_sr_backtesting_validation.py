@@ -23,7 +23,10 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 
 
+import def generate_realistic_market_data
 def generate_realistic_market_data(n_periods: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Generate realistic market data with actual S/R levels."""
     np.random.seed(42)
 
@@ -35,11 +38,15 @@ def generate_realistic_market_data(n_periods: int = 1000) -> pd.DataFrame:
     sr_levels = [95.0, 98.0, 102.0, 105.0, 108.0]  # Known S/R levels
 
     for i in range(1, n_periods):
+    pass
+    pass
         current_price = prices[-1]
 
         # Check if price is near S/R levels
         near_sr = False
         for sr_level in sr_levels:
+    pass
+    pass
             if abs(current_price - sr_level) / sr_level < 0.02:  # Within 2% of S/R
                 near_sr = True
                 # Higher probability of bouncing off S/R levels
@@ -58,6 +65,8 @@ def generate_realistic_market_data(n_periods: int = 1000) -> pd.DataFrame:
                 break
 
         if not near_sr:
+    pass
+    pass
             # Normal random walk
             change = np.random.normal(0, 0.01)  # 1% daily volatility
 
@@ -67,6 +76,8 @@ def generate_realistic_market_data(n_periods: int = 1000) -> pd.DataFrame:
     # Generate OHLCV data
     data = []
     for i, price in enumerate(prices):
+    pass
+    pass
         # Generate realistic OHLC from close price
         volatility = np.random.uniform(0.002, 0.01)
         high = price * (1 + np.random.uniform(0, volatility))
@@ -79,7 +90,11 @@ def generate_realistic_market_data(n_periods: int = 1000) -> pd.DataFrame:
 
         # Check if near S/R level
         for sr_level in sr_levels:
+    pass
+    pass
             if abs(price - sr_level) / sr_level < 0.02:
+    pass
+    pass
                 volume_multiplier = np.random.uniform(1.5, 3.0)  # Higher volume near S/R
                 break
 
@@ -106,6 +121,10 @@ async def test_sr_backtesting_validation():
     try:
         logger.info("🚀 Starting S/R Backtesting Validation Test")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Configuration with backtesting enabled
         config = {
             "sr_breakout_predictor": {
@@ -150,27 +169,27 @@ async def test_sr_backtesting_validation():
         logger.info(f"Price range: {market_data['close'].min():.2f} - {market_data['close'].max():.2f}")
 
         # Test 1: Direct S/R Backtesting Validation
-        logger.info("\n" + "="*60)
+        logger.info("\\\n" + "="*60)
         logger.info("TEST 1: Direct S/R Backtesting Validation")
         logger.info("="*60)
 
         await test_direct_backtesting(config, market_data)
 
         # Test 2: S/R Detection with Backtesting Optimization
-        logger.info("\n" + "="*60)
+        logger.info("\\\n" + "="*60)
         logger.info("TEST 2: S/R Detection with Backtesting Optimization")
         logger.info("="*60)
 
         await test_optimization_with_backtesting(config, market_data)
 
         # Test 3: Success Metrics Analysis
-        logger.info("\n" + "="*60)
+        logger.info("\\\n" + "="*60)
         logger.info("TEST 3: Success Metrics Analysis")
         logger.info("="*60)
 
         await test_success_metrics_analysis(config, market_data)
 
-        logger.info("\n" + "="*60)
+        logger.info("\\\n" + "="*60)
         logger.info("🎉 All backtesting validation tests completed!")
         logger.info("="*60)
 
@@ -184,6 +203,10 @@ async def test_direct_backtesting(config: dict, market_data: pd.DataFrame):
 
     try:
         # Initialize S/R predictor
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sr_predictor = SRBreakoutPredictor(config)
         await sr_predictor.initialize()
 
@@ -208,34 +231,36 @@ async def test_direct_backtesting(config: dict, market_data: pd.DataFrame):
         )
 
         if backtest_result:
+    pass
+    pass
             logger.info("📊 Backtesting Results:")
             logger.info(f"  Total Levels Tested: {backtest_result.total_levels_tested}")
             logger.info(f"  Successful Levels: {backtest_result.successful_levels}")
             logger.info(f"  Level Detection Accuracy: {backtest_result.level_detection_accuracy:.2%}")
 
-            logger.info("\n🎯 S/R Performance Metrics:")
+            logger.info("\\\n🎯 S/R Performance Metrics:")
             logger.info(f"  Overall Bounce Rate: {backtest_result.overall_bounce_rate:.2%}")
             logger.info(f"  Overall Breakout Rate: {backtest_result.overall_breakout_rate:.2%}")
             logger.info(f"  False Breakout Rate: {backtest_result.overall_false_breakout_rate:.2%}")
 
-            logger.info("\n📈 Support vs Resistance Performance:")
+            logger.info("\\\n📈 Support vs Resistance Performance:")
             logger.info(f"  Support Bounce Rate: {backtest_result.support_bounce_rate:.2%}")
             logger.info(f"  Resistance Bounce Rate: {backtest_result.resistance_bounce_rate:.2%}")
             logger.info(f"  Support Breakout Rate: {backtest_result.support_breakout_rate:.2%}")
             logger.info(f"  Resistance Breakout Rate: {backtest_result.resistance_breakout_rate:.2%}")
 
-            logger.info("\n📊 Volume Analysis:")
+            logger.info("\\\n📊 Volume Analysis:")
             logger.info(f"  Average Volume Spike Ratio: {backtest_result.avg_volume_spike_ratio:.2f}x")
             logger.info(f"  Volume Confirmation Rate: {backtest_result.avg_volume_confirmation_rate:.2%}")
             logger.info(f"  Institutional Volume Ratio: {backtest_result.avg_institutional_volume_ratio:.2%}")
             logger.info(f"  Volume Cluster Score: {backtest_result.avg_volume_cluster_score:.2f}")
 
-            logger.info("\n🎯 S/R Validation Score:")
+            logger.info("\\\n🎯 S/R Validation Score:")
             logger.info(f"  Overall S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
             logger.info(f"  Level Detection Accuracy: {backtest_result.level_detection_accuracy:.2%}")
             logger.info(f"  Average Confidence Score: {backtest_result.avg_confidence_score:.3f}")
 
-            logger.info("\n🎯 Individual Level Analysis:")
+            logger.info("\\\n🎯 Individual Level Analysis:")
             for i, level_test in enumerate(backtest_result.level_tests[:5]):  # Show first 5
                 logger.info(f"  Level {i+1} ({level_test.level_type} at {level_test.level_price:.2f}):")
                 logger.info(f"    Touches: {level_test.touches}, Bounces: {level_test.bounces}")
@@ -259,9 +284,15 @@ async def test_optimization_with_backtesting(config: dict, market_data: pd.DataF
 
     try:
         # Initialize optimizer
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         optimizer = await setup_sr_detection_optimizer(config)
 
         if not optimizer:
+    pass
+    pass
             logger.error("❌ Failed to initialize optimizer")
             return
 
@@ -274,20 +305,24 @@ async def test_optimization_with_backtesting(config: dict, market_data: pd.DataF
         )
 
         if result:
+    pass
+    pass
             logger.info("✅ Optimization with backtesting completed!")
             logger.info(f"Best optimization score: {result.optimization_score:.4f}")
             logger.info(f"Optimization method: {result.optimization_method}")
 
             # Show optimized parameters
-            logger.info("\n📈 Optimized Parameters:")
+            logger.info("\\\n📈 Optimized Parameters:")
             logger.info(f"  Method Weights: {result.method_weights}")
             logger.info(f"  Strength Weights: {result.strength_weights}")
             logger.info(f"  DBSCAN Params: {result.dbscan_params}")
 
             # Show backtesting results from optimization
             if hasattr(optimizer, 'backtest_results') and optimizer.backtest_results:
+    pass
+    pass
                 latest_backtest = optimizer.backtest_results[-1]['backtest_result']
-                logger.info(f"\n🎯 Optimization Backtesting Results:")
+                logger.info(f"\\\n🎯 Optimization Backtesting Results:")
                 logger.info(f"  S/R Validation Score: {latest_backtest.sr_validation_score:.3f}")
                 logger.info(f"  Bounce Rate: {latest_backtest.overall_bounce_rate:.2%}")
                 logger.info(f"  Volume Confirmation: {latest_backtest.avg_volume_confirmation_rate:.2%}")
@@ -303,6 +338,10 @@ async def test_success_metrics_analysis(config: dict, market_data: pd.DataFrame)
     try:
         logger.info("📊 Analyzing S/R Level Success Metrics...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Initialize components
         sr_predictor = SRBreakoutPredictor(config)
         await sr_predictor.initialize()
@@ -327,10 +366,14 @@ async def test_success_metrics_analysis(config: dict, market_data: pd.DataFrame)
         results = []
 
         for param_set in parameter_sets:
-            logger.info(f"\n🔧 Testing {param_set['name']} parameters...")
+    pass
+    pass
+            logger.info(f"\\\n🔧 Testing {param_set['name']} parameters...")
 
             # Update validator parameters
             for key, value in param_set['params'].items():
+    pass
+    pass
                 setattr(validator, key, value)
 
             # Get S/R levels
@@ -349,6 +392,8 @@ async def test_success_metrics_analysis(config: dict, market_data: pd.DataFrame)
             )
 
             if backtest_result:
+    pass
+    pass
                 results.append({
                     "name": param_set['name'],
                     "total_levels": backtest_result.total_levels_tested,
@@ -361,19 +406,21 @@ async def test_success_metrics_analysis(config: dict, market_data: pd.DataFrame)
                 })
 
         # Compare results
-        logger.info("\n📊 Parameter Set Comparison:")
+        logger.info("\\\n📊 Parameter Set Comparison:")
         logger.info("="*90)
         logger.info(f"{'Parameter Set':<15} {'Levels':<8} {'Success':<8} {'Accuracy':<10} {'Bounce':<8} {'Volume':<8} {'Confidence':<10} {'Score':<8}")
         logger.info("="*90)
 
         for result in results:
+    pass
+    pass
             logger.info(f"{result['name']:<15} {result['total_levels']:<8} {result['successful_levels']:<8} "
                        f"{result['accuracy']:<10.2%} {result['bounce_rate']:<8.2%} {result['volume_confirmation']:<8.2%} "
                        f"{result['confidence_score']:<10.3f} {result['validation_score']:<8.3f}")
 
         # Find best performing parameter set
         best_result = max(results, key=lambda x: x['validation_score'])
-        logger.info(f"\n🏆 Best Performing Parameter Set: {best_result['name']}")
+        logger.info(f"\\\n🏆 Best Performing Parameter Set: {best_result['name']}")
         logger.info(f"   S/R Validation Score: {best_result['validation_score']:.3f}")
         logger.info(f"   Level Detection Accuracy: {best_result['accuracy']:.2%}")
         logger.info(f"   Bounce Rate: {best_result['bounce_rate']:.2%}")
@@ -388,7 +435,11 @@ async def assess_sr_level_validity(backtest_result):
     logger = system_logger.getChild("SRValidityAssessment")
 
     try:
-        logger.info("\n🔍 S/R Level Validity Assessment:")
+        logger.info("\\\n🔍 S/R Level Validity Assessment:")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("="*50)
 
         # Define validity criteria
@@ -407,6 +458,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check bounce rate
         if backtest_result.overall_bounce_rate >= validity_criteria["bounce_rate_threshold"]:
+    pass
+    pass
             assessment.append("✅ Bounce rate is acceptable")
         else:
             assessment.append(f"❌ Bounce rate too low: {backtest_result.overall_bounce_rate:.2%} < {validity_criteria['bounce_rate_threshold']:.2%}")
@@ -414,6 +467,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check confidence score
         if backtest_result.avg_confidence_score >= validity_criteria["confidence_threshold"]:
+    pass
+    pass
             assessment.append("✅ Average confidence score is acceptable")
         else:
             assessment.append(f"❌ Confidence score too low: {backtest_result.avg_confidence_score:.3f} < {validity_criteria['confidence_threshold']:.3f}")
@@ -421,6 +476,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check false breakout rate
         if backtest_result.overall_false_breakout_rate <= validity_criteria["max_false_breakout_rate"]:
+    pass
+    pass
             assessment.append("✅ False breakout rate is acceptable")
         else:
             assessment.append(f"❌ False breakout rate too high: {backtest_result.overall_false_breakout_rate:.2%} > {validity_criteria['max_false_breakout_rate']:.2%}")
@@ -428,6 +485,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check volume confirmation
         if backtest_result.avg_volume_confirmation_rate >= validity_criteria["volume_confirmation_threshold"]:
+    pass
+    pass
             assessment.append("✅ Volume confirmation rate is acceptable")
         else:
             assessment.append(f"❌ Volume confirmation too low: {backtest_result.avg_volume_confirmation_rate:.2%} < {validity_criteria['volume_confirmation_threshold']:.2%}")
@@ -435,6 +494,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check overall validation score
         if backtest_result.sr_validation_score >= validity_criteria["validation_score_threshold"]:
+    pass
+    pass
             assessment.append("✅ Overall S/R validation score is acceptable")
         else:
             assessment.append(f"❌ Validation score too low: {backtest_result.sr_validation_score:.3f} < {validity_criteria['validation_score_threshold']:.3f}")
@@ -442,6 +503,8 @@ async def assess_sr_level_validity(backtest_result):
 
         # Check level detection accuracy
         if backtest_result.level_detection_accuracy >= 0.5:
+    pass
+    pass
             assessment.append("✅ Level detection accuracy is acceptable")
         else:
             assessment.append(f"❌ Level detection accuracy too low: {backtest_result.level_detection_accuracy:.2%} < 50%")
@@ -449,27 +512,41 @@ async def assess_sr_level_validity(backtest_result):
 
         # Print assessment
         for item in assessment:
+    pass
+    pass
             logger.info(f"  {item}")
 
         # Overall verdict
         if overall_valid:
-            logger.info(f"\n🎉 VERDICT: S/R levels are VALID and RELIABLE")
+    pass
+    pass
+            logger.info(f"\\\n🎉 VERDICT: S/R levels are VALID and RELIABLE")
             logger.info(f"   S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
         else:
-            logger.info(f"\n⚠️  VERDICT: S/R levels need IMPROVEMENT")
+            logger.info(f"\\\n⚠️  VERDICT: S/R levels need IMPROVEMENT")
             logger.info(f"   S/R Validation Score: {backtest_result.sr_validation_score:.3f}")
 
         # Recommendations
-        logger.info(f"\n💡 Recommendations:")
+        logger.info(f"\\\n💡 Recommendations:")
         if backtest_result.overall_bounce_rate < 0.6:
+    pass
+    pass
             logger.info("  - Increase bounce rate by improving S/R detection algorithms")
         if backtest_result.overall_false_breakout_rate > 0.3:
+    pass
+    pass
             logger.info("  - Reduce false breakouts by improving confirmation logic")
         if backtest_result.avg_volume_confirmation_rate < 0.5:
+    pass
+    pass
             logger.info("  - Improve volume analysis to confirm S/R level significance")
         if backtest_result.level_detection_accuracy < 0.5:
+    pass
+    pass
             logger.info("  - Enhance level detection accuracy through parameter optimization")
         if backtest_result.sr_validation_score < 0.7:
+    pass
+    pass
             logger.info("  - Focus on improving overall S/R validation metrics")
 
     except Exception as e:
@@ -482,6 +559,10 @@ async def main():
 
     try:
         logger.info("🚀 Starting S/R Backtesting Validation Tests")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("This demonstrates how S/R levels are validated through proper backtesting")
         logger.info("and how success metrics are calculated to assess S/R level effectiveness.")
 
@@ -492,4 +573,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

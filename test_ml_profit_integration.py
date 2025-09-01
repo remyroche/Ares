@@ -20,10 +20,13 @@ from src.supervisor.supervisor import Supervisor
 from src.config.enhanced_prediction_service_config import get_integration_config
 
 
+import class MLProfitIntegrationTester:
 class MLProfitIntegrationTester:
     """Test class for ML Profit Integration System."""
 
     def __init__(self):
+    pass
+    pass
         self.config = get_integration_config()
         self.enhanced_prediction_service = None
         self.supervisor = None
@@ -38,6 +41,8 @@ class MLProfitIntegrationTester:
         success = await self.enhanced_prediction_service.initialize()
 
         if not success:
+    pass
+    pass
             print("❌ Failed to initialize Enhanced Prediction Service")
             return False
 
@@ -49,6 +54,8 @@ class MLProfitIntegrationTester:
         return True
 
     def generate_mock_market_data(self, symbol: str = "ETHUSDT", days: int = 30) -> pd.DataFrame:
+    pass
+    pass
         """Generate mock market data for testing."""
         print(f"📊 Generating mock market data for {symbol} ({days} days)...")
 
@@ -66,12 +73,16 @@ class MLProfitIntegrationTester:
         prices = [base_price]
 
         for ret in returns[1:]:
+    pass
+    pass
             new_price = prices[-1] * (1 + ret)
             prices.append(new_price)
 
         # Generate OHLCV data
         data = []
         for i, (timestamp, price) in enumerate(zip(timestamps, prices)):
+    pass
+    pass
             # Add some noise to create realistic OHLC
             noise = np.random.normal(0, price * 0.0005)
 
@@ -98,6 +109,8 @@ class MLProfitIntegrationTester:
         return df
 
     def generate_mock_regime_info(self) -> dict:
+    pass
+    pass
         """Generate mock regime information."""
         return {
             "regime": "trending_bullish",
@@ -115,6 +128,8 @@ class MLProfitIntegrationTester:
         }
 
     def generate_mock_ml_profit_models(self):
+    pass
+    pass
         """Generate mock ML profit models for testing."""
         print("🤖 Generating mock ML profit models...")
 
@@ -126,6 +141,8 @@ class MLProfitIntegrationTester:
         model_types = ["hmm_profit", "analyst_profit", "tactician_profit", "ensemble_profit"]
 
         for model_type in model_types:
+    pass
+    pass
             type_dir = mock_models_dir / model_type
             type_dir.mkdir(exist_ok=True)
 
@@ -151,7 +168,7 @@ class MLProfitIntegrationTester:
 
     async def test_enhanced_confidence_calculation(self):
         """Test the enhanced confidence calculation function."""
-        print("\n🎯 Testing Enhanced Confidence Calculation...")
+        print("\\\n🎯 Testing Enhanced Confidence Calculation...")
 
         # Generate test data
         market_data = self.generate_mock_market_data()
@@ -186,7 +203,9 @@ class MLProfitIntegrationTester:
         price_volatility = market_data['close'].pct_change().std()
 
         for scenario in test_scenarios:
-            print(f"\n  📋 Testing: {scenario['name']}")
+    pass
+    pass
+            print(f"\\\n  📋 Testing: {scenario['name']}")
 
             # Calculate enhanced confidence
             enhanced_confidence = await self.enhanced_prediction_service._calculate_directional_confidence_with_barriers(
@@ -206,6 +225,8 @@ class MLProfitIntegrationTester:
 
             # Validate results
             if scenario["expected_high_confidence"]:
+    pass
+    pass
                 assert enhanced_confidence > 0.6, f"Expected high confidence for {scenario['name']}"
             else:
                 assert enhanced_confidence <= 0.6, f"Expected low confidence for {scenario['name']}"
@@ -216,14 +237,14 @@ class MLProfitIntegrationTester:
 
     async def test_ml_profit_integration(self):
         """Test the ML profit integration with Analyst and Tactician."""
-        print("\n🔄 Testing ML Profit Integration...")
+        print("\\\n🔄 Testing ML Profit Integration...")
 
         # Generate test data
         market_data = self.generate_mock_market_data()
         regime_info = self.generate_mock_regime_info()
 
         # Test Analyst integration
-        print("\n  📊 Testing Analyst Integration...")
+        print("\\\n  📊 Testing Analyst Integration...")
         analyst_predictions = await self.supervisor.get_analyst_predictions(
             market_data=market_data,
             regime_info=regime_info,
@@ -233,6 +254,8 @@ class MLProfitIntegrationTester:
         )
 
         if analyst_predictions:
+    pass
+    pass
             print("    ✅ Analyst predictions generated successfully")
             print(f"    📈 ML Profit Predictions: {len(analyst_predictions.get('ml_profit_integration', {}).get('ml_profit_predictions', {}))}")
             print(f"    🎯 Enhanced Confidence Scores: {len(analyst_predictions.get('ml_profit_integration', {}).get('enhanced_confidence_scores', {}))}")
@@ -241,7 +264,7 @@ class MLProfitIntegrationTester:
             print("    ⚠️ No analyst predictions generated (expected if no models loaded)")
 
         # Test Tactician integration
-        print("\n  ⚡ Testing Tactician Integration...")
+        print("\\\n  ⚡ Testing Tactician Integration...")
         tactician_predictions = await self.supervisor.get_tactician_predictions(
             market_data=market_data,
             regime_info=regime_info,
@@ -252,6 +275,8 @@ class MLProfitIntegrationTester:
         )
 
         if tactician_predictions:
+    pass
+    pass
             print("    ✅ Tactician predictions generated successfully")
             print(f"    🎯 Enhanced Tactician Signals: {len(tactician_predictions.get('enhanced_tactician_signals', {}))}")
             print(f"    ⚙️ Execution Parameters: {len(tactician_predictions.get('execution_parameters', {}))}")
@@ -263,7 +288,7 @@ class MLProfitIntegrationTester:
 
     async def test_barrier_analysis(self):
         """Test the barrier analysis functionality."""
-        print("\n🛡️ Testing Barrier Analysis...")
+        print("\\\n🛡️ Testing Barrier Analysis...")
 
         # Generate test data
         market_data = self.generate_mock_market_data()
@@ -290,7 +315,9 @@ class MLProfitIntegrationTester:
         }
 
         for prediction_name, prediction_data in test_predictions.items():
-            print(f"\n  📋 Testing: {prediction_name}")
+    pass
+    pass
+            print(f"\\\n  📋 Testing: {prediction_name}")
 
             # Calculate barrier metrics
             barrier_metrics = self.enhanced_prediction_service._calculate_barrier_metrics(
@@ -312,7 +339,7 @@ class MLProfitIntegrationTester:
 
     async def test_risk_metrics_calculation(self):
         """Test risk metrics calculation."""
-        print("\n📊 Testing Risk Metrics Calculation...")
+        print("\\\n📊 Testing Risk Metrics Calculation...")
 
         # Generate test data
         market_data = self.generate_mock_market_data()
@@ -366,6 +393,8 @@ class MLProfitIntegrationTester:
 
         print("  🎯 Individual Risk Metrics:")
         for prediction_name, individual_risk in risk_metrics.get("individual_risks", {}).items():
+    pass
+    pass
             print(f"    {prediction_name}:")
             print(f"      Confidence: {individual_risk.get('confidence', 0):.3f}")
             print(f"      Expected Value: {individual_risk.get('expected_value', 0):.4f}")
@@ -386,11 +415,17 @@ class MLProfitIntegrationTester:
 
         # Setup
         if not await self.setup():
+    pass
+    pass
             print("❌ Setup failed, aborting tests")
             return False
 
         try:
             # Generate mock models
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.generate_mock_ml_profit_models()
 
             # Run tests
@@ -399,14 +434,14 @@ class MLProfitIntegrationTester:
             await self.test_barrier_analysis()
             await self.test_risk_metrics_calculation()
 
-            print("\n" + "=" * 80)
+            print("\\\n" + "=" * 80)
             print("🎉 All ML Profit Integration System Tests Completed Successfully!")
             print("=" * 80)
 
             return True
 
         except Exception as e:
-            print(f"\n❌ Test failed with error: {e}")
+            print(f"\\\n❌ Test failed with error: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -416,13 +451,19 @@ class MockMLModel:
     """Mock ML model for testing purposes."""
 
     def __init__(self, model_type: str, model_id: int):
+    pass
+    pass
         self.model_type = model_type
         self.model_id = model_id
 
     def predict(self, features):
+    pass
+    pass
         """Mock prediction method."""
         # Generate realistic mock predictions based on model type
         if self.model_type == "hmm_profit":
+    pass
+    pass
             # HMM models tend to be more conservative
             return np.array([0.01 + (self.model_id * 0.005)])
         elif self.model_type == "analyst_profit":
@@ -442,8 +483,10 @@ async def main():
     success = await tester.run_all_tests()
 
     if success:
-        print("\n✅ All tests passed! The Universal ML Profit Integration System is working correctly.")
-        print("\n📋 Summary of what was tested:")
+    pass
+    pass
+        print("\\\n✅ All tests passed! The Universal ML Profit Integration System is working correctly.")
+        print("\\\n📋 Summary of what was tested:")
         print("  1. Enhanced confidence calculation with barrier analysis")
         print("  2. ML profit predictions integration with Analyst")
         print("  3. ML profit predictions integration with Tactician")
@@ -452,10 +495,12 @@ async def main():
         print("  6. Position sizing enhancement")
         print("  7. Execution parameter optimization")
     else:
-        print("\n❌ Some tests failed. Please check the error messages above.")
+        print("\\\n❌ Some tests failed. Please check the error messages above.")
 
     return success
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

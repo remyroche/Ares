@@ -18,6 +18,7 @@ from tactician.sr_backtesting_validator import SRBacktestingValidator
 from tactician.sr_detection_optimization import SRDetectionOptimizer
 
 # Configure logging
+import logging.basicConfig
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -25,6 +26,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Generate realistic test market data with clear S/R levels."""
     np.random.seed(42)
 
@@ -38,15 +41,25 @@ def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
     resistance_levels = [105.0, 108.0, 112.0]
 
     for i in range(1, n_periods):
+    pass
+    pass
         current_price = prices[-1]
 
         # Add some mean reversion to S/R levels
         for support in support_levels:
+    pass
+    pass
             if current_price < support:
+    pass
+    pass
                 returns[i] += 0.01  # Bounce up from support
 
         for resistance in resistance_levels:
+    pass
+    pass
             if current_price > resistance:
+    pass
+    pass
                 returns[i] -= 0.01  # Bounce down from resistance
 
         new_price = current_price * (1 + returns[i])
@@ -55,6 +68,8 @@ def generate_test_market_data(n_periods: int = 1000) -> pd.DataFrame:
     # Generate OHLC data
     data = []
     for i, close in enumerate(prices):
+    pass
+    pass
         high = close * (1 + abs(np.random.normal(0, 0.005)))
         low = close * (1 - abs(np.random.normal(0, 0.005)))
         open_price = close * (1 + np.random.normal(0, 0.002))
@@ -125,7 +140,13 @@ async def test_sr_level_detection():
     try:
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if sr_context:
+    pass
+    pass
             support_levels = sr_context.get('support_levels', [])
             resistance_levels = sr_context.get('resistance_levels', [])
 
@@ -135,8 +156,12 @@ async def test_sr_level_detection():
             logger.info(f"   - Current price: {current_price:.2f}")
 
             if support_levels:
+    pass
+    pass
                 logger.info(f"   - Nearest support: {sr_context.get('nearest_support', 'N/A')}")
             if resistance_levels:
+    pass
+    pass
                 logger.info(f"   - Nearest resistance: {sr_context.get('nearest_resistance', 'N/A')}")
 
             return len(support_levels) > 0 or len(resistance_levels) > 0
@@ -186,13 +211,21 @@ async def test_comprehensive_strength_calculation():
 
     try:
         # Test comprehensive strength calculation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         strength_results = await sr_predictor.calculate_comprehensive_strength(market_data, test_levels)
 
         if strength_results:
+    pass
+    pass
             logger.info(f"✅ Comprehensive strength calculation successful")
             logger.info(f"   - Calculated strength for {len(strength_results)} levels")
 
             for level_id, strength_data in strength_results.items():
+    pass
+    pass
                 comprehensive_strength = strength_data.get('comprehensive_strength', 0)
                 logger.info(f"   - Level {level_id}: strength = {comprehensive_strength:.3f}")
 
@@ -244,10 +277,16 @@ async def test_backtesting_validation():
 
     try:
         # Test validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         current_price = market_data['close'].iloc[-1]
         validation_result = await validator.validate_sr_levels(market_data, test_levels, current_price)
 
         if validation_result:
+    pass
+    pass
             logger.info(f"✅ Backtesting validation successful")
             logger.info(f"   - Overall validation score: {validation_result.sr_validation_score:.3f}")
             logger.info(f"   - Bounce rate: {validation_result.bounce_rate:.3f}")
@@ -321,7 +360,13 @@ async def test_optimization_framework():
 
     try:
         # Initialize the optimizer first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not await optimizer.initialize():
+    pass
+    pass
             logger.error("❌ Failed to initialize optimizer")
             return False
 
@@ -329,6 +374,8 @@ async def test_optimization_framework():
         result = await optimizer.optimize_sr_detection(market_data, target_timeframe="15m")
 
         if result:
+    pass
+    pass
             logger.info(f"✅ Optimization successful")
             logger.info(f"   - Optimization score: {result.optimization_score:.3f}")
             logger.info(f"   - Method: {result.optimization_method}")
@@ -366,13 +413,15 @@ async def main():
     passed_tests = sum(test_results)
     total_tests = len(test_results)
 
-    logger.info("\n" + "="*60)
+    logger.info("\\\n" + "="*60)
     logger.info("📊 CRITICAL BUG FIX VERIFICATION RESULTS")
     logger.info("="*60)
     logger.info(f"✅ Tests passed: {passed_tests}/{total_tests}")
     logger.info(f"❌ Tests failed: {total_tests - passed_tests}/{total_tests}")
 
     if passed_tests == total_tests:
+    pass
+    pass
         logger.info("🎉 ALL CRITICAL BUGS HAVE BEEN FIXED!")
         logger.info("✅ S/R level detection is working")
         logger.info("✅ Comprehensive strength calculation is working")
@@ -385,5 +434,7 @@ async def main():
     return passed_tests == total_tests
 
 if __name__ == "__main__":
+    pass
+    pass
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

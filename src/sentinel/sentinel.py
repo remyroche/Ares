@@ -6,6 +6,7 @@ from typing import Any
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.trading_decorators import performance_monitor
+import error,
     error,
     failed,
     initialization_error,
@@ -19,6 +20,8 @@ class Sentinel:
     """Enhanced sentinel with monitoring and alerting helpers."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize sentinel with configuration."""
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Sentinel")
@@ -54,6 +57,8 @@ class Sentinel:
         await self._load_sentinel_configuration()
 
         if not self._validate_configuration():
+    pass
+    pass
             self.logger.error(invalid("Invalid configuration for sentinel"))
             return False
 
@@ -87,16 +92,24 @@ class Sentinel:
     )
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate sentinel configuration values."""
         if self.monitoring_interval <= 0:
+    pass
+    pass
             self.logger.error(invalid("Invalid monitoring interval"))
             return False
 
         if not (0 <= self.alert_threshold <= 1):
+    pass
+    pass
             self.logger.error(invalid("Invalid alert threshold"))
             return False
 
         if self.max_alerts <= 0:
+    pass
+    pass
             self.logger.error(invalid("Invalid max alerts"))
             return False
 
@@ -112,6 +125,8 @@ class Sentinel:
         self.monitoring_rules.clear()
 
         if self.sentinel_config.get("enable_performance_monitoring", True):
+    pass
+    pass
             self.monitoring_rules["performance"] = {
                 "cpu_threshold": 0.8,
                 "memory_threshold": 0.8,
@@ -120,6 +135,8 @@ class Sentinel:
             }
 
         if self.sentinel_config.get("enable_error_monitoring", True):
+    pass
+    pass
             self.monitoring_rules["errors"] = {
                 "error_rate_threshold": 0.1,
                 "consecutive_errors_threshold": 5,
@@ -127,6 +144,8 @@ class Sentinel:
             }
 
         if self.sentinel_config.get("enable_system_monitoring", True):
+    pass
+    pass
             self.monitoring_rules["system"] = {
                 "uptime_threshold": 0.99,
                 "connection_threshold": 0.95,
@@ -148,6 +167,8 @@ class Sentinel:
     async def start_monitoring(self) -> bool:
         """Start the monitoring loop in the background."""
         if self.is_monitoring:
+    pass
+    pass
             self.logger.warning(warning("Monitoring already active"))
             return True
 
@@ -178,12 +199,18 @@ class Sentinel:
     async def _perform_monitoring_checks(self) -> None:
         """Perform all monitoring checks configured."""
         if "performance" in self.monitoring_rules:
+    pass
+    pass
             await self._check_performance_metrics()
 
         if "errors" in self.monitoring_rules:
+    pass
+    pass
             await self._check_error_metrics()
 
         if "system" in self.monitoring_rules:
+    pass
+    pass
             await self._check_system_metrics()
 
     @handle_errors(
@@ -202,15 +229,23 @@ class Sentinel:
         rules = self.monitoring_rules["performance"]
 
         if cpu_usage > rules["cpu_threshold"]:
+    pass
+    pass
             await self._create_alert("PERFORMANCE", "High CPU usage", cpu_usage)
 
         if memory_usage > rules["memory_threshold"]:
+    pass
+    pass
             await self._create_alert("PERFORMANCE", "High memory usage", memory_usage)
 
         if disk_usage > rules["disk_threshold"]:
+    pass
+    pass
             await self._create_alert("PERFORMANCE", "High disk usage", disk_usage)
 
         if response_time > rules["response_time_threshold"]:
+    pass
+    pass
             await self._create_alert(
                 "PERFORMANCE",
                 "High response time",
@@ -232,9 +267,13 @@ class Sentinel:
         rules = self.monitoring_rules["errors"]
 
         if error_rate > rules["error_rate_threshold"]:
+    pass
+    pass
             await self._create_alert("ERROR", "High error rate", error_rate)
 
         if consecutive_errors > rules["consecutive_errors_threshold"]:
+    pass
+    pass
             await self._create_alert(
                 "ERROR",
                 "High consecutive errors",
@@ -242,6 +281,8 @@ class Sentinel:
             )
 
         if critical_errors > rules["critical_error_threshold"]:
+    pass
+    pass
             await self._create_alert(
                 "ERROR",
                 "Critical errors detected",
@@ -263,9 +304,13 @@ class Sentinel:
         rules = self.monitoring_rules["system"]
 
         if uptime < rules["uptime_threshold"]:
+    pass
+    pass
             await self._create_alert("SYSTEM", "Low uptime", 1.0 - uptime)
 
         if connection_success_rate < rules["connection_threshold"]:
+    pass
+    pass
             await self._create_alert(
                 "SYSTEM",
                 "Low connection success rate",
@@ -273,6 +318,8 @@ class Sentinel:
             )
 
         if data_quality < rules["data_quality_threshold"]:
+    pass
+    pass
             await self._create_alert("SYSTEM", "Low data quality", 1.0 - data_quality)
 
     @handle_specific_errors(
@@ -295,6 +342,8 @@ class Sentinel:
         """
         # Below per-alert threshold, no alert needed
         if value < self.alert_threshold:
+    pass
+    pass
             return
 
         severity = (
@@ -311,6 +360,8 @@ class Sentinel:
 
         self.alerts.append(alert)
         if len(self.alerts) > self.max_alerts:
+    pass
+    pass
             self.alerts.pop(0)
 
         self.logger.warning(
@@ -332,6 +383,8 @@ class Sentinel:
             alert: Alert information
         """
         if not self.alert_callbacks:
+    pass
+    pass
             return
 
         self.logger.info(
@@ -339,9 +392,17 @@ class Sentinel:
         )
 
         for i, callback in enumerate(self.alert_callbacks, start=1):
+    pass
+    pass
             try:
                 if asyncio.iscoroutinefunction(callback):
+    pass
+    except Exception as e:
+        pass
+    pass
                     await callback(alert)
+    except Exception as e:
+        pass
                 else:
                     callback(alert)
                 self.logger.debug(f"Alert callback {i} executed successfully")
@@ -354,6 +415,8 @@ class Sentinel:
         context="alert callback registration",
     )
     def register_alert_callback(self, callback: Callable) -> None:
+    pass
+    pass
         """
         Register an alert callback.
 
@@ -361,6 +424,8 @@ class Sentinel:
             callback: Callback function to execute when alerts are created
         """
         if callback not in self.alert_callbacks:
+    pass
+    pass
             self.alert_callbacks.append(callback)
             self.logger.info("Alert callback registered")
         else:
@@ -372,6 +437,8 @@ class Sentinel:
         context="alert callback removal",
     )
     def unregister_alert_callback(self, callback: Callable) -> None:
+    pass
+    pass
         """
         Unregister an alert callback.
 
@@ -379,6 +446,8 @@ class Sentinel:
             callback: Callback function to remove
         """
         if callback in self.alert_callbacks:
+    pass
+    pass
             self.alert_callbacks.remove(callback)
             self.logger.info("Alert callback unregistered")
         else:
@@ -407,11 +476,15 @@ class Sentinel:
         filtered_alerts = self.alerts.copy()
 
         if alert_type:
+    pass
+    pass
             filtered_alerts = [
                 a for a in filtered_alerts if a.get("type") == alert_type
             ]
 
         if severity:
+    pass
+    pass
             filtered_alerts = [
                 a for a in filtered_alerts if a.get("severity") == severity
             ]
@@ -424,12 +497,16 @@ class Sentinel:
         context="alerts clearing",
     )
     def clear_alerts(self) -> None:
+    pass
+    pass
         """Clear all alerts."""
         alert_count = len(self.alerts)
         self.alerts.clear()
         self.logger.info(f"Cleared {alert_count} alerts")
 
     def get_sentinel_status(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get sentinel status information.
 
@@ -484,6 +561,8 @@ async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | Non
     global sentinel
 
     if config is None:
+    pass
+    pass
         config = {
             "sentinel": {
                 "monitoring_interval": 60,
@@ -498,5 +577,7 @@ async def setup_sentinel(config: dict[str, Any] | None = None) -> Sentinel | Non
     sentinel = Sentinel(config)
     success = await sentinel.initialize()
     if success:
+    pass
+    pass
         return sentinel
     return None

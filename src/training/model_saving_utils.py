@@ -15,6 +15,7 @@ import pandas as pd
 
 from .model_probability_generator import ModelProbabilityGenerator
 
+import logger = logging.getLogger
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +39,10 @@ def save_model_with_probabilities(
     """
     try:
         # Create standardized model data structure
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         standardized_model_data = {
             "model": model_data.get("model"),
             "model_type": model_data.get("model_type", "unknown"),
@@ -63,6 +68,8 @@ def save_model_with_probabilities(
 
         # Save model based on format
         if save_format.lower() == "joblib":
+    pass
+    pass
             joblib.dump(standardized_model_data, model_path)
         elif save_format.lower() == "pickle":
             with open(model_path, 'wb') as f:
@@ -99,11 +106,17 @@ def save_multi_output_model_with_probabilities(
     """
     try:
         # Extract multi-output components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         multi_output_trainer = model_data.get("multi_output_trainer")
         multi_output_models = model_data.get("multi_output_models")
 
         # Generate probability outputs if trainer is available
         if multi_output_trainer and multi_output_models:
+    pass
+    pass
             # Use test data to generate probabilities
             X_test = model_data.get("X_test", np.random.randn(100, 10))
             market_data = model_data.get("market_data", pd.DataFrame({
@@ -143,6 +156,8 @@ def save_multi_output_model_with_probabilities(
 
         # Save model based on format
         if save_format.lower() == "joblib":
+    pass
+    pass
             joblib.dump(standardized_model_data, model_path)
         elif save_format.lower() == "pickle":
             with open(model_path, 'wb') as f:
@@ -162,6 +177,8 @@ def save_multi_output_model_with_probabilities(
 
 
 def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
+    pass
+    pass
     """
     Load model with probability outputs from file.
 
@@ -173,11 +190,21 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
     """
     try:
         if not os.path.exists(model_path):
+    pass
+    except Exception as e:
+        pass
+    pass
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
+    except Exception as e:
+        pass
         # Try to load with joblib first
         try:
             model_data = joblib.load(model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except:
             # Fallback to pickle
             with open(model_path, 'rb') as f:
@@ -185,16 +212,24 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
 
         # Validate loaded data
         if not isinstance(model_data, dict):
+    pass
+    pass
             raise ValueError("Loaded model data is not a dictionary")
 
         # Check for required fields based on model type
         model_type = model_data.get('model_type', 'unknown')
 
         if model_type == "multi_output":
+    pass
+    pass
             # Multi-output model validation
             required_fields = ["model_type", "price_action_probabilities"]
             for field in required_fields:
+    pass
+    pass
                 if field not in model_data:
+    pass
+    pass
                     logger.warning(f"Missing required field in multi-output model: {field}")
 
             # Check for multi-output specific components
@@ -202,6 +237,8 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
             multi_output_models = model_data.get("multi_output_models")
 
             if multi_output_trainer and multi_output_models:
+    pass
+    pass
                 logger.info("✅ Loaded multi-output model successfully")
             else:
                 logger.warning("⚠️ Multi-output model missing components")
@@ -209,7 +246,11 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
             # Standard model validation
             required_fields = ["model", "model_type", "price_action_probabilities"]
             for field in required_fields:
+    pass
+    pass
                 if field not in model_data:
+    pass
+    pass
                     logger.warning(f"Missing required field in loaded model: {field}")
 
         logger.info(f"Model loaded successfully from {model_path}")
@@ -223,6 +264,8 @@ def load_model_with_probabilities(model_path: str) -> Dict[str, Any]:
 
 
 def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any]:
+    pass
+    pass
     """
     Load multi-output model with probability outputs from file.
 
@@ -235,12 +278,20 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any
     try:
         model_data = load_model_with_probabilities(model_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if it's a multi-output model
         if model_data.get("model_type") == "multi_output":
+    pass
+    pass
             multi_output_trainer = model_data.get("multi_output_trainer")
             multi_output_models = model_data.get("multi_output_models")
 
             if multi_output_trainer and multi_output_models:
+    pass
+    pass
                 logger.info("✅ Loaded multi-output model successfully")
                 return model_data
             else:
@@ -256,6 +307,8 @@ def load_multi_output_model_with_probabilities(model_path: str) -> Dict[str, Any
 
 
 def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
+    pass
+    pass
     """
     Validate that a model has valid probability outputs.
 
@@ -267,7 +320,13 @@ def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
     """
     try:
         # Check if probabilities exist
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if "price_action_probabilities" not in model_data:
+    pass
+    pass
             logger.error("Model missing price_action_probabilities")
             return False
 
@@ -283,30 +342,44 @@ def validate_model_probabilities(model_data: Dict[str, Any]) -> bool:
         ]
 
         for key in required_keys:
+    pass
+    pass
             if key not in probabilities:
+    pass
+    pass
                 logger.error(f"Missing required probability key: {key}")
                 return False
 
             prob = probabilities[key]
             if not isinstance(prob, (int, float)) or not 0.0 <= prob <= 1.0:
+    pass
+    pass
                 logger.error(f"Invalid probability value for {key}: {prob}")
                 return False
 
         # Additional validation for multi-output models
         if model_type == "multi_output":
+    pass
+    pass
             multi_output_trainer = model_data.get("multi_output_trainer")
             multi_output_models = model_data.get("multi_output_models")
 
             if not multi_output_trainer:
+    pass
+    pass
                 logger.error("Multi-output model missing trainer")
                 return False
 
             if not multi_output_models:
+    pass
+    pass
                 logger.error("Multi-output model missing models")
                 return False
 
             # Check if trainer is trained
             if not hasattr(multi_output_trainer, 'is_trained') or not multi_output_trainer.is_trained:
+    pass
+    pass
                 logger.warning("Multi-output trainer not trained")
 
         return True
@@ -334,6 +407,10 @@ def update_model_probabilities(
     """
     try:
         # Load existing model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         model_data = load_model_with_probabilities(model_path)
 
         # Update probabilities
@@ -377,6 +454,10 @@ def generate_and_save_model_probabilities(
     """
     try:
         # Generate probability outputs
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         probability_generator = ModelProbabilityGenerator()
         model_type = model_data.get("model_type", "classification")
 
@@ -386,6 +467,8 @@ def generate_and_save_model_probabilities(
 
         # Validate probabilities
         if not probability_generator.validate_probabilities(price_action_probabilities):
+    pass
+    pass
             logger.warning("Generated probabilities failed validation, using defaults")
             price_action_probabilities = probability_generator._get_default_probabilities(model_type)
 
@@ -400,6 +483,8 @@ def generate_and_save_model_probabilities(
 
 
 def list_models_with_probabilities(directory: str) -> list:
+    pass
+    pass
     """
     List all models in a directory that have probability outputs.
 
@@ -412,12 +497,26 @@ def list_models_with_probabilities(directory: str) -> list:
     try:
         valid_models = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for filename in os.listdir(directory):
+    pass
+    pass
             if filename.endswith(('.pkl', '.joblib')):
+    pass
+    pass
                 model_path = os.path.join(directory, filename)
                 try:
                     model_data = load_model_with_probabilities(model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if validate_model_probabilities(model_data):
+    pass
+    pass
                         valid_models.append(model_path)
                 except Exception as e:
                     logger.warning(f"Could not load model {filename}: {e}")
@@ -430,6 +529,8 @@ def list_models_with_probabilities(directory: str) -> list:
 
 
 def get_model_probability_summary(model_path: str) -> Dict[str, Any]:
+    pass
+    pass
     """
     Get a summary of model probability outputs.
 
@@ -442,7 +543,13 @@ def get_model_probability_summary(model_path: str) -> Dict[str, Any]:
     try:
         model_data = load_model_with_probabilities(model_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if "price_action_probabilities" not in model_data:
+    pass
+    pass
             return {"error": "No probability outputs found"}
 
         probabilities = model_data["price_action_probabilities"]
@@ -466,6 +573,8 @@ def get_model_probability_summary(model_path: str) -> Dict[str, Any]:
 
 
 def batch_validate_models(directory: str) -> Dict[str, Any]:
+    pass
+    pass
     """
     Validate all models in a directory for probability outputs.
 
@@ -483,16 +592,30 @@ def batch_validate_models(directory: str) -> Dict[str, Any]:
             "errors": [],
             "valid_model_paths": [],
             "invalid_model_paths": []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         }
 
         for filename in os.listdir(directory):
+    pass
+    pass
             if filename.endswith(('.pkl', '.joblib')):
+    pass
+    pass
                 model_path = os.path.join(directory, filename)
                 results["total_models"] += 1
 
                 try:
                     model_data = load_model_with_probabilities(model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if validate_model_probabilities(model_data):
+    pass
+    pass
                         results["valid_models"] += 1
                         results["valid_model_paths"].append(model_path)
                     else:

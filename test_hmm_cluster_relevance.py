@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -34,14 +35,20 @@ class HMMClusterValidator:
     """Comprehensive HMM cluster validation and testing."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         self.config = config or {}
         self.results = {}
 
     def test_cluster_predictive_power(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Test the predictive power of clusters for future price movements."""
         results = {}
 
         if "composite_cluster_id" not in cluster_data.columns:
+    pass
+    pass
             print("⚠️ No composite_cluster_id found in data")
             return {"error": "Missing composite_cluster_id column"}
 
@@ -50,20 +57,30 @@ class HMMClusterValidator:
         transition_counts = {}
 
         for i in range(len(regimes) - 1):
+    pass
+    pass
             current = regimes[i]
             next_regime = regimes[i + 1]
 
             if current not in transition_counts:
+    pass
+    pass
                 transition_counts[current] = {}
             if next_regime not in transition_counts[current]:
+    pass
+    pass
                 transition_counts[current][next_regime] = 0
             transition_counts[current][next_regime] += 1
 
         # Calculate predictability scores
         predictability_scores = {}
         for regime, transitions in transition_counts.items():
+    pass
+    pass
             total_transitions = sum(transitions.values())
             if total_transitions > 0:
+    pass
+    pass
                 probabilities = [count / total_transitions for count in transitions.values()]
                 entropy = -sum(p * np.log2(p) for p in probabilities if p > 0)
                 max_entropy = np.log2(len(transitions))
@@ -77,10 +94,14 @@ class HMMClusterValidator:
         return results
 
     def test_cluster_stability(self, cluster_data: pd.DataFrame, window_size: int = 1000) -> Dict[str, Any]:
+    pass
+    pass
         """Test cluster stability over rolling windows."""
         results = {}
 
         if "composite_cluster_id" not in cluster_data.columns:
+    pass
+    pass
             return {"error": "Missing composite_cluster_id column"}
 
         # Calculate cluster consistency over rolling windows
@@ -88,6 +109,8 @@ class HMMClusterValidator:
         window_data_list = []
 
         for i in range(0, len(cluster_data) - window_size, window_size // 2):
+    pass
+    pass
             window_data = cluster_data.iloc[i:i+window_size]
             window_clusters = window_data["composite_cluster_id"].values
 
@@ -99,6 +122,8 @@ class HMMClusterValidator:
             # Calculate entropy (lower = more stable)
             valid_proportions = cluster_proportions[cluster_proportions > 0]
             if len(valid_proportions) > 1:
+    pass
+    pass
                 entropy = -sum(p * np.log2(p) for p in valid_proportions)
                 max_entropy = np.log2(len(valid_proportions))
                 stability = 1 - (entropy / max_entropy) if max_entropy > 0 else 0
@@ -118,16 +143,22 @@ class HMMClusterValidator:
         return results
 
     def test_market_condition_differentiation(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Test if clusters effectively differentiate market conditions."""
         results = {}
 
         if "composite_cluster_id" not in cluster_data.columns:
+    pass
+    pass
             return {"error": "Missing composite_cluster_id column"}
 
         # Calculate average characteristics for each cluster
         cluster_characteristics = {}
 
         for cluster_id in cluster_data["composite_cluster_id"].unique():
+    pass
+    pass
             cluster_mask = cluster_data["composite_cluster_id"] == cluster_id
             cluster_subset = cluster_data[cluster_mask]
 
@@ -144,12 +175,18 @@ class HMMClusterValidator:
         # Calculate differentiation scores
         differentiation_scores = {}
         for cluster_id, char in cluster_characteristics.items():
+    pass
+    pass
             # Calculate how different this cluster is from others
             differences = []
             for other_id, other_char in cluster_characteristics.items():
+    pass
+    pass
                 if other_id != cluster_id:
-                    diff = abs(char["avg_volatility"] - other_char["avg_volatility"]) + \
-                           abs(char["avg_momentum"] - other_char["avg_momentum"]) + \
+    pass
+    pass
+                    diff = abs(char["avg_volatility"] - other_char["avg_volatility"]) + \\\
+                           abs(char["avg_momentum"] - other_char["avg_momentum"]) + \\\
                            abs(char["avg_volume"] - other_char["avg_volume"])
                     differences.append(diff)
 
@@ -162,25 +199,35 @@ class HMMClusterValidator:
         return results
 
     def test_return_predictability(self, cluster_data: pd.DataFrame, forward_periods: List[int] = [1, 5, 10]) -> Dict[str, Any]:
+    pass
+    pass
         """Test if clusters can predict future returns."""
         results = {}
 
         if "composite_cluster_id" not in cluster_data.columns or "close" not in cluster_data.columns:
+    pass
+    pass
             return {"error": "Missing required columns: composite_cluster_id or close"}
 
         for period in forward_periods:
+    pass
+    pass
             # Calculate forward returns
             cluster_data[f"forward_return_{period}"] = cluster_data["close"].pct_change(period).shift(-period)
 
             # Calculate average returns by cluster
             cluster_returns = {}
             for cluster_id in cluster_data["composite_cluster_id"].unique():
+    pass
+    pass
                 cluster_mask = cluster_data["composite_cluster_id"] == cluster_id
                 cluster_subset = cluster_data[cluster_mask]
 
                 # Remove NaN values
                 valid_returns = cluster_subset[f"forward_return_{period}"].dropna()
                 if len(valid_returns) > 0:
+    pass
+    pass
                     cluster_returns[cluster_id] = {
                         "mean_return": valid_returns.mean(),
                         "std_return": valid_returns.std(),
@@ -191,10 +238,18 @@ class HMMClusterValidator:
 
             # Calculate return predictability score
             if cluster_returns:
+    pass
+    pass
                 return_spreads = []
                 for cluster_id, returns in cluster_returns.items():
+    pass
+    pass
                     for other_id, other_returns in cluster_returns.items():
+    pass
+    pass
                         if cluster_id != other_id:
+    pass
+    pass
                             spread = abs(returns["mean_return"] - other_returns["mean_return"])
                             return_spreads.append(spread)
 
@@ -210,10 +265,14 @@ class HMMClusterValidator:
         return results
 
     def calculate_cluster_quality_metrics(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Calculate traditional cluster quality metrics."""
         results = {}
 
         if "composite_cluster_id" not in cluster_data.columns:
+    pass
+    pass
             return {"error": "Missing composite_cluster_id column"}
 
         # Prepare features for clustering metrics
@@ -221,6 +280,8 @@ class HMMClusterValidator:
                           if col not in ["composite_cluster_id", "timestamp", "close", "high", "low", "open", "volume"]]
 
         if len(feature_columns) == 0:
+    pass
+    pass
             return {"error": "No feature columns found for quality metrics"}
 
         # Use first few features for dimensionality reduction
@@ -229,18 +290,30 @@ class HMMClusterValidator:
 
         try:
             # Silhouette score
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results["silhouette_score"] = silhouette_score(features_for_metrics, cluster_labels)
         except Exception:
             results["silhouette_score"] = 0.0
 
         try:
             # Calinski-Harabasz score
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results["calinski_harabasz_score"] = calinski_harabasz_score(features_for_metrics, cluster_labels)
         except Exception:
             results["calinski_harabasz_score"] = 0.0
 
         try:
             # Davies-Bouldin score
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results["davies_bouldin_score"] = davies_bouldin_score(features_for_metrics, cluster_labels)
         except Exception:
             results["davies_bouldin_score"] = float('inf')
@@ -260,6 +333,8 @@ class HMMClusterValidator:
                                quality_thresholds: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """Comprehensive validation of HMM clusters."""
         if quality_thresholds is None:
+    pass
+    pass
             quality_thresholds = {
                 "min_silhouette": 0.3,
                 "min_predictability": 0.4,
@@ -306,6 +381,8 @@ class HMMClusterValidator:
         # Silhouette score
         silhouette = results["quality_metrics"].get("silhouette_score", 0)
         if silhouette > quality_thresholds["min_silhouette"]:
+    pass
+    pass
             scores.append(1.0)
         else:
             scores.append(silhouette / quality_thresholds["min_silhouette"])
@@ -313,6 +390,8 @@ class HMMClusterValidator:
         # Predictive power score
         predictability = results["predictive_power"].get("avg_predictability", 0)
         if predictability > quality_thresholds["min_predictability"]:
+    pass
+    pass
             scores.append(1.0)
         else:
             scores.append(predictability / quality_thresholds["min_predictability"])
@@ -320,6 +399,8 @@ class HMMClusterValidator:
         # Stability score
         stability = results["stability"].get("avg_stability", 0)
         if stability > quality_thresholds["min_stability"]:
+    pass
+    pass
             scores.append(1.0)
         else:
             scores.append(stability / quality_thresholds["min_stability"])
@@ -327,6 +408,8 @@ class HMMClusterValidator:
         # Differentiation score
         differentiation = results["market_differentiation"].get("avg_differentiation", 0)
         if differentiation > quality_thresholds["min_differentiation"]:
+    pass
+    pass
             scores.append(1.0)
         else:
             scores.append(differentiation / quality_thresholds["min_differentiation"])
@@ -335,19 +418,31 @@ class HMMClusterValidator:
 
         # 7. Generate Recommendations
         if results["overall_score"] < 0.6:
+    pass
+    pass
             results["recommendations"].append("Consider reducing number of clusters or adjusting HMM parameters")
         if predictability < quality_thresholds["min_predictability"]:
+    pass
+    pass
             results["recommendations"].append("Clusters show low predictive power - consider feature engineering improvements")
         if stability < quality_thresholds["min_stability"]:
+    pass
+    pass
             results["recommendations"].append("Clusters are unstable over time - consider longer lookback periods")
         if silhouette < quality_thresholds["min_silhouette"]:
+    pass
+    pass
             results["recommendations"].append("Low silhouette score - clusters may not be well-separated")
         if differentiation < quality_thresholds["min_differentiation"]:
+    pass
+    pass
             results["recommendations"].append("Low differentiation - clusters may not capture distinct market conditions")
 
         return results
 
     def generate_report(self, validation_results: Dict[str, Any], output_path: Optional[str] = None) -> str:
+    pass
+    pass
         """Generate a comprehensive validation report."""
         report = []
         report.append("# HMM Cluster Validation Report")
@@ -357,13 +452,15 @@ class HMMClusterValidator:
         report.append(f"## Overall Assessment")
         report.append(f"**Overall Score**: {validation_results['overall_score']:.3f}")
 
-        score_level = "🟢 Good" if validation_results['overall_score'] > 0.7 else \
+        score_level = "🟢 Good" if validation_results['overall_score'] > 0.7 else \\\
                      "🟡 Moderate" if validation_results['overall_score'] > 0.5 else "🔴 Poor"
         report.append(f"**Quality Level**: {score_level}")
         report.append("")
 
         # Quality Metrics
         if "quality_metrics" in validation_results and "error" not in validation_results["quality_metrics"]:
+    pass
+    pass
             qm = validation_results["quality_metrics"]
             report.append("## Quality Metrics")
             report.append(f"- **Silhouette Score**: {qm.get('silhouette_score', 0):.4f}")
@@ -374,6 +471,8 @@ class HMMClusterValidator:
 
         # Predictive Power
         if "predictive_power" in validation_results and "error" not in validation_results["predictive_power"]:
+    pass
+    pass
             pp = validation_results["predictive_power"]
             report.append("## Predictive Power")
             report.append(f"- **Average Predictability**: {pp.get('avg_predictability', 0):.4f}")
@@ -381,6 +480,8 @@ class HMMClusterValidator:
 
         # Stability
         if "stability" in validation_results and "error" not in validation_results["stability"]:
+    pass
+    pass
             st = validation_results["stability"]
             report.append("## Stability")
             report.append(f"- **Average Stability**: {st.get('avg_stability', 0):.4f}")
@@ -389,6 +490,8 @@ class HMMClusterValidator:
 
         # Market Differentiation
         if "market_differentiation" in validation_results and "error" not in validation_results["market_differentiation"]:
+    pass
+    pass
             md = validation_results["market_differentiation"]
             report.append("## Market Differentiation")
             report.append(f"- **Average Differentiation**: {md.get('avg_differentiation', 0):.4f}")
@@ -396,26 +499,42 @@ class HMMClusterValidator:
 
         # Return Predictability
         if "return_predictability" in validation_results:
+    pass
+    pass
             rp = validation_results["return_predictability"]
             report.append("## Return Predictability")
             for period_key, period_data in rp.items():
+    pass
+    pass
                 if "error" not in period_data:
+    pass
+    pass
                     report.append(f"- **{period_key}**: {period_data.get('predictability_score', 0):.6f}")
             report.append("")
 
         # Recommendations
         if validation_results.get("recommendations"):
+    pass
+    pass
             report.append("## Recommendations")
             for i, rec in enumerate(validation_results["recommendations"], 1):
+    pass
+    pass
                 report.append(f"{i}. {rec}")
             report.append("")
 
         # Cluster Details
         if "market_differentiation" in validation_results and "error" not in validation_results["market_differentiation"]:
+    pass
+    pass
             md = validation_results["market_differentiation"]
             if "cluster_characteristics" in md:
+    pass
+    pass
                 report.append("## Cluster Details")
                 for cluster_id, char in md["cluster_characteristics"].items():
+    pass
+    pass
                     report.append(f"### Cluster {cluster_id}")
                     report.append(f"- **Size**: {char.get('size', 0)} ({char.get('percentage', 0):.1f}%)")
                     report.append(f"- **Avg Volatility**: {char.get('avg_volatility', 0):.6f}")
@@ -423,9 +542,11 @@ class HMMClusterValidator:
                     report.append(f"- **Avg Volume**: {char.get('avg_volume', 0):.6f}")
                     report.append("")
 
-        report_text = "\n".join(report)
+        report_text = "\\\n".join(report)
 
         if output_path:
+    pass
+    pass
             with open(output_path, 'w') as f:
                 f.write(report_text)
             print(f"📄 Report saved to: {output_path}")
@@ -436,6 +557,8 @@ class HMMClusterValidator:
                             output_dir: Optional[str] = None) -> None:
         """Create visualizations for cluster analysis."""
         if output_dir:
+    pass
+    pass
             output_path = Path(output_dir)
             output_path.mkdir(exist_ok=True)
 
@@ -446,6 +569,8 @@ class HMMClusterValidator:
 
         # 1. Cluster Size Distribution
         if "quality_metrics" in validation_results and "cluster_sizes" in validation_results["quality_metrics"]:
+    pass
+    pass
             cluster_sizes = validation_results["quality_metrics"]["cluster_sizes"]
             axes[0, 0].bar(cluster_sizes.keys(), cluster_sizes.values())
             axes[0, 0].set_title('Cluster Size Distribution')
@@ -454,6 +579,8 @@ class HMMClusterValidator:
 
         # 2. Stability Over Time
         if "stability" in validation_results and "stability_scores" in validation_results["stability"]:
+    pass
+    pass
             stability_scores = validation_results["stability"]["stability_scores"]
             axes[0, 1].plot(stability_scores)
             axes[0, 1].set_title('Cluster Stability Over Time')
@@ -464,6 +591,8 @@ class HMMClusterValidator:
 
         # 3. Market Characteristics by Cluster
         if "market_differentiation" in validation_results and "cluster_characteristics" in validation_results["market_differentiation"]:
+    pass
+    pass
             cluster_chars = validation_results["market_differentiation"]["cluster_characteristics"]
             cluster_ids = list(cluster_chars.keys())
             volatilities = [cluster_chars[cid]["avg_volatility"] for cid in cluster_ids]
@@ -480,26 +609,36 @@ class HMMClusterValidator:
         scores = []
 
         if "quality_metrics" in validation_results:
+    pass
+    pass
             silhouette = validation_results["quality_metrics"].get("silhouette_score", 0)
             metrics.append("Silhouette")
             scores.append(min(silhouette / 0.3, 1.0) if silhouette > 0 else 0)
 
         if "predictive_power" in validation_results:
+    pass
+    pass
             predictability = validation_results["predictive_power"].get("avg_predictability", 0)
             metrics.append("Predictability")
             scores.append(min(predictability / 0.4, 1.0) if predictability > 0 else 0)
 
         if "stability" in validation_results:
+    pass
+    pass
             stability = validation_results["stability"].get("avg_stability", 0)
             metrics.append("Stability")
             scores.append(min(stability / 0.5, 1.0) if stability > 0 else 0)
 
         if "market_differentiation" in validation_results:
+    pass
+    pass
             differentiation = validation_results["market_differentiation"].get("avg_differentiation", 0)
             metrics.append("Differentiation")
             scores.append(min(differentiation / 0.1, 1.0) if differentiation > 0 else 0)
 
         if metrics:
+    pass
+    pass
             bars = axes[1, 1].bar(metrics, scores)
             axes[1, 1].set_title('Quality Score Breakdown')
             axes[1, 1].set_ylabel('Normalized Score')
@@ -507,7 +646,11 @@ class HMMClusterValidator:
 
             # Color bars based on score
             for bar, score in zip(bars, scores):
+    pass
+    pass
                 if score > 0.7:
+    pass
+    pass
                     bar.set_color('green')
                 elif score > 0.5:
                     bar.set_color('orange')
@@ -517,6 +660,8 @@ class HMMClusterValidator:
         plt.tight_layout()
 
         if output_dir:
+    pass
+    pass
             plt.savefig(output_path / 'cluster_analysis.png', dpi=300, bbox_inches='tight')
             print(f"📊 Visualizations saved to: {output_path / 'cluster_analysis.png'}")
         else:
@@ -526,6 +671,8 @@ class HMMClusterValidator:
 
 
 def main():
+    pass
+    pass
     """Main function to run cluster validation."""
     parser = argparse.ArgumentParser(description="Test HMM cluster relevance")
     parser.add_argument("--data_path", type=str, help="Path to cluster data parquet file")
@@ -538,16 +685,22 @@ def main():
     # Load configuration
     config = {}
     if args.config_path:
+    pass
+    pass
         with open(args.config_path, 'r') as f:
             config = json.load(f)
 
     # Load quality thresholds
     quality_thresholds = None
     if args.thresholds:
+    pass
+    pass
         quality_thresholds = json.loads(args.thresholds)
 
     # Load cluster data
     if args.data_path:
+    pass
+    pass
         print(f"📂 Loading cluster data from: {args.data_path}")
         cluster_data = pd.read_parquet(args.data_path)
     else:
@@ -569,15 +722,19 @@ def main():
 
     # Create visualizations
     if args.output_dir:
+    pass
+    pass
         validator.create_visualizations(cluster_data, validation_results, args.output_dir)
 
     # Print summary
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("SUMMARY")
     print("="*60)
     print(f"Overall Score: {validation_results['overall_score']:.3f}")
 
     if validation_results['overall_score'] > 0.7:
+    pass
+    pass
         print("✅ Clusters are of good quality - safe to proceed with ML training")
     elif validation_results['overall_score'] > 0.5:
         print("⚠️ Clusters are of moderate quality - consider improvements before ML training")
@@ -585,10 +742,16 @@ def main():
         print("❌ Clusters are of poor quality - significant improvements needed before ML training")
 
     if validation_results.get("recommendations"):
-        print("\nRecommendations:")
+    pass
+    pass
+        print("\\\nRecommendations:")
         for i, rec in enumerate(validation_results["recommendations"], 1):
+    pass
+    pass
             print(f"  {i}. {rec}")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

@@ -31,6 +31,10 @@ async def main():
 
     try:
         # Run the enhanced step1_7
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await run_step_enhanced(
             symbol, symbol = exchange=exchange,
             data_dir, data_dir = timeframe=timeframe,
@@ -42,6 +46,8 @@ async def main():
             generate_metrics_report, True = )
 
         if success:
+    pass
+    pass
             logger.info("✅ Enhanced Step 1_7 completed successfully!")
 
             # Show what files were generated
@@ -51,11 +57,15 @@ async def main():
             timeframes_to_check = [timeframe] if timeframe else ["1m", "5m", "15m"]
 
             for tf in timeframes_to_check:
+    pass
+    pass
                 # Metrics report
                 report_path = os.path.join(
                     data_dir = f"{exchange}_{symbol}_composite_metrics_report_{tf}.txt",
                 )
                 if os.path.exists(report_path):
+    pass
+    pass
                     logger.info(f"   📊 Metrics Report: {report_path}")
 
                     # Show a preview of the report
@@ -64,11 +74,19 @@ async def main():
                             lines = f.readlines()
                             logger.info("   📄 Report preview (first 10 lines):")
                             for i , line in enumerate(lines[:10]):
+    pass
+    except Exception as e:
+        pass
+    pass
                                 logger.info(f"      {i+1:2d}: {line.rstrip()}")
                             if len(lines) > 10:
+    pass
+    pass
                                 logger.info(
                                     f"      ... and {len(lines) - 10} more lines",
                                 )
+    except Exception as e:
+        pass
                     except Exception as e:
                         logger.warning(f"   ⚠️ Could not read report preview: {e}")
 
@@ -77,6 +95,8 @@ async def main():
                     data_dir = f"{exchange}_{symbol}_composite_metrics_{tf}.json",
                 )
                 if os.path.exists(metrics_path):
+    pass
+    pass
                     logger.info(f"   📈 Metrics JSON: {metrics_path}")
 
                 # Original HMM files
@@ -88,11 +108,15 @@ async def main():
                 ]
 
                 for hmm_file in hmm_files:
+    pass
+    pass
                     hmm_path = os.path.join(data_dir = hmm_file)
                     if os.path.exists(hmm_path):
+    pass
+    pass
                         logger.info(f"   🧩 HMM Data: {hmm_path}")
 
-            logger.info("\n📋 Key Benefits of Enhanced Step 1_7:")
+            logger.info("\\\n📋 Key Benefits of Enhanced Step 1_7:")
             logger.info(
                 "   • Comprehensive cluster quality metrics (Silhouette = Calinski-Harabasz, Davies-Bouldin)",
             )
@@ -116,4 +140,6 @@ async def main():
         logger.exception(traceback.format_exc())
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

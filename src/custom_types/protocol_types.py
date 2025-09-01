@@ -13,6 +13,7 @@ from .ml_types import ModelInput, ModelOutput , PredictionResult
 from .trading_types import OrderRequest , RiskParameters, TradeDecision
 
 # Generic type variables
+import T = TypeVar
 T = TypeVar("T")
 ConfigT = TypeVar("ConfigT", bound=dict[str , Any])
 DataT = TypeVar("DataT")
@@ -35,6 +36,8 @@ class DataProvider(Protocol[DataT]):
 
     @abstractmethod
     def is_connected(self) -> bool:
+    pass
+    pass
         """Check if the data provider is connected."""
         ...
 
@@ -55,11 +58,15 @@ class ModelPredictor(Protocol[T]):
 
     @abstractmethod
     def get_feature_importance(self) -> dict[str , float]:
+    pass
+    pass
         """Get feature importance scores."""
         ...
 
     @abstractmethod
     def is_trained(self) -> bool:
+    pass
+    pass
         """Check if the model is trained and ready for prediction."""
         ...
 
@@ -80,6 +87,8 @@ class RiskManager(Protocol):
 
     @abstractmethod
     def get_risk_parameters(self) -> RiskParameters:
+    pass
+    pass
         """Get current risk parameters."""
         ...
 
@@ -165,16 +174,22 @@ class Configurable(Protocol[ConfigT]):
 
     @abstractmethod
     def configure(self, config: ConfigT) -> None:
+    pass
+    pass
         """Configure the component."""
         ...
 
     @abstractmethod
     def get_config(self) -> ConfigT:
+    pass
+    pass
         """Get current configuration."""
         ...
 
     @abstractmethod
     def validate_config(self, config: ConfigT) -> bool:
+    pass
+    pass
         """Validate configuration."""
         ...
 
@@ -185,16 +200,22 @@ class Monitorable(Protocol):
 
     @abstractmethod
     def get_health_status(self) -> dict[str , Any]:
+    pass
+    pass
         """Get health status."""
         ...
 
     @abstractmethod
     def get_metrics(self) -> dict[str , float]:
+    pass
+    pass
         """Get performance metrics."""
         ...
 
     @abstractmethod
     def get_status(self) -> str:
+    pass
+    pass
         """Get current status."""
         ...
 
@@ -215,6 +236,8 @@ class Startable(Protocol):
 
     @abstractmethod
     def is_running(self) -> bool:
+    pass
+    pass
         """Check if component is running."""
         ...
 
@@ -241,5 +264,7 @@ class DataProcessor(Protocol[DataT, ResultT]):
 
     @abstractmethod
     def validate_input(self, data: DataT) -> bool:
+    pass
+    pass
         """Validate input data."""
         ...

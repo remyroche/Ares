@@ -11,31 +11,40 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def validate_imports():
+    pass
+    pass
     """Validate that all required imports are working."""
     print("🔍 Validating SR Levels Manager Imports")
     print("=" * 50)
 
     try:
         # Test 1: Import SRBreakoutPredictor
-        print("\n📦 Test 1: Importing SRBreakoutPredictor")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+        print("\\\n📦 Test 1: Importing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+import print
         print("✅ SRBreakoutPredictor imported successfully")
 
         # Test 2: Import SRLevelsManager
-        print("\n📦 Test 2: Importing SRLevelsManager")
+        print("\\\n📦 Test 2: Importing SRLevelsManager")
         print("✅ SRLevelsManager imported successfully")
 
         # Test 3: Import SR Trading Intelligence
-        print("\n📦 Test 3: Importing SR Trading Intelligence")
+        print("\\\n📦 Test 3: Importing SR Trading Intelligence")
         from src.trading.sr_trading_intelligence import SRTradingIntelligence
+import print
         print("✅ SRTradingIntelligence imported successfully")
 
         # Test 4: Check SRBreakoutPredictor methods
-        print("\n🔧 Test 4: Checking SRBreakoutPredictor Methods")
+        print("\\\n🔧 Test 4: Checking SRBreakoutPredictor Methods")
         predictor_methods = [
             '_detect_support_levels',
             '_detect_resistance_levels',
@@ -53,13 +62,17 @@ def validate_imports():
         ]
 
         for method in predictor_methods:
+    pass
+    pass
             if hasattr(SRBreakoutPredictor, method):
+    pass
+    pass
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
 
         # Test 5: Check SRLevelsManager methods
-        print("\n🔧 Test 5: Checking SRLevelsManager Methods")
+        print("\\\n🔧 Test 5: Checking SRLevelsManager Methods")
         manager_methods = [
             'calculate_sr_levels_from_backtest',
             'calculate_sr_levels_with_method',
@@ -71,13 +84,17 @@ def validate_imports():
         ]
 
         for method in manager_methods:
+    pass
+    pass
             if hasattr(SRLevelsManager, method):
+    pass
+    pass
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
 
         # Test 6: Check SR Trading Intelligence methods
-        print("\n🔧 Test 6: Checking SR Trading Intelligence Methods")
+        print("\\\n🔧 Test 6: Checking SR Trading Intelligence Methods")
         intelligence_methods = [
             'get_sr_levels_for_trading',
             'update_position',
@@ -88,12 +105,16 @@ def validate_imports():
         ]
 
         for method in intelligence_methods:
+    pass
+    pass
             if hasattr(SRTradingIntelligence, method):
+    pass
+    pass
                 print(f"✅ {method} - Available")
             else:
                 print(f"❌ {method} - Missing")
 
-        print("\n✅ All import validations completed successfully!")
+        print("\\\n✅ All import validations completed successfully!")
         return True
 
     except ImportError as e:
@@ -105,11 +126,15 @@ def validate_imports():
 
 async def validate_integration():
     """Validate that the integration between components works."""
-    print("\n🔗 Validating SR Levels Manager Integration")
+    print("\\\n🔗 Validating SR Levels Manager Integration")
     print("=" * 50)
 
     try:
         # Configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {
             "sr_levels_manager": {
                 "storage_path": "data/sr_levels_test",
@@ -124,35 +149,43 @@ async def validate_integration():
         }
 
         # Test 1: Initialize SRBreakoutPredictor
-        print("\n🔧 Test 1: Initializing SRBreakoutPredictor")
+        print("\\\n🔧 Test 1: Initializing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
+import predictor = SRBreakoutPredictor
         predictor = SRBreakoutPredictor(config)
         if await predictor.initialize():
+    pass
+    pass
             print("✅ SRBreakoutPredictor initialized successfully")
         else:
             print("❌ SRBreakoutPredictor initialization failed")
             return False
 
         # Test 2: Initialize SRLevelsManager
-        print("\n🔧 Test 2: Initializing SRLevelsManager")
+        print("\\\n🔧 Test 2: Initializing SRLevelsManager")
         from src.tactician.sr_levels_manager import create_sr_levels_manager
+import sr_manager = await create_sr_levels_manager
         sr_manager = await create_sr_levels_manager(config)
         if sr_manager:
+    pass
+    pass
             print("✅ SRLevelsManager initialized successfully")
         else:
             print("❌ SRLevelsManager initialization failed")
             return False
 
         # Test 3: Check that SRLevelsManager has access to SRBreakoutPredictor
-        print("\n🔧 Test 3: Checking SRBreakoutPredictor Access")
+        print("\\\n🔧 Test 3: Checking SRBreakoutPredictor Access")
         if hasattr(sr_manager, 'sr_predictor') and sr_manager.sr_predictor is not None:
+    pass
+    pass
             print("✅ SRLevelsManager has access to SRBreakoutPredictor")
         else:
             print("❌ SRLevelsManager does not have access to SRBreakoutPredictor")
             return False
 
         # Test 4: Check that SRBreakoutPredictor methods are accessible
-        print("\n🔧 Test 4: Checking Method Accessibility")
+        print("\\\n🔧 Test 4: Checking Method Accessibility")
         required_methods = [
             '_detect_support_levels',
             '_detect_resistance_levels',
@@ -160,13 +193,17 @@ async def validate_integration():
         ]
 
         for method in required_methods:
+    pass
+    pass
             if hasattr(sr_manager.sr_predictor, method):
+    pass
+    pass
                 print(f"✅ {method} - Accessible")
             else:
                 print(f"❌ {method} - Not accessible")
                 return False
 
-        print("\n✅ All integration validations completed successfully!")
+        print("\\\n✅ All integration validations completed successfully!")
         return True
 
     except Exception as e:
@@ -184,24 +221,30 @@ async def main():
     imports_ok = validate_imports()
 
     if imports_ok:
+    pass
+    pass
         # Validate integration
         integration_ok = await validate_integration()
 
         if integration_ok:
-            print("\n🎉 All validations passed! SR Levels Manager is properly integrated.")
-            print("\n📋 Summary:")
+    pass
+    pass
+            print("\\\n🎉 All validations passed! SR Levels Manager is properly integrated.")
+            print("\\\n📋 Summary:")
             print("   ✅ All required imports are working")
             print("   ✅ SRBreakoutPredictor methods are accessible")
             print("   ✅ SRLevelsManager can use SR calculation logic")
             print("   ✅ Integration between components is functional")
         else:
-            print("\n💥 Integration validation failed.")
+            print("\\\n💥 Integration validation failed.")
             return False
     else:
-        print("\n💥 Import validation failed.")
+        print("\\\n💥 Import validation failed.")
         return False
 
     return True
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

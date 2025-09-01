@@ -13,12 +13,15 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
+import class ModelSpecificPruning:
 class ModelSpecificPruning:
     """Model-specific feature pruning for different ML architectures.
     Tailored pruning strategies for each model type used in Steps 6, 6.5, 7, and 9.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("ModelSpecificPruning")
 
@@ -76,6 +79,10 @@ class ModelSpecificPruning:
         """
         try:
             self.logger.info(f"🧠 Pruning features for neural network: {model_type}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             original_count = len(features_df.columns)
             target_features = self.neural_network_config["target_features"]
 
@@ -151,6 +158,10 @@ class ModelSpecificPruning:
         """
         try:
             self.logger.info(f"📊 Pruning features for linear model: {model_type}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             original_count = len(features_df.columns)
             target_features = self.linear_model_config["target_features"]
 
@@ -221,6 +232,10 @@ class ModelSpecificPruning:
         """
         try:
             self.logger.info(f"🌳 Pruning features for ensemble model: {model_type}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             original_count = len(features_df.columns)
             target_features = self.ensemble_config["target_features"]
 
@@ -289,10 +304,18 @@ class ModelSpecificPruning:
         try:
             self.logger.info(f"🎯 Pruning features for Step 6 {timeframe} {architecture}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if architecture in ["CNN", "TCN", "Transformer"]:
+    pass
+    pass
                 # Neural network pruning
                 return self.prune_for_neural_networks(features_df, target, architecture)
             if architecture == "LightGBM":
+    pass
+    pass
                 # Ensemble pruning
                 return self.prune_for_ensemble_models(features_df, target, architecture)
             # Default to neural network pruning
@@ -330,6 +353,10 @@ class ModelSpecificPruning:
         try:
             self.logger.info("🎯 Pruning features for Step 6.5 Unified Regime Intelligence")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Focus on regime-related features
             regime_features = self._identify_regime_features(features_df)
             intensity_features = self._identify_intensity_features(features_df)
@@ -384,6 +411,10 @@ class ModelSpecificPruning:
         try:
             self.logger.info("🎯 Pruning features for Step 7 Analyst Ensemble")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Use ensemble pruning with focus on diversity
             pruned_df, metadata = self.prune_for_ensemble_models(
                 features_df, target, "AnalystEnsemble",
@@ -432,7 +463,13 @@ class ModelSpecificPruning:
         try:
             self.logger.info(f"🎯 Pruning features for Step 9 Tactician {model_type}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if model_type == "calibrated_logistic":
+    pass
+    pass
                 # Linear model pruning
                 return self.prune_for_linear_models(features_df, target, model_type)
             # Ensemble model pruning (LightGBM, XGBoost, CatBoost, Random Forest)
@@ -445,43 +482,65 @@ class ModelSpecificPruning:
     # Helper methods for feature identification and selection
 
     def _identify_non_linear_features(self, features_df: pd.DataFrame, target: pd.Series) -> list[str]:
+    pass
+    pass
         """Identify features with non-linear relationships to target."""
         non_linear_features = []
 
         for col in features_df.columns:
+    pass
+    pass
             # Check for interaction features
             if "_x_" in col or "_div_" in col or "_ratio_" in col:
+    pass
+    pass
                 non_linear_features.append(col)
 
             # Check for polynomial-like features
             if any(keyword in col.lower() for keyword in ["squared", "cubed", "power"]):
+    pass
+    pass
                 non_linear_features.append(col)
 
             # Check for transformed features
             if any(keyword in col.lower() for keyword in ["log", "exp", "sqrt", "sin", "cos"]):
+    pass
+    pass
                 non_linear_features.append(col)
 
         return non_linear_features
 
     def _identify_interaction_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify interaction features."""
         return [col for col in features_df.columns if "_x_" in col or "_div_" in col or "_ratio_" in col]
 
     def _identify_normalized_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify normalized features."""
         return [col for col in features_df.columns if any(keyword in col.lower() for keyword in ["_norm", "_z_score", "_standardized", "_scaled"])]
 
     def _identify_linear_features(self, features_df: pd.DataFrame, target: pd.Series) -> list[str]:
+    pass
+    pass
         """Identify features with linear relationships to target."""
         linear_features = []
 
         for col in features_df.columns:
+    pass
+    pass
             # Exclude interaction features
             if "_x_" in col or "_div_" in col or "_ratio_" in col:
+    pass
+    pass
                 continue
 
             # Exclude transformed features
             if any(keyword in col.lower() for keyword in ["log", "exp", "sqrt", "sin", "cos", "squared", "cubed"]):
+    pass
+    pass
                 continue
 
             linear_features.append(col)
@@ -489,43 +548,63 @@ class ModelSpecificPruning:
         return linear_features
 
     def _identify_interpretable_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify interpretable features for linear models."""
         interpretable_features = []
 
         for col in features_df.columns:
+    pass
+    pass
             # Keep basic technical indicators
             if any(keyword in col.lower() for keyword in ["rsi", "macd", "sma", "ema", "atr", "adx", "cci", "mfi"]):
+    pass
+    pass
                 interpretable_features.append(col)
 
             # Keep basic price/volume features
             if any(keyword in col.lower() for keyword in ["price", "volume", "returns", "volatility"]):
+    pass
+    pass
                 interpretable_features.append(col)
 
             # Keep regime features
             if any(keyword in col.lower() for keyword in ["regime", "cluster", "state"]):
+    pass
+    pass
                 interpretable_features.append(col)
 
         return interpretable_features
 
     def _identify_regime_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify regime-related features."""
         return [col for col in features_df.columns if any(keyword in col.lower() for keyword in ["regime", "cluster", "state", "composite"])]
 
     def _identify_intensity_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify intensity-related features."""
         return [col for col in features_df.columns if "intensity" in col.lower()]
 
     def _identify_transition_features(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """Identify transition-related features."""
         return [col for col in features_df.columns if any(keyword in col.lower() for keyword in ["transition", "probability", "p_state"])]
 
     def _remove_highly_correlated_features(self, features_df: pd.DataFrame, threshold: float = 0.95) -> list[str]:
+    pass
+    pass
         """Remove highly correlated features."""
         corr_matrix = features_df.corr().abs()
         upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
         features_to_keep = []
         for col in features_df.columns:
+    pass
+    pass
             high_corr_features = upper_tri[col][upper_tri[col] > threshold].index.tolist()
             if not high_corr_features:  # No high correlation found
                 features_to_keep.append(col)
@@ -533,6 +612,8 @@ class ModelSpecificPruning:
         return features_to_keep
 
     def _remove_redundant_features(self, features_df: pd.DataFrame, target: pd.Series) -> list[str]:
+    pass
+    pass
         """Remove redundant features for ensemble models."""
         # Use mutual information to identify redundant features
         mi_scores = mutual_info_classif(features_df, target, random_state=42)
@@ -544,6 +625,8 @@ class ModelSpecificPruning:
 
 
     def _balance_feature_categories(self, features_df: pd.DataFrame, target_features: int) -> list[str]:
+    pass
+    pass
         """Balance features across categories for ensemble diversity."""
         categories = {
             "momentum": [],
@@ -554,7 +637,11 @@ class ModelSpecificPruning:
         }
 
         for col in features_df.columns:
+    pass
+    pass
             if any(keyword in col.lower() for keyword in ["momentum", "rsi", "macd"]):
+    pass
+    pass
                 categories["momentum"].append(col)
             elif any(keyword in col.lower() for keyword in ["volatility", "atr"]):
                 categories["volatility"].append(col)
@@ -570,11 +657,15 @@ class ModelSpecificPruning:
         features_per_category = target_features // len(categories)
 
         for features in categories.values():
+    pass
+    pass
             balanced_features.extend(features[:features_per_category])
 
         return balanced_features[:target_features]
 
     def _lasso_feature_selection(self, features_df: pd.DataFrame, target: pd.Series, target_features: int) -> list[str]:
+    pass
+    pass
         """Use Lasso for feature selection in linear models."""
         lasso = Lasso(alpha=0.01, random_state=42)
         lasso.fit(features_df, target)
@@ -584,12 +675,16 @@ class ModelSpecificPruning:
 
         # If too many features selected, use top by coefficient magnitude
         if len(selected_features) > target_features:
+    pass
+    pass
             coef_ranking = pd.Series(lasso.coef_, index=features_df.columns).abs().sort_values(ascending=False)
             selected_features = coef_ranking.head(target_features).index.tolist()
 
         return selected_features
 
     def _ensemble_feature_selection(self, features_df: pd.DataFrame, target: pd.Series, target_features: int) -> list[str]:
+    pass
+    pass
         """Use ensemble methods for feature selection."""
         # Use Random Forest for feature importance
         rf = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -601,6 +696,8 @@ class ModelSpecificPruning:
         return importance_ranking.head(target_features).index.tolist()
 
     def _optimize_ensemble_diversity(self, features_df: pd.DataFrame, target: pd.Series, target_features: int) -> list[str]:
+    pass
+    pass
         """Optimize feature diversity for ensemble models."""
         # Use multiple feature selection methods
         methods = [
@@ -611,7 +708,11 @@ class ModelSpecificPruning:
 
         feature_scores = {}
         for method_name, estimator in methods:
+    pass
+    pass
             if method_name == "mutual_info":
+    pass
+    pass
                 scores = mutual_info_classif(features_df, target, random_state=42)
             else:
                 estimator.fit(features_df, target)

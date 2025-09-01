@@ -16,6 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Import advanced neural network models
 from .advanced_neural_models import (
+import create_neural_model,
     create_neural_model,
     NEURAL_MODEL_CONFIGS,
     NeuralNetworkWrapper
@@ -29,6 +30,7 @@ from .advanced_neural_models import (
 )
 from src.utils.logger import system_logger
 
+import logger = system_logger
 logger = system_logger
 
 
@@ -44,6 +46,8 @@ class ProbabilityTargetGenerator:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         self.config = config or {}
         self.logger = logger
 
@@ -84,7 +88,11 @@ class ProbabilityTargetGenerator:
         targets = []
 
         for i in range(len(X)):
+    pass
+    pass
             if i >= len(market_data) - self.look_ahead_periods:
+    pass
+    pass
                 # Not enough future data, use neutral target
                 target = 0.5
             else:
@@ -97,6 +105,8 @@ class ProbabilityTargetGenerator:
                 stop_hit = any(future_prices <= entry_price * (1 - stop_loss))
 
                 if profit_hit and not stop_hit:
+    pass
+    pass
                     target = 1  # Success
                 elif stop_hit and not profit_hit:
                     target = 0  # Failure
@@ -114,6 +124,8 @@ class ProbabilityTargetGenerator:
     @handle_errors(default_return=np.array([]), context="generate_direction_targets")
     @comprehensive_validation()
     def generate_direction_targets(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    pass
+    pass
         """
         Generate direction probability targets.
 
@@ -127,11 +139,15 @@ class ProbabilityTargetGenerator:
         targets = []
 
         for i in range(len(X)):
+    pass
+    pass
             # Calculate actual direction accuracy
             predicted_direction = np.sign(y[i])
             actual_direction = np.sign(y[i])  # Assuming y contains actual price changes
 
             if predicted_direction == actual_direction:
+    pass
+    pass
                 target = 1  # Correct direction
             else:
                 target = 0  # Wrong direction
@@ -165,7 +181,11 @@ class ProbabilityTargetGenerator:
         targets = []
 
         for i in range(len(X)):
+    pass
+    pass
             if i >= len(market_data) - 1:
+    pass
+    pass
                 # Not enough future data
                 target = 0
             else:
@@ -174,6 +194,8 @@ class ProbabilityTargetGenerator:
                 actual_magnitude = abs(market_data['close'].pct_change().iloc[i])
 
                 if predicted_magnitude >= actual_magnitude * threshold_factor:
+    pass
+    pass
                     target = 1  # Magnitude prediction successful
                 else:
                     target = 0  # Magnitude prediction failed
@@ -207,7 +229,11 @@ class ProbabilityTargetGenerator:
         targets = []
 
         for i in range(len(X)):
+    pass
+    pass
             if i >= len(market_data) - self.avoidance_look_ahead:
+    pass
+    pass
                 # Not enough future data
                 target = 0
             else:
@@ -216,6 +242,8 @@ class ProbabilityTargetGenerator:
                 adverse_movements = abs(future_returns) > adverse_threshold
 
                 if not any(adverse_movements):
+    pass
+    pass
                     target = 1  # Successfully avoided adverse movements
                 else:
                     target = 0  # Hit adverse movement
@@ -254,7 +282,11 @@ class ProbabilityTargetGenerator:
 
         # Validate targets
         for target_name, target_values in targets.items():
+    pass
+    pass
             if len(target_values) != len(X):
+    pass
+    pass
                 raise ValueError(f"Target length mismatch for {target_name}")
             # Convert any non-binary values to binary
             target_values = np.array(target_values)
@@ -275,6 +307,8 @@ class MultiOutputModel:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         self.config = config or {}
         self.logger = logger
 
@@ -306,11 +340,17 @@ class MultiOutputModel:
         self._initialize_models()
 
     def _initialize_models(self):
+    pass
+    pass
         """Initialize individual models for each probability type."""
         for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
+    pass
+    pass
             self.models[output_type] = self._create_model(output_type)
 
     def _create_model(self, output_type: str):
+    pass
+    pass
         """Create model for specific output type with advanced model selection."""
 
         # Get model type based on output type or use default
@@ -320,6 +360,8 @@ class MultiOutputModel:
         input_size = self.config.get('input_size', 50)  # Default, will be updated
 
         if model_type.lower() in ['lightgbm', 'lgb']:
+    pass
+    pass
             return lgb.LGBMClassifier(
                 n_estimators=self.n_estimators,
                 learning_rate=self.learning_rate,
@@ -345,6 +387,7 @@ class MultiOutputModel:
             )
         elif model_type.lower() in ['catboost', 'cat']:
             from catboost import CatBoostClassifier
+import return CatBoostClassifier
             return CatBoostClassifier(
                 iterations=self.n_estimators,
                 learning_rate=self.learning_rate,
@@ -397,6 +440,8 @@ class MultiOutputModel:
         trained_models = {}
 
         for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
+    pass
+    pass
             self.logger.info(f"Training {output_type} model...")
 
             # Get model and targets
@@ -406,18 +451,26 @@ class MultiOutputModel:
 
             # Update input size for neural networks if needed
             if hasattr(model, 'model_class') and hasattr(model, 'model_params'):
+    pass
+    pass
                 # This is a neural network wrapper
                 model.model_params['input_size'] = X_train.shape[1]
 
             # Handle class imbalance for certain targets
             sample_weights = None
             if output_type in ['triple_barrier', 'barrier_avoidance']:
+    pass
+    pass
                 # These targets are often imbalanced
                 try:
                     class_weights = compute_class_weight(
                         'balanced',
                         classes=np.unique(y_train_target),
                         y=y_train_target
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     )
                     sample_weights = class_weights[y_train_target.astype(int)]
                 except Exception as e:
@@ -426,14 +479,22 @@ class MultiOutputModel:
             # Train model
             try:
                 if hasattr(model, 'fit'):
+    pass
+    except Exception as e:
+        pass
+    pass
                     # Check if it's a neural network (NeuralNetworkWrapper)
                     if isinstance(model, NeuralNetworkWrapper):
+    pass
+    pass
                         # Neural networks handle their own training
                         model.fit(X_train, y_train_target)
                         trained_models[output_type] = model
                     else:
                         # Traditional ML models
                         if sample_weights is not None:
+    pass
+    pass
                             model.fit(X_train, y_train_target, sample_weight=sample_weights)
                         else:
                             model.fit(X_train, y_train_target)
@@ -441,12 +502,18 @@ class MultiOutputModel:
                         # Calibrate probabilities for non-neural models
                         try:
                             calibrator = CalibratedClassifierCV(model, cv=5, method='isotonic')
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             calibrator.fit(X_val, y_val_target)
                             self.calibrators[output_type] = calibrator
                             trained_models[output_type] = calibrator
                         except Exception as e:
                             self.logger.warning(f"Calibration failed for {output_type}, using original model: {e}")
                             trained_models[output_type] = model
+    except Exception as e:
+        pass
                 else:
                     self.logger.error(f"Model {output_type} does not have fit method")
                     raise ValueError(f"Model {output_type} does not have fit method")
@@ -484,15 +551,23 @@ class MultiOutputModel:
             Dictionary of optimized weights
         """
         def objective(weights):
+    pass
+    pass
             """Objective function to minimize."""
             total_loss = 0
 
             for i, output_type in enumerate(['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']):
+    pass
+    pass
                 model = models[output_type]
                 y_true = y_val_multi[output_type]
 
                 try:
                     y_pred_proba = model.predict_proba(X_val)[:, 1]  # Probability of positive class
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     # Calculate Brier score (lower is better)
                     brier_score = np.mean((y_pred_proba - y_true) ** 2)
                     total_loss += brier_score * weights[i]
@@ -507,6 +582,10 @@ class MultiOutputModel:
 
         try:
             # Optimize weights
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             result = minimize(
                 objective,
                 initial_weights,
@@ -548,8 +627,12 @@ class MultiOutputModel:
         probabilities = {}
 
         for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
+    pass
+    pass
             # Check if model exists
             if output_type not in self.models or self.models[output_type] is None:
+    pass
+    pass
                 self.logger.warning(f"Model for {output_type} not available, using default probability")
                 probabilities[f"{output_type}_probability"] = 0.5
                 continue
@@ -558,9 +641,17 @@ class MultiOutputModel:
 
             try:
                 # Get probability predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if hasattr(model, 'predict_proba'):
+    pass
+    pass
                     # Handle both traditional ML models and neural networks
                     if isinstance(model, NeuralNetworkWrapper):
+    pass
+    pass
                         # Neural networks return probabilities directly
                         proba = model.predict_proba(X_test)
                     else:
@@ -568,6 +659,8 @@ class MultiOutputModel:
                         proba = model.predict_proba(X_test)
 
                     if proba.shape[1] > 1:
+    pass
+    pass
                         # Binary classification, get positive class probability
                         prob_value = proba[:, 1].mean()
                     else:
@@ -599,10 +692,13 @@ class MultiOutputProbabilityTrainer:
     Main class for multi-output probability training.
 
     This class coordinates the entire multi-output training process,
-    from target generation to model training and prediction.
+    from target generation to model training and prediction. import *
+import """
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         self.config = config or {}
         self.logger = logger
 
@@ -633,17 +729,25 @@ class MultiOutputProbabilityTrainer:
         self._configure_models_for_timeframe()
 
     def _configure_models_for_timeframe(self):
+    pass
+    pass
         """Configure models based on the specified timeframe."""
         if self.timeframe in self.model_architectures:
+    pass
+    pass
             model_type = self.model_architectures[self.timeframe]
             self.logger.info(f"Configuring models for {self.timeframe} timeframe using {model_type}")
 
             # Update config for each output type
             for output_type in ['triple_barrier', 'direction', 'magnitude', 'barrier_avoidance']:
+    pass
+    pass
                 self.config[f'{output_type}_model_type'] = model_type
 
             # Update neural config if it's a neural network
             if model_type in ['tcn', 'cnn', 'transformer', 'lstm', 'gru']:
+    pass
+    pass
                 self.neural_config[model_type] = NEURAL_MODEL_CONFIGS.get(model_type, {})
         else:
             self.logger.warning(f"No specific model configuration for timeframe {self.timeframe}, using defaults")
@@ -723,6 +827,8 @@ class MultiOutputProbabilityTrainer:
             Dictionary containing all 4 probability outputs
         """
         if not self.is_trained or self.trained_models is None:
+    pass
+    pass
             self.logger.error("Model not trained. Call train_multi_output_model first.")
             return self._get_default_probabilities()
 
@@ -731,11 +837,17 @@ class MultiOutputProbabilityTrainer:
         # Use the multi-output model's prediction method
         try:
             return self.multi_output_model.predict_probabilities(X_test, market_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error in multi-output model prediction: {e}")
             return self._get_default_probabilities()
 
     def _get_default_probabilities(self) -> Dict[str, float]:
+    pass
+    pass
         """Get default probabilities when training fails."""
         return {
             "triple_barrier_probability": 0.5,
@@ -747,8 +859,12 @@ class MultiOutputProbabilityTrainer:
         }
 
     def get_model_info(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get information about the trained model."""
         if not self.is_trained:
+    pass
+    pass
             return {"status": "not_trained"}
 
         return {

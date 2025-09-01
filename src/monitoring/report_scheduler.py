@@ -14,6 +14,7 @@ from pathlib import Path
 from src.utils.logger import system_logger
 
 
+import class ReportType
 class ReportType(Enum):
     PERFORMANCE_SUMMARY = "performance_summary"
     MODEL_ANALYSIS = "model_analysis"
@@ -57,6 +58,8 @@ class ReportScheduler:
     """Automated report scheduler."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("ReportScheduler")
         self.scheduler_config = config.get("report_scheduler", {})

@@ -11,6 +11,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 
 
+import class BacktestingEvaluator:
 class BacktestingEvaluator:
     """
     Backtesting evaluator for parameter optimization.
@@ -18,6 +19,8 @@ class BacktestingEvaluator:
     """
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("BacktestingEvaluator")
 
@@ -39,6 +42,8 @@ class BacktestingEvaluator:
         self.market_data = self._generate_mock_market_data()
 
     def _generate_mock_market_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Generate mock market data for backtesting."""
         np.random.seed(42)
 
@@ -52,12 +57,16 @@ class BacktestingEvaluator:
         prices = [base_price]
 
         for ret in returns[1:]:
+    pass
+    pass
             new_price = prices[-1] * (1 + ret)
             prices.append(new_price)
 
         # Generate OHLCV data
         data = []
         for i, (date, price) in enumerate(zip(dates, prices)):
+    pass
+    pass
             # Generate realistic OHLC from close price
             volatility = np.random.uniform(0.005, 0.02)
             high = price * (1 + np.random.uniform(0, volatility))
@@ -93,6 +102,10 @@ class BacktestingEvaluator:
         """
         try:
             # Run backtesting simulation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             backtest_results = await self._run_backtest(params)
 
             # Calculate performance metrics
@@ -111,6 +124,10 @@ class BacktestingEvaluator:
         """Run backtesting simulation with given parameters."""
         try:
             # Initialize backtesting state
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             capital = self.initial_capital
             position = 0.0
             trades = []
@@ -123,6 +140,8 @@ class BacktestingEvaluator:
 
             # Process each data point
             for i, row in self.market_data.iterrows():
+    pass
+    pass
                 current_price = row['close']
                 current_time = row['timestamp']
 
@@ -131,10 +150,14 @@ class BacktestingEvaluator:
 
                 # Execute trades
                 if signal == 'BUY' and not in_position:
+    pass
+    pass
                     # Calculate position size
                     position_size = self._calculate_position_size(capital, current_price, params)
 
                     if position_size > 0:
+    pass
+    pass
                         # Execute buy
                         entry_price = current_price * (1 + self.slippage)
                         entry_time = current_time
@@ -195,9 +218,15 @@ class BacktestingEvaluator:
             return {'trades': [], 'equity_curve': [], 'final_capital': self.initial_capital, 'total_return': 0.0}
 
     def _generate_signal(self, row: pd.Series, params: Dict[str, Any], index: int) -> str:
+    pass
+    pass
         """Generate trading signal based on parameters and market data."""
         try:
             # Calculate technical indicators
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             min_idx = max(
                 params.get('sma_fast_window', 20),
                 params.get('sma_slow_window', 50),
@@ -231,31 +260,45 @@ class BacktestingEvaluator:
             confidence = 0.0
 
             if strategy_type == 'trend_following':
+    pass
+    pass
                 # Trend: follow MA direction
                 if sma_fast > sma_slow:
+    pass
+    pass
                     confidence += 0.3
                 else:
                     confidence -= 0.3
                 # RSI confirms momentum
                 if rsi < rsi_oversold:
+    pass
+    pass
                     confidence += 0.2
                 elif rsi > rsi_overbought:
                     confidence -= 0.2
             elif strategy_type == 'mean_reversion':
                 # Mean reversion: prefer reversals
                 if sma_fast < sma_slow and rsi < rsi_oversold:
+    pass
+    pass
                     confidence += 0.3
                 if sma_fast > sma_slow and rsi > rsi_overbought:
+    pass
+    pass
                     confidence -= 0.3
             elif strategy_type == 'breakout':
                 # Breakout: fast MA crossing slow + volume expansion
                 if sma_fast > sma_slow and volume_ratio > vr_high:
+    pass
+    pass
                     confidence += 0.35
                 elif sma_fast < sma_slow and volume_ratio > vr_high:
                     confidence -= 0.35
 
             # Volume analysis for all strategies
             if volume_ratio > vr_high:
+    pass
+    pass
                 confidence += 0.1
             elif volume_ratio < vr_low:
                 confidence -= 0.1
@@ -266,6 +309,8 @@ class BacktestingEvaluator:
             threshold = max(min_conf, entry_th)
 
             if confidence >= threshold:
+    pass
+    pass
                 return 'BUY'
             elif -confidence >= threshold:
                 return 'SELL'
@@ -277,11 +322,19 @@ class BacktestingEvaluator:
             return 'HOLD'
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
+    pass
+    pass
         """Calculate RSI indicator."""
         try:
             if len(prices) < period + 1:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 50.0
 
+    except Exception as e:
+        pass
             delta = prices.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -292,9 +345,15 @@ class BacktestingEvaluator:
             return 50.0
 
     def _calculate_position_size(self, capital: float, price: float, params: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate position size based on Kelly criterion and ML confidence."""
         try:
             # Kelly criterion calculation (simplified)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             win_rate = 0.6  # Mock win rate
             avg_win = 0.02  # Mock average win
             avg_loss = 0.01  # Mock average loss
@@ -319,9 +378,15 @@ class BacktestingEvaluator:
             return 0.01
 
     def _calculate_leverage(self, params: Dict[str, Any], price: float) -> float:
+    pass
+    pass
         """Calculate leverage based on parameters."""
         try:
             # Base leverage calculation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             min_leverage = params.get('min_leverage', 10.0)
             max_leverage = params.get('max_leverage', 100.0)
 
@@ -330,6 +395,8 @@ class BacktestingEvaluator:
             confidence_threshold = params.get('leverage_confidence_threshold', 0.6)
 
             if confidence >= confidence_threshold:
+    pass
+    pass
                 leverage = min_leverage + (max_leverage - min_leverage) * (confidence - confidence_threshold) / (1 - confidence_threshold)
             else:
                 leverage = min_leverage
@@ -349,13 +416,21 @@ class BacktestingEvaluator:
             return 10.0
 
     def _calculate_performance_metrics(self, backtest_results: Dict[str, Any]) -> Dict[str, float]:
+    pass
+    pass
         """Calculate performance metrics from backtest results."""
         try:
             trades = backtest_results['trades']
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             equity_curve = backtest_results['equity_curve']
             final_capital = backtest_results['final_capital']
 
             if not trades:
+    pass
+    pass
                 return {
                     'sharpe_ratio': 0.0,
                     'profit_factor': 0.0,
@@ -370,6 +445,8 @@ class BacktestingEvaluator:
 
             # Sharpe ratio
             if len(equity_df) > 1:
+    pass
+    pass
                 sharpe_ratio = equity_df['returns'].mean() / equity_df['returns'].std() * np.sqrt(252 * 24)  # Annualized
             else:
                 sharpe_ratio = 0.0
@@ -414,10 +491,16 @@ class BacktestingEvaluator:
             }
 
     def _calculate_weighted_score(self, metrics: Dict[str, float]) -> float:
+    pass
+    pass
         """Calculate weighted performance score."""
         try:
             score = 0.0
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Sharpe ratio (higher is better)
             score += self.metric_weights['sharpe_ratio'] * min(metrics['sharpe_ratio'], 3.0) / 3.0
 
@@ -440,12 +523,20 @@ class BacktestingEvaluator:
             return 0.0
 
     def get_detailed_analysis(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Get detailed analysis of backtest results."""
         try:
             trades = backtest_results['trades']
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             equity_curve = backtest_results['equity_curve']
 
             if not trades:
+    pass
+    pass
                 return {"error": "No trades executed"}
 
             # Basic statistics
@@ -487,13 +578,23 @@ class BacktestingEvaluator:
             return {"error": str(e)}
 
     def _calculate_max_consecutive_losses(self, trades: List[Dict[str, Any]]) -> int:
+    pass
+    pass
         """Calculate maximum consecutive losing trades."""
         try:
             max_consecutive = 0
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             current_consecutive = 0
 
             for trade in trades:
+    pass
+    pass
                 if trade.get('pnl', 0) < 0:
+    pass
+    pass
                     current_consecutive += 1
                     max_consecutive = max(max_consecutive, current_consecutive)
                 else:

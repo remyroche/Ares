@@ -9,6 +9,7 @@ from typing import Literal, TypedDict
 from .base_types import Interval, Percentage, Symbol
 
 
+import class DatabaseConfig
 class DatabaseConfig(TypedDict, total, False):
     """Type-safe database configuration."""
 

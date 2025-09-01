@@ -14,14 +14,21 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_multi_output_probability_trainer_core():
+    pass
+    pass
     """Test the core MultiOutputProbabilityTrainer functionality."""
     print("🧪 Testing MultiOutputProbabilityTrainer core functionality...")
 
     try:
         # Test if we can import the trainer
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create minimal test data
+import n_samples = 100
         n_samples = 100
         n_features = 5
 
@@ -55,6 +62,8 @@ def test_multi_output_probability_trainer_core():
         # Verify targets
         expected_targets = ["triple_barrier", "direction", "magnitude", "barrier_avoidance"]
         for target_name in expected_targets:
+    pass
+    pass
             assert target_name in y_multi, f"Missing target: {target_name}"
             assert len(y_multi[target_name]) == len(X), f"Target length mismatch for {target_name}"
             assert np.all((y_multi[target_name] >= 0) & (y_multi[target_name] <= 1)), f"Invalid target values for {target_name}"
@@ -73,6 +82,8 @@ def test_multi_output_probability_trainer_core():
         ]
 
         for prob_name in expected_probabilities:
+    pass
+    pass
             assert prob_name in price_action_probabilities, f"Missing probability: {prob_name}"
             prob_value = price_action_probabilities[prob_name]
             assert 0.0 <= prob_value <= 1.0, f"Invalid probability value for {prob_name}: {prob_value}"
@@ -92,14 +103,21 @@ def test_multi_output_probability_trainer_core():
         return False
 
 def test_step6_integration_core():
+    pass
+    pass
     """Test Step 6 integration core functionality."""
     print("🧪 Testing Step 6 integration core functionality...")
 
     try:
         # Test if we can import the step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.steps.step6_hmm_based_training import HMMBasedTrainingStep
 
         # Create minimal test configuration
+import config = {
         config = {
             "HMM_LM": {
                 "specialist_models": {
@@ -121,14 +139,21 @@ def test_step6_integration_core():
         return False
 
 def test_step9_integration_core():
+    pass
+    pass
     """Test Step 9 integration core functionality."""
     print("🧪 Testing Step 9 integration core functionality...")
 
     try:
         # Test if we can import the step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.steps.step9_tactician_specialist_training import TacticianSpecialistTrainingStep
 
         # Create minimal test configuration
+import config = {}
         config = {}
 
         # Initialize step
@@ -144,14 +169,21 @@ def test_step9_integration_core():
         return False
 
 def test_enhanced_step6_integration_core():
+    pass
+    pass
     """Test Enhanced Step 6 integration core functionality."""
     print("🧪 Testing Enhanced Step 6 integration core functionality...")
 
     try:
         # Test if we can import the step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.steps.step6_hmm_based_training_enhanced import HMMBasedTrainingStepEnhanced
 
         # Create minimal test configuration
+import config = {
         config = {
             "enable_multi_output": True,
             "multi_output_model_type": "LightGBM"
@@ -170,12 +202,18 @@ def test_enhanced_step6_integration_core():
         return False
 
 def test_model_saving_utils_core():
+    pass
+    pass
     """Test model saving utilities core functionality."""
     print("🧪 Testing model saving utilities core functionality...")
 
     try:
         # Test if we can import the utilities
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print("✅ Model saving utilities import test passed!")
         return True
 
@@ -186,6 +224,8 @@ def test_model_saving_utils_core():
         return False
 
 def run_minimal_tests():
+    pass
+    pass
     """Run all minimal integration tests."""
     print("🚀 Starting Minimal Multi-Output Training Integration Tests")
     print("=" * 60)
@@ -201,14 +241,22 @@ def run_minimal_tests():
     results = {}
 
     for test_name, test_func in tests:
-        print(f"\n{'='*60}")
+    pass
+    pass
+        print(f"\\\n{'='*60}")
         print(f"Running {test_name} test...")
 
         try:
             result = test_func()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results[test_name] = result
 
             if result:
+    pass
+    pass
                 print(f"✅ {test_name} PASSED")
             else:
                 print(f"❌ {test_name} FAILED")
@@ -218,7 +266,7 @@ def run_minimal_tests():
             results[test_name] = False
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\\\n{'='*60}")
     print("MINIMAL INTEGRATION TEST SUMMARY")
     print(f"{'='*60}")
 
@@ -226,25 +274,31 @@ def run_minimal_tests():
     total = len(results)
 
     for test_name, result in results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         print(f"{test_name}: {status}")
 
-    print(f"\nOverall: {passed}/{total} tests passed")
+    print(f"\\\nOverall: {passed}/{total} tests passed")
 
     if passed == total:
+    pass
+    pass
         print("🎉 ALL MINIMAL TESTS PASSED! Core multi-output training integration is working.")
-        print("\n📋 IMPLEMENTATION STATUS:")
+        print("\\\n📋 IMPLEMENTATION STATUS:")
         print("✅ MultiOutputProbabilityTrainer is implemented and functional")
         print("✅ Step 6 (HMM-based training) has been updated with multi-output training")
         print("✅ Step 9 (Tactician specialist training) has been updated with multi-output training")
         print("✅ Enhanced Step 6 has been updated with multi-output training")
         print("✅ Model saving utilities support multi-output models")
-        print("\n🎯 The multi-output training plan has been successfully implemented!")
+        print("\\\n🎯 The multi-output training plan has been successfully implemented!")
     else:
         print(f"⚠️ {total - passed} tests failed. Please check the implementation.")
 
     return passed == total
 
 if __name__ == "__main__":
+    pass
+    pass
     success = run_minimal_tests()
     sys.exit(0 if success else 1)

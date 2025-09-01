@@ -10,6 +10,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create synthetic test data with profit percentages."""
     np.random.seed(42)
 
@@ -22,6 +24,8 @@ def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
     prices = [base_price]
 
     for change in price_changes[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + change)
         prices.append(new_price)
 
@@ -44,6 +48,8 @@ def create_test_data_with_profit(n_samples: int = 1000) -> pd.DataFrame:
     return data
 
 def test_profit_feature_engineering_directly():
+    pass
+    pass
     """Test the profit-based feature engineering directly."""
     print("🔧 Testing Profit-Based Feature Engineering Directly...")
 
@@ -57,7 +63,12 @@ def test_profit_feature_engineering_directly():
 
     try:
         # Import and test the profit-based feature engineering
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+import ProfitBasedFeatureEngineering
             ProfitBasedFeatureEngineering
         )
 
@@ -88,6 +99,8 @@ def test_profit_feature_engineering_directly():
         # Check for NaN values
         nan_count = result.isna().sum().sum()
         if nan_count > 0:
+    pass
+    pass
             print(f"   ⚠️ Found {nan_count} NaN values in result")
         else:
             print("   ✅ No NaN values found")
@@ -95,6 +108,8 @@ def test_profit_feature_engineering_directly():
         # Check for infinite values
         inf_count = np.isinf(result.select_dtypes(include=[np.number])).sum().sum()
         if inf_count > 0:
+    pass
+    pass
             print(f"   ⚠️ Found {inf_count} infinite values in result")
         else:
             print("   ✅ No infinite values found")
@@ -108,15 +123,22 @@ def test_profit_feature_engineering_directly():
         return False
 
 def test_step2_integration_simple():
+    pass
+    pass
     """Test a simplified version of step2 integration."""
-    print("\n🔧 Testing Simplified Step2 Integration...")
+    print("\\\n🔧 Testing Simplified Step2 Integration...")
 
     try:
         # Create test data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_data = create_test_data_with_profit(1000)
 
         # Test that we can import the profit-based feature engineering
         from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
+import ProfitBasedFeatureEngineering
             ProfitBasedFeatureEngineering
         )
 
@@ -131,12 +153,16 @@ def test_step2_integration_simple():
 
         # Test that it can process data with profit percentages
         if "potential_profit_pct" in test_data.columns:
+    pass
+    pass
             result = profit_feature_engineer.apply_all_features(test_data)
 
             # Verify that profit-based features were created
             profit_features = [col for col in result.columns if "potential_profit_pct" in col and col != "potential_profit_pct"]
 
             if len(profit_features) > 0:
+    pass
+    pass
                 print("✅ Step2 profit integration test passed")
                 print(f"   - Created {len(profit_features)} profit-based features")
                 print(f"   - Sample features: {profit_features[:5]}")
@@ -155,6 +181,8 @@ def test_step2_integration_simple():
         return False
 
 def main():
+    pass
+    pass
     """Run all tests."""
     print("🧪 Testing Profit-Based Feature Engineering Integration")
     print("=" * 70)
@@ -166,22 +194,26 @@ def main():
     test2_success = test_step2_integration_simple()
 
     # Summary
-    print("\n" + "=" * 70)
+    print("\\\n" + "=" * 70)
     print("📊 Test Summary:")
     print(f"   Direct profit feature engineering: {'✅ PASSED' if test1_success else '❌ FAILED'}")
     print(f"   Step2 integration: {'✅ PASSED' if test2_success else '❌ FAILED'}")
 
     if test1_success and test2_success:
-        print("\n🎉 All tests passed! Profit-based feature engineering is working correctly.")
+    pass
+    pass
+        print("\\\n🎉 All tests passed! Profit-based feature engineering is working correctly.")
         print("   - The ProfitBasedFeatureEngineering class is functional")
         print("   - It can process data with profit percentages")
         print("   - It generates comprehensive profit-based features")
         print("   - Integration with step2 is ready (once syntax errors are fixed)")
         return True
     else:
-        print("\n❌ Some tests failed. Please check the implementation.")
+        print("\\\n❌ Some tests failed. Please check the implementation.")
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

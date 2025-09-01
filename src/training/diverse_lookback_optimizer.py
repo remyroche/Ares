@@ -24,6 +24,7 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 
 
+import class DiverseLookbackOptimizer:
 class DiverseLookbackOptimizer:
     """
     Optimizer that finds diverse yet meaningful lookback periods for each feature.
@@ -36,6 +37,8 @@ class DiverseLookbackOptimizer:
     """
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         """Initialize the diverse lookback optimizer."""
         self.config = config
         self.logger = system_logger.getChild("DiverseLookbackOptimizer")
@@ -124,6 +127,8 @@ class DiverseLookbackOptimizer:
 
         # 4. Regime-specific diverse periods (if regimes available)
         if regimes is not None and len(regimes.unique()) > 1:
+    pass
+    pass
             self.logger.info("🔄 Finding regime-specific diverse periods...")
             regime_periods = await self._find_regime_specific_diverse_periods(
                 data, target, regimes, diverse_periods
@@ -146,6 +151,8 @@ class DiverseLookbackOptimizer:
         diverse_periods = {}
 
         for feature_name, lookback_config in self.diverse_config["lookback_ranges"].items():
+    pass
+    pass
             self.logger.info(f"🔍 Finding diverse periods for {feature_name}...")
 
             # Generate lookback periods to test
@@ -178,8 +185,12 @@ class DiverseLookbackOptimizer:
         period_scores = []
 
         for period in periods:
+    pass
+    pass
             feature_values = self._calculate_feature_with_period(data, feature_name, period)
             if feature_values is not None:
+    pass
+    pass
                 # Calculate information score
                 info_score = await self._calculate_information_score(feature_values, target)
 
@@ -197,6 +208,8 @@ class DiverseLookbackOptimizer:
         ]
 
         if len(meaningful_periods) < self.diverse_config["min_periods_per_feature"]:
+    pass
+    pass
             # If not enough meaningful periods, take top periods
             meaningful_periods = sorted(period_scores, key=lambda x: x["information_score"], reverse=True)
             meaningful_periods = meaningful_periods[:self.diverse_config["min_periods_per_feature"]]
@@ -221,6 +234,8 @@ class DiverseLookbackOptimizer:
         }
 
     def _select_diverse_subset(self, meaningful_periods: List[dict[str, Any]]) -> List[dict[str, Any]]:
+    pass
+    pass
         """Select diverse subset using greedy algorithm."""
 
         target_count = min(
@@ -229,6 +244,8 @@ class DiverseLookbackOptimizer:
         )
 
         if target_count == 0:
+    pass
+    pass
             return []
 
         # Start with the period with highest information score
@@ -241,15 +258,21 @@ class DiverseLookbackOptimizer:
             best_diversity_score = -1
 
             for candidate in remaining:
+    pass
+    pass
                 # Calculate diversity score for this candidate
                 candidate_set = selected + [candidate]
                 diversity_score = self._calculate_set_diversity_score(candidate_set)
 
                 if diversity_score > best_diversity_score:
+    pass
+    pass
                     best_diversity_score = diversity_score
                     best_candidate = candidate
 
             if best_candidate:
+    pass
+    pass
                 selected.append(best_candidate)
                 remaining.remove(best_candidate)
             else:
@@ -258,9 +281,13 @@ class DiverseLookbackOptimizer:
         return selected
 
     def _calculate_set_diversity_score(self, period_set: List[dict[str, Any]]) -> float:
+    pass
+    pass
         """Calculate diversity score for a set of periods."""
 
         if len(period_set) < 2:
+    pass
+    pass
             return 0.0
 
         # Extract feature values
@@ -276,7 +303,11 @@ class DiverseLookbackOptimizer:
         count = 0
 
         for i in range(n_periods):
+    pass
+    pass
             for j in range(i + 1, n_periods):
+    pass
+    pass
                 correlation = correlation_matrix.iloc[i, j]
                 diversity = 1.0 - correlation
                 total_diversity += diversity
@@ -300,6 +331,10 @@ class DiverseLookbackOptimizer:
 
         try:
             # Prepare data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             X = feature_values.values.reshape(-1, 1)
             y = target.values
 
@@ -338,7 +373,13 @@ class DiverseLookbackOptimizer:
 
         try:
             if feature_name == "RSI":
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self._calculate_rsi(data['close'], period)
+    except Exception as e:
+        pass
             elif feature_name == "MACD_fast":
                 return self._calculate_ema(data['close'], period)
             elif feature_name == "MACD_slow":
@@ -379,6 +420,8 @@ class DiverseLookbackOptimizer:
         """Calculate diversity metrics for selected periods."""
 
         if len(selected_features) < 2:
+    pass
+    pass
             return {"diversity_score": 0.0, "avg_correlation": 1.0}
 
         # Calculate correlation matrix
@@ -391,7 +434,11 @@ class DiverseLookbackOptimizer:
         count = 0
 
         for i in range(n_periods):
+    pass
+    pass
             for j in range(i + 1, n_periods):
+    pass
+    pass
                 correlation = correlation_matrix.iloc[i, j]
                 total_correlation += correlation
                 count += 1
@@ -425,6 +472,8 @@ class DiverseLookbackOptimizer:
         feature_count = 0
 
         for feature_name, feature_data in diverse_periods.items():
+    pass
+    pass
             # Feature diversity score
             diversity_score = feature_data["diversity_metrics"]["diversity_score"]
             analysis["feature_diversity_scores"][feature_name] = diversity_score
@@ -444,6 +493,8 @@ class DiverseLookbackOptimizer:
 
             # Correlation analysis between periods
             if len(feature_data["selected_periods"]) > 1:
+    pass
+    pass
                 correlation_analysis = self._analyze_period_correlations(
                     data, target, feature_name, feature_data["selected_periods"]
                 )
@@ -451,6 +502,8 @@ class DiverseLookbackOptimizer:
 
         # Overall diversity score
         if feature_count > 0:
+    pass
+    pass
             analysis["overall_diversity_score"] = total_diversity / feature_count
 
         return analysis
@@ -467,11 +520,17 @@ class DiverseLookbackOptimizer:
         correlations = {}
 
         for i, period1 in enumerate(periods):
+    pass
+    pass
             for j, period2 in enumerate(periods[i+1:], i+1):
+    pass
+    pass
                 feature1 = self._calculate_feature_with_period(data, feature_name, period1)
                 feature2 = self._calculate_feature_with_period(data, feature_name, period2)
 
                 if feature1 is not None and feature2 is not None:
+    pass
+    pass
                     # Calculate correlation
                     correlation = feature1.corr(feature2)
                     correlations[f"{period1}_vs_{period2}"] = {
@@ -493,9 +552,13 @@ class DiverseLookbackOptimizer:
         analysis = {}
 
         for feature_name, feature_data in diverse_periods.items():
+    pass
+    pass
             feature_analysis = {}
 
             for period_score in feature_data["period_scores"]:
+    pass
+    pass
                 period = period_score["period"]
                 feature_values = period_score["feature_values"]
 
@@ -530,6 +593,10 @@ class DiverseLookbackOptimizer:
 
         try:
             # Calculate information score
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             info_score = await self._calculate_information_score(feature_values, target)
             analysis["information_score"] = info_score
 
@@ -543,6 +610,8 @@ class DiverseLookbackOptimizer:
 
             # Determine market insight based on period length
             if period <= 10:
+    pass
+    pass
                 insight = "Short-term momentum"
             elif period <= 20:
                 insight = "Medium-term trend"
@@ -568,6 +637,8 @@ class DiverseLookbackOptimizer:
         regime_periods = {}
 
         for regime in regimes.unique():
+    pass
+    pass
             regime_mask = regimes == regime
             regime_data = data[regime_mask]
             regime_target = target[regime_mask]
@@ -605,6 +676,8 @@ class DiverseLookbackOptimizer:
 
     # Technical indicator calculation methods
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate RSI with specific period."""
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -614,14 +687,20 @@ class DiverseLookbackOptimizer:
         return rsi
 
     def _calculate_sma(self, prices: pd.Series, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate SMA with specific period."""
         return prices.rolling(window=period).mean()
 
     def _calculate_ema(self, prices: pd.Series, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate EMA with specific period."""
         return prices.ewm(span=period).mean()
 
     def _calculate_bollinger_position(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate Bollinger Bands position with specific period."""
         sma = data['close'].rolling(window=period).mean()
         std = data['close'].rolling(window=period).std()
@@ -631,6 +710,8 @@ class DiverseLookbackOptimizer:
         return position
 
     def _calculate_atr(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate ATR with specific period."""
         high_low = data['high'] - data['low']
         high_close = np.abs(data['high'] - data['close'].shift())
@@ -640,6 +721,8 @@ class DiverseLookbackOptimizer:
         return atr
 
     def _calculate_stochastic_k(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate Stochastic %K with specific period."""
         lowest_low = data['low'].rolling(window=period).min()
         highest_high = data['high'].rolling(window=period).max()
@@ -647,12 +730,16 @@ class DiverseLookbackOptimizer:
         return k
 
     def _calculate_stochastic_d(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate Stochastic %D with specific period."""
         k = self._calculate_stochastic_k(data, period)
         d = k.rolling(window=3).mean()
         return d
 
     def _calculate_adx(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate ADX with specific period."""
         # Simplified ADX calculation
         high_low = data['high'] - data['low']
@@ -679,6 +766,8 @@ class DiverseLookbackOptimizer:
         return adx
 
     def _calculate_cci(self, data: pd.DataFrame, period: int) -> pd.Series:
+    pass
+    pass
         """Calculate CCI with specific period."""
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         sma = typical_price.rolling(window=period).mean()
@@ -697,6 +786,8 @@ class DiverseLookbackOptimizer:
         filepath = Path(f"data/diverse_lookback_optimization/{exchange}_{symbol}_{timeframe}_diverse_lookback_periods.json")
 
         if not filepath.exists():
+    pass
+    pass
             self.logger.warning(f"⚠️ No diverse lookback results found for {symbol} on {exchange}")
             return {}
 
@@ -704,6 +795,10 @@ class DiverseLookbackOptimizer:
             with open(filepath, 'r') as f:
                 results = json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return results.get("diverse_lookback_periods", {})
 
         except Exception as e:

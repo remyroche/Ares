@@ -36,6 +36,8 @@ class FeatureInteractionEngine:
     """
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         """
         Initialize feature interaction engine.
 
@@ -51,6 +53,12 @@ class FeatureInteractionEngine:
         # Initialize DiverseLookbackOptimizer for dynamic period selection
         try:
             from src.training.diverse_lookback_optimizer import DiverseLookbackOptimizer
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.diverse_optimizer, DiverseLookbackOptimizer
         self.diverse_optimizer, DiverseLookbackOptimizer(config)
         self.use_dynamic_periods, True
         self.logger.info("✅ Integrated with DiverseLookbackOptimizer for dynamic period selection")
@@ -212,12 +220,18 @@ class FeatureInteractionEngine:
             Dictionary with optimized lookback periods
         """
         if not self.use_dynamic_periods:
+    pass
+    pass
         self.logger.warning("⚠️ Dynamic period optimization not available, using fallback periods")
         return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
         try:
         self.logger.info("🎯 Starting dynamic lookback period optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Run diverse lookback optimization
             optimization_results, await self.diverse_optimizer.find_diverse_lookback_periods(
                 market_data, target, regimes
@@ -244,6 +258,8 @@ class FeatureInteractionEngine:
         return {"status": "fallback", "periods": self.fallback_lookback_periods}
 
     def _extract_optimized_periods(self, optimization_results: Dict[str, Any]) -> Dict[str, List[int]]:
+    pass
+    pass
         """
         Extract optimized periods from DiverseLookbackOptimizer results.
         """
@@ -252,27 +268,41 @@ class FeatureInteractionEngine:
         diverse_periods, optimization_results.get("diverse_lookback_periods", {})
 
         for indicator, results in diverse_periods.items():
+    pass
+    pass
         if "selected_periods" in results:
+    pass
+    pass
                 optimized_periods[indicator] = results["selected_periods"]
 
         return optimized_periods
 
     def _update_interaction_patterns_with_optimized_periods(self):
+    pass
+    pass
         """
         Update interaction patterns to use optimized periods.
         """
         if not self.dynamic_lookback_periods:
+    pass
+    pass
             return
 
         # Update interaction patterns with optimized periods
         for pattern_name, pattern_config in self.interaction_patterns.items():
+    pass
+    pass
             updated_features = []
 
         for feature in pattern_config["features"]:
+    pass
+    pass
         # Check if this feature has an optimized period
                 base_indicator, feature.split("_")[0]
 
         if base_indicator in self.dynamic_lookback_periods:
+    pass
+    pass
         # Use the first optimized period for this pattern
                     optimized_period, self.dynamic_lookback_periods[base_indicator][0]
                     updated_feature, f"{base_indicator}_{optimized_period}"
@@ -286,6 +316,8 @@ class FeatureInteractionEngine:
         self.logger.info("🔄 Updated interaction patterns with optimized periods")
 
     def _validate_lookback_periods(self):
+    pass
+    pass
         """
         Validate that the selected lookback periods are not too correlated.
         """
@@ -295,7 +327,11 @@ class FeatureInteractionEngine:
         periods_to_validate, self.dynamic_lookback_periods if self.dynamic_lookback_periods else self.fallback_lookback_periods
 
         for indicator, config in periods_to_validate.items():
+    pass
+    pass
         if isinstance(config, dict) and "periods" in config:
+    pass
+    pass
                 periods, config["periods"]
                 threshold, config.get("correlation_threshold", 0.8)
             elif isinstance(config, list):
@@ -306,7 +342,11 @@ class FeatureInteractionEngine:
 
         # Check if periods are too close (which would cause high correlation)
         for i in range(len(periods)):
+    pass
+    pass
         for j in range(i + 1, len(periods)):
+    pass
+    pass
                     period1, period2, periods[i], periods[j]
 
         # Calculate ratio to ensure periods are sufficiently different
@@ -317,11 +357,15 @@ class FeatureInteractionEngine:
 
         # Log the selected periods
         if isinstance(config, dict) and "description" in config:
+    pass
+    pass
         self.logger.info(f"✅ {indicator}: Selected periods {periods} - {config['description']}")
                     else:
         self.logger.info(f"✅ {indicator}: Selected periods {periods}")
 
     def extract_optimal_technical_indicators(self, market_data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """
         Extract technical indicators using optimal, non - correlated lookback periods.
 
@@ -340,22 +384,34 @@ class FeatureInteractionEngine:
 
         # Extract RSI with optimal periods
         if "RSI" in periods_to_use:
+    pass
+    pass
             rsi_periods, periods_to_use["RSI"]
         if isinstance(rsi_periods, dict):
+    pass
+    pass
                 rsi_periods, rsi_periods["periods"]
 
         for period in rsi_periods:
+    pass
+    pass
                 rsi, talib.RSI(market_data['close'].values, timeperiod = period)
                 indicators[f"RSI_{period}"] = rsi
 
         # Extract MACD with optimal periods
         if "MACD" in periods_to_use:
+    pass
+    pass
             macd_periods, periods_to_use["MACD"]
         if isinstance(macd_periods, dict):
+    pass
+    pass
                 macd_periods, macd_periods["periods"]
 
         # Use first two periods for fast / slow
         if len(macd_periods) >= 2:
+    pass
+    pass
                 macd, macd_signal, macd_hist, talib.MACD(
                     market_data['close'].values,
                     fastperiod = macd_periods[0],
@@ -368,6 +424,8 @@ class FeatureInteractionEngine:
 
         # Add extended MACD if we have 3 periods
         if len(macd_periods) >= 3:
+    pass
+    pass
                     macd_ext, macd_signal_ext, macd_hist_ext, talib.MACD(
                         market_data['close'].values,
                         fastperiod = macd_periods[1],
@@ -380,11 +438,17 @@ class FeatureInteractionEngine:
 
         # Extract Bollinger Bands with optimal periods
         if "Bollinger_Bands" in periods_to_use:
+    pass
+    pass
             bb_periods, periods_to_use["Bollinger_Bands"]
         if isinstance(bb_periods, dict):
+    pass
+    pass
                 bb_periods, bb_periods["periods"]
 
         for period in bb_periods:
+    pass
+    pass
                 bb_upper, bb_middle, bb_lower, talib.BBANDS(
                     market_data['close'].values,
                     timeperiod = period,
@@ -402,31 +466,49 @@ class FeatureInteractionEngine:
 
         # Extract SMA with optimal periods
         if "SMA" in periods_to_use:
+    pass
+    pass
             sma_periods, periods_to_use["SMA"]
         if isinstance(sma_periods, dict):
+    pass
+    pass
                 sma_periods, sma_periods["periods"]
 
         for period in sma_periods:
+    pass
+    pass
                 sma, talib.SMA(market_data['close'].values, timeperiod = period)
                 indicators[f"SMA_{period}"] = sma
 
         # Extract EMA with optimal periods
         if "EMA" in periods_to_use:
+    pass
+    pass
             ema_periods, periods_to_use["EMA"]
         if isinstance(ema_periods, dict):
+    pass
+    pass
                 ema_periods, ema_periods["periods"]
 
         for period in ema_periods:
+    pass
+    pass
                 ema, talib.EMA(market_data['close'].values, timeperiod = period)
                 indicators[f"EMA_{period}"] = ema
 
         # Extract ATR with optimal periods
         if "ATR" in periods_to_use:
+    pass
+    pass
             atr_periods, periods_to_use["ATR"]
         if isinstance(atr_periods, dict):
+    pass
+    pass
                 atr_periods, atr_periods["periods"]
 
         for period in atr_periods:
+    pass
+    pass
                 atr, talib.ATR(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -440,11 +522,17 @@ class FeatureInteractionEngine:
 
         # Extract Stochastic with optimal periods
         if "Stochastic" in periods_to_use:
+    pass
+    pass
             stoch_periods, periods_to_use["Stochastic"]
         if isinstance(stoch_periods, dict):
+    pass
+    pass
                 stoch_periods, stoch_periods["periods"]
 
         for period in stoch_periods:
+    pass
+    pass
                 stoch_k, stoch_d, talib.STOCH(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -458,11 +546,17 @@ class FeatureInteractionEngine:
 
         # Extract ADX with optimal periods
         if "ADX" in periods_to_use:
+    pass
+    pass
             adx_periods, periods_to_use["ADX"]
         if isinstance(adx_periods, dict):
+    pass
+    pass
                 adx_periods, adx_periods["periods"]
 
         for period in adx_periods:
+    pass
+    pass
                 adx, talib.ADX(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -473,11 +567,17 @@ class FeatureInteractionEngine:
 
         # Extract CCI with optimal periods
         if "CCI" in periods_to_use:
+    pass
+    pass
             cci_periods, periods_to_use["CCI"]
         if isinstance(cci_periods, dict):
+    pass
+    pass
                 cci_periods, cci_periods["periods"]
 
         for period in cci_periods:
+    pass
+    pass
                 cci, talib.CCI(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -488,11 +588,17 @@ class FeatureInteractionEngine:
 
         # Extract Williams %R with optimal periods
         if "Williams_R" in periods_to_use:
+    pass
+    pass
             williams_periods, periods_to_use["Williams_R"]
         if isinstance(williams_periods, dict):
+    pass
+    pass
                 williams_periods, williams_periods["periods"]
 
         for period in williams_periods:
+    pass
+    pass
                 williams_r, talib.WILLR(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -503,16 +609,24 @@ class FeatureInteractionEngine:
 
         # Extract ROC with optimal periods
         if "ROC" in periods_to_use:
+    pass
+    pass
             roc_periods, periods_to_use["ROC"]
         if isinstance(roc_periods, dict):
+    pass
+    pass
                 roc_periods, roc_periods["periods"]
 
         for period in roc_periods:
+    pass
+    pass
                 roc, talib.ROC(market_data['close'].values, timeperiod = period)
                 indicators[f"ROC_{period}"] = roc
 
         # Extract OBV with optimal periods
         if "OBV" in periods_to_use:
+    pass
+    pass
             obv, talib.OBV(market_data['close'].values, market_data['volume'].values)
         # Normalize OBV
             obv_normalized = (obv - obv.rolling(20).mean()) / obv.rolling(20).std()
@@ -521,11 +635,17 @@ class FeatureInteractionEngine:
 
         # Extract MFI with optimal periods
         if "MFI" in periods_to_use:
+    pass
+    pass
             mfi_periods, periods_to_use["MFI"]
         if isinstance(mfi_periods, dict):
+    pass
+    pass
                 mfi_periods, mfi_periods["periods"]
 
         for period in mfi_periods:
+    pass
+    pass
                 mfi, talib.MFI(
                     market_data['high'].values,
                     market_data['low'].values,
@@ -546,6 +666,8 @@ class FeatureInteractionEngine:
         return indicators_df
 
     def analyze_feature_correlations(self, features: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """
         Analyze correlations between features to ensure non - correlation.
 
@@ -562,7 +684,11 @@ class FeatureInteractionEngine:
         # Find highly correlated feature pairs
         high_correlations = []
         for i in range(len(correlation_matrix.columns)):
+    pass
+    pass
         for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
+    pass
                 corr_value, correlation_matrix.iloc[i, j]
         if abs(corr_value) > 0.8:  # High correlation threshold
                     high_correlations.append({
@@ -574,8 +700,12 @@ class FeatureInteractionEngine:
         # Group correlations by indicator type
         correlation_groups = {}
         for corr in high_correlations:
+    pass
+    pass
             indicator_type, corr["feature1"].split("_")[0]
         if indicator_type not in correlation_groups:
+    pass
+    pass
                 correlation_groups[indicator_type] = []
             correlation_groups[indicator_type].append(corr)
 
@@ -591,6 +721,8 @@ class FeatureInteractionEngine:
 
         # Log findings
         if high_correlations:
+    pass
+    pass
         self.logger.warning(f"⚠️ Found {len(high_correlations)} highly correlated feature pairs")
         for corr in high_correlations[:5]:  # Show first 5
         self.logger.warning(f"   {corr['feature1']} vs {corr['feature2']}: {corr['correlation']:.3f}")
@@ -622,6 +754,10 @@ class FeatureInteractionEngine:
         try:
         self.logger.info("Extracting feature interactions...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # 1. Create basic interaction features
             basic_interactions, self._create_basic_interactions(features, feature_names)
 
@@ -647,6 +783,8 @@ class FeatureInteractionEngine:
 
         # 7. Scale interaction features
         if not self.is_fitted:
+    pass
+    pass
                 selected_interactions, self.scaler.fit_transform(selected_interactions)
         self.is_fitted, True
             else:
@@ -685,7 +823,11 @@ class FeatureInteractionEngine:
         ]
 
         for feature1, feature2 in important_pairs:
+    pass
+    pass
         if feature1 in feature_map and feature2 in feature_map:
+    pass
+    pass
                 idx1, idx2, feature_map[feature1], feature_map[feature2]
 
         # Create interaction
@@ -711,7 +853,11 @@ class FeatureInteractionEngine:
         feature_map = {name: i for i, name in enumerate(feature_names)}
 
         for pattern_name, pattern_config in self.interaction_patterns.items():
+    pass
+    pass
         if not pattern_config["enabled"]:
+    pass
+    pass
                 continue
 
             pattern_features, pattern_config["features"]
@@ -720,10 +866,16 @@ class FeatureInteractionEngine:
         # Find feature indices for this pattern
             pattern_indices = []
         for feature_name in pattern_features:
+    pass
+    pass
         if feature_name in feature_map:
+    pass
+    pass
                     pattern_indices.append(feature_map[feature_name])
 
         if len(pattern_indices) >= 2:
+    pass
+    pass
         # Create pattern - specific interactions
                 pattern_interactions, self._create_pattern_specific_interactions(
                     features, pattern_indices, pattern_name, weight
@@ -743,6 +895,8 @@ class FeatureInteractionEngine:
         pattern_features, features[:, pattern_indices]
 
         if pattern_name == "momentum_volume":
+    pass
+    pass
         # Momentum × Volume interactions
             momentum_avg, np.mean(pattern_features[:, :3], axis = 1)  # RSI, MACD, Stochastic
             volume_feature, pattern_features[:, 3]  # Volume_Ratio
@@ -812,6 +966,8 @@ class FeatureInteractionEngine:
 
         # Create regime - specific interactions
         if market_regime == "trending":
+    pass
+    pass
         # Trending market interactions
             trend_interactions, self._create_trending_interactions(features, feature_names)
             interactions.extend(trend_interactions)
@@ -844,6 +1000,8 @@ class FeatureInteractionEngine:
         momentum_indices = [feature_map.get(f) for f in momentum_features if f in feature_map]
 
         if trend_indices and momentum_indices:
+    pass
+    pass
             trend_avg, np.mean(features[:, trend_indices], axis = 1)
             momentum_avg, np.mean(features[:, momentum_indices], axis = 1)
 
@@ -871,6 +1029,8 @@ class FeatureInteractionEngine:
         volume_indices = [feature_map.get(f) for f in volume_features if f in feature_map]
 
         if oscillator_indices and volume_indices:
+    pass
+    pass
             oscillator_avg, np.mean(features[:, oscillator_indices], axis = 1)
             volume_avg, np.mean(features[:, volume_indices], axis = 1)
 
@@ -898,6 +1058,8 @@ class FeatureInteractionEngine:
         risk_indices = [feature_map.get(f) for f in risk_features if f in feature_map]
 
         if volatility_indices and risk_indices:
+    pass
+    pass
             volatility_avg, np.mean(features[:, volatility_indices], axis = 1)
             risk_avg, np.mean(features[:, risk_indices], axis = 1)
 
@@ -926,7 +1088,11 @@ class FeatureInteractionEngine:
         ]
 
         for short_feature, long_feature in timeframe_pairs:
+    pass
+    pass
         if short_feature in feature_map and long_feature in feature_map:
+    pass
+    pass
                 short_idx, long_idx, feature_map[short_feature], feature_map[long_feature]
 
         # Create cross - timeframe interactions
@@ -940,6 +1106,8 @@ class FeatureInteractionEngine:
         return np.column_stack(interactions) if interactions else np.zeros((features.shape[0], 0))
 
     def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
+    pass
+    pass
         """
         Identify current market regime.
         """
@@ -949,7 +1117,13 @@ class FeatureInteractionEngine:
             trend_strength, abs(market_data['close'].rolling(20).mean().iloc[-1] -
                                market_data['close'].rolling(50).mean().iloc[-1]) / market_data['close'].iloc[-1]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if volatility > 0.03:
+    pass
+    pass
         return "volatile"
             elif trend_strength > 0.02:
         return "trending"
@@ -969,6 +1143,10 @@ class FeatureInteractionEngine:
         # Create dummy target for feature selection (in real implementation, use actual target)
             dummy_target, np.random.choice([0, 1], size = interactions.shape[0])
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate mutual information
             mi_scores, mutual_info_classif(interactions, dummy_target, random_state = 42)
 
@@ -979,6 +1157,8 @@ class FeatureInteractionEngine:
         # Limit number of interactions
             max_interactions, self.selection_params["max_interactions"]
         if len(important_indices) > max_interactions:
+    pass
+    pass
         # Select top interactions by mutual information
                 top_indices, np.argsort(mi_scores)[-max_interactions:]
                 selected_interactions, interactions[:, top_indices]
@@ -999,6 +1179,8 @@ class FeatureInteractionEngine:
         return interactions[:, :50]  # Return first 50 interactions as fallback
 
     def get_interaction_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """
         Get summary of interaction engineering results.
         """
@@ -1015,6 +1197,8 @@ class FeatureInteractionEngine:
         }
 
     def update_performance(self, performance_metrics: Dict[str, float]) -> None:
+    pass
+    pass
         """
         Update interaction performance tracking.
         """
@@ -1029,6 +1213,10 @@ class FeatureInteractionEngine:
         # Calculate mutual information for interaction importance
             mi_scores, mutual_info_classif(interactions, target, random_state = 42)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Store importance history
         self.feature_importance_history.append({
                 "timestamp": datetime.now(),

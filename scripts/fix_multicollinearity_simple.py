@@ -15,14 +15,21 @@ import sys
 from typing import Tuple
 
 
+import def _replace_once
 def _replace_once(content: str, old: str, new: str) -> Tuple[str, bool]:
+    pass
+    pass
     """Replace first occurrence; return updated content and whether replacement happened."""
     if old in content:
+    pass
+    pass
         return content.replace(old, new, 1), True
     return content, False
 
 
 def fix_feature_engineering_code() -> bool:
+    pass
+    pass
     """Fix the critical multicollinearity issue in the feature engineering code."""
 
     print("🔧 Starting multicollinearity fix...")
@@ -33,11 +40,17 @@ def fix_feature_engineering_code() -> bool:
     )
 
     if not feature_eng_file.exists():
+    pass
+    pass
         print(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
     try:
         # Read the current file
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         content = feature_eng_file.read_text(encoding="utf-8")
 
         print("📖 Reading current feature engineering code...")
@@ -59,6 +72,8 @@ def fix_feature_engineering_code() -> bool:
 
         content, price_fixed = _replace_once(content, old_price_change, new_price_change)
         if price_fixed:
+    pass
+    pass
             print("✅ Fixed price_change calculation")
         else:
             print("⚠️ Could not find price_change line to fix")
@@ -73,12 +88,16 @@ def fix_feature_engineering_code() -> bool:
             content, old_volume_change, new_volume_change
         )
         if volume_fixed:
+    pass
+    pass
             print("✅ Fixed volume_change calculation")
         else:
             print("⚠️ Could not find volume_change line to fix")
 
         # Only write back if any change occurred
         if price_fixed or volume_fixed:
+    pass
+    pass
             feature_eng_file.write_text(content, encoding="utf-8")
             print("✅ Successfully fixed multicollinearity issue")
             return True
@@ -92,16 +111,20 @@ def fix_feature_engineering_code() -> bool:
 
 
 def main() -> bool:
+    pass
+    pass
     """Main function to fix the multicollinearity issue."""
 
     print("🚀 Starting multicollinearity fix...")
 
     if fix_feature_engineering_code():
+    pass
+    pass
         print("🎉 Multicollinearity fix completed successfully!")
         print("📋 The issue was in the _calculate_timeframe_features_vectorized method")
         print("📋 All timeframes were using the same pct_change() without periods")
         print("📋 Now each timeframe uses proper periods: 1m=1, 5m=5, 15m=15, 30m=30")
-        print("\n🔍 Next steps:")
+        print("\\\n🔍 Next steps:")
         print("   1. Test your training pipeline again")
         print("   2. Monitor the logs for any remaining issues")
         return True
@@ -110,10 +133,14 @@ def main() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     if not success:
-        print("\n❌ MULTICOLLINEARITY FIX FAILED!")
+    pass
+    pass
+        print("\\\n❌ MULTICOLLINEARITY FIX FAILED!")
         sys.exit(1)
     else:
-        print("\n🎉 MULTICOLLINEARITY FIX COMPLETED SUCCESSFULLY!")
+        print("\\\n🎉 MULTICOLLINEARITY FIX COMPLETED SUCCESSFULLY!")
         print("✅ Your feature engineering should now work correctly.")

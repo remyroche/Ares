@@ -21,6 +21,7 @@ This package contains specialized components for analyst model training.
 
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
+import __all__ = [
 __all__ = [
     "RegimeSpecificTPSLOptimizer",
 ]

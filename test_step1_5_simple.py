@@ -15,6 +15,8 @@ class ColumnVerifier:
     """Utility class for verifying and calculating missing columns."""
 
     def __init__(self, logger=None):
+    pass
+    pass
         self.logger = logger or print
 
         # Define required columns for different data types
@@ -31,6 +33,8 @@ class ColumnVerifier:
         }
 
     def verify_missing_columns(self, df: pd.DataFrame, data_type: str = "unified") -> dict:
+    pass
+    pass
         """
         Verify which columns are missing from the dataframe.
 
@@ -44,6 +48,10 @@ class ColumnVerifier:
         try:
             self.logger(f"🔍 Verifying missing columns for {data_type} data...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             missing_info = {
                 "data_type": data_type,
                 "total_columns": len(df.columns),
@@ -56,6 +64,8 @@ class ColumnVerifier:
 
             # Check required columns based on data type
             if data_type == "klines":
+    pass
+    pass
                 required_columns = self.required_klines_columns
             elif data_type == "aggtrades":
                 required_columns = self.required_aggtrades_columns
@@ -69,11 +79,15 @@ class ColumnVerifier:
             missing_info["missing_required"] = missing_required
 
             if missing_required:
+    pass
+    pass
                 missing_info["verification_passed"] = False
                 self.logger(f"⚠️ Missing required columns: {missing_required}")
 
             # Check for missing optional calculated columns
             for category, columns in self.optional_calculated_columns.items():
+    pass
+    pass
                 missing_optional = [col for col in columns if col not in df.columns]
                 missing_info["missing_optional"][category] = missing_optional
 
@@ -82,8 +96,12 @@ class ColumnVerifier:
                 missing_info["can_calculate"][category] = can_calculate
 
                 if missing_optional:
+    pass
+    pass
                     self.logger(f"📊 Missing {category} columns: {missing_optional}")
                     if can_calculate:
+    pass
+    pass
                         self.logger(f"   ✅ Can calculate: {can_calculate}")
                     else:
                         self.logger(f"   ❌ Cannot calculate: {[col for col in missing_optional if col not in can_calculate]}")
@@ -100,6 +118,8 @@ class ColumnVerifier:
             }
 
     def _check_calculation_feasibility(self, df: pd.DataFrame, category: str, missing_columns: list[str]) -> list[str]:
+    pass
+    pass
         """
         Check which missing columns can be calculated based on available data.
 
@@ -114,34 +134,50 @@ class ColumnVerifier:
         can_calculate = []
 
         if category == "price_returns":
+    pass
+    pass
             # Check if we have price columns for returns calculation
             price_columns = ["close", "open", "high", "low"]
             available_prices = [col for col in price_columns if col in df.columns]
 
             for col in missing_columns:
+    pass
+    pass
                 if col.endswith("_return"):
+    pass
+    pass
                     base_col = col.replace("_return", "")
                     if base_col in available_prices:
+    pass
+    pass
                         can_calculate.append(col)
 
         elif category == "vwap":
             # Check if we have required columns for VWAP calculation
             if "close" in df.columns and "volume" in df.columns:
+    pass
+    pass
                 can_calculate.extend([col for col in missing_columns if col in ["vwap", "vwap_return", "price_vwap_ratio", "price_vwap_deviation"]])
 
         elif category == "volume_features":
             # Check if we have volume column
             if "volume" in df.columns:
+    pass
+    pass
                 can_calculate.extend([col for col in missing_columns if col in ["volume_return", "volume_ma", "volume_ratio"]])
 
         elif category == "technical_indicators":
             # Check if we have price column for technical indicators
             if "close" in df.columns:
+    pass
+    pass
                 can_calculate.extend([col for col in missing_columns if col in ["sma_20", "ema_12", "rsi", "macd"]])
 
         return can_calculate
 
     def calculate_missing_columns(self, df: pd.DataFrame, missing_info: dict) -> pd.DataFrame:
+    pass
+    pass
         """
         Calculate missing columns that can be computed.
 
@@ -155,35 +191,49 @@ class ColumnVerifier:
         try:
             self.logger("🔄 Calculating missing columns...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create a copy to avoid modifying original
             enhanced_df = df.copy()
             calculated_columns = []
 
             # Calculate price returns
             if "price_returns" in missing_info["can_calculate"]:
+    pass
+    pass
                 calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
                 enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
                 calculated_columns.extend(calculated_returns.columns)
 
             # Calculate VWAP features
             if "vwap" in missing_info["can_calculate"]:
+    pass
+    pass
                 calculated_vwap = self._calculate_vwap_features(enhanced_df, missing_info["can_calculate"]["vwap"])
                 enhanced_df = pd.concat([enhanced_df, calculated_vwap], axis=1)
                 calculated_columns.extend(calculated_vwap.columns)
 
             # Calculate volume features
             if "volume_features" in missing_info["can_calculate"]:
+    pass
+    pass
                 calculated_volume = self._calculate_volume_features(enhanced_df, missing_info["can_calculate"]["volume_features"])
                 enhanced_df = pd.concat([enhanced_df, calculated_volume], axis=1)
                 calculated_columns.extend(calculated_volume.columns)
 
             # Calculate technical indicators
             if "technical_indicators" in missing_info["can_calculate"]:
+    pass
+    pass
                 calculated_technical = self._calculate_technical_indicators(enhanced_df, missing_info["can_calculate"]["technical_indicators"])
                 enhanced_df = pd.concat([enhanced_df, calculated_technical], axis=1)
                 calculated_columns.extend(calculated_technical.columns)
 
             if calculated_columns:
+    pass
+    pass
                 self.logger(f"✅ Calculated {len(calculated_columns)} columns: {calculated_columns}")
             else:
                 self.logger("ℹ️ No columns were calculated")
@@ -195,65 +245,99 @@ class ColumnVerifier:
             return df
 
     def _calculate_price_returns(self, df: pd.DataFrame, missing_returns: list[str]) -> pd.DataFrame:
+    pass
+    pass
         """Calculate price return columns."""
         calculated = pd.DataFrame(index=df.index)
 
         for col in missing_returns:
+    pass
+    pass
             if col.endswith("_return"):
+    pass
+    pass
                 base_col = col.replace("_return", "")
                 if base_col in df.columns:
+    pass
+    pass
                     calculated[col] = df[base_col].pct_change()
 
         return calculated
 
     def _calculate_vwap_features(self, df: pd.DataFrame, missing_vwap: list[str]) -> pd.DataFrame:
+    pass
+    pass
         """Calculate VWAP-related features."""
         calculated = pd.DataFrame(index=df.index)
 
         # Calculate VWAP if needed
         if "vwap" in missing_vwap and "close" in df.columns and "volume" in df.columns:
+    pass
+    pass
             calculated["vwap"] = (df["close"] * df["volume"]).rolling(window=20).sum() / df["volume"].rolling(window=20).sum()
 
         # Calculate VWAP return if needed
         if "vwap_return" in missing_vwap and "vwap" in calculated.columns:
+    pass
+    pass
             calculated["vwap_return"] = calculated["vwap"].pct_change()
 
         # Calculate price-VWAP ratio if needed
         if "price_vwap_ratio" in missing_vwap and "vwap" in calculated.columns and "close" in df.columns:
+    pass
+    pass
             calculated["price_vwap_ratio"] = df["close"] / calculated["vwap"]
 
         # Calculate price-VWAP deviation if needed
         if "price_vwap_deviation" in missing_vwap and "vwap" in calculated.columns and "close" in df.columns:
+    pass
+    pass
             calculated["price_vwap_deviation"] = (df["close"] - calculated["vwap"]) / calculated["vwap"]
 
         return calculated
 
     def _calculate_volume_features(self, df: pd.DataFrame, missing_volume: list[str]) -> pd.DataFrame:
+    pass
+    pass
         """Calculate volume-related features."""
         calculated = pd.DataFrame(index=df.index)
 
         if "volume_return" in missing_volume and "volume" in df.columns:
+    pass
+    pass
             calculated["volume_return"] = df["volume"].pct_change()
 
         if "volume_ma" in missing_volume and "volume" in df.columns:
+    pass
+    pass
             calculated["volume_ma"] = df["volume"].rolling(window=20).mean()
 
         if "volume_ratio" in missing_volume and "volume" in df.columns:
+    pass
+    pass
             calculated["volume_ratio"] = df["volume"] / df["volume"].rolling(window=20).mean()
 
         return calculated
 
     def _calculate_technical_indicators(self, df: pd.DataFrame, missing_technical: list[str]) -> pd.DataFrame:
+    pass
+    pass
         """Calculate technical indicators."""
         calculated = pd.DataFrame(index=df.index)
 
         if "sma_20" in missing_technical and "close" in df.columns:
+    pass
+    pass
             calculated["sma_20"] = df["close"].rolling(window=20).mean()
 
         if "ema_12" in missing_technical and "close" in df.columns:
+    pass
+    pass
             calculated["ema_12"] = df["close"].ewm(span=12).mean()
 
         if "rsi" in missing_technical and "close" in df.columns:
+    pass
+    pass
             delta = df["close"].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -261,6 +345,8 @@ class ColumnVerifier:
             calculated["rsi"] = 100 - (100 / (1 + rs))
 
         if "macd" in missing_technical and "close" in df.columns:
+    pass
+    pass
             ema_12 = df["close"].ewm(span=12).mean()
             ema_26 = df["close"].ewm(span=26).mean()
             calculated["macd"] = ema_12 - ema_26
@@ -269,6 +355,8 @@ class ColumnVerifier:
 
 
 def create_test_data() -> pd.DataFrame:
+    pass
+    pass
     """Create test data with intentionally missing columns to test calculation."""
     print("📊 Creating test data with missing columns...")
 
@@ -281,6 +369,8 @@ def create_test_data() -> pd.DataFrame:
     price_changes = np.random.normal(0, 0.001, len(dates))
     prices = [base_price]
     for change in price_changes[1:]:
+    pass
+    pass
         prices.append(prices[-1] * (1 + change))
 
     # Create OHLCV data (missing calculated columns)
@@ -303,11 +393,17 @@ def create_test_data() -> pd.DataFrame:
 
 
 def test_column_verifier():
+    pass
+    pass
     """Test the ColumnVerifier class functionality."""
-    print("\n🧪 Testing ColumnVerifier...")
+    print("\\\n🧪 Testing ColumnVerifier...")
 
     try:
         # Create test data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_data = create_test_data()
 
         # Initialize column verifier
@@ -338,24 +434,32 @@ def test_column_verifier():
         # Verify specific calculations
         success = True
         if 'close_return' in new_columns:
+    pass
+    pass
             print("   ✅ close_return calculated successfully")
         else:
             print("   ❌ close_return not calculated")
             success = False
 
         if 'vwap' in new_columns:
+    pass
+    pass
             print("   ✅ vwap calculated successfully")
         else:
             print("   ❌ vwap not calculated")
             success = False
 
         if 'vwap_return' in new_columns:
+    pass
+    pass
             print("   ✅ vwap_return calculated successfully")
         else:
             print("   ❌ vwap_return not calculated")
             success = False
 
         if 'price_vwap_ratio' in new_columns:
+    pass
+    pass
             print("   ✅ price_vwap_ratio calculated successfully")
         else:
             print("   ❌ price_vwap_ratio not calculated")
@@ -364,6 +468,8 @@ def test_column_verifier():
         # Test data quality
         print("🔍 Testing calculated data quality...")
         if 'close_return' in enhanced_data.columns:
+    pass
+    pass
             # Check for reasonable values
             close_return = enhanced_data['close_return']
             if close_return.isna().sum() > len(close_return) * 0.1:  # More than 10% NaN
@@ -373,6 +479,8 @@ def test_column_verifier():
                 print("   ✅ close_return data quality looks good")
 
         if 'vwap' in enhanced_data.columns:
+    pass
+    pass
             # Check for reasonable values
             vwap = enhanced_data['vwap']
             if vwap.isna().sum() > len(vwap) * 0.2:  # More than 20% NaN (rolling window effect)
@@ -389,12 +497,18 @@ def test_column_verifier():
 
 
 def test_edge_cases():
+    pass
+    pass
     """Test edge cases and error handling."""
-    print("\n🧪 Testing edge cases...")
+    print("\\\n🧪 Testing edge cases...")
 
     try:
         column_verifier = ColumnVerifier()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Test with empty DataFrame
         print("🔍 Testing with empty DataFrame...")
         empty_df = pd.DataFrame()
@@ -419,6 +533,8 @@ def test_edge_cases():
 
         # Check if VWAP was calculated (should be possible with close and volume)
         if 'vwap' in enhanced_partial.columns:
+    pass
+    pass
             print("   ✅ VWAP calculation with partial data works")
         else:
             print("   ❌ VWAP calculation with partial data failed")
@@ -431,6 +547,8 @@ def test_edge_cases():
 
 
 def main():
+    pass
+    pass
     """Main test function."""
     print("🚀 Starting Step1_5 Column Verification Tests")
     print("=" * 60)
@@ -440,7 +558,7 @@ def main():
     test2_result = test_edge_cases()
 
     # Print summary
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("📊 TEST RESULTS SUMMARY")
     print("=" * 60)
 
@@ -450,9 +568,11 @@ def main():
     total_tests = 2
     passed_tests = sum([test1_result, test2_result])
 
-    print(f"\nOverall: {passed_tests}/{total_tests} tests passed")
+    print(f"\\\nOverall: {passed_tests}/{total_tests} tests passed")
 
     if passed_tests == total_tests:
+    pass
+    pass
         print("🎉 All tests passed! Step1_5 column verification enhancement is working correctly.")
         return 0
     else:
@@ -461,12 +581,18 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     try:
         exit_code = main()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sys.exit(exit_code)
     except KeyboardInterrupt:
-        print("\n⚠️ Tests interrupted by user")
+        print("\\\n⚠️ Tests interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\\\n❌ Unexpected error: {e}")
         sys.exit(1)

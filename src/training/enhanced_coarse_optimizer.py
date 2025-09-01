@@ -19,9 +19,16 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import TimeSeriesSplit
 
 # Import neural network models (with fallback handling)
+import try:
 try:
     from pytorch_tabnet.tab_model import TabNetClassifier
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import TABNET_AVAILABLE = True
     TABNET_AVAILABLE = True
 except ImportError:
     TABNET_AVAILABLE = False
@@ -30,6 +37,12 @@ except ImportError:
 try:
     from transformers import AutoModelForSequenceClassification
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import TRANSFORMER_AVAILABLE = True
     TRANSFORMER_AVAILABLE = True
 except ImportError:
     TRANSFORMER_AVAILABLE = False
@@ -38,6 +51,12 @@ except ImportError:
 try:
     from torch import nn
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import LSTM_AVAILABLE = True
     LSTM_AVAILABLE = True
 except ImportError:
     LSTM_AVAILABLE = False
@@ -46,6 +65,7 @@ except ImportError:
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     warning,
@@ -94,9 +114,15 @@ class EnhancedCoarseOptimizer:
         self.model_configs = self._create_model_configurations()
 
     def _allocate_resources(self) -> dict[str, Any]:
+    pass
+    pass
         """Dynamically allocate computational resources for optimization."""
         try:
             cpu_count_available = cpu_count()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             memory_gb = psutil.virtual_memory().total / (1024**3)
 
             # Conservative resource allocation
@@ -133,6 +159,8 @@ class EnhancedCoarseOptimizer:
             }
 
     def _create_model_configurations(self) -> dict[str, dict[str, Any]]:
+    pass
+    pass
         """Create central model configuration dictionary."""
         return {
             "lightgbm": {
@@ -229,21 +257,31 @@ class EnhancedCoarseOptimizer:
         }
 
     def _monitor_memory_usage(self) -> bool:
+    pass
+    pass
         """Monitor memory usage and trigger cleanup if needed."""
         try:
             memory_percent = psutil.virtual_memory().percent
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             memory_gb = psutil.virtual_memory().used / (1024**3)
 
             self.resource_usage["memory_percent"] = memory_percent
             self.resource_usage["memory_gb"] = memory_gb
 
             if memory_percent > 80:
+    pass
+    pass
                 self.logger.warning(
                     f"⚠️ High memory usage: {memory_percent:.1f}% ({memory_gb:.1f} GB)",
                 )
                 gc.collect()
                 return True
             if memory_percent > 60:
+    pass
+    pass
                 self.logger.info(
                     f"📊 Memory usage: {memory_percent:.1f}% ({memory_gb:.1f} GB)",
                 )
@@ -267,8 +305,14 @@ class EnhancedCoarseOptimizer:
 
         self.logger.info(f"🔄 {stage}: {progress:.1f}% complete")
         if details:
+    pass
+    pass
             for key, value in details.items():
+    pass
+    pass
                 if isinstance(value, float):
+    pass
+    pass
                     self.logger.info(f"   📊 {key}: {value:.4f}")
                 else:
                     self.logger.info(f"   📊 {key}: {value}")
@@ -284,6 +328,8 @@ class EnhancedCoarseOptimizer:
     ) -> dict[str, float]:
         """Run feature selection in parallel using multiprocessing."""
         if not self.resources["enable_parallel"]:
+    pass
+    pass
             self.logger.info("🔄 Sequential feature selection (parallel disabled)")
             return self._sequential_feature_selection(features, X, y)
 
@@ -311,11 +357,17 @@ class EnhancedCoarseOptimizer:
             total = len(features)
 
             for future in as_completed(future_to_chunk):
+    pass
+    pass
                 chunk = future_to_chunk[future]
                 completed += len(chunk)
 
                 try:
                     chunk_results = future.result()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     results.update(chunk_results)
 
                     # Update progress
@@ -336,6 +388,8 @@ class EnhancedCoarseOptimizer:
                     )
                     # Add default values for failed features
                     for feature in chunk:
+    pass
+    pass
                         results[feature] = 0.0
 
         return results
@@ -349,14 +403,22 @@ class EnhancedCoarseOptimizer:
         """Calculate feature importance for a chunk of features (for multiprocessing)."""
         results = {}
         for feature in features:
+    pass
+    pass
             try:
                 # Use mutual information as a robust importance measure
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 feature_data = X[[feature]]
                 target_data = y
 
                 # Handle NaN values
                 valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
                 if valid_mask.sum() < 10:
+    pass
+    pass
                     results[feature] = 0.0
                     continue
 
@@ -364,6 +426,8 @@ class EnhancedCoarseOptimizer:
                 clean_target = target_data[valid_mask]
 
                 if len(clean_feature) < 10:
+    pass
+    pass
                     results[feature] = 0.0
                     continue
 
@@ -391,14 +455,22 @@ class EnhancedCoarseOptimizer:
         total = len(features)
 
         for i, feature in enumerate(features):
+    pass
+    pass
             try:
                 # Use mutual information as a robust importance measure
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 feature_data = X[[feature]]
                 target_data = y
 
                 # Handle NaN values
                 valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
                 if valid_mask.sum() < 10:
+    pass
+    pass
                     results[feature] = 0.0
                     continue
 
@@ -406,6 +478,8 @@ class EnhancedCoarseOptimizer:
                 clean_target = target_data[valid_mask]
 
                 if len(clean_feature) < 10:
+    pass
+    pass
                     results[feature] = 0.0
                     continue
 
@@ -449,21 +523,36 @@ class EnhancedCoarseOptimizer:
         ]
 
         for model_name, model in models_to_try:
+    pass
+    pass
             try:
                 self.logger.info(f"🤖 Trying SHAP analysis with {model_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Quick training with early stopping
                 model.fit(X_sample, y_sample)
                 # Try new import path first, then fallback to old path
                 try:
                     from shap.explainers import TreeExplainer
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except ImportError:
                 except ImportError:
                     from shap import TreeExplainer
+import explainer = TreeExplainer
                 explainer = TreeExplainer(model)
                 shap_values = explainer.shap_values(X_sample)
 
                 # Process SHAP values
                 if isinstance(shap_values, list):
+    pass
+    pass
                     shap_values = np.array(shap_values)
 
                 feature_importance = np.mean(np.abs(shap_values), axis=0)
@@ -488,6 +577,10 @@ class EnhancedCoarseOptimizer:
         """Correlation-based feature importance as fallback."""
         try:
             correlations = X.corrwith(y).abs()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return correlations.to_dict()
         except Exception:
             self.print(failed("Correlation-based importance failed: {e}"))
@@ -511,11 +604,17 @@ class EnhancedCoarseOptimizer:
         self.logger.info("🔄 Running enhanced cross-validation...")
 
         for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+    pass
+    pass
             X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
             try:
                 model.fit(X_train, y_train)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 y_pred = model.predict(X_val)
 
                 metrics["accuracy"].append(accuracy_score(y_val, y_pred))
@@ -548,6 +647,8 @@ class EnhancedCoarseOptimizer:
         # Calculate statistics
         results = {}
         for metric_name, values in metrics.items():
+    pass
+    pass
             if values:  # Check if we have any valid values
                 results[metric_name] = {
                     "mean": np.mean(values),
@@ -562,12 +663,20 @@ class EnhancedCoarseOptimizer:
         return results
 
     def prepare_data(self, data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    pass
+    pass
         """Prepare data for optimization using functional approach."""
         self.logger.info("Preparing data for optimization...")
 
         try:
             # Validate input data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if data is None or data.empty:
+    pass
+    pass
                 msg = "Input data is None or empty"
                 raise ValueError(msg)
 
@@ -589,6 +698,8 @@ class EnhancedCoarseOptimizer:
             return pd.DataFrame(), pd.Series()
 
     def _clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Comprehensive data cleaning with functional approach."""
         self.logger.info("🧹 ENHANCED DATA CLEANING:")
         self.logger.info("=" * 50)
@@ -606,6 +717,8 @@ class EnhancedCoarseOptimizer:
         # 1. Remove duplicate rows
         initial_duplicates = cleaned_data.duplicated().sum()
         if initial_duplicates > 0:
+    pass
+    pass
             cleaned_data = cleaned_data.drop_duplicates()
             self.logger.info(f"   ✅ Removed {initial_duplicates} duplicate rows")
 
@@ -614,6 +727,8 @@ class EnhancedCoarseOptimizer:
             np.isinf(cleaned_data.select_dtypes(include=[np.number])).sum().sum()
         )
         if inf_counts > 0:
+    pass
+    pass
             cleaned_data = cleaned_data.replace([np.inf, -np.inf], np.nan)
             self.logger.info(f"   ✅ Replaced {inf_counts} infinity values with NaN")
 
@@ -622,7 +737,11 @@ class EnhancedCoarseOptimizer:
         outlier_counts = 0
 
         for col in numeric_cols:
+    pass
+    pass
             if col in cleaned_data.columns:
+    pass
+    pass
                 Q1 = cleaned_data[col].quantile(0.25)
                 Q3 = cleaned_data[col].quantile(0.75)
                 IQR = Q3 - Q1
@@ -634,6 +753,8 @@ class EnhancedCoarseOptimizer:
                     | (cleaned_data[col] > upper_bound)
                 ).sum()
                 if outliers > 0:
+    pass
+    pass
                     # Replace outliers with bounds instead of removing
                     cleaned_data[col] = cleaned_data[col].clip(
                         lower=lower_bound,
@@ -647,16 +768,24 @@ class EnhancedCoarseOptimizer:
         # 4. Handle missing values
         missing_before = cleaned_data.isnull().sum().sum()
         if missing_before > 0:
+    pass
+    pass
             # For numeric columns, use forward fill then backward fill
             numeric_cols = cleaned_data.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
+    pass
+    pass
                 if cleaned_data[col].isnull().sum() > 0:
+    pass
+    pass
                     # Forward fill then backward fill
                     cleaned_data[col] = (
                         cleaned_data[col].fillna(method="ffill").fillna(method="bfill")
                     )
                     # If still has NaN, fill with median
                     if cleaned_data[col].isnull().sum() > 0:
+    pass
+    pass
                         median_val = cleaned_data[col].median()
                         cleaned_data[col] = cleaned_data[col].fillna(median_val)
                         self.logger.info(
@@ -674,6 +803,8 @@ class EnhancedCoarseOptimizer:
         memory_saved = memory_before - memory_after
 
         if memory_saved > 0:
+    pass
+    pass
             self.logger.info(
                 f"   ✅ Memory optimization: {memory_before:.2f} MB → {memory_after:.2f} MB (saved {memory_saved:.2f} MB)",
             )
@@ -696,15 +827,21 @@ class EnhancedCoarseOptimizer:
         return cleaned_data
 
     def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize data types to reduce memory usage."""
         optimized_data = data.copy()
 
         # Optimize numeric columns
         for col in optimized_data.select_dtypes(include=["int64"]).columns:
+    pass
+    pass
             col_min = optimized_data[col].min()
             col_max = optimized_data[col].max()
 
             if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
+    pass
+    pass
                 optimized_data[col] = optimized_data[col].astype(np.int8)
             elif (
                 col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max
@@ -717,14 +854,22 @@ class EnhancedCoarseOptimizer:
 
         # Optimize float columns
         for col in optimized_data.select_dtypes(include=["float64"]).columns:
+    pass
+    pass
             optimized_data[col] = pd.to_numeric(optimized_data[col], downcast="float")
 
         return optimized_data
 
     def _add_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Add features to the data using functional approach."""
         try:
             # Add technical indicators
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             data = self._add_technical_indicators(data)
 
             # Add statistical features
@@ -740,9 +885,15 @@ class EnhancedCoarseOptimizer:
             return data
 
     def _add_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Add technical indicators to the data."""
         try:
             # Implementation for adding technical indicators
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return data
         except Exception as e:
             error_msg = f"Error adding technical indicators: {e}"
@@ -751,9 +902,15 @@ class EnhancedCoarseOptimizer:
             return data
 
     def _add_statistical_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Add statistical features to the data."""
         try:
             # Implementation for adding statistical features
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return data
         except Exception as e:
             error_msg = f"Error adding statistical features: {e}"
@@ -762,9 +919,15 @@ class EnhancedCoarseOptimizer:
             return data
 
     def _add_lag_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Add lag features to the data."""
         try:
             # Implementation for adding lag features
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return data
         except Exception as e:
             error_msg = f"Error adding lag features: {e}"
@@ -786,10 +949,14 @@ class EnhancedCoarseOptimizer:
 
         # If no target columns found, check if 'target' column exists
         if not target_columns and "target" in data.columns:
+    pass
+    pass
             target_columns = ["target"]
 
         # If still no target columns, create a default target column
         if not target_columns:
+    pass
+    pass
             data["target"] = 0  # Default target
             target_columns = ["target"]
 
@@ -807,11 +974,17 @@ class EnhancedCoarseOptimizer:
         return X, y
 
     def run_feature_selection(self, X: pd.DataFrame, y: pd.Series) -> list[str]:
+    pass
+    pass
         """Run feature selection using functional approach."""
         self.logger.info("Running feature selection...")
 
         try:
             # Get all features
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             features = list(X.columns)
 
             # Run parallel feature selection
@@ -845,6 +1018,8 @@ class EnhancedCoarseOptimizer:
     ) -> dict[str, Any]:
         """Get model parameters from central configuration."""
         if model_type not in self.model_configs:
+    pass
+    pass
             msg = f"Unknown model type: {model_type}"
             raise ValueError(msg)
 
@@ -853,8 +1028,14 @@ class EnhancedCoarseOptimizer:
 
         # Add trial parameters
         for param_name, param_range in config["param_ranges"].items():
+    pass
+    pass
             if isinstance(param_range, tuple):
+    pass
+    pass
                 if isinstance(param_range[0], float):
+    pass
+    pass
                     params[param_name] = trial.suggest_float(
                         param_name,
                         param_range[0],
@@ -872,9 +1053,13 @@ class EnhancedCoarseOptimizer:
 
         # Handle model-specific configurations
         if model_type == "lightgbm":
+    pass
+    pass
             params["objective"] = "multiclass" if n_classes > 2 else "binary"
             params["metric"] = "multi_logloss" if n_classes > 2 else "binary_logloss"
             if n_classes > 2:
+    pass
+    pass
                 params["num_class"] = n_classes
         elif model_type == "xgboost":
             params["objective"] = (
@@ -882,9 +1067,13 @@ class EnhancedCoarseOptimizer:
             )
             params["eval_metric"] = "mlogloss" if n_classes > 2 else "logloss"
             if n_classes > 2:
+    pass
+    pass
                 params["num_class"] = n_classes
         elif model_type == "catboost":
             if n_classes > 2:
+    pass
+    pass
                 params["loss_function"] = "MultiClass"
             else:
                 params["loss_function"] = "Logloss"
@@ -892,8 +1081,12 @@ class EnhancedCoarseOptimizer:
         return params
 
     def _create_model(self, model_type: str, params: dict[str, Any]):
+    pass
+    pass
         """Create model instance from configuration."""
         if model_type not in self.model_configs:
+    pass
+    pass
             msg = f"Unknown model type: {model_type}"
             raise ValueError(msg)
 
@@ -902,6 +1095,10 @@ class EnhancedCoarseOptimizer:
 
         try:
             return model_class(**params)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
             self.print(failed("Failed to create {model_type} model: {e}"))
             # Fallback to Random Forest
@@ -919,6 +1116,10 @@ class EnhancedCoarseOptimizer:
 
         try:
             X_selected = X[features]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X_selected) * 0.8)
             X_train = X_selected.iloc[:split_idx]
@@ -932,6 +1133,8 @@ class EnhancedCoarseOptimizer:
             )
 
             def objective(trial):
+    pass
+    pass
                 # Test multiple model types
                 model_type = trial.suggest_categorical(
                     "model_type",
@@ -947,6 +1150,10 @@ class EnhancedCoarseOptimizer:
                 # Train model with enhanced cross-validation
                 try:
                     if hasattr(model, "fit"):
+    pass
+    except Exception as e:
+        pass
+    pass
                         # Use enhanced cross-validation for more robust evaluation
                         cv_results = self._enhanced_cross_validation(
                             model,
@@ -959,6 +1166,8 @@ class EnhancedCoarseOptimizer:
 
                         # Enhanced early stopping check
                         if trial.number > 10 and accuracy < 0.5:
+    pass
+    pass
                             self.logger.warning(
                                 f"⚠️ Early stopping trial {trial.number} - accuracy too low: {accuracy:.4f}",
                             )
@@ -975,6 +1184,8 @@ class EnhancedCoarseOptimizer:
                             )
 
                         return accuracy
+    except Exception as e:
+        pass
                     return 0.0
                 except Exception:
                     self.print(failed("Model training failed: {e}"))
@@ -998,6 +1209,8 @@ class EnhancedCoarseOptimizer:
 
             # Add progress callback
             def progress_callback(study, trial) -> None:
+    pass
+    pass
                 progress = (trial.number + 1) / n_trials * 100
                 self._track_optimization_progress(
                     "Hyperparameter Optimization",
@@ -1018,38 +1231,66 @@ class EnhancedCoarseOptimizer:
 
             ranges = {}
             if top_trials:
+    pass
+    pass
                 # Get all unique parameter names from all trials
                 all_param_names = set()
                 for trial in top_trials:
+    pass
+    pass
                     if hasattr(trial, "params") and trial.params:
+    pass
+    pass
                         all_param_names.update(trial.params.keys())
 
                 # Create ranges for each parameter
                 for param_name in all_param_names:
+    pass
+    pass
                     try:
                         values = [
                             t.params[param_name]
                             for t in top_trials
                             if param_name in t.params
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         ]
                         if values:
+    pass
+    pass
                             # Filter out non-numeric values and convert to proper types
                             numeric_values = []
                             for val in values:
+    pass
+    pass
                                 if val is not None:
+    pass
+    pass
                                     try:
                                         if isinstance(val, str):
+    pass
+    except Exception as e:
+        pass
+    pass
                                             # Try to convert string to float/int
                                             if "." in val:
+    pass
+    pass
                                                 numeric_values.append(float(val))
                                             else:
                                                 numeric_values.append(int(val))
+    except Exception as e:
+        pass
                                         elif isinstance(val, int | float):
                                             numeric_values.append(val)
                                     except (ValueError, TypeError):
                                         continue
 
                             if numeric_values:
+    pass
+    pass
                                 ranges[param_name] = {
                                     "low": min(numeric_values),
                                     "high": max(numeric_values),
@@ -1058,6 +1299,8 @@ class EnhancedCoarseOptimizer:
                                     else "int",
                                 }
                                 if isinstance(numeric_values[0], float):
+    pass
+    pass
                                     ranges[param_name]["step"] = (
                                         max(numeric_values) - min(numeric_values)
                                     ) / 10.0
@@ -1087,6 +1330,10 @@ class EnhancedCoarseOptimizer:
 
         try:
             # Implementation for validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {"validation_score": 0.85, "cross_validation_score": 0.82}
         except Exception as e:
             error_msg = f"Error validating optimization results: {e}"
@@ -1095,6 +1342,8 @@ class EnhancedCoarseOptimizer:
             return {}
 
     def run(self) -> tuple[list[str], dict[str, Any]]:
+    pass
+    pass
         """Main entry point for the enhanced coarse optimization process.
         Uses functional programming approach and multiprocessing.
         """
@@ -1108,9 +1357,15 @@ class EnhancedCoarseOptimizer:
 
         try:
             # Prepare data using functional approach
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             X, y = self.prepare_data(self.klines_data)
 
             if X.empty or y.empty:
+    pass
+    pass
                 msg = "Failed to prepare data"
                 raise ValueError(msg)
 
@@ -1159,7 +1414,11 @@ class EnhancedCoarseOptimizer:
         self.logger.info("🔧 HYPERPARAMETER OPTIMIZATION SUMMARY:")
         self.logger.info(f"   - Parameters optimized: {len(best_params)}")
         for param, config in best_params.items():
+    pass
+    pass
             if isinstance(config, dict) and "low" in config and "high" in config:
+    pass
+    pass
                 self.logger.info(
                     f"   - {param}: [{config['low']:.4f}, {config['high']:.4f}]",
                 )

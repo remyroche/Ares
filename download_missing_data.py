@@ -25,6 +25,10 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
 
     try:
         # Define date range
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         start_date = datetime(2022, 11, 1)
         end_date = datetime(2023, 7, 31)
 
@@ -43,6 +47,10 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
             try:
                 logger.info(f"📅 Downloading batch starting from {datetime.fromtimestamp(current_since/1000)}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Download klines
                 klines = await exchange.fetch_ohlcv(
                     symbol,
@@ -52,6 +60,8 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
                 )
 
                 if not klines:
+    pass
+    pass
                     logger.info("No more data available")
                     break
 
@@ -75,6 +85,8 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
 
         # Combine all data
         if all_klines:
+    pass
+    pass
             combined_df = pd.concat(all_klines, ignore_index=True)
             combined_df = combined_df.drop_duplicates(subset=['timestamp'])
             combined_df = combined_df.sort_values('timestamp')
@@ -89,6 +101,8 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
             # Also append to existing consolidated file
             existing_file = f"data_cache/klines_{exchange_name.upper()}_{symbol}_{interval}_consolidated.parquet"
             if os.path.exists(existing_file):
+    pass
+    pass
                 existing_df = pd.read_parquet(existing_file)
                 existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp'])
 
@@ -120,9 +134,13 @@ async def main():
     success = await download_missing_data("ETHUSDT", "binance", "1m")
 
     if success:
+    pass
+    pass
         logger.info("✅ Missing data download completed successfully")
     else:
         logger.error("❌ Missing data download failed")
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

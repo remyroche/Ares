@@ -10,6 +10,7 @@ import pandas as pd
 from typing import Any, Dict, Optional, Tuple
 
 from src.utils.centralized_decorators import (
+import guard_dataframe_nulls,
     guard_dataframe_nulls,
     handle_errors,
     with_tracing_span,
@@ -17,6 +18,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
+import class FractionalTripleBarrierLabeling:
 class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.
 
@@ -136,14 +138,20 @@ class FractionalTripleBarrierLabeling:
 
         # Distance - based scoring
         if self.fractional_config["enable_distance_scaling"]:
+    pass
+    pass
             components["distance_score"] = self._calculate_distance_scores(labeled_data)
 
         # Time decay scoring
         if self.fractional_config["enable_time_decay"]:
+    pass
+    pass
             components["time_score"] = self._calculate_time_decay_scores(labeled_data)
 
         # Volatility normalization
         if self.fractional_config["enable_volatility_normalization"]:
+    pass
+    pass
             components["volatility_score"] = self._calculate_volatility_scores(
                 labeled_data, volatility_series
             )
@@ -151,12 +159,16 @@ class FractionalTripleBarrierLabeling:
         return components
 
     def _calculate_distance_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """Calculate distance - based fractional scores."""
         scores, np.zeros(len(labeled_data))
 
         # For profit hits: score based on how quickly profit was achieved
         profit_hits, labeled_data["label"] == 1
         if profit_hits.any():
+    pass
+    pass
             profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
         # Normalize by target profit
             target_profit, self.base_labeler.profit_take_multiplier
@@ -165,6 +177,8 @@ class FractionalTripleBarrierLabeling:
         # For stop loss hits: score based on how quickly stop was hit
         stop_hits, labeled_data["label"] == -1
         if stop_hits.any():
+    pass
+    pass
             stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
         # Normalize by target loss (negative)
             target_loss = -self.base_labeler.stop_loss_multiplier
@@ -173,6 +187,8 @@ class FractionalTripleBarrierLabeling:
         return scores
 
     def _calculate_time_decay_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """Calculate time decay scores based on how quickly barriers were hit."""
         scores, np.zeros(len(labeled_data))
 
@@ -184,11 +200,15 @@ class FractionalTripleBarrierLabeling:
         stop_hits, labeled_data["label"] == -1
 
         if profit_hits.any():
+    pass
+    pass
         # Quick profit hits get higher scores
             profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
             scores[profit_hits] = np.clip(profit_pcts / self.base_labeler.profit_take_multiplier, 0, 1)
 
         if stop_hits.any():
+    pass
+    pass
         # Quick stop hits get lower scores (worse performance)
             stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
             scores[stop_hits] = np.clip(stop_pcts / self.base_labeler.stop_loss_multiplier, 0, 1)
@@ -204,6 +224,8 @@ class FractionalTripleBarrierLabeling:
         scores, np.zeros(len(labeled_data))
 
         if volatility_series is not None:
+    pass
+    pass
         # Normalize by volatility - higher volatility periods get adjusted scores
             volatility_norm, volatility_series / volatility_series.rolling(20).mean()
             scores, np.clip(1 / volatility_norm, 0.5, 2.0)  # Bounded normalization
@@ -269,6 +291,8 @@ class FractionalTripleBarrierLabeling:
         return final_confidence
 
     def get_fractional_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Get statistics about fractional labels."""
         stats = {
             "total_samples": len(labeled_data),

@@ -13,13 +13,21 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_corrected_timeframes():
+    pass
+    pass
     """Test that the timeframes are correctly configured."""
     print("🧪 Testing Corrected Timeframes Configuration...")
 
     try:
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Test configuration with correct timeframes
+import config = {
         config = {
             "timeframe": "5m",
             "model_architectures": {
@@ -45,7 +53,11 @@ def test_corrected_timeframes():
         }
 
         for timeframe, expected_model in expected_mappings.items():
+    pass
+    pass
             if timeframe in trainer.model_architectures:
+    pass
+    pass
                 model_type = trainer.model_architectures[timeframe]
                 assert model_type == expected_model, f"Expected {expected_model} for {timeframe}, got {model_type}"
                 print(f"   ✅ {timeframe} → {expected_model.upper()}")
@@ -73,11 +85,17 @@ def test_corrected_timeframes():
         return False
 
 def test_training_steps_configuration():
+    pass
+    pass
     """Test that training steps are correctly configured."""
     print("🧪 Testing Training Steps Configuration...")
 
     try:
         # Test Step 6 configuration (should use TCN for 5m)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step6_config = {
             "timeframe": "5m",
             "model_architectures": {
@@ -132,6 +150,8 @@ def test_training_steps_configuration():
         return False
 
 def run_corrected_timeframes_tests():
+    pass
+    pass
     """Run all corrected timeframes tests."""
     print("🚀 Starting Corrected Timeframes Tests")
     print("=" * 60)
@@ -144,14 +164,22 @@ def run_corrected_timeframes_tests():
     results = {}
 
     for test_name, test_func in tests:
-        print(f"\n{'='*60}")
+    pass
+    pass
+        print(f"\\\n{'='*60}")
         print(f"Running {test_name} test...")
 
         try:
             result = test_func()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results[test_name] = result
 
             if result:
+    pass
+    pass
                 print(f"✅ {test_name} PASSED")
             else:
                 print(f"❌ {test_name} FAILED")
@@ -161,7 +189,7 @@ def run_corrected_timeframes_tests():
             results[test_name] = False
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\\\n{'='*60}")
     print("CORRECTED TIMEFRAMES TEST SUMMARY")
     print(f"{'='*60}")
 
@@ -169,19 +197,23 @@ def run_corrected_timeframes_tests():
     total = len(results)
 
     for test_name, result in results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         print(f"{test_name}: {status}")
 
-    print(f"\nOverall: {passed}/{total} tests passed")
+    print(f"\\\nOverall: {passed}/{total} tests passed")
 
     if passed == total:
+    pass
+    pass
         print("🎉 ALL CORRECTED TIMEFRAMES TESTS PASSED!")
-        print("\n🎯 TIMEFRAME CONFIGURATION STATUS: CORRECT")
+        print("\\\n🎯 TIMEFRAME CONFIGURATION STATUS: CORRECT")
         print("✅ Only actual timeframes are included (1m, 5m, 15m, 30m, 1h)")
         print("✅ 4h and 1d timeframes correctly excluded")
         print("✅ 1h correctly configured as HMM regime only")
         print("✅ Training steps properly configured for their timeframes")
-        print("\n🚀 The multi-output training framework is correctly configured!")
+        print("\\\n🚀 The multi-output training framework is correctly configured!")
         print("All timeframes match the actual usage in the system.")
     else:
         print(f"⚠️ {total - passed} tests failed. Please check the implementation.")
@@ -189,5 +221,7 @@ def run_corrected_timeframes_tests():
     return passed == total
 
 if __name__ == "__main__":
+    pass
+    pass
     success = run_corrected_timeframes_tests()
     sys.exit(0 if success else 1)

@@ -24,7 +24,13 @@ sys.path.insert(0, str(project_root))
 # Import required components
 try:
     from ares_launcher import AresLauncher
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
     from src.utils.logger import system_logger, setup_logging
+import except ImportError as e:
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Please ensure you're running this from the project root directory")
@@ -35,11 +41,15 @@ class MockDataCreator:
     """Creates mock data for testing the pipeline."""
 
     def __init__(self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"):
+    pass
+    pass
         self.symbol = symbol
         self.exchange = exchange
         self.logger = system_logger.getChild("MockDataCreator")
 
     def create_mock_data(self) -> Dict[str, str]:
+    pass
+    pass
         """Create mock data files that the pipeline expects."""
         self.logger.info("🏗️ Creating mock data for pipeline testing")
 
@@ -60,6 +70,8 @@ class MockDataCreator:
         price = base_price
 
         for timestamp in klines_timestamps:
+    pass
+    pass
             # Simulate price movement
             price_change = np.random.normal(0, 0.001)  # 0.1% volatility
             price = max(price * (1 + price_change), 100)  # Minimum $100
@@ -90,8 +102,12 @@ class MockDataCreator:
         aggtrades_data = []
 
         for timestamp in aggtrades_timestamps:
+    pass
+    pass
             num_trades = np.random.randint(1, 10)
             for _ in range(num_trades):
+    pass
+    pass
                 trade_price = base_price + np.random.normal(0, 50)
                 quantity = np.random.uniform(0.1, 10.0)
 
@@ -110,6 +126,8 @@ class MockDataCreator:
         futures_data = []
 
         for timestamp in futures_timestamps:
+    pass
+    pass
             mark_price = base_price + np.random.normal(0, 30)
             funding_rate = np.random.uniform(-0.001, 0.001)
 
@@ -154,6 +172,8 @@ class PipelineTester:
     """Tests the pipeline using ares_launcher."""
 
     def __init__(self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"):
+    pass
+    pass
         self.symbol = symbol
         self.exchange = exchange
         self.logger = system_logger.getChild("PipelineTester")
@@ -161,6 +181,8 @@ class PipelineTester:
         self.launcher = AresLauncher()
 
     def setup_environment(self):
+    pass
+    pass
         """Setup environment for testing."""
         self.logger.info("🔧 Setting up test environment")
 
@@ -177,16 +199,24 @@ class PipelineTester:
         self.logger.info("✅ Test environment setup completed")
 
     def create_mock_data(self):
+    pass
+    pass
         """Create mock data for testing."""
         self.logger.info("📊 Creating mock data")
         return self.mock_creator.create_mock_data()
 
     def test_step1_data_collection(self) -> bool:
+    pass
+    pass
         """Test step1 using ares_launcher."""
         self.logger.info("🧪 Testing Step1: Data Collection")
 
         try:
             # Create mock data first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.create_mock_data()
 
             # Test using ares_launcher's step pipeline
@@ -200,6 +230,8 @@ class PipelineTester:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ Step1 test completed successfully")
                 return True
             else:
@@ -211,11 +243,17 @@ class PipelineTester:
             return False
 
     def test_step1_5_data_converter(self) -> bool:
+    pass
+    pass
         """Test step1_5 using ares_launcher."""
         self.logger.info("🧪 Testing Step1.5: Data Converter")
 
         try:
             # Create mock data first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.create_mock_data()
 
             # Test using ares_launcher's step pipeline
@@ -229,6 +267,8 @@ class PipelineTester:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ Step1.5 test completed successfully")
                 return True
             else:
@@ -240,11 +280,17 @@ class PipelineTester:
             return False
 
     def test_step2_feature_engineering(self) -> bool:
+    pass
+    pass
         """Test step2 using ares_launcher."""
         self.logger.info("🧪 Testing Step2: Feature Engineering")
 
         try:
             # Create mock data first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.create_mock_data()
 
             # Test using ares_launcher's step pipeline
@@ -258,6 +304,8 @@ class PipelineTester:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ Step2 test completed successfully")
                 return True
             else:
@@ -269,11 +317,17 @@ class PipelineTester:
             return False
 
     def test_complete_pipeline(self) -> bool:
+    pass
+    pass
         """Test the complete pipeline from step1 to step2."""
         self.logger.info("🧪 Testing Complete Pipeline (Step1 -> Step1.5 -> Step2)")
 
         try:
             # Create mock data first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.create_mock_data()
 
             # Test using ares_launcher's step pipeline starting from step1
@@ -287,6 +341,8 @@ class PipelineTester:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ Complete pipeline test completed successfully")
                 return True
             else:
@@ -298,11 +354,17 @@ class PipelineTester:
             return False
 
     def test_blank_training_mode(self) -> bool:
+    pass
+    pass
         """Test using ares_launcher's blank training mode."""
         self.logger.info("🧪 Testing Blank Training Mode")
 
         try:
             # Create mock data first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.create_mock_data()
 
             # Test using ares_launcher's blank training
@@ -313,6 +375,8 @@ class PipelineTester:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ Blank training test completed successfully")
                 return True
             else:
@@ -324,6 +388,8 @@ class PipelineTester:
             return False
 
     def validate_outputs(self) -> Dict[str, bool]:
+    pass
+    pass
         """Validate that the pipeline produced expected outputs."""
         self.logger.info("🔍 Validating pipeline outputs")
 
@@ -361,6 +427,8 @@ class PipelineTester:
 
 
 def main():
+    pass
+    pass
     """Main test function."""
     print("🚀 Starting Pipeline Test with Ares Launcher")
     print("=" * 80)
@@ -380,6 +448,10 @@ def main():
 
     try:
         # Test individual steps
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("🧪 Testing individual steps...")
 
         # Step1 test
@@ -405,14 +477,20 @@ def main():
         results['validation'] = validation_results
 
         # Print results
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
         print("📊 TEST RESULTS SUMMARY")
         print("=" * 80)
 
         for test_name, result in results.items():
+    pass
+    pass
             if isinstance(result, dict):
-                print(f"\n{test_name.upper()}:")
+    pass
+    pass
+                print(f"\\\n{test_name.upper()}:")
                 for sub_test, sub_result in result.items():
+    pass
+    pass
                     status = "✅ PASS" if sub_result else "❌ FAIL"
                     print(f"  {sub_test}: {status}")
             else:
@@ -425,8 +503,10 @@ def main():
             for result in results.values()
         )
 
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
         if overall_success:
+    pass
+    pass
             print("🎉 ALL TESTS PASSED! Pipeline is working correctly with ares_launcher.")
         else:
             print("💥 SOME TESTS FAILED! Check the logs for details.")
@@ -441,6 +521,8 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the test
     success = main()
     sys.exit(0 if success else 1)

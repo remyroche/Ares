@@ -9,6 +9,7 @@ from typing import Any
 
 import psutil
 from fastapi import (
+import BackgroundTasks,
     BackgroundTasks,
     FastAPI,
     HTTPException,
@@ -35,6 +36,11 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 # --- Import from your Ares Codebase ---
 try:
     from src.config import CONFIG, AresConfig
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
     from src.database.sqlite_manager import SQLiteManager
     from src.supervisor.performance_reporter import PerformanceReporter
     from src.utils.state_manager import StateManager
@@ -43,6 +49,7 @@ try:
     from src.monitoring.enhanced_ml_tracker import EnhancedMLTracker
     from src.monitoring.ml_monitor import MLMonitor
     from src.monitoring.performance_monitor import PerformanceMonitor
+import ares_config = AresConfig
     ares_config = AresConfig()
     print("Successfully imported Ares modules.")
 except ImportError as e:
@@ -54,6 +61,8 @@ except ImportError as e:
     # Define dummy classes if imports fail
     class SQLiteManager:
         def __init__(self, db_path=""):
+    pass
+    pass
     pass  # TODO: Add proper implementation
         async def initialize(self):
             pass
@@ -66,8 +75,12 @@ except ImportError as e:
 
     class StateManager:
         def __init__(self):
+    pass
+    pass
     pass  # TODO: Add proper implementation
         def is_kill_switch_active(self):
+    pass
+    pass
             return False
 
         async def activate_kill_switch(self, reason):
@@ -77,10 +90,14 @@ except ImportError as e:
             pass
 
         def get_kill_switch_reason(self):
+    pass
+    pass
             return "Kill switch not available"
 
     class PerformanceReporter:
         def __init__(self):
+    pass
+    pass
     pass  # TODO: Add proper implementation
     ares_config = type("AresConfig", (), {"exchange_name": "BINANCE"})()
 
@@ -88,14 +105,20 @@ except ImportError as e:
 app = FastAPI(
     title="Ares Trading Bot API",
     description="Comprehensive API for the Ares trading bot with kill switch, backtesting, and analysis capabilities.",
-    version="2.0.0",
+    version="2.00",
 )
 
 # Observability and structured logging
 try:
     from src.utils.structured_logging import CorrelationIdMiddleware
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
     from src.utils.observability import init_observability
 
+import init_observability
     init_observability({})
     # Add correlation ID middleware for request scoping
     app.add_middleware(CorrelationIdMiddleware)
@@ -133,9 +156,17 @@ async def startup_event():
     async def create_and_initialize(name: str, factory, initializer):
         try:
             instance = factory()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             result = await initializer(instance)
             if isinstance(result, bool):
+    pass
+    pass
                 if not result:
+    pass
+    pass
                     logger.warning(f"{name} failed to initialize")
                 return instance
             return result if result is not None else instance
@@ -149,6 +180,8 @@ async def startup_event():
     async def init_and_start_dashboard(inst):
         ok = await inst.initialize()
         if ok is False:
+    pass
+    pass
             return False
         await inst.start()
         return True
@@ -159,6 +192,8 @@ async def startup_event():
     async def init_and_start_ml(inst):
         ok = await inst.initialize()
         if ok is False:
+    pass
+    pass
             return False
         await inst.start_monitoring()
         return True
@@ -187,13 +222,21 @@ async def startup_event():
     # Inject dependencies into metrics dashboard if available
     try:
         if metrics_dashboard:
+    pass
+    except Exception as e:
+        pass
+    pass
             metrics_dashboard.performance_monitor = performance_monitor
             metrics_dashboard.enhanced_ml_tracker = enhanced_ml_tracker
+    except Exception as e:
+        pass
     except Exception as e:
         logger.warning(f"Failed to inject monitors into MetricsDashboard: {e}")
 
     # Performance Dashboard (requires performance monitor)
     if performance_monitor is not None:
+    pass
+    pass
         performance_dashboard = await create_and_initialize(
             "PerformanceDashboard",
             lambda: PerformanceDashboard(CONFIG),
@@ -359,6 +402,8 @@ class ModelSelectionRequest(BaseModel):
 # --- WebSocket Manager ---
 class WebSocketManager:
     def __init__(self):
+    pass
+    pass
         self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
@@ -366,12 +411,20 @@ class WebSocketManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
+    pass
+    pass
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
+    pass
+    pass
             try:
                 await connection.send_text(json.dumps(message))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:
                 pass
 
@@ -383,6 +436,8 @@ websocket_manager = manager
 
 # --- Mock Data Generation ---
 def create_mock_data():
+    pass
+    pass
     mock_bots = [
         Bot(
             id=1,
@@ -469,9 +524,11 @@ def create_mock_data():
 
 @app.get("/")
 def read_root():
+    pass
+    pass
     return {
         "message": "Welcome to the Ares API v2.0. Navigate to /docs for API documentation.",
-        "version": "2.0.0",
+        "version": "2.00",
         "features": [
             "kill_switch",
             "backtesting",
@@ -490,7 +547,13 @@ async def websocket_endpoint(websocket: WebSocket):
             # Handle incoming WebSocket messages
             message = json.loads(data)
             if message.get("type") == "ping":
+    pass
+    except Exception as e:
+        pass
+    pass
                 await websocket.send_text(json.dumps({"type": "pong"}))
+    except Exception as e:
+        pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
@@ -501,8 +564,16 @@ async def get_dashboard_data(days: int = 7):
     """Fetches comprehensive dashboard data including real-time metrics."""
     try:
         # Get real data from database if available
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         try:
             await db_manager.initialize()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             open_positions_raw = await db_manager.get_collection(
                 "positions",
                 is_public=False,
@@ -522,6 +593,8 @@ async def get_dashboard_data(days: int = 7):
         value = 10000
         performance_curve = []
         for i in range(days, -1, -1):
+    pass
+    pass
             date = datetime.now() - timedelta(days=i)
             value += (random.random() - 0.45) * 200
             performance_curve.append(
@@ -562,6 +635,10 @@ async def get_dashboard_data(days: int = 7):
 async def prometheus_metrics_endpoint():
     try:
         data = prometheus_metrics.get_metrics()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return Response(content=data, media_type=CONTENT_TYPE_LATEST)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating metrics: {e}")
@@ -573,6 +650,10 @@ async def get_kill_switch_status():
     """Get current kill switch status."""
     try:
         is_active = state_manager.is_kill_switch_active()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         reason = state_manager.get_kill_switch_reason() if is_active else None
         return {
             "active": is_active,
@@ -589,6 +670,10 @@ async def activate_kill_switch(request: KillSwitchRequest):
     try:
         await state_manager.activate_kill_switch(request.reason)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Broadcast to WebSocket connections
         await manager.broadcast(
             {
@@ -614,6 +699,10 @@ async def deactivate_kill_switch():
     try:
         await state_manager.deactivate_kill_switch()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Broadcast to WebSocket connections
         await manager.broadcast(
             {
@@ -633,12 +722,18 @@ async def start_backtest(params: BacktestParams, background_tasks: BackgroundTas
     """Run a comprehensive backtest with detailed results."""
     try:
         # Simulate backtest execution
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await asyncio.sleep(2)
 
         # Generate detailed mock results
         mock_equity_curve = []
         value = params.capital or 10000
         for i in range(90, -1, -1):
+    pass
+    pass
             date = datetime.now() - timedelta(days=i)
             value += (random.random() - 0.45) * (value * 0.02)
             mock_equity_curve.append(
@@ -689,6 +784,10 @@ async def get_backtest_comparison():
     """Get comparison data for multiple backtest runs."""
     try:
         # Mock comparison data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         comparisons = [
             {
                 "id": "backtest_1",
@@ -733,7 +832,7 @@ async def get_models():
             ModelInfo(
                 id="model_1",
                 name="Performer v1.2",
-                version="1.2.0",
+                version="1.20",
                 type="ensemble",
                 performance={
                     "accuracy": 72.5,
@@ -747,7 +846,7 @@ async def get_models():
             ModelInfo(
                 id="model_2",
                 name="Current v3.1",
-                version="3.1.0",
+                version="3.10",
                 type="deep_learning",
                 performance={
                     "accuracy": 69.8,
@@ -761,7 +860,7 @@ async def get_models():
             ModelInfo(
                 id="model_3",
                 name="Experimental v2.0",
-                version="2.0.0",
+                version="2.00",
                 type="ensemble",
                 performance={
                     "accuracy": 74.2,
@@ -772,6 +871,10 @@ async def get_models():
                 last_updated="2024-01-20T09:15:00Z",
                 status="testing",
             ),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         ]
 
         return {"models": models}
@@ -784,6 +887,10 @@ async def deploy_model(model_id: str):
     """Deploy a specific model."""
     try:
         # Mock deployment
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await asyncio.sleep(1)
         return {
             "message": f"Model {model_id} deployed successfully",
@@ -800,8 +907,14 @@ async def get_trade_analysis(days: int = 30, limit: int = 100):
     """Get comprehensive trade analysis data."""
     try:
         # Mock detailed trade analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         trades = []
         for i in range(limit):
+    pass
+    pass
             trade_data = {
                 "trade_id": f"trade_{i}",
                 "pair": random.choice(["BTC/USDT", "ETH/USDT", "SOL/USDT"]),
@@ -861,6 +974,10 @@ async def get_trade_details(trade_id: str):
     """Get detailed analysis for a specific trade."""
     try:
         # Mock detailed trade data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         trade_details = {
             "trade_id": trade_id,
             "pair": "BTC/USDT",
@@ -908,6 +1025,10 @@ async def get_all_bots():
     """Get all configured bots with their status and performance."""
     try:
         mock_bots, _, _ = create_mock_data()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return mock_bots
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -918,6 +1039,10 @@ async def add_new_bot(bot: NewBot):
     """Add a new bot to the configuration."""
     try:
         new_bot_data = bot.dict()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         new_bot_data["status"] = "stopped"
         new_bot_data["uptime"] = "N/A"
         new_bot_data["id"] = random.randint(100, 999)
@@ -935,6 +1060,10 @@ async def remove_bot_endpoint(bot_id: int):
     try:
         return {"message": f"Bot {bot_id} removed successfully."}
     except Exception as e:
+        pass
+    except Exception as e:
+        pass
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -943,6 +1072,10 @@ async def toggle_bot(bot_id: int):
     """Start or stop a bot."""
     try:
         return {"message": f"Bot {bot_id} status toggled."}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -953,6 +1086,10 @@ async def get_system_status():
     """Get comprehensive system status."""
     try:
         # Get process info
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         process = psutil.Process()
         memory_info = process.memory_info()
 
@@ -978,6 +1115,10 @@ async def restart_system():
     """Restart the trading system."""
     try:
         # In a real implementation, this would trigger a system restart
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return {"message": "System restart initiated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -987,17 +1128,29 @@ async def get_monitoring_dashboard():
     """Get comprehensive monitoring dashboard data from real monitoring/reporting modules."""
     try:
         dashboard_data = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Metrics Dashboard
         if metrics_dashboard and hasattr(metrics_dashboard, 'get_dashboard_data'):
+    pass
+    pass
             dashboard_data['metrics_dashboard'] = metrics_dashboard.get_dashboard_data()
         # Performance Dashboard
         if performance_dashboard and hasattr(performance_dashboard, 'get_dashboard_summary'):
+    pass
+    pass
             dashboard_data['performance_dashboard'] = performance_dashboard.get_dashboard_summary()
         # Enhanced ML Tracker
         if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+    pass
+    pass
             dashboard_data['ml_tracker'] = await enhanced_ml_tracker.get_tracking_statistics()
         # ML Monitor
         if ml_monitor and hasattr(ml_monitor, 'get_ml_monitoring_summary'):
+    pass
+    pass
             dashboard_data['ml_monitor'] = ml_monitor.get_ml_monitoring_summary()
         return dashboard_data
     except Exception as e:
@@ -1008,6 +1161,10 @@ async def export_monitoring_data(request: Request):
     """Export monitoring data as CSV."""
     try:
         data = await request.json()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_type = data.get('dataType', 'performance')
         time_range = data.get('timeRange', '7d')
 
@@ -1022,6 +1179,8 @@ async def export_monitoring_data(request: Request):
         writer = csv.writer(output)
 
         if data_type == 'performance':
+    pass
+    pass
             writer.writerow(['timestamp', 'model_accuracy', 'trading_win_rate', 'profit_factor', 'sharpe_ratio', 'system_memory_usage', 'system_cpu_usage'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
             for i in range(168 if time_range == '7d' else 24):  # 7 days * 24 hours or 24 hours
@@ -1040,6 +1199,8 @@ async def export_monitoring_data(request: Request):
             writer.writerow(['timestamp', 'anomaly_count', 'severity_level', 'detection_rate', 'metric', 'value', 'threshold'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
             for i in range(168 if time_range == '7d' else 24):
+    pass
+    pass
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
                     timestamp.strftime('%Y-%m-%d %H:%M'),
@@ -1055,6 +1216,8 @@ async def export_monitoring_data(request: Request):
             writer.writerow(['timestamp', 'predicted_accuracy', 'predicted_win_rate', 'confidence_score', 'trend', 'next_5_predictions'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
             for i in range(168 if time_range == '7d' else 24):
+    pass
+    pass
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
                     timestamp.strftime('%Y-%m-%d %H:%M'),
@@ -1069,6 +1232,8 @@ async def export_monitoring_data(request: Request):
             writer.writerow(['metric', 'correlation_value', 'significance', 'p_value', 'sample_size'])
             metrics = ['Model Accuracy', 'Win Rate', 'Profit Factor', 'Sharpe Ratio', 'System Health']
             for metric in metrics:
+    pass
+    pass
                 writer.writerow([
                     metric,
                     round(random.uniform(0.3, 0.9), 3),
@@ -1081,6 +1246,8 @@ async def export_monitoring_data(request: Request):
             writer.writerow(['timestamp', 'portfolio_var', 'max_drawdown', 'correlation_risk', 'concentration_risk', 'leverage_ratio'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
             for i in range(168 if time_range == '7d' else 24):
+    pass
+    pass
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
                     timestamp.strftime('%Y-%m-%d %H:%M'),
@@ -1095,6 +1262,8 @@ async def export_monitoring_data(request: Request):
             writer.writerow(['timestamp', 'health_score', 'memory_usage', 'cpu_usage', 'response_time', 'error_rate', 'uptime'])
             base_time = datetime.now() - timedelta(days=7 if time_range == '7d' else 1)
             for i in range(168 if time_range == '7d' else 24):
+    pass
+    pass
                 timestamp = base_time + timedelta(hours=i)
                 writer.writerow([
                     timestamp.strftime('%Y-%m-%d %H:%M'),
@@ -1111,6 +1280,7 @@ async def export_monitoring_data(request: Request):
         csv_data = output.getvalue()
 
         from fastapi.responses import Response
+import response = Response
         response = Response(content=csv_data, media_type="text/csv")
         response.headers["Content-Disposition"] = f"attachment; filename=monitoring_data_{data_type}_{time_range}.csv"
 
@@ -1128,13 +1298,23 @@ async def get_tokens():
     """Get all configured tokens with their settings."""
     try:
         # Try to get real data from config
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {})
         tokens = []
 
         for exchange, symbols in supported_tokens.items():
+    pass
+    pass
             for symbol in symbols:
+    pass
+    pass
                 token_key = f"{symbol}_{exchange}"
                 if token_key in token_configs:
+    pass
+    pass
                     tokens.append(token_configs[token_key])
                 else:
                     # Create default config
@@ -1157,14 +1337,14 @@ async def get_tokens():
                 symbol="BTCUSDT",
                 exchange=ares_config.exchange_name.upper(),
                 enabled=True,
-                model_version="v1.2.3",
+                model_version="v1.23",
                 last_updated=datetime.now().isoformat(),
             ),
             TokenConfig(
                 symbol="ETHUSDT",
                 exchange=ares_config.exchange_name.upper(),
                 enabled=True,
-                model_version="v1.1.0",
+                model_version="v1.10",
                 last_updated=datetime.now().isoformat(),
             ),
             TokenConfig(
@@ -1182,6 +1362,10 @@ async def update_token_config(request: TokenManagementRequest):
     """Add or update token configuration."""
     try:
         token_key = f"{request.symbol}_{request.exchange}"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         token_configs[token_key] = TokenConfig(
             symbol=request.symbol,
             exchange=request.exchange,
@@ -1209,7 +1393,13 @@ async def remove_token(symbol: str, exchange: str):
     """Remove a token from trading."""
     try:
         token_key = f"{symbol}_{exchange}"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if token_key in token_configs:
+    pass
+    pass
             token_configs[token_key].enabled = False
             token_configs[token_key].last_updated = datetime.now().isoformat()
 
@@ -1236,11 +1426,19 @@ async def get_available_models():
     """Get all available models for selection."""
     try:
         # Try to get real model data from MLflow or model directory
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         model_configs = CONFIG.get("MODEL_TRAINING", {}).get("model_types", {})
         models = []
 
         for model_name, config in model_configs.items():
+    pass
+    pass
             if config.get("enabled", False):
+    pass
+    pass
                 models.append(
                     {
                         "model_id": model_name,
@@ -1292,11 +1490,17 @@ async def get_model_performance(symbol: str, exchange: str):
     """Get performance metrics for all models on a specific token/exchange."""
     try:
         # Try to get real performance data from performance_reporter
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         performances = []
 
         # Mock performance data based on performance_reporter.py structure
         models = ["lightgbm", "xgboost", "neural_network"]
         for model in models:
+    pass
+    pass
             performance = ModelPerformance(
                 model_id=model,
                 model_version=f"v1.{len(model)}.0",
@@ -1331,7 +1535,13 @@ async def select_model_for_token(request: ModelSelectionRequest):
     try:
         token_key = f"{request.symbol}_{request.exchange}"
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if token_key in token_configs:
+    pass
+    pass
             token_configs[token_key].model_version = request.model_version
             token_configs[token_key].last_updated = datetime.now().isoformat()
 
@@ -1362,11 +1572,17 @@ async def compare_models(symbol: str, exchange: str, model_a: str, model_b: str)
     """Compare two models for a specific token/exchange."""
     try:
         # Get performance data for both models
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         performances = await get_model_performance(symbol, exchange)
         model_a_perf = next((p for p in performances if p.model_id == model_a), None)
         model_b_perf = next((p for p in performances if p.model_id == model_b), None)
 
         if not model_a_perf or not model_b_perf:
+    pass
+    pass
             return {"error": "One or both models not found"}
 
         # Calculate comparison metrics
@@ -1420,10 +1636,16 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
     """Get detailed analysis for a specific model on a token/exchange."""
     try:
         # Get performance data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         performances = await get_model_performance(symbol, exchange)
         performance = next((p for p in performances if p.model_id == model_id), None)
 
         if not performance:
+    pass
+    pass
             return {"error": "Model not found"}
 
         # Create detailed analysis based on performance_reporter.py structure
@@ -1489,6 +1711,8 @@ class DriftAlertModel(BaseModel):
 @app.get("/api/monitoring/drift-alerts", response_model=list[DriftAlertModel])
 async def get_drift_alerts():
     if ml_monitor and hasattr(ml_monitor, 'get_drift_alerts'):
+    pass
+    pass
         alerts = ml_monitor.get_drift_alerts()
         # Convert to DriftAlertModel, ensuring timestamp is str
         return [
@@ -1509,12 +1733,16 @@ async def get_drift_alerts():
 @app.get("/api/monitoring/feature-importance/{model_id}")
 async def get_feature_importance(model_id: str):
     if ml_monitor and hasattr(ml_monitor, 'get_feature_importance_history'):
+    pass
+    pass
         return [fi.__dict__ for fi in ml_monitor.get_feature_importance_history(model_id)]
     return []
 
 @app.get("/api/monitoring/online-learning/{model_id}")
 async def get_online_learning_metrics(model_id: str):
     if ml_monitor and hasattr(ml_monitor, 'get_online_learning_metrics'):
+    pass
+    pass
         metrics = ml_monitor.get_online_learning_metrics(model_id)
         return metrics.__dict__ if metrics else {}
     return {}
@@ -1535,6 +1763,8 @@ async def get_ml_tracker_stats():
     ):
         return _ml_tracker_stats_cache['data']
     if enhanced_ml_tracker and hasattr(enhanced_ml_tracker, 'get_tracking_statistics'):
+    pass
+    pass
         stats = await enhanced_ml_tracker.get_tracking_statistics()
         _ml_tracker_stats_cache['data'] = stats
         _ml_tracker_stats_cache['timestamp'] = now
@@ -1559,9 +1789,11 @@ async def get_regime_performance():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import uvicorn
 
     print("Starting Ares API server v2.0...")
     print("API documentation will be available at http://localhost:8000/docs")
     port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
-    uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("api_server:app", host="0.000", port=port, reload=True)

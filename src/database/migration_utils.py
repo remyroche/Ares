@@ -10,6 +10,7 @@ from typing import Any
 
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
+import error,
     error,
     warning,
     critical,
@@ -32,6 +33,8 @@ class DatabaseMigrationUtils:
     """
 
     def __init__(self, db_manager: SQLiteManager):
+    pass
+    pass
         self.db_manager = db_manager
         self.logger = system_logger.getChild("MigrationUtils")
 
@@ -41,6 +44,8 @@ class DatabaseMigrationUtils:
         Filters out backtest-specific data and keeps only essential trading data.
         """
         if not export_name:
+    pass
+    pass
             export_name = f"trading_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         export_path = os.path.join(
@@ -50,6 +55,10 @@ class DatabaseMigrationUtils:
 
         try:
             # Create a clean copy for trading export
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             shutil.copy2(self.db_manager.db_path, export_path)
 
             # Create a temporary SQLite manager for the export
@@ -96,8 +105,14 @@ class DatabaseMigrationUtils:
         """Removes backtest-specific data from the export."""
         try:
             # Remove backtest results (keep only the latest successful ones)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             backtest_results = await temp_db.get_collection("backtest_results")
             if len(backtest_results) > 1:
+    pass
+    pass
                 # Keep only the most recent successful backtest
                 sorted_results = sorted(
                     backtest_results,
@@ -105,6 +120,8 @@ class DatabaseMigrationUtils:
                     reverse=True,
                 )
                 for result in sorted_results[1:]:
+    pass
+    pass
                     await temp_db.delete_document(
                         "backtest_results",
                         result.get("backtest_id", ""),
@@ -112,6 +129,8 @@ class DatabaseMigrationUtils:
 
             # Mark remaining backtest as migrated
             for result in await temp_db.get_collection("backtest_results"):
+    pass
+    pass
                 result["is_migrated"] = 1
                 await temp_db.set_document(
                     "backtest_results",
@@ -133,7 +152,13 @@ class DatabaseMigrationUtils:
         """
         try:
             # Verify file exists
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not os.path.exists(import_path):
+    pass
+    pass
                 self.print(missing("Import file not found: {import_path}"))
                 return False
 
@@ -148,6 +173,8 @@ class DatabaseMigrationUtils:
             success = await self.db_manager.import_migration(import_path)
 
             if success:
+    pass
+    pass
                 # Update import record
                 import_name = os.path.basename(import_path).replace(".sqlite", "")
                 import_data = {
@@ -184,12 +211,18 @@ class DatabaseMigrationUtils:
         Exports only backtest results for analysis on another computer.
         """
         if not export_name:
+    pass
+    pass
             export_name = f"backtest_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         export_path = os.path.join(self.db_manager.migration_dir, f"{export_name}.json")
 
         try:
             # Get all backtest results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             backtest_results = await self.db_manager.get_collection("backtest_results")
 
             # Export to JSON
@@ -235,7 +268,13 @@ class DatabaseMigrationUtils:
 
         try:
             # Check if file exists
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not os.path.exists(file_path):
+    pass
+    pass
                 validation_result["errors"].append("File does not exist")
                 return validation_result
             validation_result["file_exists"] = True
@@ -243,6 +282,8 @@ class DatabaseMigrationUtils:
             # Check file size
             file_size = os.path.getsize(file_path)
             if file_size == 0:
+    pass
+    pass
                 validation_result["errors"].append("File is empty")
                 return validation_result
             validation_result["size_valid"] = True
@@ -255,6 +296,10 @@ class DatabaseMigrationUtils:
             try:
                 import sqlite3
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 conn = sqlite3.connect(file_path)
                 cursor = conn.cursor()
 
@@ -277,6 +322,8 @@ class DatabaseMigrationUtils:
                     table for table in required_tables if table not in tables
                 ]
                 if missing_tables:
+    pass
+    pass
                     validation_result["errors"].append(
                         f"Missing required tables: {missing_tables}",
                     )
@@ -313,6 +360,10 @@ class DatabaseMigrationUtils:
         """
         try:
             migrations = await self.db_manager.get_collection("database_migrations")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return sorted(
                 migrations,
                 key=lambda x: x.get("created_at", ""),
@@ -329,6 +380,10 @@ class DatabaseMigrationUtils:
         try:
             cutoff_date = datetime.now() - timedelta(days=keep_days)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Get old migrations
             migrations = await self.list_migrations()
             old_migrations = [
@@ -339,6 +394,8 @@ class DatabaseMigrationUtils:
             ]
 
             for migration in old_migrations:
+    pass
+    pass
                 migration_id = migration.get("migration_id", "")
 
                 # Remove migration file
@@ -347,6 +404,8 @@ class DatabaseMigrationUtils:
                     f"{migration_id}.sqlite",
                 )
                 if os.path.exists(migration_file):
+    pass
+    pass
                     os.remove(migration_file)
                     self.logger.info(f"Removed old migration file: {migration_file}")
 
@@ -406,9 +465,13 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import sys
 
     if len(sys.argv) < 2:
+    pass
+    pass
         print("Usage:")
         print("  python migration_utils.py export [db_path]")
         print("  python migration_utils.py import <import_path> [db_path]")
@@ -419,27 +482,37 @@ if __name__ == "__main__":
 
     async def main():
         if command == "export":
+    pass
+    pass
             db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
             export_path = await export_database_for_trading(db_path)
             if export_path:
+    pass
+    pass
                 print(f"Export created: {export_path}")
             else:
                 print("Export failed")
 
         elif command == "import":
             if len(sys.argv) < 3:
+    pass
+    pass
                 print("Import path required")
                 sys.exit(1)
             import_path = sys.argv[2]
             db_path = sys.argv[3] if len(sys.argv) > 3 else "data/ares_local_db.sqlite"
             success = await import_database_for_trading(import_path, db_path)
             if success:
+    pass
+    pass
                 print("Import completed successfully")
             else:
                 print("Import failed")
 
         elif command == "validate":
             if len(sys.argv) < 3:
+    pass
+    pass
                 print("File path required")
                 sys.exit(1)
             file_path = sys.argv[2]

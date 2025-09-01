@@ -10,6 +10,7 @@ from typing import Protocol, runtime_checkable
 
 from src.custom_types.base_types import Symbol, Timestamp
 from src.custom_types.ml_types import ModelInput, PredictionResult
+import OrderRequest,
     OrderRequest,
     PerformanceMetrics,
     PositionInfo,
@@ -42,6 +43,8 @@ class TradingDataProvider(Protocol):
 
     @abstractmethod
     def is_connected(self) -> bool:
+    pass
+    pass
         ...
 
 
@@ -63,10 +66,14 @@ class TradingMLPredictor(Protocol):
 
     @abstractmethod
     def get_model_confidence(self) -> float:
+    pass
+    pass
         ...
 
     @abstractmethod
     def is_model_ready(self) -> bool:
+    pass
+    pass
         ...
 
 

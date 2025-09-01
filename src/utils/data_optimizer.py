@@ -17,12 +17,15 @@ from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 
+import class DataOptimizer:
 class DataOptimizer:
     """
     Data Optimizer for enhancing data processing efficiency and memory usage.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize Data Optimizer."""
         self.config: dict[str, Any] = config
         self.logger, get_component_logger("DataOptimizer")
@@ -49,6 +52,8 @@ class DataOptimizer:
         self._initialize_optimization_strategies()
 
     def _initialize_optimization_strategies(self) -> None:
+    pass
+    pass
         # Currently a placeholder hook for strategy registration; keep explicit method for future extension
         # Not used directly, but preserved for API stability
         return
@@ -56,12 +61,18 @@ class DataOptimizer:
 # Shared column projection helpers for Parquet reads
 
 def ohlcv_columns() -> list[str]:
+    pass
+    pass
     return ["timestamp", "open", "high", "low", "close", "volume"]
 
 def trade_columns() -> list[str]:
+    pass
+    pass
     return ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"]
 
 def regime_columns() -> list[str]:
+    pass
+    pass
     return ["timestamp", "regime", "confidence"]
 
     @handle_errors(
@@ -80,15 +91,23 @@ def regime_columns() -> list[str]:
 
         # Initialize cache if enabled
         if self.cache_enabled:
+    pass
+    pass
         self._initialize_cache()
 
         self.logger.info("✅ Data Optimizer initialized successfully")
         return True
 
     def _initialize_cache(self) -> None:
+    pass
+    pass
         """Initialize data caching system."""
         try:
         self.data_cache: dict[str, pd.DataFrame] = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.cache_timestamps: dict[str, float] = {}
         self.logger.info("Data cache initialized")
         except Exception as e:  # pragma: no cover - safety
@@ -103,6 +122,8 @@ def regime_columns() -> list[str]:
 
         # Apply optimization strategies
         if strategy == "auto":
+    pass
+    pass
             df, await self._apply_auto_optimization(df)
         elif strategy == "memory":
             df, await self._optimize_memory_usage(df)
@@ -132,6 +153,8 @@ def regime_columns() -> list[str]:
         """Apply automatic optimization based on data characteristics."""
         # Check data size and apply appropriate strategy
         if len(df) > 100_000:
+    pass
+    pass
         # Large dataset - focus on memory optimization
             df, await self._optimize_memory_usage(df)
         elif len(df) < 1_000:
@@ -155,6 +178,8 @@ def regime_columns() -> list[str]:
 
         # Apply compression if enabled
         if self.compression_enabled:
+    pass
+    pass
             df, await self._apply_compression(df)
 
         # Remove unnecessary columns
@@ -172,10 +197,18 @@ def regime_columns() -> list[str]:
     async def _optimize_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
         for column in df.columns:
+    pass
+    pass
         # Optimize numeric columns
         if df[column].dtype == "int64":
+    pass
+    pass
         if df[column].min() >= 0:
+    pass
+    pass
         if df[column].max() < 255:
+    pass
+    pass
                         df[column] = df[column].astype("uint8")
                     elif df[column].max() < 65_535:
                         df[column] = df[column].astype("uint16")
@@ -196,6 +229,8 @@ def regime_columns() -> list[str]:
             elif df[column].dtype == "object":
                 uniqueness_ratio, float(df[column].nunique()) / max(1.0, float(len(df[column])))
         if uniqueness_ratio < 0.5:
+    pass
+    pass
                     df[column] = df[column].astype("category")
 
         return df
@@ -207,15 +242,23 @@ def regime_columns() -> list[str]:
         - Convert boolean - like integer columns to bool - Downcast numeric columns where possible (non - lossy)
         """
         for column in df.select_dtypes(include=["int32", "int64", "uint32", "uint64"]).columns:
+    pass
+    pass
             series, df[column]
         if series.dropna().isin([0, 1]).all():
+    pass
+    pass
                 df[column] = series.astype("bool")
 
         # Pandas downcast for additional numeric shrinking
         with contextlib.suppress(Exception):
         for num_col in df.select_dtypes(include=["float32", "float64"]).columns:
+    pass
+    pass
                 df[num_col] = pd.to_numeric(df[num_col], downcast="float")
         for int_col in df.select_dtypes(include=["int32", "int64", "uint32", "uint64"]).columns:
+    pass
+    pass
                 df[int_col] = pd.to_numeric(df[int_col], downcast="integer")
 
         return df
@@ -228,6 +271,8 @@ def regime_columns() -> list[str]:
         # Remove columns with all null values
         null_columns, df.columns[df.isnull().all()].tolist()
         if null_columns:
+    pass
+    pass
             df, df.drop(columns = null_columns)
         self.logger.info(f"Removed {len(null_columns)} null columns")
 
@@ -235,6 +280,8 @@ def regime_columns() -> list[str]:
         with contextlib.suppress(Exception):
             duplicate_columns, df.columns[df.T.duplicated()].tolist()
         if duplicate_columns:
+    pass
+    pass
                 df, df.drop(columns = duplicate_columns)
         self.logger.info(f"Removed {len(duplicate_columns)} duplicate columns")
 
@@ -247,6 +294,8 @@ def regime_columns() -> list[str]:
         """Optimize DataFrame index."""
         # Reset index if it's not meaningful
         if df.index.name is None and len(df.index) == len(df):
+    pass
+    pass
             df, df.reset_index(drop = True)
         return df
 
@@ -267,6 +316,8 @@ def regime_columns() -> list[str]:
     async def _optimize_for_vectorization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ensure columns are numeric where appropriate to enable vectorized ops."""
         for column in df.select_dtypes(include=["object"]).columns:
+    pass
+    pass
         with contextlib.suppress(Exception):
                 df[column] = pd.to_numeric(df[column], errors="ignore")
         return df
@@ -278,10 +329,14 @@ def regime_columns() -> list[str]:
         Uses a simple schema - based cache key to avoid re - optimizing identical frames.
         """
         if not getattr(self, "data_cache", None):
+    pass
+    pass
         return df
 
         cache_key, self._make_df_cache_key(df)
         if cache_key in self.data_cache:
+    pass
+    pass
         self.processing_stats["cache_hits"] += 1
         return self.data_cache[cache_key]
 
@@ -309,12 +364,16 @@ def regime_columns() -> list[str]:
         return df
 
     def _make_df_cache_key(self, df: pd.DataFrame) -> str:
+    pass
+    pass
         """Create a stable cache key for a DataFrame structure."""
         dtypes_sig, tuple((c, str(t)) for c, t in df.dtypes.items())
         return f"cols:{tuple(df.columns)}|dtypes:{dtypes_sig}|n:{len(df)}"
 
     @lru_cache(maxsize = 128)
     def cached_optimization(self, df_hash: str) -> dict[str, Any]:
+    pass
+    pass
         """Cache optimization results keyed by a provided DataFrame hash."""
         # A minimal cached payload with versioning info; not a placeholder as it tracks config
         return {
@@ -338,13 +397,19 @@ def regime_columns() -> list[str]:
         required_columns = ["open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in market_data.columns]
         if missing_columns:
+    pass
+    pass
         self.logger.error(missing(f"Missing required columns: {missing_columns}"))
         # Continue but we still optimize whatever is present
 
         # Optimize data types for market data
         numeric_columns = ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
+    pass
+    pass
         if col in market_data.columns:
+    pass
+    pass
         with contextlib.suppress(Exception):
                     market_data[col] = pd.to_numeric(market_data[col], errors="coerce")
 
@@ -354,6 +419,8 @@ def regime_columns() -> list[str]:
 
         # Sort by timestamp if available
         if "timestamp" in market_data.columns:
+    pass
+    pass
         with contextlib.suppress(Exception):
                 market_data, market_data.sort_values("timestamp")
 
@@ -371,19 +438,31 @@ def regime_columns() -> list[str]:
         optimized_data: dict[str, pd.DataFrame] = {}
 
         for name, data in ensemble_data.items():
+    pass
+    pass
         # Optimize each dataset
             optimized_data[name] = await self.optimize_dataframe(data, strategy="memory")
 
         # Ensure consistent data types across ensemble
         if optimized_data:
+    pass
+    pass
         # Use the first dataset as reference for dtype alignment
             first_key, next(iter(optimized_data.keys()))
             reference_dtypes, optimized_data[first_key].dtypes
         for other_name, other_data in optimized_data.items():
+    pass
+    pass
         if other_name == first_key:
+    pass
+    pass
                     continue
         for col in other_data.columns:
+    pass
+    pass
         if col in reference_dtypes:
+    pass
+    pass
         with contextlib.suppress(Exception):
                             other_data[col] = other_data[col].astype(reference_dtypes[col])
 
@@ -391,6 +470,8 @@ def regime_columns() -> list[str]:
         return optimized_data
 
     def get_optimization_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get data optimization statistics."""
         try:
         return {
@@ -409,6 +490,10 @@ def regime_columns() -> list[str]:
                 ),
                 "timestamp": datetime.now().isoformat(),
             }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:  # pragma: no cover - safety
         self.logger.error(error(f"Error getting optimization stats: {e}"))
         return {"error": str(e)}
@@ -424,6 +509,8 @@ def regime_columns() -> list[str]:
 
         # Clear cache
         if hasattr(self, "data_cache"):
+    pass
+    pass
         self.data_cache.clear()
 
         # Clear processing stats
@@ -443,6 +530,8 @@ async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
     global data_optimizer
 
     if data_optimizer is None:
+    pass
+    pass
         # Fallback implementation for data_optimizer
         data_optimizer, DataOptimizer(config)
         await data_optimizer.initialize()
@@ -450,5 +539,7 @@ async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
     return data_optimizer
 
 def get_data_optimizer() -> DataOptimizer | None:
+    pass
+    pass
     """Get global data optimizer instance."""
     return data_optimizer

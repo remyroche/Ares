@@ -17,6 +17,7 @@ import sys
 from src.config import CONFIG
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -27,6 +28,8 @@ class MissingTimeframesDownloader:
     """Downloads missing timeframe data for multi-timeframe HMM ensemble."""
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.required_timeframes = ["5m", "15m", "30m"]
         self.symbol = "ETHUSDT"
@@ -39,6 +42,8 @@ class MissingTimeframesDownloader:
 
         existing_data: dict[str, bool] = {}
         for timeframe in self.required_timeframes:
+    pass
+    pass
             csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
             existing_data[timeframe] = csv_file.exists()
 
@@ -58,9 +63,15 @@ class MissingTimeframesDownloader:
                 symbol=self.symbol,
                 exchange_name=self.exchange,
                 interval=timeframe,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             if success:
+    pass
+    pass
                 logger.info(f"✅ Successfully downloaded {timeframe} data")
                 return True
             logger.error(f"❌ Failed to download {timeframe} data")
@@ -80,6 +91,8 @@ class MissingTimeframesDownloader:
         missing_timeframes = [tf for tf, exists in existing_data.items() if not exists]
 
         if not missing_timeframes:
+    pass
+    pass
             logger.info("✅ All required timeframes already have data!")
             return {tf: True for tf in self.required_timeframes}
 
@@ -88,6 +101,8 @@ class MissingTimeframesDownloader:
         # Download missing timeframes
         download_results: dict[str, bool] = {}
         for timeframe in missing_timeframes:
+    pass
+    pass
             success = await self.download_timeframe(timeframe)
             download_results[timeframe] = success
 
@@ -99,17 +114,25 @@ class MissingTimeframesDownloader:
         return {**existing_data, **download_results}
 
     def verify_downloads(self, results: dict[str, bool]) -> bool:
+    pass
+    pass
         """Verify that all downloads were successful."""
         logger.info("🔍 Verifying downloads...")
 
         all_successful = True
         for timeframe, success in results.items():
+    pass
+    pass
             status = "✅" if success else "❌"
             logger.info(f"  {timeframe}: {status} {'Success' if success else 'Failed'}")
             if not success:
+    pass
+    pass
                 all_successful = False
 
         if all_successful:
+    pass
+    pass
             logger.info("✅ All timeframes successfully downloaded!")
         else:
             logger.warning("⚠️  Some timeframes failed to download")
@@ -117,14 +140,20 @@ class MissingTimeframesDownloader:
         return all_successful
 
     def print_summary(self, results: dict[str, bool]) -> None:
+    pass
+    pass
         """Print a summary of the download results."""
-        print("\n=== Download Summary ===")
+        print("\\\n=== Download Summary ===")
         for timeframe, success in sorted(results.items()):
+    pass
+    pass
             status = "SUCCESS" if success else "FAILED"
             print(f"{timeframe}: {status}")
 
 
 def main() -> None:
+    pass
+    pass
     parser = argparse.ArgumentParser(description="Download missing timeframes")
     parser.add_argument("--symbol", default="ETHUSDT")
     parser.add_argument("--exchange", default="BINANCE")
@@ -142,4 +171,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

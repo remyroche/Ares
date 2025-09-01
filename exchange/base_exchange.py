@@ -6,6 +6,7 @@ from typing import Any
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
 
+import class BaseExchange
 class BaseExchange(IExchangeClient, ABC):
     """
     Base class for all exchange implementations.
@@ -174,10 +175,16 @@ class BaseExchange(IExchangeClient, ABC):
         """Best-effort leverage setter using underlying client if supported."""
         try:
             market_id = await self._get_market_id(symbol)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
             market_id = symbol
 
         if not self.exchange:
+    pass
+    pass
             return False
 
         attempts: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
@@ -187,9 +194,17 @@ class BaseExchange(IExchangeClient, ABC):
         ]
 
         for method, args, kwargs in attempts:
+    pass
+    pass
             if hasattr(self.exchange, method):
+    pass
+    pass
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     return True
                 except Exception:
                     continue
@@ -199,10 +214,16 @@ class BaseExchange(IExchangeClient, ABC):
         """Best-effort margin mode setter using underlying client if supported."""
         try:
             market_id = await self._get_market_id(symbol)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
             market_id = symbol
 
         if not self.exchange:
+    pass
+    pass
             return False
 
         attempts: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
@@ -212,9 +233,17 @@ class BaseExchange(IExchangeClient, ABC):
         ]
 
         for method, args, kwargs in attempts:
+    pass
+    pass
             if hasattr(self.exchange, method):
+    pass
+    pass
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     return True
                 except Exception:
                     continue
@@ -223,23 +252,43 @@ class BaseExchange(IExchangeClient, ABC):
     async def close(self) -> None:
         """Close the exchange connection if supported by underlying client."""
         if self.exchange and hasattr(self.exchange, "close"):
+    pass
+    pass
             await self.exchange.close()
 
     def _convert_timestamp(self, timestamp: Any) -> datetime:
+    pass
+    pass
         """Convert exchange timestamp to datetime."""
         if isinstance(timestamp, (int, float)):
+    pass
+    pass
             # Assume milliseconds if timestamp is large
             if timestamp > 1e10:
+    pass
+    pass
                 timestamp = timestamp / 1000
             return datetime.fromtimestamp(timestamp)
         if isinstance(timestamp, str):
+    pass
+    pass
             # Try to parse as ISO format, fall back to common formats
             try:
                 return datetime.fromisoformat(timestamp)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except ValueError:
                 for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+    pass
+    pass
                     try:
                         return datetime.strptime(timestamp, fmt)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     except ValueError:
                         continue
                 msg = f"Unable to parse timestamp: {timestamp}"
@@ -274,28 +323,48 @@ class BaseExchange(IExchangeClient, ABC):
         """Fetch current price using ticker, falling back to order book mid."""
         try:
             # Prefer a direct ticker if subclass implements get_ticker
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if hasattr(self, "get_ticker"):
+    pass
+    pass
                 ticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
                 if ticker:
+    pass
+    pass
                     last = ticker.get("last") or ticker.get("mark") or ticker.get("close")
                     if last is not None:
+    pass
+    pass
                         return float(last)
                     bid = ticker.get("bid")
                     ask = ticker.get("ask")
                     if bid is not None and ask is not None:
+    pass
+    pass
                         return (float(bid) + float(ask)) / 2.0
             # Fallback to order book mid
             if hasattr(self, "get_order_book"):
+    pass
+    pass
                 book = await self.get_order_book(symbol, 5)  # type: ignore[attr-defined]
                 bids = book.get("bids") or []
                 asks = book.get("asks") or []
                 best_bid = float(bids[0][0]) if bids else None
                 best_ask = float(asks[0][0]) if asks else None
                 if best_bid is not None and best_ask is not None:
+    pass
+    pass
                     return (best_bid + best_ask) / 2.0
                 if best_bid is not None:
+    pass
+    pass
                     return best_bid
                 if best_ask is not None:
+    pass
+    pass
                     return best_ask
         except Exception:
             return None
@@ -305,10 +374,18 @@ class BaseExchange(IExchangeClient, ABC):
         """Best-effort liquidation price for current position on symbol."""
         try:
             risk = await self.get_position_risk(symbol)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Try common ccxt fields
             if isinstance(risk, list) and risk:
+    pass
+    pass
                 # Find matching symbol
                 for position in risk:
+    pass
+    pass
                     inst = position.get("symbol") or position.get("info", {}).get("symbol")
                     if inst and inst.replace("-", "").replace("_", "").upper().startswith(
                         symbol.upper().replace("USDT", "")
@@ -319,11 +396,15 @@ class BaseExchange(IExchangeClient, ABC):
                             or position.get("liquidation_price")
                         )
                         if liq:
+    pass
+    pass
                             return float(liq)
                 # Otherwise take first
                 pos0 = risk[0]
                 liq = pos0.get("liquidationPrice") or pos0.get("liqPrice") or pos0.get("liquidation_price")
                 if liq:
+    pass
+    pass
                     return float(liq)
         except Exception:
             return None
@@ -334,9 +415,17 @@ class BaseExchange(IExchangeClient, ABC):
         """Default ticker fetch using ccxt if underlying client is set."""
         try:
             if not self.exchange:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
+    except Exception as e:
+        pass
             market_id = await self._get_market_id(symbol) if symbol else None  # type: ignore[arg-type]
             if market_id:
+    pass
+    pass
                 return await self.exchange.fetch_ticker(market_id)  # type: ignore[union-attr]
             # All tickers fallback
             tickers = await self.exchange.fetch_tickers()  # type: ignore[union-attr]
@@ -348,7 +437,13 @@ class BaseExchange(IExchangeClient, ABC):
         """Default order book fetch using ccxt if underlying client is set."""
         try:
             if not self.exchange:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
+    except Exception as e:
+        pass
             market_id = await self._get_market_id(symbol)
             return await self.exchange.fetch_order_book(market_id, limit)  # type: ignore[union-attr]
         except Exception:

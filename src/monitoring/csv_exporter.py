@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
     memory_efficient,
@@ -20,10 +21,13 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 
+import class CSVExporter:
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("CSVExporter")
 
@@ -81,6 +85,8 @@ class CSVExporter:
     ) -> Optional[str]:
         """Export performance metrics to CSV."""
         if not data:
+    pass
+    pass
             self.logger.warning("No performance data to export")
             return None
 
@@ -104,13 +110,21 @@ class CSVExporter:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for row in rows:
+    pass
+    pass
                 writer.writerow(row)
 
         if include_metadata:
+    pass
+    pass
             meta_path = filepath.with_suffix(".json")
             try:
                 import json
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 meta = {
                     "exported_at": datetime.now().isoformat(),
                     "row_count": len(rows),
@@ -122,6 +136,8 @@ class CSVExporter:
                 pass
 
     def _record_export(self, data_type: str, filepath: Path, count: int) -> None:
+    pass
+    pass
         self.export_history.append(
             {
                 "type": data_type,

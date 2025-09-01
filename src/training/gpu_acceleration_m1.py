@@ -14,6 +14,7 @@ import torch
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.training_pipeline_decorators import (
+import debug_training_step,
     debug_training_step,
     memory_efficient,
     quality_gate,
@@ -26,6 +27,8 @@ class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize GPU acceleration.
 
         Args:
@@ -72,10 +75,16 @@ class GPUAccelerationM1:
         """
         try:
             start_time = time.time()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🚀 GPU Matrix Multiplication (MPS)")
 
             # Check if GPU should be used
             if not self._should_use_gpu(A, B):
+    pass
+    pass
                 return self._cpu_matrix_multiplication(A, B)
 
             # Convert to PyTorch tensors
@@ -92,6 +101,8 @@ class GPUAccelerationM1:
             # Clean up GPU memory
             del A_tensor, B_tensor, result_tensor
             if self.mps_available:
+    pass
+    pass
                 torch.mps.empty_cache()
 
             processing_time = time.time() - start_time
@@ -114,6 +125,8 @@ class GPUAccelerationM1:
         except Exception as e:
             self.logger.exception(f"❌ GPU Matrix Multiplication failed: {e}")
             if self.config.enable_cpu_fallback:
+    pass
+    pass
                 self.logger.info("🔄 Falling back to CPU implementation")
                 return self._cpu_matrix_multiplication(A, B)
             raise
@@ -138,10 +151,16 @@ class GPUAccelerationM1:
         """
         try:
             start_time = time.time()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🚀 GPU SVD Decomposition (MPS)")
 
             # Check if GPU should be used
             if not self._should_use_gpu(matrix):
+    pass
+    pass
                 return self._cpu_svd_decomposition(matrix, k)
 
             # Convert to PyTorch tensor
@@ -153,6 +172,8 @@ class GPUAccelerationM1:
 
                 # Truncate if k is specified
                 if k is not None and k < len(S):
+    pass
+    pass
                     U = U[:, :k]
                     S = S[:k]
                     Vt = Vt[:k, :]
@@ -165,6 +186,8 @@ class GPUAccelerationM1:
             # Clean up GPU memory
             del matrix_tensor, U, S, Vt
             if self.mps_available:
+    pass
+    pass
                 torch.mps.empty_cache()
 
             processing_time = time.time() - start_time
@@ -188,12 +211,16 @@ class GPUAccelerationM1:
         except Exception as e:
             self.logger.exception(f"❌ GPU SVD Decomposition failed: {e}")
             if self.config.enable_cpu_fallback:
+    pass
+    pass
                 self.logger.info("🔄 Falling back to CPU implementation")
                 return self._cpu_svd_decomposition(matrix, k)
             raise
 
     @handle_errors(exceptions=(ValueError, RuntimeError), default_return=False)
     def _should_use_gpu(self, *matrices: np.ndarray) -> bool:
+    pass
+    pass
         """Check if GPU should be used for the given matrices.
 
         Args:
@@ -205,7 +232,13 @@ class GPUAccelerationM1:
         """
         try:
             # Check if MPS is available
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self.mps_available:
+    pass
+    pass
                 return False
 
             # Check matrix sizes (GPU is more efficient for larger matrices)
@@ -215,6 +248,8 @@ class GPUAccelerationM1:
 
             # Check memory usage
             if self._get_gpu_memory_usage() > self.memory_threshold:
+    pass
+    pass
                 return False
 
             return True
@@ -267,6 +302,8 @@ class GPUAccelerationM1:
 
         # Truncate if k is specified
         if k is not None and k < len(S):
+    pass
+    pass
             U = U[:, :k]
             S = S[:k]
             Vt = Vt[:k, :]
@@ -284,6 +321,8 @@ class GPUAccelerationM1:
         return U, S, Vt, metadata
 
     def _get_gpu_memory_usage(self) -> float:
+    pass
+    pass
         """Get current GPU memory usage.
 
         Returns:
@@ -292,14 +331,22 @@ class GPUAccelerationM1:
         """
         try:
             if self.mps_available:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # MPS doesn't provide direct memory usage info
                 # Return a conservative estimate
                 return 0.5
+    except Exception as e:
+        pass
             return 0.0
         except Exception:
             return 0.0
 
     def get_performance_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get performance statistics.
 
         Returns:

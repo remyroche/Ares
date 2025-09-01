@@ -19,11 +19,13 @@ import pandas as pd
 import yaml
 
 from src.training.wavelet_feature_selection_workflow import (
+import WaveletFeatureSelectionWorkflow,
     WaveletFeatureSelectionWorkflow,
 )
 from src.utils.logger import system_logger
 
 
+import class WaveletFeatureSelectionDemo:
 class WaveletFeatureSelectionDemo:
     """Demo class for the wavelet feature selection workflow using two-model strategy.
 
@@ -31,6 +33,8 @@ class WaveletFeatureSelectionDemo:
     """
 
     def __init__(self, config_path: str = "src/config/trading.yaml") -> None:
+    pass
+    pass
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("WaveletFeatureSelectionDemo")
@@ -44,10 +48,16 @@ class WaveletFeatureSelectionDemo:
         self.labels = None
 
     def _load_config(self) -> dict:
+    pass
+    pass
         """Load configuration from YAML file."""
         try:
             with open(self.config_path) as f:
                 return yaml.safe_load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.exception(f"Error loading config: {e}")
             return {}
@@ -57,9 +67,15 @@ class WaveletFeatureSelectionDemo:
         try:
             self.logger.info("🚀 Initializing Wavelet Feature Selection Demo...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize workflow
             success = await self.workflow.initialize()
             if not success:
+    pass
+    pass
                 self.logger.error("Failed to initialize workflow")
                 return False
 
@@ -76,9 +92,15 @@ class WaveletFeatureSelectionDemo:
             return False
 
     def _generate_demo_data(self) -> None:
+    pass
+    pass
         """Generate realistic demo data for the workflow."""
         try:
             # Generate 5000 data points of realistic price data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             np.random.seed(42)
             n_points = 5000
 
@@ -105,6 +127,8 @@ class WaveletFeatureSelectionDemo:
             # Create OHLCV data
             ohlcv_data = []
             for i in range(n_points):
+    pass
+    pass
                 price = prices[i]
                 high = price * (1 + abs(np.random.normal(0, 0.01)))
                 low = price * (1 - abs(np.random.normal(0, 0.01)))
@@ -143,14 +167,22 @@ class WaveletFeatureSelectionDemo:
             self.logger.exception(f"Error generating demo data: {e}")
 
     def _generate_labels(self, prices: np.ndarray) -> pd.Series:
+    pass
+    pass
         """Generate trading labels based on price movements."""
         try:
             # Calculate returns
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             returns = np.diff(prices) / prices[:-1]
 
             # Create labels based on future returns (next 10 periods)
             labels = []
             for i in range(len(returns) - 10):
+    pass
+    pass
                 future_return = np.sum(returns[i : i + 10])
 
                 if future_return > 0.02:  # 2% gain
@@ -174,6 +206,10 @@ class WaveletFeatureSelectionDemo:
         try:
             self.logger.info(
                 "🎬 Starting complete wavelet feature selection workflow...",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             start_time = time.time()
 
@@ -185,6 +221,8 @@ class WaveletFeatureSelectionDemo:
             )
 
             if not results:
+    pass
+    pass
                 self.logger.error("❌ Workflow failed")
                 return
 
@@ -198,9 +236,15 @@ class WaveletFeatureSelectionDemo:
             self.logger.exception(f"Error running complete workflow: {e}")
 
     def _display_results(self, results: dict[str, Any]) -> None:
+    pass
+    pass
         """Display comprehensive workflow results."""
         try:
-            self.logger.info("\n" + "=" * 80)
+            self.logger.info("\\\n" + "=" * 80)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 "📊 WAVELET FEATURE SELECTION RESULTS (Two-Model Strategy)",
             )
@@ -208,7 +252,7 @@ class WaveletFeatureSelectionDemo:
 
             # Step 1: Full Analysis Results
             analysis_results = results["analysis_results"]
-            self.logger.info("\n📊 STEP 1: FULL WAVELET ANALYSIS")
+            self.logger.info("\\\n📊 STEP 1: FULL WAVELET ANALYSIS")
             self.logger.info(
                 f"  Total features generated: {analysis_results['feature_count']}",
             )
@@ -221,7 +265,7 @@ class WaveletFeatureSelectionDemo:
 
             # Step 2: Discovery Model Results
             discovery_model_results = results["discovery_model_results"]
-            self.logger.info("\n🔍 STEP 2: DISCOVERY MODEL (Feature Selection)")
+            self.logger.info("\\\n🔍 STEP 2: DISCOVERY MODEL (Feature Selection)")
             discovery_perf = discovery_model_results["performance"]
             self.logger.info(
                 "  Model Type: Random Forest (optimized for feature selection)",
@@ -234,12 +278,14 @@ class WaveletFeatureSelectionDemo:
 
             # Step 3: Feature Selection Results
             feature_results = results["feature_results"]
-            self.logger.info("\n🔍 STEP 3: FEATURE SELECTION")
+            self.logger.info("\\\n🔍 STEP 3: FEATURE SELECTION")
             self.logger.info(f"  Features analyzed: {len(feature_results)}")
 
             # Top 10 features
             self.logger.info("  Top 10 features by importance:")
             for i, result in enumerate(feature_results[:10]):
+    pass
+    pass
                 self.logger.info(f"    {i+1:2d}. {result.feature_name}")
                 self.logger.info(f"        Importance: {result.combined_score:.4f}")
                 self.logger.info(f"        Type: {result.feature_type}")
@@ -247,7 +293,7 @@ class WaveletFeatureSelectionDemo:
 
             # Step 4: Winner Features
             winner_features = results["winner_features"]
-            self.logger.info("\n🏆 STEP 4: WINNER FEATURES")
+            self.logger.info("\\\n🏆 STEP 4: WINNER FEATURES")
             self.logger.info(f"  Winner features selected: {len(winner_features)}")
 
             # Group by type
@@ -268,7 +314,7 @@ class WaveletFeatureSelectionDemo:
 
             # Step 5: Lean Dataset
             lean_dataset = results["lean_dataset"]
-            self.logger.info("\n📊 STEP 5: LEAN DATASET CREATION")
+            self.logger.info("\\\n📊 STEP 5: LEAN DATASET CREATION")
             self.logger.info(
                 f"  Lean dataset shape: {lean_dataset['lean_feature_df'].shape}",
             )
@@ -278,7 +324,7 @@ class WaveletFeatureSelectionDemo:
 
             # Step 6: Production Model Results
             production_model_results = results["production_model_results"]
-            self.logger.info("\n🚀 STEP 6: PRODUCTION MODEL (Deployment Ready)")
+            self.logger.info("\\\n🚀 STEP 6: PRODUCTION MODEL (Deployment Ready)")
             production_perf = production_model_results["performance"]
             self.logger.info(
                 "  Model Type: Gradient Boosting (optimized for deployment)",
@@ -291,14 +337,16 @@ class WaveletFeatureSelectionDemo:
 
             # Step 7: Live Configurations
             live_configs = results["live_configs"]
-            self.logger.info("\n⚡ STEP 7: LIVE CONFIGURATIONS")
+            self.logger.info("\\\n⚡ STEP 7: LIVE CONFIGURATIONS")
             self.logger.info("  Generated configurations:")
             for config_name in live_configs:
+    pass
+    pass
                 self.logger.info(f"    - {config_name}_config.yaml")
 
             # Model Comparison
             summary = results["summary"]
-            self.logger.info("\n📈 MODEL COMPARISON")
+            self.logger.info("\\\n📈 MODEL COMPARISON")
             discovery_acc = summary["model_comparison"]["discovery_model"][
                 "test_accuracy"
             ]
@@ -314,7 +362,7 @@ class WaveletFeatureSelectionDemo:
             self.logger.info(f"  Accuracy Preservation: {accuracy_preservation:.1%}")
 
             # Performance Summary
-            self.logger.info("\n📈 PERFORMANCE SUMMARY")
+            self.logger.info("\\\n📈 PERFORMANCE SUMMARY")
             self.logger.info(
                 f"  Computation time reduction: {summary['performance_improvement']['computation_time_reduction']:.1%}",
             )
@@ -326,15 +374,17 @@ class WaveletFeatureSelectionDemo:
             )
 
             # Winner features details
-            self.logger.info("\n🏆 WINNER FEATURES DETAILS:")
+            self.logger.info("\\\n🏆 WINNER FEATURES DETAILS:")
             for i, winner in enumerate(summary["winner_features"]):
+    pass
+    pass
                 self.logger.info(f"  {i+1:2d}. {winner['name']}")
                 self.logger.info(f"      Score: {winner['importance_score']:.4f}")
                 self.logger.info(f"      Cost: {winner['computation_cost_ms']:.1f}ms")
                 self.logger.info(f"      Type: {winner['feature_type']}")
 
             # Deployment Information
-            self.logger.info("\n🚀 DEPLOYMENT INFORMATION")
+            self.logger.info("\\\n🚀 DEPLOYMENT INFORMATION")
             self.logger.info(
                 "  Production Model saved to: data/wavelet_feature_selection/models/production_model.pkl",
             )
@@ -345,7 +395,7 @@ class WaveletFeatureSelectionDemo:
                 "  Live configurations saved to: data/wavelet_feature_selection/configs/",
             )
 
-            self.logger.info("\n" + "=" * 80)
+            self.logger.info("\\\n" + "=" * 80)
             self.logger.info("✅ TWO-MODEL WORKFLOW COMPLETED SUCCESSFULLY!")
             self.logger.info("=" * 80)
 
@@ -353,9 +403,15 @@ class WaveletFeatureSelectionDemo:
             self.logger.exception(f"Error displaying results: {e}")
 
     def save_results(self, results: dict[str, Any]) -> None:
+    pass
+    pass
         """Save workflow results to files."""
         try:
             # Save summary report
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             summary_path = self.workflow.results_dir / "workflow_summary.yaml"
             with open(summary_path, "w") as f:
                 yaml.dump(results["summary"], f, default_flow_style=False)
@@ -411,10 +467,16 @@ async def main() -> None:
     """Main demo function."""
     try:
         # Create and initialize demo
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         demo = WaveletFeatureSelectionDemo()
 
         success = await demo.initialize()
         if not success:
+    pass
+    pass
             return
 
         # Run complete workflow
@@ -427,4 +489,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

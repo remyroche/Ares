@@ -5,6 +5,7 @@ from src.interfaces.base_interfaces import MarketData
 from .base_exchange import BaseExchange
 
 
+import class MexcExchange
 class MexcExchange(BaseExchange):
     def __init__(
         self,

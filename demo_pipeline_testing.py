@@ -12,7 +12,10 @@ Usage:
 
 from pathlib import Path
 
+import def create_mock_data_demo
 def create_mock_data_demo():
+    pass
+    pass
     """Demonstrate mock data creation for pipeline testing."""
     print("🏗️ Creating Mock Data Structure")
     print("=" * 50)
@@ -33,15 +36,19 @@ def create_mock_data_demo():
         "futures": "data_cache/futures_BINANCE_ETHUSDT_consolidated.parquet"
     }
 
-    print("\n📊 Mock data files that would be created:")
+    print("\\\n📊 Mock data files that would be created:")
     for data_type, file_path in mock_files.items():
+    pass
+    pass
         print(f"   - {data_type}: {file_path}")
 
     return mock_files
 
 def demonstrate_step1_testing():
+    pass
+    pass
     """Demonstrate Step1 testing approach."""
-    print("\n🧪 Step1: Data Collection Testing")
+    print("\\\n🧪 Step1: Data Collection Testing")
     print("=" * 50)
 
     print("1. Create mock data files")
@@ -56,13 +63,15 @@ def demonstrate_step1_testing():
     print("       force_rerun=True")
     print("   )")
 
-    print("\nExpected outputs:")
+    print("\\\nExpected outputs:")
     print("   - data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet")
     print("   - data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet")
 
 def demonstrate_step1_5_testing():
+    pass
+    pass
     """Demonstrate Step1.5 testing approach."""
-    print("\n🧪 Step1.5: Data Converter Testing")
+    print("\\\n🧪 Step1.5: Data Converter Testing")
     print("=" * 50)
 
     print("1. Ensure step1 outputs exist")
@@ -77,13 +86,15 @@ def demonstrate_step1_5_testing():
     print("       force_rerun=True")
     print("   )")
 
-    print("\nExpected outputs:")
+    print("\\\nExpected outputs:")
     print("   - data_cache/unified_BINANCE_ETHUSDT_1m.parquet")
     print("   - data_cache/unified_BINANCE_ETHUSDT_1m_config.json")
 
 def demonstrate_step2_testing():
+    pass
+    pass
     """Demonstrate Step2 testing approach."""
-    print("\n🧪 Step2: Feature Engineering Testing")
+    print("\\\n🧪 Step2: Feature Engineering Testing")
     print("=" * 50)
 
     print("1. Ensure step1_5 outputs exist")
@@ -98,14 +109,16 @@ def demonstrate_step2_testing():
     print("       force_rerun=True")
     print("   )")
 
-    print("\nExpected outputs:")
+    print("\\\nExpected outputs:")
     print("   - data/training/features_BINANCE_ETHUSDT_train.parquet")
     print("   - data/training/features_BINANCE_ETHUSDT_val.parquet")
     print("   - data/training/features_BINANCE_ETHUSDT_test.parquet")
 
 def demonstrate_ares_launcher_usage():
+    pass
+    pass
     """Demonstrate ares_launcher usage."""
-    print("\n🚀 Ares Launcher Usage")
+    print("\\\n🚀 Ares Launcher Usage")
     print("=" * 50)
 
     print("1. Individual step testing:")
@@ -113,24 +126,26 @@ def demonstrate_ares_launcher_usage():
     print("   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step1_5_data_converter --force-rerun")
     print("   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering --force-rerun")
 
-    print("\n2. Complete pipeline testing:")
+    print("\\\n2. Complete pipeline testing:")
     print("   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --force-rerun")
 
-    print("\n3. Environment setup:")
+    print("\\\n3. Environment setup:")
     print("   export BLANK_TRAINING_MODE=1")
     print("   export FULL_TRAINING_MODE=0")
     print("   export FORCE=1")
 
 def demonstrate_enhanced_training_manager_usage():
+    pass
+    pass
     """Demonstrate enhanced_training_manager usage."""
-    print("\n🔧 Enhanced Training Manager Usage")
+    print("\\\n🔧 Enhanced Training Manager Usage")
     print("=" * 50)
 
     print("1. Setup enhanced training manager:")
     print("   from src.training.enhanced_training_manager import setup_enhanced_training_manager")
     print("   enhanced_manager = await setup_enhanced_training_manager(CONFIG)")
 
-    print("\n2. Prepare training input:")
+    print("\\\n2. Prepare training input:")
     print("   training_input = {")
     print("       'symbol': 'ETHUSDT',")
     print("       'exchange': 'BINANCE',")
@@ -142,34 +157,38 @@ def demonstrate_enhanced_training_manager_usage():
     print("       'exclude_recent_days': 2,")
     print("   }")
 
-    print("\n3. Execute pipeline:")
+    print("\\\n3. Execute pipeline:")
     print("   success = await enhanced_manager.execute_enhanced_training(training_input)")
 
 def demonstrate_step_orchestrator_usage():
+    pass
+    pass
     """Demonstrate step_orchestrator usage."""
-    print("\n🎼 Step Orchestrator Usage")
+    print("\\\n🎼 Step Orchestrator Usage")
     print("=" * 50)
 
     print("1. Initialize orchestrator:")
     print("   from src.training.step_orchestrator import StepOrchestrator")
     print("   orchestrator = StepOrchestrator('ETHUSDT', 'BINANCE')")
 
-    print("\n2. Execute from specific step:")
+    print("\\\n2. Execute from specific step:")
     print("   success = await orchestrator.execute_from_step(")
     print("       start_step='step1_data_collection',")
     print("       config=CONFIG,")
     print("       force_rerun=True")
     print("   )")
 
-    print("\n3. Execute all steps:")
+    print("\\\n3. Execute all steps:")
     print("   success = await orchestrator.execute_all_steps(")
     print("       config=CONFIG,")
     print("       force_rerun=True")
     print("   )")
 
 def demonstrate_test_scripts():
+    pass
+    pass
     """Demonstrate the test scripts created."""
-    print("\n📝 Test Scripts Created")
+    print("\\\n📝 Test Scripts Created")
     print("=" * 50)
 
     print("1. Comprehensive test script:")
@@ -180,14 +199,14 @@ def demonstrate_test_scripts():
     print("   - Tests with ares_launcher")
     print("   - Validates outputs")
 
-    print("\n2. Simplified test script:")
+    print("\\\n2. Simplified test script:")
     print("   python test_pipeline_with_ares_launcher.py")
     print("   - Focuses on ares_launcher testing")
     print("   - Tests individual steps")
     print("   - Tests complete pipeline")
     print("   - Tests blank training mode")
 
-    print("\n3. Shell script:")
+    print("\\\n3. Shell script:")
     print("   ./run_pipeline_test.sh")
     print("   - Command-line testing")
     print("   - Step-by-step execution")
@@ -195,8 +214,10 @@ def demonstrate_test_scripts():
     print("   - Output validation")
 
 def demonstrate_mock_data_generation():
+    pass
+    pass
     """Demonstrate mock data generation approach."""
-    print("\n🎲 Mock Data Generation")
+    print("\\\n🎲 Mock Data Generation")
     print("=" * 50)
 
     print("Data types generated:")
@@ -205,25 +226,27 @@ def demonstrate_mock_data_generation():
     print("   - Realistic price movements")
     print("   - Volume and trade information")
 
-    print("\n2. Aggtrades data:")
+    print("\\\n2. Aggtrades data:")
     print("   - Aggregated trade data")
     print("   - Realistic volumes and prices")
     print("   - Trade timing information")
 
-    print("\n3. Futures data:")
+    print("\\\n3. Futures data:")
     print("   - Mark prices and index prices")
     print("   - Funding rates")
     print("   - Next funding time")
 
-    print("\nCharacteristics:")
+    print("\\\nCharacteristics:")
     print("   - 30 days of historical data")
     print("   - Realistic ETH price movements (~$3000)")
     print("   - Proper timestamps and data formats")
     print("   - Parquet file format for efficiency")
 
 def demonstrate_validation():
+    pass
+    pass
     """Demonstrate output validation approach."""
-    print("\n🔍 Output Validation")
+    print("\\\n🔍 Output Validation")
     print("=" * 50)
 
     print("1. File existence checks:")
@@ -231,18 +254,20 @@ def demonstrate_validation():
     print("   - Verify file sizes are reasonable")
     print("   - Validate file formats")
 
-    print("\n2. Data quality checks:")
+    print("\\\n2. Data quality checks:")
     print("   - Verify data completeness")
     print("   - Check for missing values")
     print("   - Validate data types")
     print("   - Ensure proper timestamps")
 
-    print("\n3. Pipeline integrity:")
+    print("\\\n3. Pipeline integrity:")
     print("   - Verify step dependencies")
     print("   - Check data flow between steps")
     print("   - Validate configuration files")
 
 def main():
+    pass
+    pass
     """Main demonstration function."""
     print("🚀 Pipeline Testing Demonstration")
     print("=" * 80)
@@ -272,15 +297,17 @@ def main():
     # Demonstrate validation
     demonstrate_validation()
 
-    print("\n" + "=" * 80)
+    print("\\\n" + "=" * 80)
     print("✅ Demonstration Complete!")
     print("=" * 80)
-    print("\nTo run the actual tests:")
+    print("\\\nTo run the actual tests:")
     print("1. Install dependencies: pip install -r requirements.txt")
     print("2. Run comprehensive test: python test_step1_step1_5_step2_pipeline.py")
     print("3. Run simplified test: python test_pipeline_with_ares_launcher.py")
     print("4. Run shell script: ./run_pipeline_test.sh")
-    print("\nFor more details, see README_PIPELINE_TESTING.md")
+    print("\\\nFor more details, see README_PIPELINE_TESTING.md")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

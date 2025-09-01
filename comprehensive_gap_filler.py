@@ -25,30 +25,46 @@ class ComprehensiveGapFiller:
     """Comprehensive gap filling using Binance Vision for historical data"""
 
     def __init__(self, data_cache_path: str = "data_cache"):
+    pass
+    pass
         self.data_cache_path = Path(data_cache_path)
         self.session = None
 
     async def _ensure_session(self):
         """Ensure aiohttp session is available"""
         if self.session is None:
+    pass
+    pass
             self.session = aiohttp.ClientSession()
 
     async def close_session(self):
         """Close aiohttp session"""
         if self.session:
+    pass
+    pass
             await self.session.close()
 
     def detect_gaps_in_file(self, file_path: Path, min_gap_seconds: int = 10) -> List[Dict]:
+    pass
+    pass
         """Detect gaps in a single aggtrades file"""
         try:
             # Read the parquet file
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             df = pd.read_parquet(file_path)
 
             if df.empty:
+    pass
+    pass
                 return []
 
             # Ensure timestamp column exists
             if 'timestamp' not in df.columns:
+    pass
+    pass
                 print(f"⚠️ No timestamp column in {file_path.name}")
                 return []
 
@@ -63,7 +79,11 @@ class ComprehensiveGapFiller:
             gap_rows = df[df['time_diff'] > min_gap_seconds]
 
             for idx , row in gap_rows.iterrows():
+    pass
+    pass
                 if idx > 0:
+    pass
+    pass
                     gap_start = df.loc[idx-1, 'timestamp']
                     gap_end = row['timestamp']
                     gap_duration = (gap_end - gap_start).total_seconds()
@@ -97,8 +117,14 @@ class ComprehensiveGapFiller:
         try:
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             async with self.session.get(url, ssl = ssl_context) as resp:
                 if resp.status != 200:
+    pass
+    pass
                     print(f"   ⚠️ Binance Vision: no file for {symbol} {date_str} (status {resp.status})")
                     return []
                 content = await resp.read()
@@ -106,6 +132,8 @@ class ComprehensiveGapFiller:
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
+    pass
+    pass
                     print(f"   ⚠️ Binance Vision: archive for {symbol} {date_str} has no CSV entries")
                     return []
 
@@ -116,12 +144,18 @@ class ComprehensiveGapFiller:
                         low_memory, False = )
 
             if df.empty:
+    pass
+    pass
                 return []
 
             # Process data types
             for col in ["a", "f", "l", "T"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             for col in ["p", "q"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
             df["m"] = (
@@ -138,6 +172,8 @@ class ComprehensiveGapFiller:
             df = df[(df["T"] >= start_time_ms) & (df["T"] < end_time_ms)]
 
             if df.empty:
+    pass
+    pass
                 return []
 
             # Convert to list of dicts
@@ -148,11 +184,15 @@ class ComprehensiveGapFiller:
             return []
 
     def _standardize_aggtrades_format(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Standardize aggtrades data format"""
         expected_columns = ['agg_trade_id', 'price', 'quantity', 'first_trade_id', 'last_trade_id', 'timestamp', 'is_buyer_maker']
 
         # Map Binance Vision format to expected format
         if 'a' in df.columns:
+    pass
+    pass
             column_mapping = {
                 'a': 'agg_trade_id',
                 'p': 'price',
@@ -166,12 +206,18 @@ class ComprehensiveGapFiller:
 
         # Convert timestamp from milliseconds to datetime
         if 'timestamp' in df.columns and df['timestamp'].dtype in ['int64', 'float64']:
+    pass
+    pass
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
         # Ensure proper data types
         if 'price' in df.columns:
+    pass
+    pass
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
         if 'quantity' in df.columns:
+    pass
+    pass
             df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce')
 
         # Select only expected columns that exist
@@ -182,6 +228,10 @@ class ComprehensiveGapFiller:
         """Fill a single gap using Binance Vision"""
         try:
             gap_start = gap_info['gap_start']
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             gap_end = gap_info['gap_end']
             file_name = gap_info['file']
 
@@ -199,6 +249,8 @@ class ComprehensiveGapFiller:
             )
 
             if missing_data and len(missing_data) > 0:
+    pass
+    pass
                 # Convert to DataFrame and standardize
                 df_missing = pd.DataFrame(missing_data)
                 df_missing = self._standardize_aggtrades_format(df_missing)
@@ -206,6 +258,8 @@ class ComprehensiveGapFiller:
                 # Load existing file
                 file_path = self.data_cache_path / file_name
                 if file_path.exists():
+    pass
+    pass
                     df_existing = pd.read_parquet(file_path)
 
                     # Combine data
@@ -242,6 +296,8 @@ class ComprehensiveGapFiller:
         files = list(self.data_cache_path.glob(pattern))
 
         if not files:
+    pass
+    pass
             print(f"❌ No aggtrades files found matching pattern: {pattern}")
             return
 
@@ -254,24 +310,32 @@ class ComprehensiveGapFiller:
         total_gaps_failed = 0
 
         for file_path in files:
-            print(f"\n🔍 Processing {file_path.name}...")
+    pass
+    pass
+            print(f"\\\n🔍 Processing {file_path.name}...")
 
             # Detect gaps in this file
             gaps = self.detect_gaps_in_file(file_path)
             total_files_processed += 1
 
             if gaps:
+    pass
+    pass
                 total_files_with_gaps += 1
                 total_gaps_found += len(gaps)
                 print(f"   🚨 Found {len(gaps)} gaps")
 
                 # Fill each gap
                 for i , gap in enumerate(gaps):
+    pass
+    pass
                     print(f"   📍 Gap {i+1}/{len(gaps)}: {gap['gap_duration_seconds']:.1f}s")
 
                     result = await self.fill_gap(gap = symbol)
 
                     if result['success']:
+    pass
+    pass
                         total_gaps_filled += 1
                         print(f"      ✅ Filled with {result['rows_added']} trades")
                     else:
@@ -284,7 +348,7 @@ class ComprehensiveGapFiller:
                 print(f"   ✅ No gaps found")
 
         # Summary
-        print(f"\n{'='*80}")
+        print(f"\\\n{'='*80}")
         print(f"🏁 COMPREHENSIVE GAP FILLING SUMMARY")
         print(f"{'='*80}")
         print(f"📊 Files processed: {total_files_processed}")
@@ -294,6 +358,8 @@ class ComprehensiveGapFiller:
         print(f"📊 Gaps failed: {total_gaps_failed}")
 
         if total_gaps_found > 0:
+    pass
+    pass
             success_rate = (total_gaps_filled / total_gaps_found) * 100
             print(f"📊 Success rate: {success_rate:.1f}%")
 
@@ -305,10 +371,16 @@ async def main():
 
     try:
         await gap_filler.process_all_gaps()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     finally:
         await gap_filler.close_session()
 
 if __name__ == "__main__":
+    pass
+    pass
     print("🚀 Starting comprehensive gap filling...")
     asyncio.run(main())
     print("🏁 Comprehensive gap filling completed")

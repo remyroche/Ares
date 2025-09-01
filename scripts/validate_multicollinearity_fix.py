@@ -67,6 +67,10 @@ async def validate_multicollinearity_fix() -> bool:
 
 	try:
 		feature_eng = VectorizedAdvancedFeatureEngineering(config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 		await feature_eng.initialize()
 
 		# Engineer features
@@ -78,7 +82,11 @@ async def validate_multicollinearity_fix() -> bool:
 		# Convert features to DataFrame
 		feature_df = pd.DataFrame()
 		for feature_name, feature_series in features.items():
+    pass
+    pass
 			if isinstance(feature_series, pd.Series):
+    pass
+    pass
 				feature_df[feature_name] = feature_series
 
 		print(f"📊 Generated {len(feature_df.columns)} features")
@@ -90,16 +98,26 @@ async def validate_multicollinearity_fix() -> bool:
 		# Find perfect correlations (r >= 0.9999)
 		perfect_correlations: List[Tuple[str, str, float]] = []
 		for i in range(len(correlation_matrix.columns)):
+    pass
+    pass
 			for j in range(i + 1, len(correlation_matrix.columns)):
+    pass
+    pass
 				corr_value = float(abs(correlation_matrix.iloc[i, j]))
 				if corr_value >= 0.9999:
+    pass
+    pass
 					feature1 = correlation_matrix.columns[i]
 					feature2 = correlation_matrix.columns[j]
 					perfect_correlations.append((feature1, feature2, corr_value))
 
 		if perfect_correlations:
+    pass
+    pass
 			print(f"❌ Found {len(perfect_correlations)} perfect correlations:")
 			for feature1, feature2, corr_value in perfect_correlations:
+    pass
+    pass
 				print(f"   {feature1} ↔ {feature2} (r={corr_value:.6f})")
 			return False
 		print("✅ No perfect correlations found!")
@@ -118,7 +136,11 @@ async def validate_multicollinearity_fix() -> bool:
 
 		print("🔍 Checking specific problematic features...")
 		for feature in problematic_features:
+    pass
+    pass
 			if feature in feature_df.columns:
+    pass
+    pass
 				print(f"   ✅ Found {feature}")
 			else:
 				print(f"   ⚠️ Missing {feature}")
@@ -126,6 +148,8 @@ async def validate_multicollinearity_fix() -> bool:
 		# Check that the features are different
 		correlation = 0.0
 		if all(f in feature_df.columns for f in ["1m_price_change", "5m_price_change"]):
+    pass
+    pass
 			correlation = float(
 				feature_df["1m_price_change"].corr(
 					feature_df["5m_price_change"],
@@ -134,6 +158,8 @@ async def validate_multicollinearity_fix() -> bool:
 			print(f"📊 1m vs 5m price change correlation: {correlation:.6f}")
 
 			if abs(correlation) >= 0.9999:
+    pass
+    pass
 				print("❌ 1m and 5m price changes are still perfectly correlated!")
 				return False
 			print("✅ 1m and 5m price changes are properly differentiated")
@@ -146,17 +172,23 @@ async def validate_multicollinearity_fix() -> bool:
 
 
 def main() -> None:
+    pass
+    pass
 	"""Main function to run the validation."""
 
 	success = asyncio.run(validate_multicollinearity_fix())
 	if success:
-		print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
+    pass
+    pass
+		print("\\\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
 		print("✅ Your feature engineering is now working correctly.")
 	else:
-		print("\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
+		print("\\\n❌ MULTICOLLINEARITY FIX VALIDATION FAILED!")
 		print("❌ There are still issues with the feature engineering.")
 		sys.exit(1)
 
 
 if __name__ == "__main__":
+    pass
+    pass
 	main()

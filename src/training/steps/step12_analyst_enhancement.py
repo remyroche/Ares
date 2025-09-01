@@ -25,17 +25,27 @@ from torch.nn.utils import prune
 from torch.utils.data import DataLoader, TensorDataset
 
 # Import shap with error handling
+import try:
 try:
     import shap
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except ImportError:
     shap, None
 
 # Import new model architectures
 try:
     import torch
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     from torch import nn, optim
     from torch.utils.data import DataLoader, TensorDataset
 
+import TORCH_AVAILABLE, True
     TORCH_AVAILABLE, True
 except ImportError:
     TORCH_AVAILABLE, False
@@ -49,6 +59,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     timeout,
@@ -88,7 +99,13 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
     name_candidate, bit_generator_name
     try:
         if hasattr(name_candidate, "__name__"):
+    pass
+    except Exception as e:
+        pass
+    pass
             name_candidate, name_candidate.__name__
+    except Exception as e:
+        pass
         elif isinstance(name_candidate, str) and name_candidate.startswith("<class "):
             name_candidate, name_candidate.split(".")[-1].split("'>")[0]
     except Exception:
@@ -97,37 +114,67 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name, state = None, *args, **kwa
     effective_state, kwargs.get("state", state)
     try:
         return _NP_ORIGINAL_BITGEN_CTOR(name_candidate, effective_state)  # type: ignore[misc]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except (TypeError, ValueError):
         try:
         return _NP_ORIGINAL_BITGEN_CTOR(name_candidate)  # type: ignore[misc]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
         try:
                 import numpy as _np
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 bitgen_cls, getattr(_np.random, name_candidate, None)
         if bitgen_cls is None and name_candidate == "MT19937":
+    pass
+    pass
         try:
                         import numpy.random._mt19937 as _mt  # type: ignore[attr - defined]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         bitgen_cls, getattr(_mt, "MT19937", None)
         except Exception:
                         bitgen_cls, None
         if bitgen_cls is not None:
+    pass
+    pass
         return bitgen_cls()
         except Exception:
                 pass
             raise
 
 def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
+    pass
+    pass
     """Enable compatibility for unpickling NumPy RNG BitGenerators (idempotent)."""
     global _NUMPY_RNG_UNPICKLE_PATCHED, _NP_ORIGINAL_BITGEN_CTOR
     if _NUMPY_RNG_UNPICKLE_PATCHED:
+    pass
+    pass
         return
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr - defined]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         original_ctor, getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
+    pass
+    pass
             _NUMPY_RNG_UNPICKLE_PATCHED, True
             return
 
@@ -135,10 +182,14 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
         np_random_pickle.__bit_generator_ctor, _normalized_numpy_bitgen_ctor  # type: ignore[attr - defined]
         _NUMPY_RNG_UNPICKLE_PATCHED, True
         if logger is not None:
+    pass
+    pass
             logger.info("Applied NumPy RNG unpickle compatibility shim")
     except Exception as _shim_exc:  # noqa: BLE001
         _NUMPY_RNG_UNPICKLE_PATCHED, True
         if logger is not None:
+    pass
+    pass
             logger.warning(
                 warning(
                     f"NumPy RNG unpickle compatibility shim not applied: {_shim_exc}",
@@ -157,6 +208,8 @@ class AnalystEnhancementStep:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initializes the AnalystEnhancementStep.
 
         Args: config (Dict[str, Any]): Configuration dictionary for the step.
@@ -196,13 +249,19 @@ class AnalystEnhancementStep:
         }
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
     def _safe_get_device(self) -> str:
+    pass
+    pass
         """Safely determine the best device to use with timeout protection."""
         try:
         # Use threading with timeout to prevent hanging
@@ -212,8 +271,18 @@ class AnalystEnhancementStep:
             result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         try:
                     is_available, torch.backends.mps.is_available()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     result_queue.put(("mps" if is_available else "cpu", None))
         except Exception as e:  # noqa: BLE001
                     result_queue.put(("cpu", e))
@@ -226,7 +295,13 @@ class AnalystEnhancementStep:
         # Wait for result with timeout
         try:
                 device, err, result_queue.get(timeout = 10)  # 10 second timeout
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if err:
+    pass
+    pass
         self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device
@@ -276,6 +351,10 @@ class AnalystEnhancementStep:
 
         try:
             data_dir: str, str(training_input.get("data_dir", "data / training"))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             models_dir: str, os.path.join(data_dir, "models")
         # Use the main data_dir for regime data
             regime_data_dir: str, data_dir
@@ -295,12 +374,20 @@ class AnalystEnhancementStep:
         with contextlib.suppress(Exception):
                 pass
         if not hmm_models:
+    pass
+    pass
                 msg, f"No HMM - based models found in {models_dir}. Step 5 must complete successfully first."
                 raise ValueError(msg)
 
         if isinstance(hmm_models, dict):
+    pass
+    pass
         try:
                     timeframes_count: int, len(hmm_models)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     counts_per_timeframe: dict[str, int | str] = {
                         timeframe: (len(models) if isinstance(models, dict) else "n / a")
         for timeframe, models in hmm_models.items()
@@ -316,6 +403,12 @@ class AnalystEnhancementStep:
         try:
                 from src.training.steps.unified_data_loader import UnifiedDataLoader
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import data_loader, UnifiedDataLoader
                 data_loader, UnifiedDataLoader(self.config)
                 perf_metrics, data_loader.get_performance_metrics()
         self.logger.info("📊 Performance before enhancement:")
@@ -354,6 +447,10 @@ class AnalystEnhancementStep:
                         regime_data_dir,
                         regime_name,
                     )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(
                         f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
@@ -372,6 +469,8 @@ class AnalystEnhancementStep:
                     f"🔄 Starting model enhancement loop for regime: {regime_name}",
                 )
         for i, (model_name, model_data) in enumerate(regime_models.items(), 1):
+    pass
+    pass
         self.logger.info(
                         f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
                     )
@@ -405,6 +504,8 @@ class AnalystEnhancementStep:
             )
             tasks: list[asyncio.Task] = []
         for regime_name, regime_models in hmm_models.items():
+    pass
+    pass
                 task, asyncio.create_task(enhance_regime_models(regime_name, regime_models))
                 tasks.append(task)
 
@@ -415,6 +516,8 @@ class AnalystEnhancementStep:
             )
 
         for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
+    pass
+    pass
                 batch, tasks[i : i + max_concurrent]
         self.logger.info(
                     f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}",
@@ -422,7 +525,11 @@ class AnalystEnhancementStep:
                 results, await asyncio.gather(*batch, return_exceptions = True)
 
         for result in results:
+    pass
+    pass
         if isinstance(result, Exception):
+    pass
+    pass
         self.logger.error(
                             f"❌ Error in parallel regime processing: {result}",
                         )
@@ -471,18 +578,26 @@ class AnalystEnhancementStep:
         return {"status": "FAILED", "error": str(e), "duration": duration}
 
     def _load_models(self, models_dir: str) -> dict[str, Any]:
+    pass
+    pass
         """Loads all analyst models from the specified directory, supporting both traditional and HMM composite regime structures."""
         # Ensure NumPy RNG pickles created under different versions can be loaded
         _enable_numpy_rng_unpickle_compat(self.logger)
         analyst_models: dict[str, Any] = {}
         if not os.path.exists(models_dir):
+    pass
+    pass
         return analyst_models
 
         # Check if we have the new regime - specific structure
         has_regime_specific_structure: bool, False
         for item in os.listdir(models_dir):
+    pass
+    pass
             item_path, os.path.join(models_dir, item)
         if os.path.isdir(item_path):
+    pass
+    pass
         # Check if this looks like a regime - specific directory
         if any(
                     regime_file.endswith((".pkl", ".joblib"))
@@ -492,21 +607,37 @@ class AnalystEnhancementStep:
                     break
 
         if has_regime_specific_structure:
+    pass
+    pass
         self.logger.info("🔄 Loading models with regime - specific structure")
         # Load regime - specific models
         for regime_dir in os.listdir(models_dir):
+    pass
+    pass
                 regime_path, os.path.join(models_dir, regime_dir)
         if os.path.isdir(regime_path):
+    pass
+    pass
                     regime_models: dict[str, Any] = {}
         for model_file in os.listdir(regime_path):
+    pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
+    pass
                             model_name, model_file.replace(".pkl", "")
                             model_name, model_name.replace(".joblib", "")
                             model_path, os.path.join(regime_path, model_file)
         try:
         if model_file.endswith(".joblib"):
+    pass
+    except Exception as e:
+        pass
+    pass
                                     regime_models[model_name] = joblib.load(model_path)
                                 else:
+    except Exception as e:
+        pass
         with open(model_path, "rb") as f:
                                         regime_models[model_name] = pickle.load(f)
         except (ValueError, TypeError) as e:
@@ -514,19 +645,31 @@ class AnalystEnhancementStep:
                                 continue
 
         if regime_models:
+    pass
+    pass
                         analyst_models[regime_dir] = regime_models
         else:
         self.logger.info("🔄 Loading models with traditional structure")
         # Fallback to traditional model loading structure
         for model_file in os.listdir(models_dir):
+    pass
+    pass
         if model_file.endswith((".pkl", ".joblib")):
+    pass
+    pass
                     model_name, model_file.replace(".pkl", "")
                     model_name, model_name.replace(".joblib", "")
                     model_path, os.path.join(models_dir, model_file)
         try:
         if model_file.endswith(".joblib"):
+    pass
+    except Exception as e:
+        pass
+    pass
                             analyst_models[model_name] = joblib.load(model_path)
                         else:
+    except Exception as e:
+        pass
         with open(model_path, "rb") as f:
                                 analyst_models[model_name] = pickle.load(f)
         except (ValueError, TypeError) as e:
@@ -547,9 +690,19 @@ class AnalystEnhancementStep:
             exchange: str, str(self.config.get("exchange", "BINANCE"))
             timeframe: str, str(self.config.get("timeframe", "1m"))
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Try to load from unified data loader first (more efficient)
         try:
                 from src.config.constants import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import BLANK_TRAINING_LOOKBACK_DAYS,
                     BLANK_TRAINING_LOOKBACK_DAYS,
                 )
 
@@ -567,9 +720,13 @@ class AnalystEnhancementStep:
                 )
 
         if historical_data is not None and not historical_data.empty:
+    pass
+    pass
         # For HMM - based training, we use all data since models are trained on composite clusters
         # Filter by timeframe if timeframe information is available
         if "timeframe" in historical_data.columns:
+    pass
+    pass
                         timeframe_data, historical_data[
                             historical_data["timeframe"] == timeframe_name
                         ]
@@ -577,6 +734,8 @@ class AnalystEnhancementStep:
                         timeframe_data, historical_data
 
         if not timeframe_data.empty:
+    pass
+    pass
         self.logger.info(
                             f"✅ Loaded {len(timeframe_data)} rows for timeframe '{timeframe_name}' using unified data loader",
                         )
@@ -588,6 +747,8 @@ class AnalystEnhancementStep:
 
         # Extract features and target
         if "label" in timeframe_data.columns:
+    pass
+    pass
                             X_train, train_data.drop(
                                 ["label", "timestamp"], axis = 1, errors="ignore"
                             )
@@ -630,6 +791,8 @@ class AnalystEnhancementStep:
             )
 
         if os.path.exists(hmm_data_path):
+    pass
+    pass
         # Load HMM composite data
                 hmm_data: pd.DataFrame, pd.read_parquet(hmm_data_path)
 
@@ -640,6 +803,8 @@ class AnalystEnhancementStep:
                 )
 
         if os.path.exists(intensity_path):
+    pass
+    pass
                     intensity_data: pd.DataFrame, pd.read_parquet(intensity_path)
         # Merge HMM clusters with intensity data
                     data, hmm_data.merge(intensity_data, on="timestamp", how="inner")
@@ -671,12 +836,18 @@ class AnalystEnhancementStep:
                 ]
 
         for possible_target in target_candidates:
+    pass
+    pass
         if possible_target in data.columns:
+    pass
+    pass
                         target_column, possible_target
         self.logger.info(f"Found target column: {target_column}")
                         break
 
         if target_column is None:
+    pass
+    pass
         self.logger.warning(
                         f"No target column found in HMM data. Available columns: {list(data.columns)}",
                     )
@@ -685,6 +856,8 @@ class AnalystEnhancementStep:
                     target_created: bool, self._create_target_from_data(data, timeframe_name)
 
         if target_created:
+    pass
+    pass
                         target_column = "label"
         self.logger.info(
                             "Successfully created target column from available data",
@@ -732,6 +905,8 @@ class AnalystEnhancementStep:
                 )
 
         if len(unique_targets) <= 1:
+    pass
+    pass
         # Emit mode - aware structured warning
         self.logger.warning(
                         f"⚠️ Target has only {len(unique_targets)} unique values: {unique_targets}",
@@ -755,9 +930,13 @@ class AnalystEnhancementStep:
                     )
         # Create a more diverse target if possible
         if len(data.columns) > 1:
+    pass
+    pass
         # Use the first numeric column as a proxy target
                         proxy_column: str, data.columns[0]
         if proxy_column != "label":
+    pass
+    pass
                             proxy_values, data[proxy_column]
         # Create binary target based on median
                             median_val, proxy_values.median()
@@ -800,6 +979,8 @@ class AnalystEnhancementStep:
     @with_tracing_span("Step6._create_target_from_data", log_args = False)
     @guard_dataframe_nulls(mode="warn", arg_index = 1)
     def _create_target_from_data(self, data: pd.DataFrame, regime_name: str) -> bool:
+    pass
+    pass
         """Attempts to create a meaningful target column from available data.
 
         Args:
@@ -814,6 +995,10 @@ class AnalystEnhancementStep:
         # Look for price - related columns that could be used to create targets
             price_columns = [
                 col
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in data.columns
         if any(
                     price_term in col.lower()
@@ -822,12 +1007,16 @@ class AnalystEnhancementStep:
             ]
 
         if price_columns:
+    pass
+    pass
         # Use the first price column to create a target
                 price_col, price_columns[0]
                 price_values, data[price_col]
 
         # Create a simple momentum - based target
         if len(price_values) > 1:
+    pass
+    pass
         # Calculate price changes
                     price_changes, price_values.pct_change().fillna(0)
 
@@ -837,6 +1026,8 @@ class AnalystEnhancementStep:
 
         # Ensure we have at least 2 classes
         if target.nunique() >= 2:
+    pass
+    pass
                         data["label"] = target
         self.logger.info(
                             f"Created momentum - based target from {price_col}",
@@ -847,15 +1038,21 @@ class AnalystEnhancementStep:
             volume_columns = [col for col in data.columns if "volume" in col.lower()]
 
         if volume_columns:
+    pass
+    pass
                 volume_col, volume_columns[0]
                 volume_values, data[volume_col]
 
         # Create target based on volume spikes
         if len(volume_values) > 1:
+    pass
+    pass
                     volume_median, float(volume_values.median())
                     target = (volume_values > volume_median).astype(int)
 
         if target.nunique() >= 2:
+    pass
+    pass
                         data["label"] = target
         self.logger.info(
                             f"Created volume - based target from {volume_col}",
@@ -864,12 +1061,20 @@ class AnalystEnhancementStep:
 
         # Look for any numeric column with good variance
         for col in data.columns:
+    pass
+    pass
         if col != "label" and str(data[col].dtype) in ["int64", "float64"]:
+    pass
+    pass
                     series, data[col]
         if series.dropna().std() > 0:
+    pass
+    pass
                         median_val, float(series.median())
                         target = (series > median_val).astype(int)
         if target.nunique() >= 2:
+    pass
+    pass
                             data["label"] = target
         self.logger.info(
                                 f"Created median - based target from {col}",
@@ -893,6 +1098,8 @@ class AnalystEnhancementStep:
 
         # Support both legacy dict payloads and direct model instances
         if isinstance(model_data, dict):
+    pass
+    pass
             original_accuracy, model_data.get("accuracy", "N / A")
             initial_model, model_data.get("model")
         else:
@@ -906,6 +1113,8 @@ class AnalystEnhancementStep:
 
         # Check if we have valid targets for training
         if y_train.nunique() <= 1:
+    pass
+    pass
         self.logger.warning(
                 f"⚠️ Target has only {y_train.nunique()} unique values: {y_train.unique()}",
             )
@@ -939,6 +1148,8 @@ class AnalystEnhancementStep:
         if c not in self._METADATA_COLUMNS and c not in self._LABEL_COLUMNS
         ]
         if len(allow_features) != X_train.shape[1]:
+    pass
+    pass
         self.logger.info(
                 f"Feature isolation excluded {X_train.shape[1]-len(allow_features)} non - feature columns",
             )
@@ -949,6 +1160,8 @@ class AnalystEnhancementStep:
         # Different architectures require different enhancement strategies
 
         if model_name == "tcn":
+    pass
+    pass
         # TCN (Temporal Convolutional Network) - Neural network specific enhancements
         self.logger.info(
                 f"🎯 Applying TCN - specific enhancements for {timeframe_name}",
@@ -1005,6 +1218,10 @@ class AnalystEnhancementStep:
                 f"🔄 TCN enhancement: Temporal convolution optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # TCN - specific hyperparameter optimization
             best_params, await self._optimize_tcn_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1063,6 +1280,10 @@ class AnalystEnhancementStep:
                 f"🔄 Transformer enhancement: Attention mechanism optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Transformer - specific hyperparameter optimization
             best_params, await self._optimize_transformer_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1121,6 +1342,10 @@ class AnalystEnhancementStep:
                 f"🔄 LightGBM enhancement: Tree - based optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # LightGBM - specific hyperparameter optimization
             best_params, await self._optimize_lightgbm_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1179,6 +1404,10 @@ class AnalystEnhancementStep:
                 f"🔄 CNN enhancement: Convolution optimization for {timeframe_name}",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # CNN - specific hyperparameter optimization
             best_params, await self._optimize_cnn_hyperparameters(
                 X_train, y_train, X_val, y_val,
@@ -1273,24 +1502,38 @@ class AnalystEnhancementStep:
         }
 
     def _get_model_instance(self, model_name: str, params: dict[str, Any]):
+    pass
+    pass
         """Factory function to get a model instance from its name and parameters."""
         if model_name in ["xgboost", "lightgbm"] and self.device == "mps":
+    pass
+    pass
         # LightGBM does not support 'mps' device. Force CPU for tree learners on Apple Silicon.
             params.pop("device", None)
         if model_name == "random_forest":
+    pass
+    pass
         return RandomForestClassifier(**params, random_state = 42, n_jobs=-1)
         if model_name == "lightgbm":
+    pass
+    pass
         # Ensure CPU execution to avoid 'Unknown device type mps'
             safe_params, params.copy()
             safe_params.pop("device", None)
             safe_params["device_type"] = "cpu"
         return lgb.LGBMClassifier(**safe_params, random_state = 42)
         if model_name == "xgboost":
+    pass
+    pass
         # Remove eval_metric and device from params if they exist to avoid duplicate / unsupported parameters
             xgb_params, params.copy()
         if "eval_metric" in xgb_params:
+    pass
+    pass
                 del xgb_params["eval_metric"]
         if "device" in xgb_params:
+    pass
+    pass
                 del xgb_params["device"]
 
         return xgb.XGBClassifier(
@@ -1303,12 +1546,18 @@ class AnalystEnhancementStep:
             colsample_bytree = params.get("colsample_bytree", 0.8),
         )
         if model_name == "svm":
+    pass
+    pass
             from sklearn.svm import SVC
 
+import return SVC
         return SVC(**params, random_state = 42, probability = True)
         if model_name == "neural_network":
+    pass
+    pass
             from sklearn.neural_network import MLPClassifier
 
+import return MLPClassifier
         return MLPClassifier(
                 **params,
                 random_state = 42,
@@ -1357,6 +1606,8 @@ class AnalystEnhancementStep:
             pass
 
         def objective(trial: optuna.trial.Trial) -> float:
+    pass
+    pass
             nonlocal trial_count
             trial_count += 1
         self.logger.info(
@@ -1373,6 +1624,8 @@ class AnalystEnhancementStep:
 
         # Validate target data before proceeding
         if y_train.nunique() <= 1:
+    pass
+    pass
         self.logger.warning(
                     f"Target has only {y_train.nunique()} unique values, skipping optimization",
                 )
@@ -1380,6 +1633,8 @@ class AnalystEnhancementStep:
 
         # Build model params for this trial
         if model_name == "lightgbm":
+    pass
+    pass
         # Align pruning metric and study direction for LightGBM using logloss (minimize)
         # Determine binary vs multiclass
                 n_classes, len(set(pd.concat([y_train, y_val]).unique()))
@@ -1460,10 +1715,14 @@ class AnalystEnhancementStep:
 
         # Train the model with appropriate parameters based on model type
         if model_name == "lightgbm":
+    pass
+    pass
         # LightGBM supports callbacks. Train with eval_set so pruning can observe logloss.
                 use_pruning, pruning_callback is not None
                 fit_kwargs = {"eval_set": [(X_val, y_val)]}
         if use_pruning:
+    pass
+    pass
                     fit_kwargs["callbacks"] = [pruning_callback]
         # Suppress LightGBM training output
                 import signal
@@ -1480,6 +1739,8 @@ class AnalystEnhancementStep:
                     )
 
                 def timeout_handler(signum, frame) -> Never:
+    pass
+    pass
                     msg = "LightGBM training timed out"
                     raise TimeoutError(msg)
 
@@ -1491,11 +1752,16 @@ class AnalystEnhancementStep:
                 import sys
                 from io import StringIO
 
+import try:
         try:
         # Redirect stdout to suppress LightGBM output
                     old_stdout, sys.stdout
                     sys.stdout, StringIO()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
                         model.fit(X_train, y_train, **fit_kwargs)
@@ -1509,6 +1775,8 @@ class AnalystEnhancementStep:
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)])
             else: # SVM, Neural Network, and Random Forest don't support eval_set
         if model_name == "svm":
+    pass
+    pass
         self.logger.info(
                         {
                             "msg": "Training model",
@@ -1522,6 +1790,8 @@ class AnalystEnhancementStep:
             accuracy, accuracy_score(y_val, preds)
         # Return metric aligned with study direction: for LightGBM use logloss (minimize); others use accuracy (maximize)
         if model_name == "svm":
+    pass
+    pass
         self.logger.info(
                     {
                         "msg": "SVM trial result",
@@ -1540,9 +1810,12 @@ class AnalystEnhancementStep:
                         },
                     )
         if model_name == "lightgbm":
+    pass
+    pass
                 from sklearn.metrics import log_loss
 
         # Ensure labels ordering covers all classes present
+import labels_sorted, sorted
                 labels_sorted, sorted(pd.unique(pd.concat([y_train, y_val])))
         # Use predict_proba to compute logloss
                 y_proba, model.predict_proba(X_val)
@@ -1562,6 +1835,8 @@ class AnalystEnhancementStep:
 
         # Add progress callback
             def progress_callback(study, trial) -> None:
+    pass
+    pass
                 completed_trials, len(study.trials)
         if completed_trials % 1 == 0:  # Log every trial for better visibility
         self.logger.info(
@@ -1578,6 +1853,10 @@ class AnalystEnhancementStep:
         # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
         try:
                 import platform
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
                 platform, None
         try: is_macos, platform.system() == "Darwin" if platform else False
@@ -1617,6 +1896,8 @@ class AnalystEnhancementStep:
                 pass
 
         if not study.best_trial:
+    pass
+    pass
         self.logger.warning(
                     "Optuna study found no best trial, possibly due to all trials being pruned. Returning empty params.",
                 )
@@ -1633,6 +1914,8 @@ class AnalystEnhancementStep:
         with contextlib.suppress(Exception):
                 pass
         if model_name == "svm":
+    pass
+    pass
         self.logger.info(
                     {
                         "msg": "Best SVM parameters",
@@ -1674,6 +1957,10 @@ class AnalystEnhancementStep:
         # Check 5: Cross - Validation Stability warnings
         try:
         self._log_feature_stability_warnings(X_train)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(f"Stability check failed: {e}")
 
@@ -1681,6 +1968,8 @@ class AnalystEnhancementStep:
 
         # Enhanced tiered feature selection strategy for large feature sets
         if total_features > 200:
+    pass
+    pass
         # Use tiered selection with stability selection for large feature sets
             (
                 optimal_features,
@@ -1703,11 +1992,15 @@ class AnalystEnhancementStep:
         return optimal_features, selection_summary
 
     def _log_mutual_information_warnings(self, X: pd.DataFrame, y: pd.Series) -> None:
+    pass
+    pass
         """Compute MI for each feature vs target and warn on near - zero scores.
         Threshold: in blank mode -> absolute threshold 1e - 5.
         Full mode -> bottom 20% percentile flagged.
         """
         if X.empty or y is None or len(X.columns) == 0:
+    pass
+    pass
             return
         # Detect blank mode
         try: is_blank_env, os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
@@ -1723,46 +2016,72 @@ class AnalystEnhancementStep:
         )
         mi_series, pd.Series(mi, index = X.columns)
         if blank_mode:
+    pass
+    pass
             low, mi_series[mi_series <= 1e - 5]
         else:
             threshold, mi_series.quantile(0.20)
             low, mi_series[mi_series <= threshold]
         if not low.empty:
+    pass
+    pass
             names, low.sort_values().index.tolist()
         self.logger.warning(
                 f"MI: {len(names)} features show near - zero uni - variate predictive power (<= {('1e - 5' if blank_mode else f'{threshold:.4g}')}): {names[:50]}{' ...' if len(names)>50 else ''}"
             )
 
     def _log_feature_stability_warnings(self, X: pd.DataFrame) -> None:
+    pass
+    pass
         """Check 4 - fold CV stability: warn if std of fold means >> expected standard error.
         Criterion: std_of_means > 3 * (global_std / sqrt(k)).
         """
         if X.empty:
+    pass
+    pass
             return
         kf, KFold(n_splits = 4, shuffle = True, random_state = 42)
         unstable: list[str] = []
         for col in X.columns:
+    pass
+    pass
         try:
                 vals, X[col].astype(float).values
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Skip constant columns
                 gstd, float(np.nanstd(vals))
         if not np.isfinite(gstd) or gstd == 0.0:
+    pass
+    pass
                     continue
                 fold_means = []
         for train_idx, _ in kf.split(vals):
+    pass
+    pass
                     fold_vals, vals[train_idx]
         if fold_vals.size == 0:
+    pass
+    pass
                         continue
                     fold_means.append(float(np.nanmean(fold_vals)))
         if len(fold_means) < 2:
+    pass
+    pass
                     continue
                 std_of_means, float(np.nanstd(fold_means))
                 expected_se, gstd / np.sqrt(4)
         if std_of_means > 3.0 * expected_se:
+    pass
+    pass
                     unstable.append(col)
         except Exception:
                 continue
         if unstable:
+    pass
+    pass
         self.logger.warning(
                 f"Stability: {len(unstable)} features are unstable across folds (std(mean) >> expected): {unstable[:50]}{' ...' if len(unstable)>50 else ''}"
             )
@@ -1916,6 +2235,8 @@ class AnalystEnhancementStep:
 
         # Apply final pruning if we exceed total_max_features
         if len(selected_features) > total_max_features:
+    pass
+    pass
             selected_features, await self._apply_stable_final_pruning(
                 selected_features,
                 X_val[selected_features],
@@ -1968,7 +2289,13 @@ class AnalystEnhancementStep:
                 n_bootstrap_samples,
                 stability_threshold,
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if optimal_features:
+    pass
+    pass
         return optimal_features, {"method": "stable_shap", **shap_summary}
         except Exception as e:
         self.logger.warning(
@@ -1999,11 +2326,15 @@ class AnalystEnhancementStep:
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_1_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select core features with stability selection using bootstrapping."""
         if not tier_1_features:
+    pass
+    pass
         return []
 
         # Get available features
         available_features = [f for f in tier_1_features if f in X_val.columns]
         if not available_features:
+    pass
+    pass
         return []
 
         # Perform stability selection
@@ -2023,10 +2354,14 @@ class AnalystEnhancementStep:
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_2_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select normalized features with stability selection."""
         if not tier_2_features:
+    pass
+    pass
         return []
 
         available_features = [f for f in tier_2_features if f in X_val.columns]
         if not available_features:
+    pass
+    pass
         return []
 
         # For normalized features, use stability selection with stability - based criteria
@@ -2047,10 +2382,14 @@ class AnalystEnhancementStep:
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_3_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select interaction features with stability selection."""
         if not tier_3_features:
+    pass
+    pass
         return []
 
         available_features = [f for f in tier_3_features if f in X_val.columns]
         if not available_features:
+    pass
+    pass
         return []
 
         # For interaction features, use stability selection with significance - based criteria
@@ -2071,10 +2410,14 @@ class AnalystEnhancementStep:
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_4_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select lagged features with stability selection."""
         if not tier_4_features:
+    pass
+    pass
         return []
 
         available_features = [f for f in tier_4_features if f in X_val.columns]
         if not available_features:
+    pass
+    pass
         return []
 
         # For lagged features, use stability selection with temporal criteria
@@ -2095,10 +2438,14 @@ class AnalystEnhancementStep:
         self, model: Any, model_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, tier_5_features: list, count: int, n_bootstrap_samples: int, stability_threshold: float, min_features_per_tier: int, ) -> list[str]:
         """Select causality features with stability selection."""
         if not tier_5_features:
+    pass
+    pass
         return []
 
         available_features = [f for f in tier_5_features if f in X_val.columns]
         if not available_features:
+    pass
+    pass
         return []
 
         # For causality features, use stability selection with market logic criteria
@@ -2128,6 +2475,8 @@ class AnalystEnhancementStep:
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
+    pass
+    pass
         try:
         # Create bootstrap sample (with replacement) from training data only
                 bootstrap_indices, np.random.choice(
@@ -2137,6 +2486,10 @@ class AnalystEnhancementStep:
                 X_bootstrap, X_train.iloc[bootstrap_indices][available_features]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Perform feature selection on bootstrap sample
                 selected_features_bootstrap = (await self._select_features_single_bootstrap(
                         model,
@@ -2151,6 +2504,8 @@ class AnalystEnhancementStep:
 
         # Count selected features
         for feature in selected_features_bootstrap:
+    pass
+    pass
                     feature_selection_freq[feature] += 1
 
         except Exception as e:
@@ -2172,6 +2527,8 @@ class AnalystEnhancementStep:
 
         # Ensure minimum number of features per tier
         if len(stable_features) < min_features_per_tier:
+    pass
+    pass
         # Add top features by stability score to meet minimum
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
@@ -2180,6 +2537,8 @@ class AnalystEnhancementStep:
 
         # Limit to requested count
         if len(stable_features) > count:
+    pass
+    pass
         # Sort by stability and take top features
             stable_features, sorted(
                 stable_features, key = lambda x: feature_stability[x], reverse = True
@@ -2201,7 +2560,13 @@ class AnalystEnhancementStep:
         """Select features for a single bootstrap sample."""
         try:
         # Use model - based importance if available
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if hasattr(model, "feature_importances_"):
+    pass
+    pass
         # Tree - based models
                 feature_importance, model.feature_importances_
                 feature_importance_dict, dict(
@@ -2216,20 +2581,28 @@ class AnalystEnhancementStep:
         return [f[0] for f in selected_features]
         # Use criteria - based selection for non - tree models
         if selection_criteria == "stability":
+    pass
+    pass
         # Select based on feature stability (lower variance for normalized features)
                 feature_variance, X_bootstrap[available_features].var()
         return feature_variance.nsmallest(count).index.tolist()
         if selection_criteria == "significance":
+    pass
+    pass
         # Select based on absolute mean (higher values indicate more significant interactions)
                 feature_abs_mean, X_bootstrap[available_features].abs().mean()
         return feature_abs_mean.nlargest(
                     count,
                 ).index.tolist()
         if selection_criteria == "temporal":
+    pass
+    pass
         # Select based on variance (higher variance indicates more temporal information)
                 feature_variance, X_bootstrap[available_features].var()
         return feature_variance.nlargest(count).index.tolist()
         if selection_criteria == "market_logic":
+    pass
+    pass
         # Select based on absolute mean (causality features should have meaningful values)
                 feature_abs_mean, X_bootstrap[available_features].abs().mean()
         return feature_abs_mean.nlargest(count).index.tolist()
@@ -2245,6 +2618,8 @@ class AnalystEnhancementStep:
         self, selected_features: list, X_val_subset: pd.DataFrame, y_val: pd.Series, max_features: int, n_bootstrap_samples: int, stability_threshold: float, ) -> list[str]:
         """Apply final pruning with stability selection to meet maximum feature count."""
         if len(selected_features) <= max_features:
+    pass
+    pass
         return selected_features
 
         # Perform stability selection for final pruning
@@ -2287,6 +2662,8 @@ class AnalystEnhancementStep:
 
         # Perform bootstrap sampling and SHAP analysis
         for i in range(n_bootstrap_samples):
+    pass
+    pass
         try:
         # Create bootstrap sample from training data only (prevent look - ahead bias)
                 bootstrap_indices, np.random.choice(
@@ -2296,6 +2673,10 @@ class AnalystEnhancementStep:
                 X_bootstrap, X_train.iloc[bootstrap_indices]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Sample validation set for SHAP analysis with adaptive size
                 sample_idx, np.random.RandomState(42 + i).choice(
                     len(X_val),
@@ -2317,6 +2698,8 @@ class AnalystEnhancementStep:
                 )
 
         if shap_importance is not None:
+    pass
+    pass
         # Select top features based on SHAP importance
                     top_features, sorted(
                         shap_importance.items(), key = lambda x: x[1], reverse = True
@@ -2324,6 +2707,8 @@ class AnalystEnhancementStep:
 
         # Count selected features
         for feature, importance in top_features:
+    pass
+    pass
                         feature_selection_freq[feature] += 1
                         shap_values_all.append((feature, importance))
 
@@ -2346,6 +2731,8 @@ class AnalystEnhancementStep:
 
         # Ensure minimum number of features
         if len(stable_features) < min_features:
+    pass
+    pass
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )
@@ -2353,6 +2740,8 @@ class AnalystEnhancementStep:
 
         # Limit to maximum features
         if len(stable_features) > max_features:
+    pass
+    pass
             stable_features, sorted(
                 stable_features, key = lambda x: feature_stability[x], reverse = True
             )[:max_features]
@@ -2360,8 +2749,12 @@ class AnalystEnhancementStep:
         # Calculate average SHAP importance for selected features
         feature_shap_avg = {}
         for feature in stable_features:
+    pass
+    pass
             shap_values = [shap_val for f, shap_val in shap_values_all if f == feature]
         if shap_values:
+    pass
+    pass
                 feature_shap_avg[feature] = np.mean(shap_values)
 
         self.logger.info("   📊 Stable SHAP selection results:")
@@ -2374,6 +2767,10 @@ class AnalystEnhancementStep:
         try:
             top_by_stability, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )[:10]
         self.logger.info(
                 {
@@ -2403,10 +2800,14 @@ class AnalystEnhancementStep:
         enable_adaptive, shap_config.get("enable_adaptive_sampling", True)
 
         if not enable_adaptive:
+    pass
+    pass
         return min(default_size, total_samples)
 
         # Adaptive sizing based on dataset size
         if total_samples <= 10000:
+    pass
+    pass
         # Small dataset: use 20% of data, but at least min_size
             sample_size, max(min_size, int(total_samples * 0.2))
         elif total_samples <= 50000:
@@ -2429,21 +2830,37 @@ class AnalystEnhancementStep:
         """Calculate SHAP importance for a single bootstrap sample."""
         try:
         if model_name in ["lightgbm", "xgboost", "random_forest"]:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         # Try TreeExplainer with proper import
         try:
                     from shap.explainers import TreeExplainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import explainer, TreeExplainer
                     explainer, TreeExplainer(model)
                     shap_values, explainer.shap_values(X_val)
 
         # Normalize SHAP outputs to a 1D importance vector
         if isinstance(shap_values, list):
+    pass
+    pass
                         shap_array, np.asarray(shap_values)
                     else:
                         shap_array, np.asarray(shap_values)
 
         # Handle different SHAP output shapes
         if shap_array.ndim == 2:
+    pass
+    pass
                         feature_importance, np.mean(np.abs(shap_array), axis = 0)
                     elif shap_array.ndim == 3:
                         feature_importance, np.mean(np.abs(shap_array), axis=(0, 1))
@@ -2456,6 +2873,7 @@ class AnalystEnhancementStep:
         # Fallback to permutation importance
                     from sklearn.inspection import permutation_importance
 
+import feature_importance, permutation_importance
                     feature_importance, permutation_importance(
                         model,
                         X_val,
@@ -2470,7 +2888,13 @@ class AnalystEnhancementStep:
         try:
                     from shap.explainers import KernelExplainer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Use training data as background
+import explainer, KernelExplainer
                     explainer, KernelExplainer(
                         model.predict, X_train.iloc[:100],
                     )  # Sample background
@@ -2487,6 +2911,7 @@ class AnalystEnhancementStep:
             else: # For other models, use permutation importance
                 from sklearn.inspection import permutation_importance
 
+import feature_importance, permutation_importance
                 feature_importance, permutation_importance(
                     model,
                     X_val,
@@ -2511,6 +2936,8 @@ class AnalystEnhancementStep:
 
         # Perform bootstrap sampling and feature selection
         for i in range(n_bootstrap_samples):
+    pass
+    pass
         try:
         # Create bootstrap sample from training data only
                 bootstrap_indices, np.random.choice(
@@ -2520,6 +2947,10 @@ class AnalystEnhancementStep:
                 X_bootstrap, X_train.iloc[bootstrap_indices]
                 y_bootstrap, y_train.iloc[bootstrap_indices]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Sample validation set
                 sample_idx, np.random.RandomState(42 + i).choice(
                     len(X_val),
@@ -2545,6 +2976,8 @@ class AnalystEnhancementStep:
 
         # Count selected features
         for feature in selected_features_bootstrap:
+    pass
+    pass
                     feature_selection_freq[feature] += 1
 
         except Exception as e:
@@ -2566,6 +2999,8 @@ class AnalystEnhancementStep:
 
         # Ensure minimum number of features
         if len(stable_features) < min_features:
+    pass
+    pass
             sorted_features, sorted(
                 feature_stability.items(), key = lambda x: x[1], reverse = True
             )
@@ -2573,6 +3008,8 @@ class AnalystEnhancementStep:
 
         # Limit to maximum features
         if len(stable_features) > max_features:
+    pass
+    pass
             stable_features, sorted(
                 stable_features, key = lambda x: feature_stability[x], reverse = True
             )[:max_features]
@@ -2597,9 +3034,17 @@ class AnalystEnhancementStep:
         # Try multiple feature selection methods
             methods = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Method 1: Variance - based selection
         try:
                 feature_variance, X_val[feature_names].var()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 variance_features, feature_variance.nlargest(
                     max_features,
                 ).index.tolist()
@@ -2611,6 +3056,12 @@ class AnalystEnhancementStep:
         try:
                 from sklearn.feature_selection import SelectKBest, f_classif
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import selector, SelectKBest
                 selector, SelectKBest(score_func = f_classif, k = max_features)
                 selector.fit(X_train[feature_names], y_train)
                 correlation_features = [
@@ -2624,6 +3075,12 @@ class AnalystEnhancementStep:
         try:
                 from sklearn.feature_selection import mutual_info_classif
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import mi_scores, mutual_info_classif
                 mi_scores, mutual_info_classif(
                     X_train[feature_names], y_train, random_state = 42
                 )
@@ -2637,6 +3094,10 @@ class AnalystEnhancementStep:
         # Method 4: Model - based importance (if available)
         try:
         if hasattr(model, "feature_importances_"):
+    pass
+    except Exception as e:
+        pass
+    pass
                     feature_importance, model.feature_importances_
                     feature_importance_dict, dict(
                         zip(X_train.columns, feature_importance, strict = False)
@@ -2650,14 +3111,22 @@ class AnalystEnhancementStep:
                         f[0] for f in model_features if f[0] in feature_names
                     ]
                     methods.append(model_features)
+    except Exception as e:
+        pass
         except Exception:
                 pass
 
         # Combine methods using voting
         if methods:
+    pass
+    pass
                 feature_votes = {}
         for method_features in methods:
+    pass
+    pass
         for feature in method_features:
+    pass
+    pass
                         feature_votes[feature] = feature_votes.get(feature, 0) + 1
 
         # Select features with highest votes
@@ -2674,6 +3143,8 @@ class AnalystEnhancementStep:
         return feature_names[:max_features]
 
     def _categorize_features_by_tier(self, feature_names: list) -> dict:
+    pass
+    pass
         """Categorize features into tiers based on naming patterns (enhanced with data - driven methods)."""
         categories = {
             "tier_1": [],  # Core features
@@ -2684,6 +3155,8 @@ class AnalystEnhancementStep:
         }
 
         for feature in feature_names:
+    pass
+    pass
             feature_lower, feature.lower()
 
         # Tier 1: Core technical and liquidity features
@@ -2761,6 +3234,10 @@ class AnalystEnhancementStep:
 
             selected_features, feature_columns.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Stage 1: Data quality filtering
             X_clean, data[feature_columns].copy()
 
@@ -2772,7 +3249,11 @@ class AnalystEnhancementStep:
         # Remove features with infinite values
             inf_features = []
         for col in X_clean.columns:
+    pass
+    pass
         if np.isinf(X_clean[col]).any():
+    pass
+    pass
                     inf_features.append(col)
             X_clean, X_clean.drop(columns = inf_features)
 
@@ -2785,6 +3266,12 @@ class AnalystEnhancementStep:
         try:
                 from src.utils.vif_calculator import calculate_vif_robust
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import vif_scores, calculate_vif_robust
                 vif_scores, calculate_vif_robust(X_clean)
 
         # Remove features with high VIF (>10)
@@ -2798,15 +3285,24 @@ class AnalystEnhancementStep:
 
         # Stage 3: Mutual Information filtering (if target available)
         if target_column and target_column in data.columns:
+    pass
+    pass
         try:
                     y, data[target_column]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
         # Determine task type
+import task_type = "classification" if len
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
 
         if task_type == "classification":
+    pass
+    pass
                         mi_scores, mutual_info_classif(X_clean, y, random_state = 42)
                     else:
                         mi_scores, mutual_info_regression(X_clean, y, random_state = 42)
@@ -2823,13 +3319,23 @@ class AnalystEnhancementStep:
 
         # Stage 4: SHAP - based filtering (if target available)
         if target_column and target_column in data.columns and len(X_clean.columns) > 50:
+    pass
+    pass
         try:
                     from src.analyst.meta_label_relevance import compute_shap_importance
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Calculate SHAP importance
+import shap_scores, compute_shap_importance
                     shap_scores, compute_shap_importance(X_clean, y, task = task_type)
 
         if shap_scores:
+    pass
+    pass
         # Remove bottom 20% of features by SHAP importance
                         shap_series, pd.Series(shap_scores)
                         threshold, shap_series.quantile(0.2)
@@ -2843,11 +3349,21 @@ class AnalystEnhancementStep:
 
         # Stage 5: RandomForest importance filtering (if target available)
         if target_column and target_column in data.columns and len(X_clean.columns) > 30:
+    pass
+    pass
         try:
                     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Train RF for feature importance
+import if task_type == "classification":
         if task_type == "classification":
+    pass
+    pass
                         rf, RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
                     else:
                         rf, RandomForestRegressor(n_estimators = 100, random_state = 42, n_jobs=-1)
@@ -2884,11 +3400,15 @@ class AnalystEnhancementStep:
         json_summary = {}
 
         for regime_name, models in enhanced_models.items():
+    pass
+    pass
             regime_models_dir, os.path.join(enhanced_models_dir, regime_name)
             os.makedirs(regime_models_dir, exist_ok = True)
             json_summary[regime_name] = {}
 
         for model_name, model_data in models.items():
+    pass
+    pass
             model_file, os.path.join(regime_models_dir, f"{model_name}.joblib")
             joblib.dump(model_data["model"], model_file)
 
@@ -2909,6 +3429,8 @@ class AnalystEnhancementStep:
         return enhanced_models_dir
 
     def _apply_quantization(self, model: torch.nn.Module) -> torch.nn.Module:
+    pass
+    pass
         """Applies dynamic quantization to a PyTorch model for CPU / MPS inference."""
         self.logger.info("Applying dynamic quantization to the model...")
         # Move model to CPU for quantization, as it's primarily a CPU - based feature set in PyTorch
@@ -2941,23 +3463,37 @@ class AnalystEnhancementStep:
         activations = {}
 
         def get_activation(name):
+    pass
+    pass
             def hook(model, input, output) -> None:
+    pass
+    pass
                 activations[name] = torch.sqrt(torch.mean(input[0] ** 2, dim = 0))
 
         return hook
 
         hooks = []
         for name, module in model.named_modules():
+    pass
+    pass
         if isinstance(module, nn.Linear):
+    pass
+    pass
                 hooks.append(module.register_forward_hook(get_activation(name)))
 
         model(calib_tensor)  # Forward pass to trigger hooks
         for hook in hooks:
+    pass
+    pass
             hook.remove()
 
         # 2. Calculate importance and prune
         for name, module in model.named_modules():
+    pass
+    pass
         if isinstance(module, nn.Linear) and name in activations:
+    pass
+    pass
                 W, module.weight.data
                 act_norm, activations[name]
 
@@ -2975,6 +3511,10 @@ class AnalystEnhancementStep:
                 prune.remove(module, "weight")
         try:
                 total, W.numel()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 nonzero, int(torch.count_nonzero(W).item())
                 sparsity_actual, 1.0 - (nonzero / max(1, total))
         self.logger.info(
@@ -3022,6 +3562,8 @@ class AnalystEnhancementStep:
         student_model.train()
         for epoch in range(5):  # A short training for demonstration
         for data, targets in train_loader:
+    pass
+    pass
                 data, targets, data.to(self.device), targets.to(self.device)
 
         # Get teacher's logits (outputs before softmax)
@@ -3064,9 +3606,16 @@ class AnalystEnhancementStep:
         """Lightweight CatBoost HPO using Optuna; returns (best_params, best_score)."""
         try:
             import optuna
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from catboost import CatBoostClassifier
 
+import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
                 params = {
                     "iterations": trial.suggest_int("iterations", 300, 1500, step = 300),
                     "learning_rate": trial.suggest_float(
@@ -3079,6 +3628,8 @@ class AnalystEnhancementStep:
         # Subsample for speed
                 frac, min(1.0, 30000 / max(1, len(X_train)))
         if frac < 1.0:
+    pass
+    pass
                     Xs, ys, X_train.sample(frac = frac, random_state = 42), y_train.loc[Xs.index]
                 else:
                     Xs, ys, X_train, y_train
@@ -3101,8 +3652,14 @@ class AnalystEnhancementStep:
                 f"🔍 Applying pre - feature selection for {len(feature_columns)} features...",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if this is a new architecture model
         if regime_name.startswith("hmm_"):
+    pass
+    pass
         # For new architectures, use architecture - specific feature selection
         return await self._apply_architecture_specific_feature_selection(
                     data, feature_columns, regime_name,
@@ -3173,14 +3730,24 @@ class AnalystEnhancementStep:
         # Aggressive MI pruning if still too large
         try:
         if len(selected_features) > total_max_features:
+    pass
+    except Exception as e:
+        pass
+    pass
                     from sklearn.feature_selection import mutual_info_classif
 
+import except Exception as e:
+    except Exception as e:
+        pass
+import X =
                     X = (data[selected_features]
                         .select_dtypes(include=[np.number])
                         .fillna(0)
                     )
                     y, data.get("label")
         if y is not None and not X.empty:
+    pass
+    pass
                         mi, mutual_info_classif(
                             X.values,
                             y.values if hasattr(y, "values") else y,
@@ -3196,6 +3763,8 @@ class AnalystEnhancementStep:
 
         # Apply final pruning if we exceed total_max_features
         if len(selected_features) > total_max_features:
+    pass
+    pass
                 selected_features, await self._apply_final_pruning_pre_training(
                     data, selected_features, total_max_features,
                 )
@@ -3216,6 +3785,10 @@ class AnalystEnhancementStep:
         # Extract timeframe from regime name
             timeframe, regime_name.replace("hmm_", "")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Architecture - specific feature selection
         if timeframe == "5m":  # TCN
         # TCN works well with temporal features and regime information
@@ -3284,9 +3857,16 @@ class AnalystEnhancementStep:
         """Optuna HPO for RandomForest; returns (best_params, best_score)."""
         try:
             import optuna
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sklearn.ensemble import RandomForestClassifier
 
+import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
                 params = {
                     "n_estimators": trial.suggest_int(
                         "n_estimators", 100, 800, step = 100
@@ -3321,9 +3901,16 @@ class AnalystEnhancementStep:
         """Optuna HPO for Logistic Regression; returns (best_params, best_score)."""
         try:
             import optuna
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sklearn.linear_model import LogisticRegression
 
+import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
                 penalty, trial.suggest_categorical(
                     "penalty", ["l2", "l1"],
                 )  # elastic net optional
@@ -3364,12 +3951,19 @@ class AnalystEnhancementStep:
         """Optuna HPO for SVM proxy (RBFSampler + LinearSVC)."""
         try:
             import optuna
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sklearn.kernel_approximation import RBFSampler
             from sklearn.pipeline import make_pipeline
             from sklearn.preprocessing import StandardScaler
             from sklearn.svm import LinearSVC
 
+import def objective
             def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
                 gamma, trial.suggest_float("gamma", 1e - 4, 1.0, log = True)
                 n_components, trial.suggest_int("n_components", 1000, 5000, step = 500)
                 C, trial.suggest_float("C", 0.1, 10.0, log = True)
@@ -3504,6 +4098,7 @@ class AnalystEnhancementStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
+import artifact_versioning,
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -3603,6 +4198,7 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
     from src.utils.logger import system_logger
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -3635,6 +4231,10 @@ from src.utils.enhanced_mlflow_integration import (
     try:
         logger.info(f"🔄 Starting Step 6: Analyst Enhancement for {exchange}:{symbol}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Phase 1: Configuration
         logger.info("📋 Phase 1: Loading configuration...")
         try:
@@ -3642,6 +4242,10 @@ from src.utils.enhanced_mlflow_integration import (
                 "symbol": symbol,
                 "exchange": exchange,
                 "data_dir": data_dir,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
             logger.info(f"✅ Configuration loaded: {len(config)} parameters")
             step_phases["configuration"] = True
@@ -3653,6 +4257,10 @@ from src.utils.enhanced_mlflow_integration import (
         logger.info("🔧 Phase 2: Initializing Analyst Enhancement Step...")
         try:
             step, AnalystEnhancementStep(config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await step.initialize()
             logger.info("✅ Analyst Enhancement Step initialized successfully")
             step_phases["initialization"] = True
@@ -3668,6 +4276,10 @@ from src.utils.enhanced_mlflow_integration import (
                 "exchange": exchange,
                 "data_dir": data_dir,
                 "force_rerun": force_rerun,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
             pipeline_state = {}
             logger.info(f"✅ Training input prepared: {len(training_input)} parameters")
@@ -3681,9 +4293,17 @@ from src.utils.enhanced_mlflow_integration import (
         try:
             result, await step.execute(training_input, pipeline_state)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if isinstance(result, dict):
+    pass
+    pass
                 status, result.get("status", "UNKNOWN")
         if status == "SUCCESS":
+    pass
+    pass
                     logger.info("✅ Model enhancement completed successfully")
                     step_phases["enhancement"] = True
                 else:
@@ -3702,6 +4322,10 @@ from src.utils.enhanced_mlflow_integration import (
         # Add validation logic here
             logger.info("✅ Enhancement validation completed")
             step_phases["validation"] = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.exception(f"❌ Enhancement validation failed: {e}")
         # Don't fail the entire step for validation issues
@@ -3719,6 +4343,8 @@ from src.utils.enhanced_mlflow_integration import (
         logger.info(f"Successful phases: {successful_phases}/{total_phases}")
         logger.info("Phase status:")
         for phase, status in step_phases.items():
+    pass
+    pass
             status_emoji = "✅" if status else "❌"
             logger.info(
                 f"   {status_emoji} {phase}: {'SUCCESS' if status else 'FAILED'}",

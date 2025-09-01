@@ -20,6 +20,7 @@ from src.strategist.strategist import Strategist
 from src.supervisor.supervisor import Supervisor
 from src.tactician.tactician import Tactician
 from src.interfaces.base_interfaces import (
+import IAnalyst,
     IAnalyst,
     IEventBus,
     IStrategist,
@@ -34,10 +35,14 @@ class ServiceRegistry:
     """
 
     def __init__(self, container: DependencyContainer):
+    pass
+    pass
         self.container = container
         self.logger = system_logger.getChild("ServiceRegistry")
 
     def register_all_services(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Register all trading system services."""
         self.logger.info("Registering all trading system services")
 
@@ -53,6 +58,8 @@ class ServiceRegistry:
         self.logger.info("All services registered successfully")
 
     def _register_core_services(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Register core infrastructure services."""
         # Event bus as singleton
         self.container.register(
@@ -63,11 +70,15 @@ class ServiceRegistry:
         )
 
     def _register_trading_components(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Register trading component services."""
         # Determine which implementations to use based on config
         use_modular = config.get("use_modular_components", True)
 
         if use_modular:
+    pass
+    pass
             # Register modular implementations
             self.container.register(
                 IAnalyst,
@@ -121,6 +132,8 @@ class ServiceRegistry:
         )
 
     def _register_specialized_services(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Register specialized services."""
         # Register training manager
         self.container.register(
@@ -139,10 +152,14 @@ class ServiceRegistry:
         )
 
     def get_registered_services(self) -> dict[str, Any]:
+    pass
+    pass
         """Get all registered services."""
         return self.container.get_all_services()
 
     def validate_registrations(self) -> bool:
+    pass
+    pass
         """Validate that all required services are registered."""
         required_services = [
             IEventBus,
@@ -154,10 +171,16 @@ class ServiceRegistry:
 
         missing_services = []
         for service in required_services:
+    pass
+    pass
             if service not in self.container.get_all_services():
+    pass
+    pass
                 missing_services.append(service.__name__)
 
         if missing_services:
+    pass
+    pass
             self.logger.error(f"Missing required services: {missing_services}")
             return False
 

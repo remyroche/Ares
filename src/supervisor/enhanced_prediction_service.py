@@ -18,6 +18,7 @@ from src.utils.performance import performance_monitor
 from src.utils.caching import intelligent_caching
 
 
+import class EnhancedPredictionService:
 class EnhancedPredictionService:
     """
     Enhanced Prediction Service that provides calibrated confidence scores from ML models.
@@ -27,6 +28,8 @@ class EnhancedPredictionService:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         """Initialize the Enhanced Prediction Service."""
         self.config = config or get_enhanced_prediction_service_config()
         self.logger = get_logger(__name__)
@@ -60,6 +63,10 @@ class EnhancedPredictionService:
         try:
             self.logger.info("🚀 Initializing Enhanced Prediction Service...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load ML models for both Analyst and Tactician
             await self._load_analyst_ml_models()
             await self._load_tactician_ml_models()
@@ -87,7 +94,13 @@ class EnhancedPredictionService:
         """Load Analyst ML models (higher timeframe) from steps 6-14."""
         try:
             analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not analyst_models_path.exists():
+    pass
+    pass
                 raise ValueError(f"Analyst ML models directory not found: {analyst_models_path}")
 
             # Load different types of Analyst models
@@ -97,19 +110,31 @@ class EnhancedPredictionService:
             ]
 
             for model_type in analyst_model_types:
+    pass
+    pass
                 type_path = analyst_models_path / model_type
                 if type_path.exists():
+    pass
+    pass
                     self.analyst_ml_models[model_type] = {}
 
                     for model_file in type_path.glob("*.pkl"):
+    pass
+    pass
                         try:
                             with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             model_name = model_file.stem
 
                             # Verify that the model has probability outputs
                             if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+    pass
+    pass
                                 self.logger.warning(warning(f"⚠️ Skipping Analyst model {model_name} - missing probability outputs"))
                                 continue
 
@@ -120,6 +145,8 @@ class EnhancedPredictionService:
                             self.logger.warning(warning(f"⚠️ Failed to load Analyst ML model {model_file}: {e}"))
 
             if not self.analyst_ml_models:
+    pass
+    pass
                 raise ValueError("No Analyst ML models loaded")
 
         except Exception as e:
@@ -137,7 +164,13 @@ class EnhancedPredictionService:
         """Load Tactician ML models (lower timeframe) from steps 6-14."""
         try:
             tactician_models_path = Path(self.data_dir) / "ml_profit_models" / "tactician_models"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not tactician_models_path.exists():
+    pass
+    pass
                 raise ValueError(f"Tactician ML models directory not found: {tactician_models_path}")
 
             # Load different types of Tactician models
@@ -147,19 +180,31 @@ class EnhancedPredictionService:
             ]
 
             for model_type in tactician_model_types:
+    pass
+    pass
                 type_path = tactician_models_path / model_type
                 if type_path.exists():
+    pass
+    pass
                     self.tactician_ml_models[model_type] = {}
 
                     for model_file in type_path.glob("*.pkl"):
+    pass
+    pass
                         try:
                             with open(model_file, "rb") as f:
                                 model_data = pickle.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             model_name = model_file.stem
 
                             # Verify that the model has probability outputs
                             if not self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}"):
+    pass
+    pass
                                 self.logger.warning(warning(f"⚠️ Skipping Tactician model {model_name} - missing probability outputs"))
                                 continue
 
@@ -170,6 +215,8 @@ class EnhancedPredictionService:
                             self.logger.warning(warning(f"⚠️ Failed to load Tactician ML model {model_file}: {e}"))
 
             if not self.tactician_ml_models:
+    pass
+    pass
                 raise ValueError("No Tactician ML models loaded")
 
         except Exception as e:
@@ -186,10 +233,22 @@ class EnhancedPredictionService:
         """Load calibration results from step 11 (model performance vs actual reliability)."""
         try:
             calibration_path = Path(self.data_dir) / "calibration_results"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if calibration_path.exists():
+    pass
+    pass
                 for calibration_file in calibration_path.glob("*.json"):
+    pass
+    pass
                     try:
                         import json
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         with open(calibration_file, "r") as f:
                             calibration_data = json.load(f)
 
@@ -213,10 +272,22 @@ class EnhancedPredictionService:
         """Load optimization results from step 11 (model performance vs actual reliability)."""
         try:
             optimization_path = Path(self.data_dir) / "optimization_results"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if optimization_path.exists():
+    pass
+    pass
                 for optimization_file in optimization_path.glob("*.json"):
+    pass
+    pass
                     try:
                         import json
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 
@@ -272,8 +343,14 @@ class EnhancedPredictionService:
         """
         try:
             if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
                 raise ValueError("Enhanced Prediction Service not initialized")
 
+    except Exception as e:
+        pass
             calibrated_scores = {
                 "analyst_models": {},
                 "tactician_models": {}
@@ -284,6 +361,8 @@ class EnhancedPredictionService:
                 market_data, regime_info, symbol, exchange
             )
             if not analyst_scores:
+    pass
+    pass
                 raise ValueError(f"No calibrated Analyst confidence scores available for {symbol} on {exchange}")
             calibrated_scores["analyst_models"] = analyst_scores
 
@@ -292,6 +371,8 @@ class EnhancedPredictionService:
                 market_data, regime_info, symbol, exchange
             )
             if not tactician_scores:
+    pass
+    pass
                 raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
             calibrated_scores["tactician_models"] = tactician_scores
 
@@ -321,13 +402,27 @@ class EnhancedPredictionService:
         try:
             analyst_scores = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for model_type, models in self.analyst_ml_models.items():
+    pass
+    pass
                 for model_name, model_data in models.items():
+    pass
+    pass
                     try:
                         # Get price action probabilities from ML model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         price_action_probabilities = model_data.get("price_action_probabilities", {})
 
                         if not price_action_probabilities:
+    pass
+    pass
                             self.logger.warning(warning(f"⚠️ No price action probabilities for Analyst model {model_name}"))
                             continue
 
@@ -342,6 +437,8 @@ class EnhancedPredictionService:
                         )
 
                         if calibrated_confidence is not None:
+    pass
+    pass
                             analyst_scores[f"{model_type}_{model_name}"] = calibrated_confidence
 
                     except Exception as e:
@@ -370,13 +467,27 @@ class EnhancedPredictionService:
         try:
             tactician_scores = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for model_type, models in self.tactician_ml_models.items():
+    pass
+    pass
                 for model_name, model_data in models.items():
+    pass
+    pass
                     try:
                         # Get price action probabilities from ML model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         price_action_probabilities = model_data.get("price_action_probabilities", {})
 
                         if not price_action_probabilities:
+    pass
+    pass
                             self.logger.warning(warning(f"⚠️ No price action probabilities for Tactician model {model_name}"))
                             continue
 
@@ -391,6 +502,8 @@ class EnhancedPredictionService:
                         )
 
                         if calibrated_confidence is not None:
+    pass
+    pass
                             tactician_scores[f"{model_type}_{model_name}"] = calibrated_confidence
 
                     except Exception as e:
@@ -426,6 +539,10 @@ class EnhancedPredictionService:
         """
         try:
             # Extract key probability metrics from ML model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             triple_barrier_prob = price_action_probabilities.get("triple_barrier_probability", 0.5)
             direction_prob = price_action_probabilities.get("direction_probability", 0.5)
             magnitude_prob = price_action_probabilities.get("magnitude_probability", 0.5)
@@ -443,6 +560,8 @@ class EnhancedPredictionService:
 
             # Use optimized weights if available, otherwise use defaults
             if optimized_weights:
+    pass
+    pass
                 triple_barrier_weight = optimized_weights.get("triple_barrier_weight", 0.25)
                 direction_weight = optimized_weights.get("direction_weight", 0.25)
                 magnitude_weight = optimized_weights.get("magnitude_weight", 0.25)
@@ -524,15 +643,25 @@ class EnhancedPredictionService:
                 "direction_probability",
                 "magnitude_probability",
                 "barrier_avoidance_probability"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ]
 
             for prob_name in required_probabilities:
+    pass
+    pass
                 if prob_name not in price_action_probabilities:
+    pass
+    pass
                     self.logger.warning(warning(f"⚠️ Missing required probability '{prob_name}' for model {model_name}"))
                     return False
 
                 prob_value = price_action_probabilities[prob_name]
                 if not isinstance(prob_value, (int, float)) or not (0.0 <= prob_value <= 1.0):
+    pass
+    pass
                     self.logger.warning(warning(f"⚠️ Invalid probability value for '{prob_name}' in model {model_name}: {prob_value}"))
                     return False
 
@@ -544,11 +673,15 @@ class EnhancedPredictionService:
 
             # Triple barrier probability should be <= direction probability
             if triple_barrier > direction:
+    pass
+    pass
                 self.logger.warning(warning(f"⚠️ Triple barrier probability ({triple_barrier}) > direction probability ({direction}) for model {model_name}"))
                 return False
 
             # Barrier avoidance should be reasonable relative to triple barrier
             if barrier_avoidance < triple_barrier * 0.5:
+    pass
+    pass
                 self.logger.warning(warning(f"⚠️ Barrier avoidance probability ({barrier_avoidance}) seems too low relative to triple barrier ({triple_barrier}) for model {model_name}"))
                 return False
 
@@ -565,6 +698,8 @@ class EnhancedPredictionService:
     )
     @with_tracing_span("verify_model_probability_outputs")
     def _verify_model_probability_outputs(self, model_data: Dict[str, Any], model_name: str) -> bool:
+    pass
+    pass
         """
         Verify that a model has the required probability outputs.
 
@@ -577,7 +712,13 @@ class EnhancedPredictionService:
         """
         try:
             # Check if model_data has price_action_probabilities
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if "price_action_probabilities" not in model_data:
+    pass
+    pass
                 self.logger.warning(warning(f"⚠️ Model {model_name} missing 'price_action_probabilities' key"))
                 return False
 
@@ -585,6 +726,8 @@ class EnhancedPredictionService:
 
             # Validate the probability outputs
             if not self._validate_price_action_probabilities(price_action_probabilities, model_name):
+    pass
+    pass
                 return False
 
             self.logger.debug(f"✅ Model {model_name} has valid probability outputs")
@@ -618,12 +761,20 @@ class EnhancedPredictionService:
                     "tactician_models_with_probabilities": 0,
                     "all_models_verified": False
                 }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Verify Analyst models
             for model_type, models in self.analyst_ml_models.items():
+    pass
+    pass
                 verification_results["analyst_models"][model_type] = {}
                 for model_name, model_data in models.items():
+    pass
+    pass
                     has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
                     verification_results["analyst_models"][model_type][model_name] = {
                         "has_probability_outputs": has_probabilities,
@@ -631,12 +782,18 @@ class EnhancedPredictionService:
                     }
                     verification_results["summary"]["total_analyst_models"] += 1
                     if has_probabilities:
+    pass
+    pass
                         verification_results["summary"]["analyst_models_with_probabilities"] += 1
 
             # Verify Tactician models
             for model_type, models in self.tactician_ml_models.items():
+    pass
+    pass
                 verification_results["tactician_models"][model_type] = {}
                 for model_name, model_data in models.items():
+    pass
+    pass
                     has_probabilities = self._verify_model_probability_outputs(model_data, f"{model_type}_{model_name}")
                     verification_results["tactician_models"][model_type][model_name] = {
                         "has_probability_outputs": has_probabilities,
@@ -644,6 +801,8 @@ class EnhancedPredictionService:
                     }
                     verification_results["summary"]["total_tactician_models"] += 1
                     if has_probabilities:
+    pass
+    pass
                         verification_results["summary"]["tactician_models_with_probabilities"] += 1
 
             # Check if all models have probabilities
@@ -654,6 +813,8 @@ class EnhancedPredictionService:
 
             # Log verification results
             if verification_results["summary"]["all_models_verified"]:
+    pass
+    pass
                 self.logger.info(f"✅ All {total_models} models have probability outputs")
             else:
                 self.logger.warning(warning(f"⚠️ Only {models_with_probabilities}/{total_models} models have probability outputs"))
@@ -674,16 +835,26 @@ class EnhancedPredictionService:
         """Check if the service is healthy and has loaded models with probability outputs."""
         try:
             if not self.is_initialized:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
+    except Exception as e:
+        pass
             # Check if we have both Analyst and Tactician models
             has_analyst_models = len(self.analyst_ml_models) > 0
             has_tactician_models = len(self.tactician_ml_models) > 0
 
             if not has_analyst_models:
+    pass
+    pass
                 self.logger.warning(warning("⚠️ No Analyst ML models loaded"))
 
             if not has_tactician_models:
+    pass
+    pass
                 self.logger.warning(warning("⚠️ No Tactician ML models loaded"))
 
             # Verify that all models have probability outputs
@@ -691,6 +862,8 @@ class EnhancedPredictionService:
             all_models_verified = verification_results.get("summary", {}).get("all_models_verified", False)
 
             if not all_models_verified:
+    pass
+    pass
                 self.logger.warning(warning("⚠️ Not all models have probability outputs"))
                 return False
 
@@ -701,9 +874,15 @@ class EnhancedPredictionService:
             return False
 
     def get_service_info(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get service information and statistics."""
         try:
             analyst_model_count = sum(len(models) for models in self.analyst_ml_models.values())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             tactician_model_count = sum(len(models) for models in self.tactician_ml_models.values())
 
             return {
@@ -725,6 +904,8 @@ class EnhancedPredictionService:
             return {"error": str(e)}
 
     def _get_probability_requirements_info(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get information about required probability outputs from ML models."""
         return {
             "probability_outputs_location": "ML models in steps 6-14 of enhanced_training_manager",

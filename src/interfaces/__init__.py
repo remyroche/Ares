@@ -1,6 +1,7 @@
 # src/interfaces/__init__.py
 
 from .base_interfaces import (
+import IAnalyst,
     IAnalyst,
     IEventBus,
     IExchangeClient,
@@ -13,6 +14,7 @@ from .base_interfaces import (
 )
 from .event_bus import Event, EventBus, EventType
 
+import __all__ = [
 __all__ = [
     "IAnalyst",
     "IStrategist",

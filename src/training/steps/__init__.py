@@ -7,6 +7,12 @@ with explicit imports to avoid namespace pollution.
 # Import specific classes from each step module
 try:
     from .step01_data_collection import DataCollectionStep
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except ImportError:
 except ImportError:
     DataCollectionStep, None
 
@@ -113,6 +119,12 @@ SavingStep, None
 # Import utility functions
 try:
     from .unified_data_loader import UnifiedDataLoader, get_unified_data_loader
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except ImportError:
 except ImportError:
     get_unified_data_loader, None
     UnifiedDataLoader, None

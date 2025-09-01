@@ -29,6 +29,8 @@ class CombinedFeaturesConfig:
 
 class CombinedFeaturesBuilder:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("CombinedFeaturesBuilder")
         cf = (
             (config or {}).get("combined_features", {})
@@ -40,6 +42,8 @@ class CombinedFeaturesBuilder:
         )
 
     def _rsi(self, close: pd.Series, window: int = 14) -> pd.Series:
+    pass
+    pass
         delta = close.diff()
         gain = delta.where(delta > 0, 0.0).rolling(window, min_periods=1).mean()
         loss = (-delta.where(delta < 0, 0.0)).rolling(window, min_periods=1).mean()
@@ -89,7 +93,11 @@ class CombinedFeaturesBuilder:
         return tr.rolling(window, min_periods=1).mean()
 
     def build(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         if ohlcv is None or ohlcv.empty:
+    pass
+    pass
             return pd.DataFrame(
                 columns=REQUIRED_FEATURES,
                 index=pd.Index([], name=getattr(ohlcv, "index", None)),
@@ -98,6 +106,8 @@ class CombinedFeaturesBuilder:
         df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
         df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()
         if "volume" in df.columns:
+    pass
+    pass
             vol_ma = df["volume"].rolling(20, min_periods=1).mean()
             df["volume_ratio"] = (df["volume"] / vol_ma).replace(
                 [np.inf, -np.inf],

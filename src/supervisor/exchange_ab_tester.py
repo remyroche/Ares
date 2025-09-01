@@ -44,6 +44,8 @@ class ExchangeABTester:
     """A/B testing framework for comparing model performance across exchanges."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("ExchangeABTester")
 
@@ -77,6 +79,10 @@ class ExchangeABTester:
         try:
             self.logger.info("Initializing Exchange A/B Tester...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create result storage directory
             os.makedirs(self.result_storage_path, exist_ok=True)
 
@@ -99,11 +105,19 @@ class ExchangeABTester:
         """Start a new A/B test."""
         try:
             if self.is_running:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("A/B test already running")
                 return False
 
+    except Exception as e:
+        pass
             # Validate test configuration
             if len(test_config.exchanges) < 2:
+    pass
+    pass
                 self.logger.error("A/B test requires at least 2 exchanges")
                 return False
 
@@ -113,6 +127,8 @@ class ExchangeABTester:
 
             # Initialize results for each exchange
             for exchange in test_config.exchanges:
+    pass
+    pass
                 self.test_results[exchange] = []
                 self.performance_metrics[exchange] = {
                     "total_predictions": 0,
@@ -146,10 +162,18 @@ class ExchangeABTester:
         """Process a model prediction for a specific exchange."""
         try:
             if not self.is_running or self.current_test is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 msg = "No A/B test currently running"
                 raise ValueError(msg)
 
+    except Exception as e:
+        pass
             if exchange not in self.current_test.exchanges:
+    pass
+    pass
                 msg = f"Exchange {exchange} not in current test"
                 raise ValueError(msg)
 
@@ -159,6 +183,8 @@ class ExchangeABTester:
             # Calculate position size (with exchange-specific adjustments)
             position_size = self.current_test.max_position_size
             if exchange.upper() in ["MEXC", "GATEIO"]:
+    pass
+    pass
                 position_size *= 0.4  # Reduce position size for smaller exchanges
 
             # Simulate execution results
@@ -166,6 +192,8 @@ class ExchangeABTester:
             slippage = None
 
             if should_execute:
+    pass
+    pass
                 # Simulate slippage based on exchange
                 slippage_multipliers = {"BINANCE": 1.0, "MEXC": 3.0, "GATEIO": 3.5}
                 base_slippage = 0.001
@@ -176,6 +204,8 @@ class ExchangeABTester:
 
                 # Simulate profit/loss
                 if prediction > 0:
+    pass
+    pass
                     profit_loss = position_size * prediction * 0.1
                 else:
                     profit_loss = position_size * prediction * 0.1
@@ -227,14 +257,24 @@ class ExchangeABTester:
         try:
             metrics = self.performance_metrics[exchange]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             metrics["total_predictions"] += 1
             if result.executed:
+    pass
+    pass
                 metrics["total_executions"] += 1
 
                 if result.profit_loss is not None:
+    pass
+    pass
                     metrics["total_profit_loss"] += result.profit_loss
 
                 if result.slippage is not None:
+    pass
+    pass
                     # Update average slippage
                     current_avg = metrics["avg_slippage"]
                     count = metrics["total_executions"]
@@ -244,7 +284,11 @@ class ExchangeABTester:
 
                 # Update accuracy (simplified)
                 if result.profit_loss is not None:
+    pass
+    pass
                     if result.profit_loss > 0:
+    pass
+    pass
                         metrics["accuracy"] = (
                             metrics["accuracy"] * (metrics["total_executions"] - 1) + 1
                         ) / metrics["total_executions"]
@@ -265,8 +309,14 @@ class ExchangeABTester:
         """Stop the current A/B test and generate results."""
         try:
             if not self.is_running:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
+    except Exception as e:
+        pass
             self.is_running = False
             self.logger.info("🛑 Stopping A/B test...")
 
@@ -292,14 +342,24 @@ class ExchangeABTester:
         """Generate final test results."""
         try:
             if not self.current_test:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             self.logger.info("📊 Generating A/B test results...")
 
             # Create comparison summary
             comparison_data = []
             for exchange in self.current_test.exchanges:
+    pass
+    pass
                 if exchange in self.performance_metrics:
+    pass
+    pass
                     metrics = self.performance_metrics[exchange]
                     comparison_data.append(
                         {
@@ -315,11 +375,15 @@ class ExchangeABTester:
                     )
 
             if comparison_data:
+    pass
+    pass
                 df = pd.DataFrame(comparison_data)
 
                 # Log summary
                 self.logger.info("🏆 Exchange Performance Summary:")
                 for _, row in df.iterrows():
+    pass
+    pass
                     self.logger.info(
                         f"  {row['exchange']}: "
                         f"P&L={row['total_profit_loss']:.4f}, "
@@ -350,8 +414,14 @@ class ExchangeABTester:
         """Save test results to file."""
         try:
             if not self.current_test:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{self.result_storage_path}/ab_test_{self.current_test.test_name}_{timestamp}.json"
 
@@ -381,6 +451,8 @@ class ExchangeABTester:
         context="test status retrieval",
     )
     def get_test_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get current test status."""
         try:
             return {
@@ -396,6 +468,10 @@ class ExchangeABTester:
                     exchange: len(results)
                     for exchange, results in self.test_results.items()
                 },
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
         except Exception as e:
             self.logger.error(f"Error getting test status: {e}")
@@ -410,8 +486,14 @@ class ExchangeABTester:
         """Cleanup resources."""
         try:
             if self.is_running:
+    pass
+    except Exception as e:
+        pass
+    pass
                 await self.stop_ab_test()
 
+    except Exception as e:
+        pass
             self.test_results.clear()
             self.performance_metrics.clear()
             self.logger.info("✅ Exchange A/B Tester cleanup completed")
@@ -430,10 +512,18 @@ async def setup_exchange_ab_tester(
     """Setup exchange A/B tester."""
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         tester = ExchangeABTester(config)
         if await tester.initialize():
+    pass
+    pass
             return tester
         return None
 

@@ -22,12 +22,17 @@ import pandas as pd
 current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
 if str(src_dir) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(src_dir))
 
 from src.training.steps.vectorized_labelling_orchestrator import VectorizedLabellingOrchestrator
 
 
+import def create_test_data
 def create_test_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    pass
+    pass
     """Create test data with the problematic features that cause multicollinearity."""
     print("📊 Creating test data with problematic features...")
 
@@ -122,48 +127,64 @@ async def test_critical_fixes() -> None:
     }
 
     # Initialize orchestrator
-    print("\n🚀 Initializing orchestrator with critical fixes...")
+    print("\\\n🚀 Initializing orchestrator with critical fixes...")
     orchestrator = VectorizedLabellingOrchestrator(config)
     success = await orchestrator.initialize()
 
     if not success:
+    pass
+    pass
         print("❌ Failed to initialize orchestrator")
         return
 
     print("✅ Orchestrator initialized successfully")
 
     # Test the pipeline
-    print("\n🎯 Testing the complete pipeline...")
+    print("\\\n🎯 Testing the complete pipeline...")
     try:
         result = await orchestrator.orchestrate_labeling_and_feature_engineering(
             price_data=price_data,
             volume_data=volume_data,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         if "error" in result:
+    pass
+    pass
             print(f"❌ Pipeline failed: {result['error']}")
             return
 
         # Extract the final data
         if "final_data" in result:
+    pass
+    pass
             final_data = result["final_data"]
-            print("\n✅ Pipeline completed successfully!")
+            print("\\\n✅ Pipeline completed successfully!")
             print(f"📊 Final data shape: {final_data.shape}")
             print(f"📏 Final features: {list(final_data.columns)}")
 
             # Check for label column
             if "label" in final_data.columns:
+    pass
+    pass
                 labels = final_data["label"]
                 unique_labels, counts = np.unique(labels, return_counts=True)
                 label_distribution = dict(zip(unique_labels, counts))
 
-                print("\n🎯 Label distribution:")
+                print("\\\n🎯 Label distribution:")
                 for label, count in label_distribution.items():
+    pass
+    pass
                     ratio = count / len(labels) * 100
                     print(f"   {label}: {count} samples ({ratio:.1f}%)")
 
                 # Check for label imbalance fix
                 if 0 not in label_distribution:
+    pass
+    pass
                     print(
                         "✅ CRITICAL FIX VERIFIED: HOLD class (0) successfully removed",
                     )
@@ -172,6 +193,8 @@ async def test_critical_fixes() -> None:
 
                 # Check for balanced binary classification
                 if len(label_distribution) == 2:
+    pass
+    pass
                     min_ratio = min(label_distribution.values()) / len(labels) * 100
                     max_ratio = max(label_distribution.values()) / len(labels) * 100
                     if min_ratio > 10:  # At least 10% in each class
@@ -205,6 +228,8 @@ async def test_critical_fixes() -> None:
                     col for col in redundant_features if col in feature_columns
                 ]
                 if not remaining_redundant:
+    pass
+    pass
                     print(
                         "✅ CRITICAL FIX VERIFIED: Redundant price features successfully removed",
                     )
@@ -224,6 +249,8 @@ async def test_critical_fixes() -> None:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function to run the critical fixes test."""
     print("🧪 CRITICAL FIXES TEST")
     print("=" * 60)
@@ -235,10 +262,12 @@ def main() -> None:
 
     asyncio.run(test_critical_fixes())
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("✅ Critical fixes test completed!")
     print("=" * 60)
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

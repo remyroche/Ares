@@ -61,6 +61,8 @@ def analyze_feature_variance(
 
 
 def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
+    pass
+    pass
     """
     Analyze feature types and patterns to understand the data better.
     """
@@ -73,8 +75,12 @@ def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
     }
 
     for col in features_df.columns:
+    pass
+    pass
         # Check for constant features
         if features_df[col].nunique() == 1:
+    pass
+    pass
             analysis["constant_features"].append(col)
 
         # Count unique values
@@ -82,7 +88,11 @@ def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
 
         # Identify feature patterns
         if "cluster" in col.lower():
+    pass
+    pass
             if "intensity" in col.lower():
+    pass
+    pass
                 pattern = "intensity_cluster"
             elif "hmm" in col.lower():
                 pattern = "hmm_cluster"
@@ -94,6 +104,8 @@ def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
             pattern = "other"
 
         if pattern not in analysis["feature_patterns"]:
+    pass
+    pass
             analysis["feature_patterns"][pattern] = []
         analysis["feature_patterns"][pattern].append(col)
 
@@ -120,7 +132,7 @@ def generate_debug_report(
 
     # Summary
     summary = variance_analysis["analysis_summary"]
-    report.append("\n📊 SUMMARY:")
+    report.append("\\\n📊 SUMMARY:")
     report.append(f"   Total features: {summary['total_features']}")
     report.append(
         f"   Low variance features: {summary['low_variance_count']} ({summary['low_variance_percentage']:.1f}%)",
@@ -133,31 +145,45 @@ def generate_debug_report(
 
     # Low variance features list
     if variance_analysis["low_variance_features"]:
-        report.append(f"\n⚠️ LOW VARIANCE FEATURES (std <= {std_threshold}):")
+    pass
+    pass
+        report.append(f"\\\n⚠️ LOW VARIANCE FEATURES (std <= {std_threshold}):")
         for i , feature in enumerate(variance_analysis["low_variance_features"], 1):
+    pass
+    pass
             std_val = variance_analysis["feature_std_values"][feature]
             unique_count = type_analysis["unique_counts"][feature]
             report.append(f"   {i:2d}. {feature}")
             report.append(f"       std: {std_val:.2e}, unique values: {unique_count}")
 
     # Feature patterns
-    report.append("\n🔍 FEATURE PATTERNS:")
+    report.append("\\\n🔍 FEATURE PATTERNS:")
     for pattern , features in type_analysis["feature_patterns"].items():
+    pass
+    pass
         report.append(f"   {pattern}: {len(features)} features")
         if len(features) <= 10:
+    pass
+    pass
             report.append(f"       {', '.join(features)}")
 
     # Constant features
     if type_analysis["constant_features"]:
-        report.append("\n🚨 CONSTANT FEATURES (no variance):")
+    pass
+    pass
+        report.append("\\\n🚨 CONSTANT FEATURES (no variance):")
         for feature in type_analysis["constant_features"]:
+    pass
+    pass
             report.append(f"   - {feature}")
 
     # Assessment
-    report.append("\n📋 ASSESSMENT:")
+    report.append("\\\n📋 ASSESSMENT:")
     low_var_pct = summary["low_variance_percentage"]
 
     if low_var_pct == 100:
+    pass
+    pass
         report.append("   🚨 CRITICAL: ALL features have low variance!")
         report.append("   This indicates a serious data pipeline issue.")
         report.append("   Possible causes:")
@@ -176,8 +202,10 @@ def generate_debug_report(
         report.append("   ✅ Normal: Low percentage of low variance features")
 
     # Recommendations
-    report.append("\n💡 RECOMMENDATIONS:")
+    report.append("\\\n💡 RECOMMENDATIONS:")
     if low_var_pct > 50:
+    pass
+    pass
         report.append("   1. Check feature engineering pipeline")
         report.append("   2. Verify data preprocessing steps")
         report.append("   3. Investigate if features are being calculated correctly")
@@ -191,12 +219,14 @@ def generate_debug_report(
             "   3. Consider if these features should be excluded from autoencoder training",
         )
 
-    report.append("\n" + "=" * 80)
+    report.append("\\\n" + "=" * 80)
 
-    return "\n".join(report)
+    return "\\\n".join(report)
 
 
 def main():
+    pass
+    pass
     """
     Main function to demonstrate usage.
     """
@@ -209,7 +239,7 @@ def main():
     logger.info("   3. Review the output to understand the issue")
 
     # Example with dummy data to show the structure
-    logger.info("\n📊 Example analysis structure:")
+    logger.info("\\\n📊 Example analysis structure:")
 
     # Create dummy data similar to what we saw in the logs
     dummy_features = [
@@ -243,7 +273,11 @@ def main():
     dummy_df = pd.DataFrame()
 
     for feature in dummy_features:
+    pass
+    pass
         if "cluster" in feature:
+    pass
+    pass
             # Simulate cluster features with very low variance
             dummy_df[feature] = np.random.choice([0, 1], size, n_rows = p=[0.99, 0.01])
         else:
@@ -258,4 +292,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

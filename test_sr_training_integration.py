@@ -10,16 +10,20 @@ import traceback
 from pathlib import Path
 
 # Add src to path
+import sys.path.insert
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 
+import class SRTrainingIntegrationTester:
 class SRTrainingIntegrationTester:
     """Test S/R integration across all training files."""
 
     def __init__(self):
+    pass
+    pass
         self.logger = system_logger.getChild("SRTrainingIntegrationTester")
         self.test_results = {}
 
@@ -28,7 +32,13 @@ class SRTrainingIntegrationTester:
         try:
             from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Test configuration
+import config = {
             config = {
                 "sr_breakout_predictor": {
                     "enable_sr_breakout_tactics": True,
@@ -46,6 +56,8 @@ class SRTrainingIntegrationTester:
             init_success = await predictor.initialize()
 
             if not init_success:
+    pass
+    pass
                 self.logger.error("Failed to initialize SRBreakoutPredictor")
                 return False
 
@@ -56,30 +68,40 @@ class SRTrainingIntegrationTester:
             # Test get_sr_context
             sr_context = await predictor.get_sr_context(test_data, current_price)
             if not isinstance(sr_context, dict):
+    pass
+    pass
                 self.logger.error("get_sr_context returned invalid type")
                 return False
 
             # Test predict_sr_outcome
             sr_outcome = await predictor.predict_sr_outcome(test_data, current_price, sr_context)
             if not isinstance(sr_outcome, dict):
+    pass
+    pass
                 self.logger.error("predict_sr_outcome returned invalid type")
                 return False
 
             # Test calculate_sr_features
             sr_features = await predictor.calculate_sr_features(test_data)
             if not isinstance(sr_features, dict):
+    pass
+    pass
                 self.logger.error("calculate_sr_features returned invalid type")
                 return False
 
             # Test calculate_comprehensive_sr_features
             comprehensive_features = await predictor.calculate_comprehensive_sr_features(test_data)
             if not isinstance(comprehensive_features, dict):
+    pass
+    pass
                 self.logger.error("calculate_comprehensive_sr_features returned invalid type")
                 return False
 
             # Test is_near_sr_level
             is_near = predictor.is_near_sr_level(current_price, sr_context)
             if not isinstance(is_near, bool):
+    pass
+    pass
                 self.logger.error("is_near_sr_level returned invalid type")
                 return False
 
@@ -98,6 +120,10 @@ class SRTrainingIntegrationTester:
         """Test step6_feature_engineering.py S/R integration."""
         try:
             # Import the function that uses S/R
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             sys.path.insert(0, str(Path(__file__).parent / "src" / "training" / "steps"))
 
             # Test the _add_sr_features function
@@ -121,15 +147,20 @@ class SRTrainingIntegrationTester:
             # Import and test the function
             from step6_feature_engineering import _add_sr_features
 
+import enhanced_features = await _add_sr_features
             enhanced_features = await _add_sr_features(features, test_data, config)
 
             if not isinstance(enhanced_features, pd.DataFrame):
+    pass
+    pass
                 self.logger.error("_add_sr_features returned invalid type")
                 return False
 
             # Check that S/R features were added
             sr_feature_cols = [col for col in enhanced_features.columns if col.startswith('sr_')]
             if len(sr_feature_cols) == 0:
+    pass
+    pass
                 self.logger.error("No S/R features were added")
                 return False
 
@@ -145,8 +176,13 @@ class SRTrainingIntegrationTester:
         """Test step10_unified_regime_intelligence.py S/R integration."""
         try:
             # Test that the class can be imported and initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from step10_unified_regime_intelligence import UnifiedRegimeIntelligence
 
+import config = {
             config = {
                 "sr_breakout_predictor": {
                     "enable_sr_breakout_tactics": True,
@@ -163,10 +199,14 @@ class SRTrainingIntegrationTester:
 
             # Test that sr_predictor was initialized
             if not hasattr(regime_intelligence, 'sr_predictor'):
+    pass
+    pass
                 self.logger.error("UnifiedRegimeIntelligence missing sr_predictor")
                 return False
 
             if regime_intelligence.sr_predictor is None:
+    pass
+    pass
                 self.logger.error("UnifiedRegimeIntelligence sr_predictor is None")
                 return False
 
@@ -182,8 +222,13 @@ class SRTrainingIntegrationTester:
         """Test step15_tactician_specialist_training.py S/R integration."""
         try:
             # Test that the class can be imported and initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from step15_tactician_specialist_training import TacticianSpecialistTraining
 
+import config = {
             config = {
                 "sr_breakout_predictor": {
                     "enable_sr_breakout_tactics": True,
@@ -200,10 +245,14 @@ class SRTrainingIntegrationTester:
 
             # Test that sr_predictor was initialized
             if not hasattr(tactician_training, 'sr_predictor'):
+    pass
+    pass
                 self.logger.error("TacticianSpecialistTraining missing sr_predictor")
                 return False
 
             if tactician_training.sr_predictor is None:
+    pass
+    pass
                 self.logger.error("TacticianSpecialistTraining sr_predictor is None")
                 return False
 
@@ -219,8 +268,13 @@ class SRTrainingIntegrationTester:
         """Test sr_outcome_model_trainer.py S/R integration."""
         try:
             # Test that the class can be imported and initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sr_outcome_model_trainer import SROutcomeModelTrainer
 
+import config = {
             config = {
                 "sr_breakout_predictor": {
                     "enable_sr_breakout_tactics": True,
@@ -237,10 +291,14 @@ class SRTrainingIntegrationTester:
 
             # Test that sr_predictor was initialized
             if not hasattr(sr_trainer, 'sr_predictor'):
+    pass
+    pass
                 self.logger.error("SROutcomeModelTrainer missing sr_predictor")
                 return False
 
             if sr_trainer.sr_predictor is None:
+    pass
+    pass
                 self.logger.error("SROutcomeModelTrainer sr_predictor is None")
                 return False
 
@@ -256,8 +314,13 @@ class SRTrainingIntegrationTester:
         """Test step9_hmm_based_training.py S/R integration."""
         try:
             # Test that the class can be imported and initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from step9_hmm_based_training import HMMBasedTraining
 
+import config = {
             config = {
                 "sr_breakout_predictor": {
                     "enable_sr_breakout_tactics": True,
@@ -274,10 +337,14 @@ class SRTrainingIntegrationTester:
 
             # Test that sr_predictor was initialized
             if not hasattr(hmm_training, 'sr_predictor'):
+    pass
+    pass
                 self.logger.error("HMMBasedTraining missing sr_predictor")
                 return False
 
             if hmm_training.sr_predictor is None:
+    pass
+    pass
                 self.logger.error("HMMBasedTraining sr_predictor is None")
                 return False
 
@@ -290,6 +357,8 @@ class SRTrainingIntegrationTester:
             return False
 
     def _create_test_market_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test market data for S/R testing."""
         np.random.seed(42)
         n_bars = 100
@@ -300,12 +369,16 @@ class SRTrainingIntegrationTester:
         volumes = []
 
         for i in range(n_bars):
+    pass
+    pass
             # Add some trend and noise
             trend = 0.001 * i  # Small upward trend
             noise = np.random.normal(0, 0.01)  # 1% volatility
             price_change = trend + noise
 
             if i == 0:
+    pass
+    pass
                 close_price = base_price
             else:
                 close_price = prices[-1]['close'] * (1 + price_change)
@@ -351,12 +424,20 @@ class SRTrainingIntegrationTester:
         ]
 
         for test_name, test_func in tests:
-            self.logger.info(f"\n🧪 Running {test_name} test...")
+    pass
+    pass
+            self.logger.info(f"\\\n🧪 Running {test_name} test...")
             try:
                 result = await test_func()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 self.test_results[test_name] = result
 
                 if result:
+    pass
+    pass
                     self.logger.info(f"✅ {test_name} test PASSED")
                 else:
                     self.logger.error(f"❌ {test_name} test FAILED")
@@ -369,8 +450,10 @@ class SRTrainingIntegrationTester:
         return self.test_results
 
     def print_summary(self):
+    pass
+    pass
         """Print test summary."""
-        self.logger.info("\n" + "=" * 60)
+        self.logger.info("\\\n" + "=" * 60)
         self.logger.info("📊 S/R TRAINING INTEGRATION TEST SUMMARY")
         self.logger.info("=" * 60)
 
@@ -378,6 +461,8 @@ class SRTrainingIntegrationTester:
         total = len(self.test_results)
 
         for test_name, result in self.test_results.items():
+    pass
+    pass
             status = "✅ PASS" if result else "❌ FAIL"
             self.logger.info(f"{test_name:<40} {status}")
 
@@ -388,10 +473,12 @@ class SRTrainingIntegrationTester:
         self.logger.info(f"Success Rate: {passed/total*100:.1f}%")
 
         if passed == total:
-            self.logger.info("\n🎉 ALL S/R TRAINING INTEGRATION TESTS PASSED!")
+    pass
+    pass
+            self.logger.info("\\\n🎉 ALL S/R TRAINING INTEGRATION TESTS PASSED!")
             self.logger.info("The cleaned up S/R implementation is working correctly across all training files.")
         else:
-            self.logger.error(f"\n⚠️ {total - passed} TESTS FAILED")
+            self.logger.error(f"\\\n⚠️ {total - passed} TESTS FAILED")
             self.logger.error("Some S/R integrations need attention.")
 
 async def main():
@@ -402,9 +489,13 @@ async def main():
 
     # Exit with appropriate code
     if all(results.values()):
+    pass
+    pass
         sys.exit(0)
     else:
         sys.exit(1)
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

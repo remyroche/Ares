@@ -35,6 +35,10 @@ async def create_30m_hmm_artifacts():
 
     try:
         # Run the HMM regime discovery for 30m timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await run_step(
             symbol=symbol,
             exchange=exchange,
@@ -44,6 +48,8 @@ async def create_30m_hmm_artifacts():
         )
 
         if success:
+    pass
+    pass
             logger.info("✅ Successfully created 30m HMM artifacts!")
 
             # Verify the artifacts were created
@@ -56,8 +62,12 @@ async def create_30m_hmm_artifacts():
 
             logger.info("🔍 Verifying created artifacts...")
             for artifact in artifacts_to_check:
+    pass
+    pass
                 artifact_path = os.path.join(data_dir, artifact)
                 if os.path.exists(artifact_path):
+    pass
+    pass
                     size = os.path.getsize(artifact_path)
                     logger.info(f"✅ {artifact}: {size:,} bytes")
                 else:
@@ -76,10 +86,14 @@ async def create_30m_hmm_artifacts():
     return True
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the async function
     success = asyncio.run(create_30m_hmm_artifacts())
 
     if success:
+    pass
+    pass
         print("✅ 30m HMM artifacts created successfully!")
         sys.exit(0)
     else:

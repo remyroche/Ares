@@ -15,20 +15,25 @@ import pandas as pd
 from src.utils.logger import get_logger
 from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
+import validate_data_quality,
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
 
 # Import fractional components
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
+import FractionalTripleBarrierLabeling
     FractionalTripleBarrierLabeling
 )
 from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
+import class HMMFractionalIntegration:
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         """Initialize HMM integration component.
 
         Args:
@@ -41,6 +46,8 @@ class HMMFractionalIntegration:
         self.logger, get_logger("HMMFractionalIntegration")
 
     def enhance_features(self, features: pd.DataFrame, hmm_regime: Optional[str] = None) -> pd.DataFrame:
+    pass
+    pass
         """Enhance features with HMM regime information.
 
         Args:
@@ -53,6 +60,8 @@ class HMMFractionalIntegration:
         enhanced_features, features.copy()
 
         if self.feature_enhancement and hmm_regime:
+    pass
+    pass
         try:
         # Add regime - specific feature quality metrics
                 regime_quality, self.calculate_regime_quality(features, hmm_regime)
@@ -61,8 +70,14 @@ class HMMFractionalIntegration:
                 enhanced_features[f'regime_{hmm_regime}_quality'] = regime_quality
                 enhanced_features[f'regime_{hmm_regime}_stability'] = regime_stability
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Track regime metrics
         if self.quality_tracking:
+    pass
+    pass
         self.regime_metrics[hmm_regime] = {
                         'quality': regime_quality,
                         'stability': regime_stability,
@@ -78,6 +93,8 @@ class HMMFractionalIntegration:
         return enhanced_features
 
     def calculate_regime_quality(self, features: pd.DataFrame, regime: str) -> float:
+    pass
+    pass
         """Calculate feature quality for specific HMM regime.
 
         Args:
@@ -93,17 +110,29 @@ class HMMFractionalIntegration:
             correlation_scores = []
             information_scores = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in features.columns:
+    pass
+    pass
         if col.startswith('regime_'):
+    pass
+    pass
                     continue  # Skip existing regime features
 
                 feature_series, features[col].dropna()
         if len(feature_series) == 0:
+    pass
+    pass
                     continue
 
         # Variance score (good features have reasonable variance)
                 variance, feature_series.var()
         if 0.001 <= variance <= 0.1:
+    pass
+    pass
                     variance_score, 1.0
                 else:
                     variance_score, max(0.0, 1.0 - abs(variance - 0.05) / 0.05)
@@ -111,13 +140,21 @@ class HMMFractionalIntegration:
 
         # Correlation score (avoid perfect correlations)
         if len(features.columns) > 1:
+    pass
+    pass
                     correlations = []
         for other_col in features.columns:
+    pass
+    pass
         if other_col != col and not other_col.startswith('regime_'):
+    pass
+    pass
                             corr, abs(feature_series.corr(features[other_col].dropna()))
                             correlations.append(corr)
 
         if correlations:
+    pass
+    pass
                         avg_correlation, np.mean(correlations)
                         correlation_score, max(0.0, 1.0 - avg_correlation)
                         correlation_scores.append(correlation_score)
@@ -130,16 +167,22 @@ class HMMFractionalIntegration:
 
         # Combine scores
         if variance_scores:
+    pass
+    pass
                 avg_variance, np.mean(variance_scores)
             else:
                 avg_variance, 0.5
 
         if correlation_scores:
+    pass
+    pass
                 avg_correlation, np.mean(correlation_scores)
             else:
                 avg_correlation, 0.5
 
         if information_scores:
+    pass
+    pass
                 avg_information, np.mean(information_scores)
             else:
                 avg_information, 0.5
@@ -154,6 +197,8 @@ class HMMFractionalIntegration:
         return 0.5
 
     def calculate_regime_stability(self, features: pd.DataFrame, regime: str) -> float:
+    pass
+    pass
         """Calculate feature stability for specific HMM regime.
 
         Args:
@@ -166,18 +211,30 @@ class HMMFractionalIntegration:
         try:
             stability_scores = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for col in features.columns:
+    pass
+    pass
         if col.startswith('regime_'):
+    pass
+    pass
                     continue  # Skip existing regime features
 
                 feature_series, features[col].dropna()
         if len(feature_series) < 50:
+    pass
+    pass
                     continue
 
         # Calculate rolling variance stability
                 rolling_var, feature_series.rolling(window = min(50, len(feature_series)//4), min_periods = 10).var()
 
         if rolling_var.mean() > 0:
+    pass
+    pass
                     var_consistency, 1.0 - (rolling_var.std() / rolling_var.mean())
                     stability_score, max(0.0, var_consistency)
                 else:
@@ -186,6 +243,8 @@ class HMMFractionalIntegration:
                 stability_scores.append(stability_score)
 
         if stability_scores:
+    pass
+    pass
         return np.mean(stability_scores)
             else:
         return 0.5
@@ -195,6 +254,8 @@ class HMMFractionalIntegration:
         return 0.5
 
     def get_regime_metrics(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get current regime metrics.
 
         Returns:
@@ -209,6 +270,8 @@ class CombinedFractionalSystem:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         """Initialize combined fractional system.
 
         Args:
@@ -259,6 +322,10 @@ class CombinedFractionalSystem:
         try:
         self.logger.info(f"🚀 Starting combined fractional processing (regime: {hmm_regime})")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # 1. Generate fractional differentiation features (Step 6)
         self.logger.info("📊 Generating fractional differentiation features...")
             features, self.fractional_feature_generator.generate_features(price_data, volume_data)
@@ -325,24 +392,38 @@ class CombinedFractionalSystem:
                 'feature_count': len(features.columns),
                 'sample_count': len(features),
                 'regime': hmm_regime
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         # Feature quality metrics
         if not features.empty:
+    pass
+    pass
         # Calculate feature quality
                 feature_qualities = []
         for col in features.columns:
+    pass
+    pass
         if col.startswith('regime_'):
+    pass
+    pass
                         continue
 
                     feature_series, features[col].dropna()
         if len(feature_series) > 0:
+    pass
+    pass
                         variance, feature_series.var()
                         non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
                         quality_score, min(1.0, variance * 100) * non_zero_ratio
                         feature_qualities.append(quality_score)
 
         if feature_qualities:
+    pass
+    pass
                     metrics['feature_quality'] = np.mean(feature_qualities)
                     metrics['feature_quality_std'] = np.std(feature_qualities)
                 else:
@@ -351,8 +432,12 @@ class CombinedFractionalSystem:
 
         # Label quality metrics
         if not labels.empty and 'fractional_label' in labels.columns:
+    pass
+    pass
                 label_series, labels['fractional_label'].dropna()
         if len(label_series) > 0:
+    pass
+    pass
                     metrics['label_variance'] = label_series.var()
                     metrics['label_range'] = label_series.max() - label_series.min()
                     metrics['label_mean'] = label_series.mean()
@@ -371,8 +456,12 @@ class CombinedFractionalSystem:
 
         # HMM regime metrics
         if hmm_regime:
+    pass
+    pass
                 regime_metrics, self.hmm_integration.get_regime_metrics()
         if hmm_regime in regime_metrics:
+    pass
+    pass
                     metrics['regime_quality'] = regime_metrics[hmm_regime]['quality']
                     metrics['regime_stability'] = regime_metrics[hmm_regime]['stability']
 
@@ -389,12 +478,16 @@ class CombinedFractionalSystem:
             }
 
     def get_performance_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get performance summary across all processing runs.
 
         Returns:
             Dictionary with performance summary
         """
         if not self.performance_history:
+    pass
+    pass
         return {'message': 'No performance data available'}
 
         try:
@@ -403,11 +496,19 @@ class CombinedFractionalSystem:
             feature_counts = [p['metrics'].get('feature_count', 0) for p in self.performance_history]
             feature_qualities = [p['metrics'].get('feature_quality', 0) for p in self.performance_history if 'feature_quality' in p['metrics']]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Regime - specific metrics
             regime_performance = {}
         for record in self.performance_history:
+    pass
+    pass
                 regime, record['regime']
         if regime not in regime_performance:
+    pass
+    pass
                     regime_performance[regime] = []
                 regime_performance[regime].append(record['metrics'])
 
@@ -421,6 +522,8 @@ class CombinedFractionalSystem:
 
         # Calculate regime - specific summaries
         for regime, metrics_list in regime_performance.items():
+    pass
+    pass
                 regime_qualities = [m.get('feature_quality', 0) for m in metrics_list]
                 summary['regime_performance'][regime] = {
                     'runs': len(metrics_list),
@@ -435,6 +538,8 @@ class CombinedFractionalSystem:
         return {'error': str(e)}
 
     def export_performance_report(self, output_dir: str = "data / fractional_performance / combined_system") -> str:
+    pass
+    pass
         """Export performance report to file.
 
         Args:
@@ -445,6 +550,10 @@ class CombinedFractionalSystem:
         """
         try:
             output_path, Path(output_dir)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             output_path.mkdir(parents = True, exist_ok = True)
 
         # Generate performance summary

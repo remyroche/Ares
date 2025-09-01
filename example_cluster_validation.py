@@ -17,7 +17,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_hmm_cluster_relevance import HMMClusterValidator
 
 
+import def create_sample_cluster_data
 def create_sample_cluster_data(n_samples: int = 10000, n_clusters: int = 5) -> pd.DataFrame:
+    pass
+    pass
     """Create sample cluster data for demonstration."""
     print(f"🔧 Creating sample data with {n_samples} samples and {n_clusters} clusters...")
 
@@ -33,12 +36,18 @@ def create_sample_cluster_data(n_samples: int = 10000, n_clusters: int = 5) -> p
     cluster_duration = n_samples // (n_clusters * 3)  # Each cluster appears multiple times
 
     for i in range(n_samples):
+    pass
+    pass
         if i % cluster_duration == 0:
+    pass
+    pass
             current_cluster = (current_cluster + 1) % n_clusters
         cluster_ids.append(current_cluster)
 
     # Add some noise to cluster transitions
     for i in range(1, len(cluster_ids)):
+    pass
+    pass
         if np.random.random() < 0.01:  # 1% chance of random transition
             cluster_ids[i] = np.random.randint(0, n_clusters)
 
@@ -52,6 +61,8 @@ def create_sample_cluster_data(n_samples: int = 10000, n_clusters: int = 5) -> p
 
     # Add cluster-specific characteristics
     for i in range(n_samples):
+    pass
+    pass
         cluster = cluster_ids[i]
 
         # Volatility varies by cluster
@@ -90,6 +101,8 @@ def create_sample_cluster_data(n_samples: int = 10000, n_clusters: int = 5) -> p
 
 
 def run_basic_validation_example():
+    pass
+    pass
     """Run a basic validation example."""
     print("="*60)
     print("BASIC CLUSTER VALIDATION EXAMPLE")
@@ -102,42 +115,56 @@ def run_basic_validation_example():
     validator = HMMClusterValidator()
 
     # Run comprehensive validation
-    print("\n🔍 Running comprehensive validation...")
+    print("\\\n🔍 Running comprehensive validation...")
     validation_results = validator.comprehensive_validation(cluster_data)
 
     # Print results
-    print(f"\n📊 Validation Results:")
+    print(f"\\\n📊 Validation Results:")
     print(f"Overall Score: {validation_results['overall_score']:.3f}")
 
     if 'quality_metrics' in validation_results and 'error' not in validation_results['quality_metrics']:
+    pass
+    pass
         qm = validation_results['quality_metrics']
         print(f"Silhouette Score: {qm.get('silhouette_score', 0):.4f}")
         print(f"Cluster Balance: {qm.get('cluster_balance', 0):.4f}")
 
     if 'predictive_power' in validation_results and 'error' not in validation_results['predictive_power']:
+    pass
+    pass
         pp = validation_results['predictive_power']
         print(f"Predictive Power: {pp.get('avg_predictability', 0):.4f}")
 
     if 'stability' in validation_results and 'error' not in validation_results['stability']:
+    pass
+    pass
         st = validation_results['stability']
         print(f"Stability: {st.get('avg_stability', 0):.4f}")
 
     if 'market_differentiation' in validation_results and 'error' not in validation_results['market_differentiation']:
+    pass
+    pass
         md = validation_results['market_differentiation']
         print(f"Differentiation: {md.get('avg_differentiation', 0):.4f}")
 
     # Print recommendations
     if validation_results.get("recommendations"):
-        print(f"\n💡 Recommendations:")
+    pass
+    pass
+        print(f"\\\n💡 Recommendations:")
         for i, rec in enumerate(validation_results["recommendations"], 1):
+    pass
+    pass
             print(f"  {i}. {rec}")
 
     return validation_results
 
 
 def run_advanced_validation_example():
+    pass
+    pass
     """Run an advanced validation example with custom thresholds."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("ADVANCED CLUSTER VALIDATION EXAMPLE")
     print("="*60)
 
@@ -157,24 +184,26 @@ def run_advanced_validation_example():
     validator = HMMClusterValidator()
 
     # Run validation with custom thresholds
-    print("\n🔍 Running validation with custom thresholds...")
+    print("\\\n🔍 Running validation with custom thresholds...")
     validation_results = validator.comprehensive_validation(cluster_data, custom_thresholds)
 
     # Generate detailed report
-    print("\n📄 Generating detailed report...")
+    print("\\\n📄 Generating detailed report...")
     report = validator.generate_report(validation_results)
     print(report)
 
     # Create visualizations
-    print("\n📊 Creating visualizations...")
+    print("\\\n📊 Creating visualizations...")
     validator.create_visualizations(cluster_data, validation_results)
 
     return validation_results
 
 
 def run_comparison_example():
+    pass
+    pass
     """Run a comparison between different cluster configurations."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("CLUSTER CONFIGURATION COMPARISON")
     print("="*60)
 
@@ -183,7 +212,9 @@ def run_comparison_example():
     results_comparison = {}
 
     for n_clusters in cluster_configs:
-        print(f"\n🔍 Testing {n_clusters} clusters...")
+    pass
+    pass
+        print(f"\\\n🔍 Testing {n_clusters} clusters...")
 
         # Create data with different cluster count
         cluster_data = create_sample_cluster_data(n_samples=8000, n_clusters=n_clusters)
@@ -201,28 +232,36 @@ def run_comparison_example():
         }
 
     # Print comparison results
-    print("\n📊 Configuration Comparison Results:")
+    print("\\\n📊 Configuration Comparison Results:")
     print(f"{'Clusters':<10} {'Overall':<10} {'Silhouette':<12} {'Predictability':<15} {'Stability':<12} {'Differentiation':<15}")
     print("-" * 80)
 
     for n_clusters, results in results_comparison.items():
+    pass
+    pass
         print(f"{n_clusters:<10} {results['overall_score']:<10.3f} {results['silhouette']:<12.4f} "
               f"{results['predictability']:<15.4f} {results['stability']:<12.4f} {results['differentiation']:<15.4f}")
 
     # Find best configuration
     best_config = max(results_comparison.items(), key=lambda x: x[1]['overall_score'])
-    print(f"\n🏆 Best configuration: {best_config[0]} clusters (score: {best_config[1]['overall_score']:.3f})")
+    print(f"\\\n🏆 Best configuration: {best_config[0]} clusters (score: {best_config[1]['overall_score']:.3f})")
 
     return results_comparison
 
 
 def main():
+    pass
+    pass
     """Main function to run all examples."""
     print("🚀 HMM Cluster Validation Examples")
     print("This script demonstrates how to test HMM cluster relevance before ML training.")
 
     try:
         # Run basic example
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         basic_results = run_basic_validation_example()
 
         # Run advanced example
@@ -231,7 +270,7 @@ def main():
         # Run comparison example
         comparison_results = run_comparison_example()
 
-        print("\n" + "="*60)
+        print("\\\n" + "="*60)
         print("ALL EXAMPLES COMPLETED SUCCESSFULLY")
         print("="*60)
         print("💡 Key takeaways:")
@@ -248,4 +287,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -24,6 +25,8 @@ sys.path.insert(0, str(project_root))
 
 
 def test_comprehensive_validator():
+    pass
+    pass
     """Test the comprehensive file validator."""
     print("🧪 Testing Comprehensive File Validator")
     print("=" * 50)
@@ -40,8 +43,10 @@ def test_comprehensive_validator():
 
 
 def test_validation_functions():
+    pass
+    pass
     """Test the convenience validation functions."""
-    print("\n🧪 Testing Validation Functions")
+    print("\\\n🧪 Testing Validation Functions")
     print("=" * 50)
 
     # Test with non-existent files (should handle gracefully)
@@ -59,15 +64,27 @@ def test_validation_functions():
     ]
 
     for step_name, validation_func in validation_functions:
-        print(f"\n🔍 Testing {step_name} validation function:")
+    pass
+    pass
+        print(f"\\\n🔍 Testing {step_name} validation function:")
 
         for test_file in test_files:
+    pass
+    pass
             try:
                 result = validation_func(test_file)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 print(f"   📁 {test_file}: {'✅ Valid' if result.is_valid else '❌ Invalid'}")
 
                 if not result.is_valid:
+    pass
+    pass
                     for issue in result.issues:
+    pass
+    pass
                         print(f"      - {issue.severity.value}: {issue.description}")
 
             except Exception as e:
@@ -77,8 +94,10 @@ def test_validation_functions():
 
 
 def test_schema_validation():
+    pass
+    pass
     """Test schema validation with sample data."""
-    print("\n🧪 Testing Schema Validation")
+    print("\\\n🧪 Testing Schema Validation")
     print("=" * 50)
 
     import pandas as pd
@@ -114,14 +133,22 @@ def test_schema_validation():
     validator = ComprehensiveFileValidator()
 
     for filename, data in test_files.items():
-        print(f"\n📁 Testing validation for {filename}:")
+    pass
+    pass
+        print(f"\\\n📁 Testing validation for {filename}:")
 
         # Save temporary file
         data.to_parquet(filename, index=False)
 
         try:
             # Test validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if 'klines' in filename:
+    pass
+    pass
                 result = validator.validate_file_format(filename, expected_schema="klines", step_name="test")
             else:
                 result = validator.validate_file_format(filename, expected_schema="features", step_name="test")
@@ -132,7 +159,11 @@ def test_schema_validation():
             print(f"   📁 File type: {result.file_type}")
 
             if not result.is_valid:
+    pass
+    pass
                 for issue in result.issues:
+    pass
+    pass
                     print(f"      - {issue.severity.value}: {issue.description}")
 
         except Exception as e:
@@ -142,6 +173,10 @@ def test_schema_validation():
             # Clean up
             try:
                 Path(filename).unlink()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except:
                 pass
 
@@ -150,7 +185,7 @@ def test_schema_validation():
 
 async def test_async_validation():
     """Test async validation functionality."""
-    print("\n🧪 Testing Async Validation")
+    print("\\\n🧪 Testing Async Validation")
     print("=" * 50)
 
     # This would test async validation if implemented
@@ -159,12 +194,18 @@ async def test_async_validation():
 
 
 def main():
+    pass
+    pass
     """Run all tests."""
     print("🚀 Starting Comprehensive File Validation Tests")
     print("=" * 60)
 
     try:
         # Run tests
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_comprehensive_validator()
         test_validation_functions()
         test_schema_validation()
@@ -172,11 +213,11 @@ def main():
         # Run async test
         asyncio.run(test_async_validation())
 
-        print("\n✅ All tests completed successfully!")
+        print("\\\n✅ All tests completed successfully!")
         print("🎉 Comprehensive file validation is working correctly")
 
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\\\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -185,5 +226,7 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

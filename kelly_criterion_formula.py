@@ -17,6 +17,7 @@ For 1:1 odds, this simplifies to: f = p - q
 from typing import Dict
 
 
+import def calculate_kelly_multiplier
 def calculate_kelly_multiplier(
     price_target_confidences: Dict[str, float],
     adversarial_confidences: Dict[str, float],
@@ -38,10 +39,16 @@ def calculate_kelly_multiplier(
     """
     try:
         # Get average confidence for target levels (0.5% to 2.0%)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
 
         for level in target_levels:
+    pass
+    pass
             closest_level = min(
                 price_target_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -55,6 +62,8 @@ def calculate_kelly_multiplier(
         # Get average adverse risk (probability of loss)
         adverse_risks = []
         for level in target_levels:
+    pass
+    pass
             closest_level = min(
                 adversarial_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -75,6 +84,8 @@ def calculate_kelly_multiplier(
 
         # If p + q > 1, normalize them
         if p + q > 1.0:
+    pass
+    pass
             total = p + q
             p = p / total
             q = q / total
@@ -115,10 +126,16 @@ def calculate_kelly_fraction(
     """
     try:
         # Get average confidence for target levels (0.5% to 2.0%)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
 
         for level in target_levels:
+    pass
+    pass
             closest_level = min(
                 price_target_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -132,6 +149,8 @@ def calculate_kelly_fraction(
         # Get average adverse risk (probability of loss)
         adverse_risks = []
         for level in target_levels:
+    pass
+    pass
             closest_level = min(
                 adversarial_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -151,6 +170,8 @@ def calculate_kelly_fraction(
 
         # If p + q > 1, normalize them
         if p + q > 1.0:
+    pass
+    pass
             total = p + q
             p = p / total
             q = q / total
@@ -168,6 +189,8 @@ def calculate_kelly_fraction(
 
 # Example usage and testing
 if __name__ == "__main__":
+    pass
+    pass
     # Test data
     price_target_confidences = {
         "0.5%": 0.7,

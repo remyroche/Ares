@@ -18,21 +18,33 @@ from functools import wraps
 from typing import Dict, Any
 
 # Add the project root to the path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.utils.warning_symbols import warning
 
 
+import def _log_exceptions
 def _log_exceptions(logger_name: str, default_return):
+    pass
+    pass
     """Decorator to log exceptions and return a default value on failure."""
 
     def decorator(func):
+    pass
+    pass
         @wraps(func)
         def wrapper(*args, **kwargs):
+    pass
+    pass
             logger = system_logger.getChild(logger_name)
             try:
                 return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception as e:  # noqa: BLE001
                 logger.exception(f"Error in {func.__name__}: {e}")
                 return default_return
@@ -43,6 +55,8 @@ def _log_exceptions(logger_name: str, default_return):
 
 
 def detect_price_corruption(df: pd.DataFrame) -> bool:
+    pass
+    pass
     """
     Detect if price data is corrupted by checking if median price is reasonable.
 
@@ -53,11 +67,15 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
         bool: True if prices are corrupted, False otherwise
     """
     if df.empty:
+    pass
+    pass
         return False
 
     # Check if we have price columns
     price_cols = ["open", "high", "low", "close"]
     if not all(col in df.columns for col in price_cols):
+    pass
+    pass
         return False
 
     # Calculate median price
@@ -69,6 +87,8 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
 
 
 def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.DataFrame:
+    pass
+    pass
     """
     Fix corrupted prices by scaling them to a reasonable range.
 
@@ -80,16 +100,22 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.
         pd.DataFrame: DataFrame with corrected prices
     """
     if df.empty:
+    pass
+    pass
         return df
 
     # Check if we have price columns
     price_cols = ["open", "high", "low", "close"]
     if not all(col in df.columns for col in price_cols):
+    pass
+    pass
         return df
 
     current_median = float(df["close"].median())
 
     if current_median <= 0:
+    pass
+    pass
         print(f"Warning: Invalid median price: {current_median}")
         return df
 
@@ -103,6 +129,8 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.
 
     # Apply scaling to all price columns
     for col in price_cols:
+    pass
+    pass
         df[col] = df[col] * scale_factor
 
     # Verify the fix
@@ -115,6 +143,8 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.
 
 @_log_exceptions("ProcessCSV", default_return=False)
 def process_csv_file(csv_path: str, output_dir: str) -> bool:
+    pass
+    pass
     """
     Process a single CSV file and create corrected pickle file.
 
@@ -125,9 +155,11 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
-    print(f"\nProcessing: {csv_path}")
+    print(f"\\\nProcessing: {csv_path}")
     csv_path_obj = Path(csv_path)
     if not csv_path_obj.exists() or csv_path_obj.suffix.lower() != ".csv":
+    pass
+    pass
         print(warning(f"Invalid CSV path: {csv_path}"))
         return False
 
@@ -138,6 +170,8 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 
     # Check for price corruption
     if detect_price_corruption(df):
+    pass
+    pass
         print("  Detected corrupted prices, fixing...")
         df = fix_corrupted_prices(df)
     else:
@@ -170,6 +204,8 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
 
 @_log_exceptions("FixCorruptedData", default_return=False)
 def main() -> bool:
+    pass
+    pass
     """Main function to fix corrupted data files."""
     setup_logging()
 
@@ -179,15 +215,21 @@ def main() -> bool:
     # Check for CSV files in data_cache
     data_cache_dir = "data_cache"
     if not os.path.exists(data_cache_dir):
+    pass
+    pass
         print(warning(f"Data cache directory not found: {data_cache_dir}"))
         return False
 
     # Find CSV files
     csv_files = []
     for pattern in ["klines_*.csv", "aggtrades_*.csv", "futures_*.csv"]:
+    pass
+    pass
         csv_files.extend(Path(data_cache_dir).glob(pattern))
 
     if not csv_files:
+    pass
+    pass
         print(warning(f"No CSV files found in {data_cache_dir}"))
         return False
 
@@ -196,24 +238,40 @@ def main() -> bool:
     # Process each CSV file
     success_count = 0
     for csv_file in csv_files:
+    pass
+    pass
         if process_csv_file(str(csv_file), data_cache_dir):
+    pass
+    pass
             success_count += 1
 
-    print(f"\n✅ Successfully processed {success_count}/{len(csv_files)} files")
+    print(f"\\\n✅ Successfully processed {success_count}/{len(csv_files)} files")
 
     # Also check for existing pickle files and fix them
     pkl_files = list(Path(data_cache_dir).glob("*_cached_data.pkl"))
     if pkl_files:
-        print(f"\n🔍 Found {len(pkl_files)} existing pickle files")
+    pass
+    pass
+        print(f"\\\n🔍 Found {len(pkl_files)} existing pickle files")
         print(warning(" Consider regenerating these files with corrected data"))
 
         for pkl_file in pkl_files:
+    pass
+    pass
             try:
                 with open(pkl_file, "rb") as f:
                     data = pickle.load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if "klines" in data and isinstance(data["klines"], pd.DataFrame):
+    pass
+    pass
                     df = data["klines"]
                     if detect_price_corruption(df):
+    pass
+    pass
                         print(f"  ❌ {pkl_file.name}: Contains corrupted prices")
                     else:
                         print(f"  ✅ {pkl_file.name}: Prices appear valid")
@@ -226,5 +284,7 @@ def main() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

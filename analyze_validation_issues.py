@@ -12,6 +12,8 @@ import argparse
 
 
 def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
+    pass
+    pass
     """Extract validation details from log files"""
 
     validation_data = {
@@ -23,9 +25,17 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
 
     with open(log_file_path, "r") as f:
         for line in f:
+    pass
+    pass
             try:
                 # Parse JSON log entries
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if line.strip().startswith("{"):
+    pass
+    pass
                     log_entry = json.loads(line.strip())
                     message = log_entry.get("message", "")
 
@@ -35,9 +45,11 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
                         and "issues found" in message
                     ):
                         match = re.search(
-                            r"Feature validation for (\w+): (\d+) issues found", message
+                            r"Feature validation for (\\\w+): (\\\d+) issues found", message
                         )
                         if match:
+    pass
+    pass
                             timeframe = match.group(1)
                             issue_count = int(match.group(2))
                             validation_data["timeframes"][timeframe] = issue_count
@@ -54,6 +66,8 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
 
 
 def analyze_feature_validation_config() -> Dict[str, Any]:
+    pass
+    pass
     """Analyze the validation configuration to understand thresholds"""
 
     config_analysis = {
@@ -76,6 +90,8 @@ def analyze_feature_validation_config() -> Dict[str, Any]:
 
 
 def generate_detailed_validation_report(log_file_path: str) -> str:
+    pass
+    pass
     """Generate a detailed validation report"""
 
     # Extract data from logs
@@ -88,13 +104,15 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
     report.append("=" * 80)
 
     # Summary by timeframe
-    report.append("\n📊 VALIDATION SUMMARY BY TIMEFRAME:")
+    report.append("\\\n📊 VALIDATION SUMMARY BY TIMEFRAME:")
     report.append("-" * 50)
     for tf, count in validation_data["timeframes"].items():
+    pass
+    pass
         report.append(f"  {tf}: {count} issues")
 
     # Configuration analysis
-    report.append("\n🔧 VALIDATION CONFIGURATION:")
+    report.append("\\\n🔧 VALIDATION CONFIGURATION:")
     report.append("-" * 50)
     report.append(f"  Correlation threshold: {config['correlation_threshold']}")
     report.append(f"  NaN threshold: {config['nan_threshold']*100}%")
@@ -107,41 +125,41 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
     report.append(f"  Extreme value threshold: {config['extreme_value_threshold']}")
 
     # Issue type explanations
-    report.append("\n🔍 ISSUE TYPE EXPLANATIONS:")
+    report.append("\\\n🔍 ISSUE TYPE EXPLANATIONS:")
     report.append("-" * 50)
     report.append("  Missing Values (NaN):")
     report.append("    - Features with missing data points")
     report.append("    - WARNING: >10% missing, ERROR: >50% missing")
     report.append("    - Common in: Wavelet features, multi-timeframe features")
 
-    report.append("\n  Infinite Values:")
+    report.append("\\\n  Infinite Values:")
     report.append("    - Features with inf/-inf values")
     report.append("    - WARNING: >1% infinite, ERROR: >5% infinite")
     report.append("    - Common in: Division by zero, log calculations")
 
-    report.append("\n  🚨 Near-Constant Values:")
+    report.append("\\\n  🚨 Near-Constant Values:")
     report.append("    - Features where >95% values are the same")
     report.append("    - Common in: Wavelet features, some technical indicators")
 
-    report.append("\n  Extreme Values:")
+    report.append("\\\n  Extreme Values:")
     report.append("    - Values > 1,000,000 (configurable)")
     report.append("    - Common in: Price ratios, volatility calculations")
 
-    report.append("\n  High Correlation:")
+    report.append("\\\n  High Correlation:")
     report.append("    - Feature pairs with correlation > 0.95")
     report.append("    - Common in: Related technical indicators")
 
-    report.append("\n  Suspicious Patterns:")
+    report.append("\\\n  Suspicious Patterns:")
     report.append("    - All zeros after first non-zero value")
     report.append("    - Constant tails in features")
     report.append("    - Common in: Poorly engineered features")
 
-    report.append("\n  Data Type Issues:")
+    report.append("\\\n  Data Type Issues:")
     report.append("    - Object dtype (strings/mixed types)")
     report.append("    - Datetime in numeric context")
 
     # Recommendations
-    report.append("\n💡 RECOMMENDATIONS:")
+    report.append("\\\n💡 RECOMMENDATIONS:")
     report.append("-" * 50)
     report.append("1. CORRELATION THRESHOLD ADJUSTMENT:")
     report.append("   - Current: 0.95 (very strict)")
@@ -149,33 +167,35 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
     report.append("   - Or: 0.90 for stricter validation")
     report.append("   - Impact: Reduces high correlation warnings")
 
-    report.append("\n2. WAVELET FEATURE HANDLING:")
+    report.append("\\\n2. WAVELET FEATURE HANDLING:")
     report.append("   - Many wavelet features naturally have low variance")
     report.append("   - System already uses special threshold (1e-12)")
     report.append("   - Consider: Exclude wavelet features from variance checks")
 
-    report.append("\n3. EXTREME VALUE MONITORING:")
+    report.append("\\\n3. EXTREME VALUE MONITORING:")
     report.append(
         "   - Check features with 'ratio', 'momentum', 'acceleration' in names"
     )
     report.append("   - Common culprits: Price ratios, volatility calculations")
     report.append("   - Look for: Division by small numbers, exponential calculations")
 
-    report.append("\n4. FEATURE SELECTION STRATEGY:")
+    report.append("\\\n4. FEATURE SELECTION STRATEGY:")
     report.append("   - Remove features with >50% missing values")
     report.append("   - Remove features with >5% infinite values")
     report.append("   - Keep wavelet features despite low variance")
     report.append("   - Remove one feature from highly correlated pairs")
 
-    report.append("\n5. DATA TYPE FIXES:")
+    report.append("\\\n5. DATA TYPE FIXES:")
     report.append("   - Convert object dtype features to numeric")
     report.append("   - Handle datetime features appropriately")
     report.append("   - Check for string values in numeric features")
 
-    return "\n".join(report)
+    return "\\\n".join(report)
 
 
 def create_feature_analysis_script() -> str:
+    pass
+    pass
     """Create a script to analyze specific features"""
 
     script = '''
@@ -189,13 +209,20 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+import def analyze_specific_features
 def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str]) -> Dict[str, Any]:
+    pass
+    pass
     """Analyze specific features in detail"""
 
     results = {}
 
     for feature in feature_names:
+    pass
+    pass
         if feature not in features_df.columns:
+    pass
+    pass
             results[feature] = {"error": "Feature not found"}
             continue
 
@@ -221,6 +248,8 @@ def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str
     return results
 
 def print_feature_analysis(results: Dict[str, Any]):
+    pass
+    pass
     """Print detailed feature analysis"""
 
     print("=" * 80)
@@ -228,17 +257,23 @@ def print_feature_analysis(results: Dict[str, Any]):
     print("=" * 80)
 
     for feature, analysis in results.items():
+    pass
+    pass
         if "error" in analysis:
-            print(f"\\n❌ {feature}: {analysis['error']}")
+    pass
+    pass
+            print(f"\\\\n❌ {feature}: {analysis['error']}")
             continue
 
-        print(f"\\n📊 {feature}:")
+        print(f"\\\\n📊 {feature}:")
         print(f"  Data Type: {analysis['dtype']}")
         print(f"  Total Values: {analysis['total_values']:,}")
         print(f"  Missing Values: {analysis['missing_values']:,} ({analysis['missing_percentage']:.2f}%)")
         print(f"  Infinite Values: {analysis['infinite_values']:,} ({analysis['infinite_percentage']:.2f}%)")
 
         if analysis['variance'] is not None:
+    pass
+    pass
             print(f"  Variance: {analysis['variance']:.2e}")
             print(f"  Unique Values: {analysis['unique_values']:,}")
             print(f"  Most Common: {analysis['most_common_value']} ({analysis['most_common_count']:,} times)")
@@ -248,24 +283,34 @@ def print_feature_analysis(results: Dict[str, Any]):
         # Issue classification
         issues = []
         if analysis['missing_percentage'] > 50:
+    pass
+    pass
             issues.append("CRITICAL: >50% missing values")
         elif analysis['missing_percentage'] > 10:
             issues.append("WARNING: >10% missing values")
 
         if analysis['infinite_percentage'] > 5:
+    pass
+    pass
             issues.append("ERROR: >5% infinite values")
         elif analysis['infinite_percentage'] > 1:
             issues.append("WARNING: >1% infinite values")
 
         if analysis['variance'] is not None and analysis['variance'] == 0:
+    pass
+    pass
             issues.append("ERROR: Zero variance")
         elif analysis['variance'] is not None and analysis['variance'] < 1e-10:
             issues.append("WARNING: Very low variance")
 
         if analysis['extreme_values'] > 0:
+    pass
+    pass
             issues.append(f"WARNING: {analysis['extreme_values']} extreme values")
 
         if issues:
+    pass
+    pass
             print(f"  Issues: {', '.join(issues)}")
         else:
             print(f"  ✅ No major issues detected")
@@ -281,6 +326,8 @@ def print_feature_analysis(results: Dict[str, Any]):
 
 
 if __name__ == "__main__":
+    pass
+    pass
     parser = argparse.ArgumentParser(description="Analyze validation issues from logs")
     parser.add_argument("log_file", help="Path to the log file to analyze")
     parser.add_argument("--output", help="Output file for the report")
@@ -295,12 +342,14 @@ if __name__ == "__main__":
 
     # Save to file if requested
     if args.output:
+    pass
+    pass
         with open(args.output, "w") as f:
             f.write(report)
-        print(f"\nReport saved to: {args.output}")
+        print(f"\\\nReport saved to: {args.output}")
 
     # Create feature analysis script
     script = create_feature_analysis_script()
     with open("feature_analysis_script.py", "w") as f:
         f.write(script)
-    print("\nFeature analysis script created: feature_analysis_script.py")
+    print("\\\nFeature analysis script created: feature_analysis_script.py")

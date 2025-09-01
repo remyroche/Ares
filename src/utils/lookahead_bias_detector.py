@@ -13,6 +13,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_data_processing_errors, handle_errors
 
+import class LookaheadBiasDetector:
 class LookaheadBiasDetector:
     """
     Comprehensive lookahead bias detection and prevention system.
@@ -25,6 +26,8 @@ class LookaheadBiasDetector:
     """
 
     def __init__(self, config: dict[str, Any] | None, None) -> None:
+    pass
+    pass
         self.config, config or {}
         self.logger, system_logger.getChild("LookaheadBiasDetector")
         self.detected_issues: list[str] = []
@@ -69,10 +72,16 @@ class LookaheadBiasDetector:
 
         try:
         # 1. Check for perfect correlations (indicator of lookahead bias)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self._check_perfect_correlations(features_df, target_series, results)
 
         # 2. Check temporal alignment if timestamps available
         if timestamp_col and timestamp_col in features_df.columns:
+    pass
+    pass
         self._check_temporal_alignment(
                     features_df,
                     target_series,
@@ -88,6 +97,8 @@ class LookaheadBiasDetector:
 
         # 5. Analyze actual implementation if code provided
         if feature_engineering_code:
+    pass
+    pass
         self._analyze_implementation(
                     feature_engineering_code,
                     features_df,
@@ -99,17 +110,25 @@ class LookaheadBiasDetector:
 
         # Log results
         if results["critical_issues"]:
+    pass
+    pass
         self.logger.critical(
                     f"🚨 LOOKAHEAD BIAS DETECTED: {len(results['critical_issues'])} critical issues",
                 )
         for issue in results["critical_issues"]:
+    pass
+    pass
         self.logger.critical(f"   ❌ {issue}")
 
         if results["warnings"]:
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ LOOKAHEAD BIAS WARNINGS: {len(results['warnings'])} warnings",
                 )
         for warning_msg in results["warnings"]:
+    pass
+    pass
         self.logger.warning(f"   ⚠️ {warning_msg}")
 
         return results
@@ -130,19 +149,33 @@ class LookaheadBiasDetector:
         # Calculate correlations with target
         correlations: dict[str, float] = {}
         for col in features_df.columns:
+    pass
+    pass
         if col != target_series.name:
+    pass
+    pass
         try:
                     corr, float(features_df[col].corr(target_series))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not pd.isna(corr):
+    pass
+    pass
                         correlations[col] = corr
         except Exception:
                     continue
 
         # Check for suspicious correlations
         for feature, corr in correlations.items():
+    pass
+    pass
             abs_corr, abs(corr)
 
         if abs_corr > 0.98:
+    pass
+    pass
                 results["critical_issues"].append(
                     f"PERFECT CORRELATION: {feature} has {corr:.4f} correlation with target "
                     f"(indicates lookahead bias)",
@@ -176,8 +209,14 @@ class LookaheadBiasDetector:
         # Ensure timestamps are datetime
             timestamps, pd.to_datetime(features_df[timestamp_col])
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if features and target have same lengths
         if len(features_df) != len(target_series):
+    pass
+    pass
                 results["critical_issues"].append(
                     "TEMPORAL MISMATCH: Features and target have different lengths",
                 )
@@ -214,12 +253,20 @@ class LookaheadBiasDetector:
 
         suspicious_features: list[str] = []
         for col in features_df.columns:
+    pass
+    pass
         for pattern in rolling_patterns:
+    pass
+    pass
         if pattern in col.lower():
+    pass
+    pass
                     suspicious_features.append(col)
                     break
 
         if suspicious_features:
+    pass
+    pass
             results["warnings"].append(
                 f"ROLLING FEATURES DETECTED: {len(suspicious_features)} features may need lagging. "
                 f"Check: {suspicious_features[:5]}",
@@ -237,6 +284,8 @@ class LookaheadBiasDetector:
         correlations: dict[str, float] = results.get("feature_correlations", {})
 
         if not correlations:
+    pass
+    pass
             return
 
         # Sort by absolute correlation
@@ -248,11 +297,15 @@ class LookaheadBiasDetector:
 
         # Check for dominance by few features
         if len(sorted_features) >= 2:
+    pass
+    pass
             top_corr, abs(sorted_features[0][1])
             second_corr, abs(sorted_features[1][1])
 
         # If top 2 features have very high correlations
         if top_corr > 0.8 and second_corr > 0.8:
+    pass
+    pass
                 results["critical_issues"].append(
                     f"FEATURE DOMINANCE: Top 2 features have correlations {top_corr:.4f} and {second_corr:.4f} "
                     f"({sorted_features[0][0]}, {sorted_features[1][0]}) - likely lookahead bias",
@@ -261,6 +314,8 @@ class LookaheadBiasDetector:
 
         # If top feature dominates
         if top_corr > 0.9:
+    pass
+    pass
                 results["critical_issues"].append(
                     f"FEATURE DOMINANCE: Top feature {sorted_features[0][0]} has correlation {top_corr:.4f} "
                     f"- likely lookahead bias",
@@ -334,6 +389,8 @@ class LookaheadBiasDetector:
         ]
 
         for col in features_df.columns:
+    pass
+    pass
             col_lower, col.lower()
 
         # Check if feature matches any rolling pattern
@@ -341,12 +398,18 @@ class LookaheadBiasDetector:
             pattern_category: str | None, None
 
         for category, patterns in rolling_patterns.items():
+    pass
+    pass
         if any(pattern in col_lower for pattern in patterns):
+    pass
+    pass
                     matches_rolling_pattern, True
                     pattern_category, category
                     break
 
         if not matches_rolling_pattern:
+    pass
+    pass
                 continue
 
         # Check for legitimate lagging indicators (enhanced)
@@ -409,19 +472,29 @@ class LookaheadBiasDetector:
 
         # Generate detailed analysis
         if suspicious_features:
+    pass
+    pass
         # Only warn if we have too many suspicious features or in strict mode
         if len(suspicious_features) > self.warning_threshold or self.strict_mode:
+    pass
+    pass
         # Group by category for better reporting
                 by_category: dict[str, list[str]] = {}
         for item in suspicious_features:
+    pass
+    pass
                     cat, item["category"]
         if cat not in by_category:
+    pass
+    pass
                         by_category[cat] = []
                     by_category[cat].append(item["feature"])
 
-                warning_msg, f"POTENTIAL LAGGING ISSUES: {len(suspicious_features)} features may need investigation:\n"
+                warning_msg, f"POTENTIAL LAGGING ISSUES: {len(suspicious_features)} features may need investigation:\\\n"
         for category, features in by_category.items():
-                    warning_msg += f"   • {category.upper()}: {features[:3]}{'...' if len(features) > 3 else ''}\n"
+    pass
+    pass
+                    warning_msg += f"   • {category.upper()}: {features[:3]}{'...' if len(features) > 3 else ''}\\\n"
 
                 results["warnings"].append(warning_msg.strip())
 
@@ -429,6 +502,8 @@ class LookaheadBiasDetector:
         results["suspicious_features"] = suspicious_features
 
         if potentially_legitimate_features:
+    pass
+    pass
         # Log legitimate features for transparency
         self.logger.info(
                 f"✅ Found {len(potentially_legitimate_features)} features with legitimate lagging patterns",
@@ -438,51 +513,77 @@ class LookaheadBiasDetector:
             results["legitimate_features"] = potentially_legitimate_features
 
     def _identify_lagging_type(self, feature_name: str) -> str:
+    pass
+    pass
         """Identify the type of lagging operation used in a feature."""
         feature_lower, feature_name.lower()
 
         if "diff" in feature_lower:
+    pass
+    pass
         # Try to extract the lag period
-            diff_match, re.search(r"diff_(\d+)", feature_lower)
+            diff_match, re.search(r"diff_(\\\d+)", feature_lower)
         if diff_match:
+    pass
+    pass
                 lag_period, diff_match.group(1)
         return f"difference_lag_{lag_period}"
         return "difference_lag_1"  # Default to 1 - period difference
 
         if "lag" in feature_lower:
-            lag_match, re.search(r"lag_(\d+)", feature_lower)
+    pass
+    pass
+            lag_match, re.search(r"lag_(\\\d+)", feature_lower)
         if lag_match:
+    pass
+    pass
                 lag_period, lag_match.group(1)
         return f"explicit_lag_{lag_period}"
         return "explicit_lag_1"
 
         if "shift" in feature_lower:
-            shift_match, re.search(r"shift_(\d+)", feature_lower)
+    pass
+    pass
+            shift_match, re.search(r"shift_(\\\d+)", feature_lower)
         if shift_match:
+    pass
+    pass
                 shift_period, shift_match.group(1)
         return f"shift_{shift_period}"
         return "shift_1"
 
         if "returns" in feature_lower or "pct_change" in feature_lower:
+    pass
+    pass
         return "percentage_change"
 
         if "slope" in feature_lower:
+    pass
+    pass
         return "slope_calculation"
 
         if "change" in feature_lower:
+    pass
+    pass
         return "change_calculation"
 
         if "momentum" in feature_lower:
+    pass
+    pass
         return "momentum_calculation"
 
         return "unknown_lagging"
 
     def _generate_recommendations(self, results: dict[str, Any]) -> None:
+    pass
+    pass
         """Generate intelligent recommendations based on detected issues and analysis."""
 
         recommendations: list[str] = []
 
         if results["lookahead_bias_detected"]:
+    pass
+    pass
             recommendations.extend(
                 [
                     "🚨 CRITICAL: Stop using current models for live trading",
@@ -495,8 +596,12 @@ class LookaheadBiasDetector:
 
         # Enhanced recommendations based on analysis results
         if "suspicious_features" in results:
+    pass
+    pass
             suspicious_count, len(results["suspicious_features"])
         if suspicious_count > 0:
+    pass
+    pass
                 recommendations.append(
                     f"🔍 Investigate {suspicious_count} features for proper lagging implementation",
                 )
@@ -504,13 +609,21 @@ class LookaheadBiasDetector:
         # Group by category for specific recommendations
                 by_category: dict[str, list[str]] = {}
         for item in results["suspicious_features"]:
+    pass
+    pass
                     cat, item["category"]
         if cat not in by_category:
+    pass
+    pass
                         by_category[cat] = []
                     by_category[cat].append(item["feature"])
 
         for category in by_category:
+    pass
+    pass
         if category == "moving_averages":
+    pass
+    pass
                         recommendations.append(
                             f"📈 For {category}: Ensure MA / EMA features use .diff() or .shift() operations",
                         )
@@ -524,46 +637,66 @@ class LookaheadBiasDetector:
                         )
 
         if "legitimate_features" in results:
+    pass
+    pass
             legitimate_count, len(results["legitimate_features"])
         if legitimate_count > 0:
+    pass
+    pass
                 recommendations.append(
                     f"✅ {legitimate_count} features have proper lagging patterns - good implementation",
                 )
 
         # Implementation analysis recommendations
         if "implementation_analysis" in results:
+    pass
+    pass
             impl_analysis, results["implementation_analysis"]
 
         if "properly_lagged_features" in impl_analysis:
+    pass
+    pass
                 proper_count, len(impl_analysis["properly_lagged_features"])
         if proper_count > 0:
+    pass
+    pass
                     recommendations.append(
                         f"✅ Implementation analysis confirms {proper_count} features have proper lagging",
                     )
 
         if "potentially_problematic_features" in impl_analysis:
+    pass
+    pass
                 problematic_count, len(
                     impl_analysis["potentially_problematic_features"],
                 )
         if problematic_count > 0:
+    pass
+    pass
                     recommendations.append(
                         f"⚠️ {problematic_count} features may need implementation review",
                     )
 
         # Correlation - based recommendations
         if results["feature_correlations"]:
+    pass
+    pass
             high_corr_features = [
                 feat
         for feat, corr in results["feature_correlations"].items()
         if abs(corr) > 0.8
             ]
         if high_corr_features:
+    pass
+    pass
                 recommendations.append(
                     f"📊 {len(high_corr_features)} features have high correlation (>0.8) - consider feature selection",
                 )
 
         # General recommendations if no specific issues
         if not results["critical_issues"] and not results["warnings"]:
+    pass
+    pass
             recommendations.append("✅ No obvious lookahead bias detected")
             recommendations.append(
                 "🔍 Continue monitoring with enhanced detection system",
@@ -615,11 +748,15 @@ class LookaheadBiasDetector:
 
         # Check if split is random (bad) or temporal (good)
         if timestamp_col and timestamp_col in X_train.columns and timestamp_col in X_test.columns:
+    pass
+    pass
             train_times, pd.to_datetime(X_train[timestamp_col])
             test_times, pd.to_datetime(X_test[timestamp_col])
 
         # Check for temporal ordering
         if train_times.max() > test_times.min():
+    pass
+    pass
                 results["split_valid"] = False
                 results["issues"].append(
                     "TEMPORAL LEAKAGE: Training data contains timestamps after test data",
@@ -630,6 +767,8 @@ class LookaheadBiasDetector:
 
         # Check for data overlap
         if len(set(X_train.index) & set(X_test.index)) > 0:
+    pass
+    pass
             results["split_valid"] = False
             results["issues"].append(
                 "DATA OVERLAP: Training and test sets share data points",
@@ -660,6 +799,8 @@ class LookaheadBiasDetector:
 
         # Apply lagging to all features
         for col in lagged_features.columns:
+    pass
+    pass
         if col not in ["timestamp", "time", "date"]:  # Skip timestamp columns
                 lagged_features[col] = lagged_features[col].shift(lag_periods)
 
@@ -695,17 +836,21 @@ class LookaheadBiasDetector:
 
         # Common lagging patterns in code
         lagging_patterns: dict[str, str] = {
-            "diff": r"\.diff\((\d+)\)",  # .diff(3)
-            "shift": r"\.shift\((\d+)\)",  # .shift(1)
-            "pct_change": r"\.pct_change\((\d+)\)",  # .pct_change(1)
-            "rolling_diff": r"\.rolling\(.*\)\.diff\((\d+)\)",  # .rolling(20).diff(1)
-            "ewm_diff": r"\.ewm\(.*\)\.diff\((\d+)\)",  # .ewm(span = 20).diff(1)
+            "diff": r"\\\.diff\\\((\\\d+)\\\)",  # .diff(3)
+            "shift": r"\\\.shift\\\((\\\d+)\\\)",  # .shift(1)
+            "pct_change": r"\\\.pct_change\\\((\\\d+)\\\)",  # .pct_change(1)
+            "rolling_diff": r"\\\.rolling\\\(.*\\\)\\\.diff\\\((\\\d+)\\\)",  # .rolling(20).diff(1)
+            "ewm_diff": r"\\\.ewm\\\(.*\\\)\\\.diff\\\((\\\d+)\\\)",  # .ewm(span = 20).diff(1)
         }
 
         # Analyze code for lagging patterns
         for pattern_name, pattern in lagging_patterns.items():
+    pass
+    pass
             matches, re.findall(pattern, feature_engineering_code)
         if matches:
+    pass
+    pass
                 implementation_analysis["lagging_patterns_found"].append(
                     {
                         "pattern": pattern_name,
@@ -718,6 +863,8 @@ class LookaheadBiasDetector:
 
         # Cross - reference with actual features
         for col in features_df.columns:
+    pass
+    pass
             col_lower, col.lower()
 
         # Check if this feature has corresponding lagging in code
@@ -728,6 +875,8 @@ class LookaheadBiasDetector:
             )
 
         if feature_has_lagging:
+    pass
+    pass
                 implementation_analysis["properly_lagged_features"].append(
                     {"feature": col, "lagging_type": feature_has_lagging},
                 )
@@ -742,11 +891,15 @@ class LookaheadBiasDetector:
 
         # Generate implementation - specific recommendations
         if implementation_analysis["properly_lagged_features"]:
+    pass
+    pass
             implementation_analysis["recommendations"].append(
                 f"✅ Found {len(implementation_analysis['properly_lagged_features'])} features with proper lagging implementation",
             )
 
         if implementation_analysis["potentially_problematic_features"]:
+    pass
+    pass
             implementation_analysis["recommendations"].append(
                 f"⚠️ {len(implementation_analysis['potentially_problematic_features'])} features may need lagging implementation review",
             )
@@ -756,6 +909,8 @@ class LookaheadBiasDetector:
 
         # Log findings
         if implementation_analysis["properly_lagged_features"]:
+    pass
+    pass
         self.logger.info(
                 f"✅ Implementation analysis: {len(implementation_analysis['properly_lagged_features'])} features have proper lagging",
             )
@@ -784,23 +939,33 @@ class LookaheadBiasDetector:
 
         # Look for the feature assignment in code
         feature_patterns = [
-            rf'features\[["\']{re.escape(feature_lower)}["\']\]',
-            rf'features\[["\']{re.escape(base_feature)}["\']\]',
-            rf"features\[{re.escape(feature_lower)}\]",
-            rf"features\[{re.escape(base_feature)}\]",
+            rf'features\\\[["\\\']{re.escape(feature_lower)}["\\\']\\\]',
+            rf'features\\\[["\\\']{re.escape(base_feature)}["\\\']\\\]',
+            rf"features\\\[{re.escape(feature_lower)}\\\]",
+            rf"features\\\[{re.escape(base_feature)}\\\]",
         ]
 
         for pattern in feature_patterns:
+    pass
+    pass
             matches, re.findall(pattern, code)
         if matches:
+    pass
+    pass
         # Found the feature assignment, now check for lagging
         for lag_type, lag_pattern in lagging_patterns.items():
+    pass
+    pass
         if re.search(lag_pattern, code):
+    pass
+    pass
         return lag_type
 
         return None
 
     def _extract_base_feature_name(self, feature_name: str) -> str:
+    pass
+    pass
         """
         Extract the base feature name by removing common suffixes.
 
@@ -812,14 +977,14 @@ class LookaheadBiasDetector:
         """
         # Common suffixes to remove
         suffixes = [
-            r"_diff_\d+",
+            r"_diff_\\\d+",
             r"_diff",
             r"_change",
             r"_returns",
             r"_slope",
-            r"_lag_\d+",
+            r"_lag_\\\d+",
             r"_lag",
-            r"_shift_\d+",
+            r"_shift_\\\d+",
             r"_shift",
             r"_pct_change",
             r"_momentum",
@@ -828,11 +993,15 @@ class LookaheadBiasDetector:
 
         base_name, feature_name
         for suffix in suffixes:
+    pass
+    pass
             base_name, re.sub(suffix, "", base_name)
 
         return base_name
 
     def _is_base_feature(self, feature_name: str) -> bool:
+    pass
+    pass
         """
         Check if a feature is a base feature that doesn't need lagging.
 

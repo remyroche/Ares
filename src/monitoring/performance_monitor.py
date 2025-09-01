@@ -12,6 +12,7 @@ from datetime import datetime
 
 from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
     resource_monitor,
@@ -20,6 +21,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 
+import @dataclass
 @dataclass
 class PerformanceMetrics:
     """Performance metrics data structure."""
@@ -48,6 +50,8 @@ class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("PerformanceMonitor")
 
@@ -77,7 +81,11 @@ class PerformanceMonitor:
         return True
 
     def record_metrics(self, metrics: PerformanceMetrics) -> None:
+    pass
+    pass
         self.metrics_history.append(metrics)
 
     def latest_metrics(self) -> Optional[PerformanceMetrics]:
+    pass
+    pass
         return self.metrics_history[-1] if self.metrics_history else None

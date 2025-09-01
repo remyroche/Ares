@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 # Add the project root to the path
+import sys.path.insert
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.utils.logger import system_logger
@@ -16,6 +17,7 @@ from src.utils.step_dependency_validator import StepDependencyValidator
 from src.utils.validator_orchestrator import validator_orchestrator
 
 
+import async def test_pipeline_configuration
 async def test_pipeline_configuration():
     """Test pipeline configuration and dependencies."""
     logger = system_logger.getChild("PipelineTest")
@@ -28,6 +30,10 @@ async def test_pipeline_configuration():
     logger.info("📋 Test 1: Loading training configuration...")
     try:
         config = get_training_config()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("✅ Training configuration loaded successfully")
 
         # Check for required step configurations
@@ -37,7 +43,11 @@ async def test_pipeline_configuration():
         ]
 
         for config_key in required_configs:
+    pass
+    pass
             if config_key in config:
+    pass
+    pass
                 logger.info(f"✅ {config_key} configuration found")
             else:
                 logger.warning(f"⚠️ {config_key} configuration missing")
@@ -51,6 +61,10 @@ async def test_pipeline_configuration():
     try:
         validator = StepDependencyValidator()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if all steps are defined
         expected_steps = [
             "step1_data_collection",
@@ -80,7 +94,11 @@ async def test_pipeline_configuration():
         ]
 
         for step in expected_steps:
+    pass
+    pass
             if step in validator.step_dependencies:
+    pass
+    pass
                 logger.info(f"✅ {step} dependency defined")
             else:
                 logger.warning(f"⚠️ {step} dependency missing")
@@ -89,6 +107,8 @@ async def test_pipeline_configuration():
         logger.info("🔍 Checking for circular dependencies...")
         has_circular = _check_circular_dependencies(validator.step_dependencies)
         if has_circular:
+    pass
+    pass
             logger.error("❌ Circular dependencies detected!")
             return False
         else:
@@ -102,7 +122,13 @@ async def test_pipeline_configuration():
     logger.info("📋 Test 3: Validating validator mappings...")
     try:
         # Check if all steps have validators
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for step, validator_name in validator_orchestrator.validator_mapping.items():
+    pass
+    pass
             logger.info(f"✅ {step} -> {validator_name}")
 
     except Exception as e:
@@ -113,11 +139,17 @@ async def test_pipeline_configuration():
     logger.info("📋 Test 4: Testing step imports...")
     try:
         # Test step6 import
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from src.training.steps.step6_feature_engineering import run_step as step6_run
+import logger.info
         logger.info("✅ step6_feature_engineering imported successfully")
 
         # Test step7 import
         from src.training.steps.step7_enhanced_matrix_operations import run_step as step7_run
+import logger.info
         logger.info("✅ step7_enhanced_matrix_operations imported successfully")
 
         # Test validators import
@@ -132,17 +164,27 @@ async def test_pipeline_configuration():
     try:
         from src.training.enhanced_training_manager import EnhancedTrainingManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Check STEP_ORDER
+import manager = EnhancedTrainingManager
         manager = EnhancedTrainingManager(config)
         logger.info(f"✅ Enhanced training manager initialized with {len(manager.STEP_ORDER)} steps")
 
         # Verify step order includes our new steps
         if "step6_feature_engineering" in manager.STEP_ORDER:
+    pass
+    pass
             logger.info("✅ step6_feature_engineering in STEP_ORDER")
         else:
             logger.warning("⚠️ step6_feature_engineering missing from STEP_ORDER")
 
         if "step7_enhanced_matrix_operations" in manager.STEP_ORDER:
+    pass
+    pass
             logger.info("✅ step7_enhanced_matrix_operations in STEP_ORDER")
         else:
             logger.warning("⚠️ step7_enhanced_matrix_operations missing from STEP_ORDER")
@@ -158,14 +200,24 @@ async def test_pipeline_configuration():
 
 
 def _check_circular_dependencies(dependencies: Dict[str, list]) -> bool:
+    pass
+    pass
     """Check for circular dependencies in the step dependency graph."""
     def has_cycle(step: str, visited: set, rec_stack: set) -> bool:
+    pass
+    pass
         visited.add(step)
         rec_stack.add(step)
 
         for neighbor in dependencies.get(step, []):
+    pass
+    pass
             if neighbor not in visited:
+    pass
+    pass
                 if has_cycle(neighbor, visited, rec_stack):
+    pass
+    pass
                     return True
             elif neighbor in rec_stack:
                 return True
@@ -175,8 +227,14 @@ def _check_circular_dependencies(dependencies: Dict[str, list]) -> bool:
 
     visited = set()
     for step in dependencies:
+    pass
+    pass
         if step not in visited:
+    pass
+    pass
             if has_cycle(step, visited, set()):
+    pass
+    pass
                 return True
     return False
 
@@ -194,7 +252,13 @@ async def test_step_execution():
     try:
         from src.training.steps.step6_feature_engineering import run_step as step6_run
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Test with dummy parameters (should fail gracefully due to missing data)
+import result = await step6_run
         result = await step6_run(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -208,6 +272,8 @@ async def test_step_execution():
 
     except Exception as e:
         if "Failed to load unified data" in str(e) or "Failed to load labeled data" in str(e):
+    pass
+    pass
             logger.info(f"✅ step6_feature_engineering failed as expected (missing data): {e}")
         else:
             logger.error(f"❌ step6_feature_engineering failed unexpectedly: {e}")
@@ -218,7 +284,13 @@ async def test_step_execution():
     try:
         from src.training.steps.step7_enhanced_matrix_operations import run_step as step7_run
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Test with dummy parameters (should fail gracefully due to missing data)
+import result = await step7_run
         result = await step7_run(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -232,6 +304,8 @@ async def test_step_execution():
 
     except Exception as e:
         if "Features train file not found" in str(e) or "Features validation file not found" in str(e):
+    pass
+    pass
             logger.info(f"✅ step7_enhanced_matrix_operations failed as expected (missing data): {e}")
         else:
             logger.error(f"❌ step7_enhanced_matrix_operations failed unexpectedly: {e}")
@@ -252,12 +326,16 @@ async def main():
     # Test 1: Configuration and dependencies
     config_success = await test_pipeline_configuration()
     if not config_success:
+    pass
+    pass
         logger.error("❌ Pipeline configuration tests failed")
         return False
 
     # Test 2: Step execution
     execution_success = await test_step_execution()
     if not execution_success:
+    pass
+    pass
         logger.error("❌ Step execution tests failed")
         return False
 
@@ -266,4 +344,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

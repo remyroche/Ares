@@ -10,6 +10,7 @@ import pandas as pd
 from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import error,
     error,
     warning,
     critical,
@@ -32,6 +33,8 @@ class EfficientFeaturesDatabase:
     """
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("EfficientFeaturesDatabase")
 
@@ -63,6 +66,10 @@ class EfficientFeaturesDatabase:
         try:
             self.logger.info("🚀 Initializing EfficientFeaturesDatabase...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Scan existing databases
             await self._scan_existing_databases()
 
@@ -96,8 +103,12 @@ class EfficientFeaturesDatabase:
             Database name following the convention
         """
         if start_date is None:
+    pass
+    pass
             start_date = datetime.now().strftime("%Y-%m-%d")
         if timestamp is None:
+    pass
+    pass
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Remove any special characters from symbol
@@ -107,8 +118,12 @@ class EfficientFeaturesDatabase:
         return f"{clean_symbol}_{clean_exchange}_{start_date}_{timestamp}_historical_data_with_precomputed_features"
 
     def _get_database_path(self, database_name: str) -> str:
+    pass
+    pass
         """Get full path for database file."""
         if self.storage_format == "pickle":
+    pass
+    pass
             extension = ".pkl"
         elif self.storage_format == "parquet":
             extension = ".parquet"
@@ -125,10 +140,18 @@ class EfficientFeaturesDatabase:
         try:
             databases = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not os.path.exists(self.base_storage_dir):
+    pass
+    pass
                 return databases
 
             for filename in os.listdir(self.base_storage_dir):
+    pass
+    pass
                 if (
                     filename.endswith((".pkl", ".parquet", ".h5"))
                     and "precomputed_features" in filename
@@ -162,6 +185,10 @@ class EfficientFeaturesDatabase:
                         # Try to get data range information
                         try:
                             data_info = await self._get_database_info(db_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             metadata.update(data_info)
                         except Exception as e:
                             self.logger.warning(
@@ -185,13 +212,25 @@ class EfficientFeaturesDatabase:
         """Get information about a database file."""
         try:
             if self.storage_format == "pickle":
+    pass
+    except Exception as e:
+        pass
+    pass
                 with open(db_path, "rb") as f:
                     data = pickle.load(f)
+    except Exception as e:
+        pass
             elif self.storage_format == "parquet":
                 try:
                     # If index is timestamp-like, loading only index can be heavy; project minimal columns if known
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     cols = getattr(self, "feature_columns", None)
                     if isinstance(cols, list) and len(cols) > 0:
+    pass
+    pass
                         data = pd.read_parquet(db_path, columns=cols)
                     else:
                         data = pd.read_parquet(db_path)
@@ -203,6 +242,8 @@ class EfficientFeaturesDatabase:
                 return {}
 
             if isinstance(data, pd.DataFrame) and not data.empty:
+    pass
+    pass
                 return {
                     "start_time": data.index.min(),
                     "end_time": data.index.max(),
@@ -219,10 +260,16 @@ class EfficientFeaturesDatabase:
             return {}
 
     def _analyze_feature_categories(self, columns: list[str]) -> dict[str, int]:
+    pass
+    pass
         """Analyze feature categories from column names."""
         categories = {}
         for col in columns:
+    pass
+    pass
             if "_" in col:
+    pass
+    pass
                 category = col.split("_")[0]
                 categories[category] = categories.get(category, 0) + 1
         return categories
@@ -249,11 +296,17 @@ class EfficientFeaturesDatabase:
         """
         try:
             clean_symbol = symbol.replace("/", "").replace("-", "").upper()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             clean_exchange = exchange.upper()
 
             # Find matching databases
             matching_dbs = []
             for db_name, metadata in self.metadata_cache.items():
+    pass
+    pass
                 if (
                     metadata.get("symbol", "").upper() == clean_symbol
                     and metadata.get("exchange", "").upper() == clean_exchange
@@ -261,6 +314,8 @@ class EfficientFeaturesDatabase:
                     matching_dbs.append((db_name, metadata))
 
             if not matching_dbs:
+    pass
+    pass
                 # No existing database
                 missing_ranges = (
                     [(start_time, end_time)] if start_time and end_time else []
@@ -276,23 +331,35 @@ class EfficientFeaturesDatabase:
             # Check time coverage
             missing_ranges = []
             if start_time and end_time:
+    pass
+    pass
                 db_start = metadata.get("start_time")
                 db_end = metadata.get("end_time")
 
                 if db_start is None or db_end is None:
+    pass
+    pass
                     # No time info available, assume we need to process everything
                     missing_ranges = [(start_time, end_time)]
                 else:
                     # Convert to pandas timestamps if needed
                     if not isinstance(db_start, pd.Timestamp):
+    pass
+    pass
                         db_start = pd.Timestamp(db_start)
                     if not isinstance(db_end, pd.Timestamp):
+    pass
+    pass
                         db_end = pd.Timestamp(db_end)
 
                     # Check for gaps
                     if start_time < db_start:
+    pass
+    pass
                         missing_ranges.append((start_time, db_start))
                     if end_time > db_end:
+    pass
+    pass
                         missing_ranges.append((db_end, end_time))
 
             return db_name, missing_ranges
@@ -306,10 +373,18 @@ class EfficientFeaturesDatabase:
         """Load a precomputed features database."""
         try:
             if database_name in self.database_cache:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info(f"Loading database from cache: {database_name}")
                 return self.database_cache[database_name].copy()
 
+    except Exception as e:
+        pass
             if database_name not in self.metadata_cache:
+    pass
+    pass
                 self.print(missing("Database not found: {database_name}"))
                 return pd.DataFrame()
 
@@ -318,6 +393,8 @@ class EfficientFeaturesDatabase:
             self.logger.info(f"Loading database from disk: {database_name}")
 
             if self.storage_format == "pickle":
+    pass
+    pass
                 with open(db_path, "rb") as f:
                     data = pickle.load(f)
             elif self.storage_format == "parquet":
@@ -362,11 +439,19 @@ class EfficientFeaturesDatabase:
         """
         try:
             if data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Cannot save empty database")
                 return False
 
+    except Exception as e:
+        pass
             # Generate database name if not provided
             if database_name is None:
+    pass
+    pass
                 start_date = data.index.min().strftime("%Y-%m-%d")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 database_name = self._generate_database_name(
@@ -382,19 +467,27 @@ class EfficientFeaturesDatabase:
 
             # Ensure index is datetime
             if not isinstance(data.index, pd.DatetimeIndex):
+    pass
+    pass
                 data.index = pd.to_datetime(data.index, unit="ms")
 
             # Save based on format
             if self.storage_format == "pickle":
+    pass
+    pass
                 with open(db_path, "wb") as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
             elif self.storage_format == "parquet":
                 if self.compression:
+    pass
+    pass
                     data.to_parquet(db_path, compression="snappy")
                 else:
                     data.to_parquet(db_path)
             elif self.storage_format == "hdf5":
                 if self.compression:
+    pass
+    pass
                     data.to_hdf(
                         db_path,
                         key="features",
@@ -425,6 +518,8 @@ class EfficientFeaturesDatabase:
 
             # Update database cache
             if len(data) < self.chunk_size * 10:
+    pass
+    pass
                 self.database_cache[database_name] = data.copy()
 
             self.logger.info(f"✅ Database saved successfully: {db_path}")
@@ -452,13 +547,21 @@ class EfficientFeaturesDatabase:
         """
         try:
             if new_data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("No new data to update database"))
                 return True
 
+    except Exception as e:
+        pass
             # Load existing data
             existing_data = await self.load_database(existing_database_name)
 
             if existing_data.empty:
+    pass
+    pass
                 self.logger.warning(
                     f"Could not load existing database: {existing_database_name}",
                 )
@@ -466,8 +569,12 @@ class EfficientFeaturesDatabase:
 
             # Ensure indices are datetime
             if not isinstance(new_data.index, pd.DatetimeIndex):
+    pass
+    pass
                 new_data.index = pd.to_datetime(new_data.index, unit="ms")
             if not isinstance(existing_data.index, pd.DatetimeIndex):
+    pass
+    pass
                 existing_data.index = pd.to_datetime(existing_data.index, unit="ms")
 
             # Identify truly new rows (timestamps not in existing data)
@@ -475,6 +582,8 @@ class EfficientFeaturesDatabase:
             truly_new_data = new_data.loc[new_timestamps]
 
             if truly_new_data.empty:
+    pass
+    pass
                 self.logger.info("No new timestamps found, database already up-to-date")
                 return True
 
@@ -501,6 +610,8 @@ class EfficientFeaturesDatabase:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info(
                     f"✅ Database updated with {len(truly_new_data)} new records",
                 )
@@ -536,28 +647,42 @@ class EfficientFeaturesDatabase:
         """
         try:
             if data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Cannot save empty database")
                 return False
 
+    except Exception as e:
+        pass
             db_path = self._get_database_path(database_name)
 
             self.logger.info(f"Saving {len(data)} records to database: {database_name}")
 
             # Ensure index is datetime
             if not isinstance(data.index, pd.DatetimeIndex):
+    pass
+    pass
                 data.index = pd.to_datetime(data.index, unit="ms")
 
             # Save based on format
             if self.storage_format == "pickle":
+    pass
+    pass
                 with open(db_path, "wb") as f:
                     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
             elif self.storage_format == "parquet":
                 if self.compression:
+    pass
+    pass
                     data.to_parquet(db_path, compression="snappy")
                 else:
                     data.to_parquet(db_path)
             elif self.storage_format == "hdf5":
                 if self.compression:
+    pass
+    pass
                     data.to_hdf(
                         db_path,
                         key="features",
@@ -593,6 +718,8 @@ class EfficientFeaturesDatabase:
 
             # Update database cache
             if len(data) < self.chunk_size * 10:
+    pass
+    pass
                 self.database_cache[database_name] = data.copy()
 
             self.logger.info(f"✅ Database saved with updated timestamp: {db_path}")
@@ -612,9 +739,15 @@ class EfficientFeaturesDatabase:
         databases = []
 
         for db_name, metadata in self.metadata_cache.items():
+    pass
+    pass
             if symbol and metadata.get("symbol", "").upper() != symbol.upper():
+    pass
+    pass
                 continue
             if exchange and metadata.get("exchange", "").upper() != exchange.upper():
+    pass
+    pass
                 continue
 
             databases.append({"name": db_name, "metadata": metadata.copy()})
@@ -628,6 +761,8 @@ class EfficientFeaturesDatabase:
         return databases
 
     def get_database_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get statistics about all databases."""
         total_databases = len(self.metadata_cache)
         total_size = sum(
@@ -658,15 +793,25 @@ class EfficientFeaturesDatabase:
         """Clean up old databases, keeping only the latest N for each symbol/exchange pair."""
         try:
             # Group databases by symbol/exchange
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             symbol_exchange_groups = {}
             for db_name, metadata in self.metadata_cache.items():
+    pass
+    pass
                 key = (metadata.get("symbol"), metadata.get("exchange"))
                 if key not in symbol_exchange_groups:
+    pass
+    pass
                     symbol_exchange_groups[key] = []
                 symbol_exchange_groups[key].append((db_name, metadata))
 
             deleted_count = 0
             for databases in symbol_exchange_groups.values():
+    pass
+    pass
                 # Sort by last modified date (newest first)
                 databases.sort(
                     key=lambda x: x[1].get("last_modified", datetime.min),
@@ -675,17 +820,29 @@ class EfficientFeaturesDatabase:
 
                 # Delete old databases beyond keep_latest_n
                 for db_name, metadata in databases[keep_latest_n:]:
+    pass
+    pass
                     try:
                         db_path = metadata.get("file_path")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         if db_path and os.path.exists(db_path):
+    pass
+    pass
                             os.remove(db_path)
                             self.logger.info(f"Deleted old database: {db_name}")
                             deleted_count += 1
 
                         # Remove from cache
                         if db_name in self.metadata_cache:
+    pass
+    pass
                             del self.metadata_cache[db_name]
                         if db_name in self.database_cache:
+    pass
+    pass
                             del self.database_cache[db_name]
 
                     except Exception as e:

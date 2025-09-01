@@ -11,6 +11,7 @@ from enum import Enum
 from src.utils.logger import system_logger
 
 
+import class ModelType
 class ModelType(Enum):
     XGBOOST = "xgboost"
     CATBOOST = "catboost"
@@ -33,6 +34,8 @@ class EnhancedMLTracker:
     """Minimal Enhanced ML Tracker placeholder."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("EnhancedMLTracker")
         self.tracker_config = config.get("enhanced_ml_tracker", {})

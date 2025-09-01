@@ -7,6 +7,7 @@ import influxdb_client
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 from src.config import (
+import INFLUXDB_BUCKET,
     INFLUXDB_BUCKET,
     INFLUXDB_ORG,
     INFLUXDB_TOKEN,
@@ -15,6 +16,7 @@ from src.config import (
 from src.utils.logger import logger
 
 
+import class InfluxDBManager:
 class InfluxDBManager:
     """
     Manages connections and data operations with an InfluxDB database.
@@ -78,7 +80,11 @@ class InfluxDBManager:
 
         # Convert all data columns to float to avoid type conflicts in InfluxDB
         for col in ["open", "high", "low", "close", "volume"]:
+    pass
+    pass
             if col in df_copy.columns:
+    pass
+    pass
                 df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce")
 
         self.write_api.write(
@@ -121,20 +127,30 @@ class InfluxDBManager:
         """
         df = self.query_api.query_data_frame(query, org=self.org)
         if isinstance(df, list):
+    pass
+    pass
             if not df:
+    pass
+    pass
                 return pd.DataFrame()
             df = pd.concat(df, ignore_index=True)
 
         if df.empty:
+    pass
+    pass
             return pd.DataFrame()
 
         # Convert timestamp to milliseconds integer as expected by the rest of the application
         if "timestamp" in df.columns:
+    pass
+    pass
             df["timestamp"] = pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
 
             # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds
             if df["timestamp"].min() < min_reasonable_ts:
+    pass
+    pass
                 self.logger.error(
                     "Min timestamp appears unreasonable; attempting alternate conversion",
                 )
@@ -144,12 +160,18 @@ class InfluxDBManager:
 
         # Ensure correct data types
         for col in ["open", "high", "low", "close", "volume"]:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
 
     def close(self) -> None:
+    pass
+    pass
         """Closes the InfluxDB client."""
         self.client.close()
         self.logger.info("InfluxDB client closed.")

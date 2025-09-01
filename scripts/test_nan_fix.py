@@ -18,10 +18,13 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from src.utils.logger import setup_logging, system_logger  # noqa: E402
 from src.utils.error_handler import handle_nan_issues  # noqa: E402
 
+import warnings.filterwarnings
 warnings.filterwarnings("ignore")
 
 
 def _safe_numeric(value: Any) -> float:
+    pass
+    pass
 	"""Convert scalars to safe float, replacing NaN/Inf with 0.0.
 
 	Args:
@@ -32,7 +35,13 @@ def _safe_numeric(value: Any) -> float:
 	"""
 	try:
 		arr = float(value)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 		if np.isnan(arr) or np.isinf(arr):
+    pass
+    pass
 			return 0.0
 		return arr
 	except Exception:
@@ -40,6 +49,8 @@ def _safe_numeric(value: Any) -> float:
 
 
 def _clean_series(series: pd.Series) -> pd.Series:
+    pass
+    pass
 	"""Clean a pandas Series by replacing NaN/Inf appropriately.
 
 	Args:
@@ -53,12 +64,16 @@ def _clean_series(series: pd.Series) -> pd.Series:
 	cleaned = cleaned.replace([np.inf, -np.inf], np.nan)
 	# For numeric dtypes fill with 0
 	if pd.api.types.is_numeric_dtype(cleaned):
+    pass
+    pass
 		return cleaned.fillna(0)
 	# For non-numeric, forward/backward fill then empty with empty string
 	return cleaned.fillna(method="ffill").fillna(method="bfill").fillna("")
 
 
 def _clean_array(array_like: Any) -> np.ndarray:
+    pass
+    pass
 	"""Clean numpy array-like replacing NaN/Inf with 0.0.
 
 	Args:
@@ -72,6 +87,8 @@ def _clean_array(array_like: Any) -> np.ndarray:
 
 
 def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str, Any], int, int]:
+    pass
+    pass
 	"""Comprehensive NaN handling for all feature types.
 
 	Args:
@@ -85,10 +102,16 @@ def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str
 	inf_count = 0
 
 	for feature_name, feature_value in features.items():
+    pass
+    pass
 		# Scalars
 		if isinstance(feature_value, (int, float, np.integer, np.floating)):
+    pass
+    pass
 			value = float(feature_value)
 			if np.isnan(value):
+    pass
+    pass
 				nan_count += 1
 			elif np.isinf(value):
 				inf_count += 1
@@ -118,6 +141,8 @@ def _handle_nan_values_comprehensive(features: Dict[str, Any]) -> Tuple[Dict[str
 
 @handle_nan_issues
 def _align_time_series(series: np.ndarray, target_length: int) -> np.ndarray:
+    pass
+    pass
 	"""Align time series to target length with proper handling of NaN/Inf values.
 
 	- Cleans values
@@ -125,18 +150,26 @@ def _align_time_series(series: np.ndarray, target_length: int) -> np.ndarray:
 	- Pads with zeros if shorter than target_length
 	"""
 	if not isinstance(series, np.ndarray):
+    pass
+    pass
 		series = np.asarray(series, dtype=np.float64)
 
 	# Clean first
 	series = np.nan_to_num(series, nan=0.0, posinf=0.0, neginf=0.0)
 
 	if target_length <= 0:
+    pass
+    pass
 		return np.zeros(0, dtype=np.float64)
 
 	if len(series) == target_length:
+    pass
+    pass
 		return series.astype(np.float64, copy=False)
 
 	if len(series) > target_length:
+    pass
+    pass
 		return series[:target_length].astype(np.float64, copy=False)
 
 	# Pad
@@ -145,12 +178,18 @@ def _align_time_series(series: np.ndarray, target_length: int) -> np.ndarray:
 
 
 def test_nan_handling() -> bool:
+    pass
+    pass
 	"""Test that NaN values are properly handled."""
 	setup_logging()
 	logger = system_logger.getChild("TestNaNHandling")
 
 	try:
 		# Create sample data with NaN and Inf values
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 		np.random.seed(42)
 		n_samples = 1000
 
@@ -185,7 +224,7 @@ def test_nan_handling() -> bool:
 		print("NaN HANDLING FIX TEST RESULTS")
 		print("=" * 60)
 
-		print("\n📊 Original data NaN counts:")
+		print("\\\n📊 Original data NaN counts:")
 		print(f"   Price data NaN: {price_data.isna().sum().sum()}")
 		print(f"   Volume data NaN: {volume_data.isna().sum().sum()}")
 		print(
@@ -209,12 +248,12 @@ def test_nan_handling() -> bool:
 			sample_features
 		)
 
-		print("\n📊 Feature cleaning results:")
+		print("\\\n📊 Feature cleaning results:")
 		print(f"   NaN values cleaned: {nan_count}")
 		print(f"   Inf values cleaned: {inf_count}")
 		print(f"   Features processed: {len(cleaned_features)}")
 
-		print("\n📊 Feature verification:")
+		print("\\\n📊 Feature verification:")
 		print(f"   scalar_nan: {cleaned_features['scalar_nan']} (was NaN)")
 		print(f"   scalar_inf: {cleaned_features['scalar_inf']} (was Inf)")
 		print(
@@ -235,7 +274,7 @@ def test_nan_handling() -> bool:
 		aligned_short = _align_time_series(test_series, 10)
 		aligned_long = _align_time_series(test_series, 3)
 
-		print("\n📊 Time series alignment test:")
+		print("\\\n📊 Time series alignment test:")
 		print(f"   Original series: {test_series}")
 		print(f"   Aligned to length 10: {aligned_short}")
 		print(f"   Aligned to length 3: {aligned_long}")
@@ -248,8 +287,10 @@ def test_nan_handling() -> bool:
 			np.isnan(aligned_short).sum() == 0 and np.isinf(aligned_short).sum() == 0
 		)
 
-		print("\n" + "=" * 60)
+		print("\\\n" + "=" * 60)
 		if nan_fixed and alignment_fixed:
+    pass
+    pass
 			print("✅ NaN FIX SUCCESSFUL!")
 			print("   - NaN values properly cleaned")
 			print("   - Inf values properly cleaned")
@@ -269,5 +310,7 @@ def test_nan_handling() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
 	success = test_nan_handling()
 	sys.exit(0 if success else 1)

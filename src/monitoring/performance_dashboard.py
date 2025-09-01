@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
 from src.utils.centralized_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
     resource_monitor,
@@ -22,6 +23,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 
+import @dataclass
 @dataclass
 class DashboardMetrics:
     """Dashboard metrics data structure."""
@@ -39,6 +41,8 @@ class PerformanceDashboard:
     """Real-time performance dashboard."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("PerformanceDashboard")
 

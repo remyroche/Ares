@@ -47,18 +47,30 @@ class StateSequenceBuilder:
     async def initialize(self) -> bool:
         try:
             await self.urc.initialize()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # If not trained or different n_states, we trigger training with current data later
             return True
         except Exception:
             return False
 
     def _ensure_trained(self, klines_df: pd.DataFrame) -> None:
+    pass
+    pass
         # Train URC if necessary or if state count differs
         try:
             desired_states = self.sb_cfg.hmm_n_states
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Force n_states if available
             self.urc.n_states = max(3, int(desired_states))
             if not getattr(self.urc, "trained", False):
+    pass
+    pass
                 # Minimal training using available history
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_complete_system(klines_df))
@@ -66,12 +78,16 @@ class StateSequenceBuilder:
             self.logger.warning(f"URC training fallback failed: {e}")
 
     def infer_states(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """
         Returns a DataFrame aligned to klines_df index with columns:
           - hmm_state_id (int)
           - regime (str: BULL/BEAR/SIDEWAYS)
         """
         if klines_df is None or klines_df.empty:
+    pass
+    pass
             return pd.DataFrame(
                 index=pd.Index([], name=getattr(klines_df, "index", None)),
             )
@@ -79,19 +95,33 @@ class StateSequenceBuilder:
         cache_dir = self.sb_cfg.cache_dir
         try:
             if cache_dir:
+    pass
+    except Exception as e:
+        pass
+    pass
                 os.makedirs(cache_dir, exist_ok=True)
                 key = f"states_{self.exchange}_{self.symbol}_{hash(tuple(klines_df.index))}.parquet"
                 path = os.path.join(cache_dir, key)
                 if os.path.exists(path):
+    pass
+    pass
                     return pd.read_parquet(path)
+    except Exception as e:
+        pass
         except Exception:
             pass
         # Ensure trained
         self._ensure_trained(klines_df)
         try:
             # Reuse the URC feature pipeline to get HMM states
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             features_df = self.urc._calculate_features(klines_df)
             if features_df.empty:
+    pass
+    pass
                 return pd.DataFrame(index=klines_df.index)
             # Scale and predict HMM states
             X = features_df[
@@ -111,12 +141,16 @@ class StateSequenceBuilder:
                 ]
             ].fillna(0)
             if self.urc.scaler is not None:
+    pass
+    pass
                 X_scaled = self.urc.scaler.transform(X)
             else:
                 self.urc.scaler = StandardScaler().fit(X)
                 X_scaled = self.urc.scaler.transform(X)
             hmm_model = self.urc.hmm_model
             if hmm_model is None:
+    pass
+    pass
                 # Train minimal HMM labeler if missing
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete(self.urc.train_hmm_labeler(klines_df))
@@ -134,7 +168,13 @@ class StateSequenceBuilder:
             )
             try:
                 if cache_dir:
+    pass
+    except Exception as e:
+        pass
+    pass
                     out.to_parquet(os.path.join(cache_dir, key))
+    except Exception as e:
+        pass
             except Exception:
                 pass
             return out

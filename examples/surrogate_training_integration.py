@@ -12,6 +12,7 @@ import time
 
 # Import the surrogate optimizer
 from src.training.optimization.computational_optimization_manager import (
+import SurrogateOptimizer,
     SurrogateOptimizer,
     ComputationalOptimizationConfig,
 )
@@ -22,10 +23,13 @@ from src.utils.logger import system_logger
 from src.utils.decorators import handle_errors
 
 
+import class SurrogateTrainingIntegration:
 class SurrogateTrainingIntegration:
     """Integration of surrogate optimization with training pipeline."""
 
     def __init__(self):
+    pass
+    pass
         self.logger = system_logger.getChild("SurrogateTrainingIntegration")
         self.training_manager = None
         self.surrogate_optimizer = None
@@ -106,6 +110,8 @@ class SurrogateTrainingIntegration:
         return result
 
     def _create_training_hyperparameter_space(self) -> Dict[str, Any]:
+    pass
+    pass
         """Create hyperparameter space for training optimization."""
         return {
             # Model hyperparameters
@@ -178,6 +184,8 @@ class SurrogateTrainingIntegration:
         }
 
     def _create_training_constraints(self) -> Dict[str, Any]:
+    pass
+    pass
         """Create constraints for training hyperparameters."""
         return {
             'max_depth_constraint': lambda params: params.get('max_depth', 0) >= 3,
@@ -207,6 +215,10 @@ class SurrogateTrainingIntegration:
             try:
                 self.logger.info(f"🔬 Testing hyperparameters: {params}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Update training configuration with hyperparameters
                 training_config = self._create_training_config_with_params(params)
 
@@ -227,6 +239,8 @@ class SurrogateTrainingIntegration:
                 training_time = time.time() - start_time
 
                 if not success:
+    pass
+    pass
                     self.logger.warning("Training failed, returning low score")
                     return -1000.0  # Penalty for failed training
 
@@ -234,6 +248,8 @@ class SurrogateTrainingIntegration:
                 results = self.training_manager.get_enhanced_training_results()
 
                 if not results:
+    pass
+    pass
                     self.logger.warning("No training results, returning low score")
                     return -500.0
 
@@ -251,6 +267,8 @@ class SurrogateTrainingIntegration:
         return training_objective
 
     def _create_training_config_with_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Create training configuration with optimized hyperparameters."""
         return {
             "enable_enhanced_matrix_operations": True,
@@ -302,12 +320,18 @@ class SurrogateTrainingIntegration:
             Performance score (higher is better)
         """
         if not results:
+    pass
+    pass
             return -100.0
 
         # Extract metrics from results
         metrics = {}
         for result in results:
+    pass
+    pass
             if 'metrics' in result:
+    pass
+    pass
                 metrics.update(result['metrics'])
 
         # Calculate score components
@@ -315,6 +339,8 @@ class SurrogateTrainingIntegration:
 
         # Model performance (if available)
         if 'accuracy' in metrics:
+    pass
+    pass
             score_components['accuracy'] = metrics['accuracy'] * 100
         elif 'f1_score' in metrics:
             score_components['f1_score'] = metrics['f1_score'] * 100
@@ -379,6 +405,8 @@ class SurrogateTrainingIntegration:
         )
 
         if not optimization_result or 'best_params' not in optimization_result:
+    pass
+    pass
             self.logger.error("❌ Hyperparameter optimization failed")
             return {}
 
@@ -408,6 +436,8 @@ class SurrogateTrainingIntegration:
         final_training_time = time.time() - start_time
 
         if not success:
+    pass
+    pass
             self.logger.error("❌ Final training failed")
             return {
                 'optimization_result': optimization_result,
@@ -427,41 +457,53 @@ class SurrogateTrainingIntegration:
         }
 
     def print_optimization_summary(self, results: Dict[str, Any]) -> None:
+    pass
+    pass
         """Print a summary of the optimization results."""
-        print("\n" + "="*80)
+        print("\\\n" + "="*80)
         print("🎯 SURROGATE TRAINING OPTIMIZATION SUMMARY")
         print("="*80)
 
         optimization_result = results.get('optimization_result', {})
 
         if optimization_result:
-            print(f"\n📊 Optimization Results:")
+    pass
+    pass
+            print(f"\\\n📊 Optimization Results:")
             print(f"  Best Score: {optimization_result.get('best_score', 0):.4f}")
             print(f"  Best Parameters:")
             for param, value in optimization_result.get('best_params', {}).items():
+    pass
+    pass
                 print(f"    {param}: {value}")
 
             # Surrogate accuracy
             if 'surrogate_accuracy' in optimization_result:
+    pass
+    pass
                 accuracy = optimization_result['surrogate_accuracy']
                 print(f"  Surrogate Accuracy - R²: {accuracy.get('r2', 0):.4f}")
                 print(f"  Surrogate Accuracy - MAE: {accuracy.get('mae', 0):.4f}")
 
             # Efficiency metrics
             if 'optimization_efficiency' in optimization_result:
+    pass
+    pass
                 efficiency = optimization_result['optimization_efficiency']
                 print(f"  Expensive Evaluations: {efficiency.get('expensive_evaluation_ratio', 0):.2f}")
                 print(f"  Time Saved: {efficiency.get('total_time_saved', 0):.2f}")
 
         # Final training results
         if results.get('final_training_success'):
-            print(f"\n✅ Final Training Results:")
+    pass
+    pass
+            print(f"\\\n✅ Final Training Results:")
             print(f"  Training Time: {results.get('final_training_time', 0):.2f} seconds")
             print(f"  Success: Yes")
         else:
-            print(f"\n❌ Final Training Failed")
+            print(f"\\\n❌ Final Training Failed")
 
-        print("\n" + "="*80)
+        print("\\\n" + "="*80)
 
 
 async def main():
@@ -474,6 +516,8 @@ async def main():
     success = await integration.initialize()
 
     if not success:
+    pass
+    pass
         print("❌ Failed to initialize integration")
         return
 
@@ -487,8 +531,10 @@ async def main():
     # Print summary
     integration.print_optimization_summary(results)
 
-    print("\n✅ Surrogate Training Integration Demo completed!")
+    print("\\\n✅ Surrogate Training Integration Demo completed!")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

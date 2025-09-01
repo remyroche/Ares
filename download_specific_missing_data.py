@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backtesting.ares_data_downloader_optimized import (
+import DownloadConfig,
     DownloadConfig,
     OptimizedDataDownloader,
 )
@@ -35,9 +36,11 @@ shutdown_requested = False
 
 
 def signal_handler(signum, frame):
+    pass
+    pass
     """Handle interrupt signals gracefully"""
     global shutdown_requested
-    print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
+    print(f"\\\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
 
 
@@ -49,6 +52,8 @@ signal.signal(signal.SIGTERM, signal_handler)
 async def download_futures_2023():
     """Download futures data for 2023"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -63,12 +68,18 @@ async def download_futures_2023():
             lookback_years=2,
             start_date_str="2023-01-01",
             end_date_str="2023-12-31",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         success = await downloader.run_optimized_download()
 
         if success:
+    pass
+    pass
             print("✅ Successfully downloaded futures data for 2023")
         else:
             print("❌ Failed to download futures data for 2023")
@@ -83,6 +94,8 @@ async def download_futures_2023():
 async def download_futures_2025_01_to_04():
     """Download futures data for 2025-01 to 2025-04"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -97,12 +110,18 @@ async def download_futures_2025_01_to_04():
             lookback_years=2,
             start_date_str="2025-01-01",
             end_date_str="2025-04-30",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         success = await downloader.run_optimized_download()
 
         if success:
+    pass
+    pass
             print("✅ Successfully downloaded futures data for 2025-01 to 2025-04")
         else:
             print("❌ Failed to download futures data for 2025-01 to 2025-04")
@@ -117,6 +136,8 @@ async def download_futures_2025_01_to_04():
 async def download_aggtrades_since_2025_02_22():
     """Download aggtrades data since 2025-02-22 (the last file we have)"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -125,6 +146,10 @@ async def download_aggtrades_since_2025_02_22():
 
     try:
         # Start from 2025-02-23 (day after the last file we have)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -138,6 +163,8 @@ async def download_aggtrades_since_2025_02_22():
         success = await downloader.run_optimized_download()
 
         if success:
+    pass
+    pass
             print("✅ Successfully downloaded aggtrades data since 2025-02-22")
         else:
             print("❌ Failed to download aggtrades data since 2025-02-22")
@@ -152,6 +179,8 @@ async def download_aggtrades_since_2025_02_22():
 async def download_aggtrades_2025_01_01_to_2025_02_17():
     """Download aggtrades data between 2025-01-01 and 2025-02-17"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -166,12 +195,18 @@ async def download_aggtrades_2025_01_01_to_2025_02_17():
             lookback_years=2,
             start_date_str="2025-01-01",
             end_date_str="2025-02-17",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         success = await downloader.run_optimized_download()
 
         if success:
+    pass
+    pass
             print(
                 "✅ Successfully downloaded aggtrades data for 2025-01-01 to 2025-02-17",
             )
@@ -204,18 +239,28 @@ async def main():
 
     try:
         # Download futures data
-        print("\n📊 PHASE 1: Downloading missing futures data")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+        print("\\\n📊 PHASE 1: Downloading missing futures data")
         print("-" * 60)
 
         if not shutdown_requested:
+    pass
+    pass
             results["futures_2023"] = await download_futures_2023()
 
         if not shutdown_requested:
+    pass
+    pass
             results["futures_2025_01_to_04"] = await download_futures_2025_01_to_04()
 
         # Download aggtrades data
         if not shutdown_requested:
-            print("\n📊 PHASE 2: Downloading missing aggtrades data")
+    pass
+    pass
+            print("\\\n📊 PHASE 2: Downloading missing aggtrades data")
             print("-" * 60)
 
             results[
@@ -223,38 +268,48 @@ async def main():
             ] = await download_aggtrades_since_2025_02_22()
 
         if not shutdown_requested:
+    pass
+    pass
             results[
                 "aggtrades_2025_01_01_to_2025_02_17"
             ] = await download_aggtrades_2025_01_01_to_2025_02_17()
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+        print("\\\n⚠️ Download interrupted by user")
         shutdown_requested = True
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\\\n❌ Unexpected error: {e}")
         logger.exception("Unexpected error in main")
         return False
 
     # Summary
-    print("\n📊 DOWNLOAD SUMMARY")
+    print("\\\n📊 DOWNLOAD SUMMARY")
     print("=" * 80)
 
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download process was interrupted")
 
     success_count = sum(1 for success in results.values() if success)
     total_count = len(results)
 
     for task, success in results.items():
+    pass
+    pass
         status = "✅ SUCCESS" if success else "❌ FAILED"
         print(f"   {task}: {status}")
 
-    print(f"\n📈 Overall: {success_count}/{total_count} downloads successful")
+    print(f"\\\n📈 Overall: {success_count}/{total_count} downloads successful")
 
     if success_count == total_count and not shutdown_requested:
+    pass
+    pass
         print("🎉 All missing data downloaded successfully!")
         return True
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download process was interrupted - some data may be incomplete")
         return False
     print("⚠️ Some downloads failed. Check logs for details.")
@@ -262,17 +317,23 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     start_time = time.time()
     try:
         success = asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         end_time = time.time()
         duration = end_time - start_time
-        print(f"\n⏱️ Total execution time: {duration:.2f} seconds")
+        print(f"\\\n⏱️ Total execution time: {duration:.2f} seconds")
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n⚠️ Process interrupted by user")
+        print("\\\n⚠️ Process interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Fatal error: {e}")
+        print(f"\\\n❌ Fatal error: {e}")
         logger.exception("Fatal error")
         sys.exit(1)

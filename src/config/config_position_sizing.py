@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class PositionSizingConfig:
     """Optimizable position sizing parameters."""
@@ -58,7 +59,11 @@ class PositionSizingConfig:
     position_size_reductions: dict[str, float] = None
 
     def __post_init__(self):
+    pass
+    pass
         if self.confidence_thresholds is None:
+    pass
+    pass
             self.confidence_thresholds , {
                 "low_confidence": 0.6,
                 "medium_confidence": 0.75,
@@ -67,6 +72,8 @@ class PositionSizingConfig:
             }
 
         if self.position_size_multipliers is None:
+    pass
+    pass
             self.position_size_multipliers = {
                 "low_confidence": 0.5,
                 "medium_confidence": 1.0,
@@ -75,6 +82,8 @@ class PositionSizingConfig:
             }
 
         if self.volatility_thresholds is None:
+    pass
+    pass
             self.volatility_thresholds = {
                 "low_volatility": 0.02,
                 "medium_volatility": 0.05,
@@ -82,6 +91,8 @@ class PositionSizingConfig:
             }
 
         if self.volatility_multipliers is None:
+    pass
+    pass
             self.volatility_multipliers = {
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
@@ -89,6 +100,8 @@ class PositionSizingConfig:
             }
 
         if self.lss_thresholds is None:
+    pass
+    pass
             self.lss_thresholds = {
                 "very_safe": 80,
                 "safe": 60,
@@ -96,6 +109,8 @@ class PositionSizingConfig:
             }
 
         if self.lss_multipliers is None:
+    pass
+    pass
             self.lss_multipliers = {
                 "very_safe": 1.2,
                 "safe": 1.0,
@@ -104,6 +119,8 @@ class PositionSizingConfig:
             }
 
         if self.drawdown_thresholds is None:
+    pass
+    pass
             self.drawdown_thresholds = {
                 "light": 0.05,
                 "moderate": 0.15,
@@ -111,6 +128,8 @@ class PositionSizingConfig:
             }
 
         if self.position_size_reductions is None:
+    pass
+    pass
             self.position_size_reductions = {
                 "light": 0.8,
                 "moderate": 0.5,
@@ -119,11 +138,15 @@ class PositionSizingConfig:
 
 
 def get_position_sizing_config() -> PositionSizingConfig:
+    pass
+    pass
     """Get position sizing configuration."""
     return PositionSizingConfig()
 
 
 def get_position_sizing_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for position sizing optimization."""
     return {
         "base_position_size": {"min": 0.02, "max": 0.15, "type": "float"},

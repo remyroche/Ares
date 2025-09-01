@@ -21,6 +21,7 @@ from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 from src.supervisor.supervisor import Supervisor
 
 
+import def create_test_market_data
 def create_test_market_data(
     start_date: str = "2024-01-01",
     periods: int = 1000,
@@ -39,6 +40,8 @@ def create_test_market_data(
     prices = [base_price]
 
     for i in range(1, periods):
+    pass
+    pass
         # Add some trend and mean reversion
         trend = 0.0001 * np.sin(i / 100)  # Small cyclical trend
         price_change = returns[i] + trend
@@ -64,12 +67,18 @@ def create_test_market_data(
 
 
 def create_analyst_signals(data: pd.DataFrame, signal_frequency: float = 0.1) -> pd.Series:
+    pass
+    pass
     """Create realistic Analyst signals."""
     signals = pd.Series(0, index=data.index)
 
     # Generate signals based on price momentum
     for i in range(20, len(data) - 1):
+    pass
+    pass
         if np.random.random() < signal_frequency:
+    pass
+    pass
             # Calculate momentum
             recent_return = (data['close'].iloc[i] - data['close'].iloc[i-5]) / data['close'].iloc[i-5]
 
@@ -82,6 +91,8 @@ def create_analyst_signals(data: pd.DataFrame, signal_frequency: float = 0.1) ->
 
 
 def test_dynamic_barrier_calculator():
+    pass
+    pass
     """Test the dynamic barrier calculator."""
     print("🧪 Testing Dynamic Barrier Calculator")
     print("=" * 60)
@@ -109,38 +120,46 @@ def test_dynamic_barrier_calculator():
     print(f"   Lower Barrier: {analyst_info['lower_barrier_multiplier']:.4f} ({analyst_info['lower_barrier_multiplier']*100:.3f}%)")
 
     # Test dynamic barrier calculation for 1m timeframe
-    print(f"\n📊 Testing 1m Timeframe Barriers:")
+    print(f"\\\n📊 Testing 1m Timeframe Barriers:")
     upper_1m, lower_1m = calculator.calculate_dynamic_barriers("1m")
     print(f"   Upper Barrier: {upper_1m:.4f} ({upper_1m*100:.3f}%)")
     print(f"   Lower Barrier: {lower_1m:.4f} ({lower_1m*100:.3f}%)")
 
     # Test dynamic barrier calculation for 5m timeframe
-    print(f"\n📊 Testing 5m Timeframe Barriers:")
+    print(f"\\\n📊 Testing 5m Timeframe Barriers:")
     upper_5m, lower_5m = calculator.calculate_dynamic_barriers("5m")
     print(f"   Upper Barrier: {upper_5m:.4f} ({upper_5m*100:.3f}%)")
     print(f"   Lower Barrier: {lower_5m:.4f} ({lower_5m*100:.3f}%)")
 
     # Test multi-timeframe barrier calculation
-    print(f"\n📊 Testing Multi-timeframe Barriers:")
+    print(f"\\\n📊 Testing Multi-timeframe Barriers:")
     multi_barriers = calculator.calculate_multi_timeframe_barriers()
 
     for timeframe, (upper, lower) in multi_barriers.items():
+    pass
+    pass
         print(f"   {timeframe}: Upper={upper:.4f}, Lower={lower:.4f}")
 
     # Test barrier validation
-    print(f"\n📊 Testing Barrier Validation:")
+    print(f"\\\n📊 Testing Barrier Validation:")
     for timeframe in ["1m", "5m"]:
+    pass
+    pass
         validation = calculator.validate_barrier_calculation(timeframe)
         print(f"   {timeframe} validation: {'✓' if validation['is_valid'] else '✗'}")
         if validation['is_valid']:
+    pass
+    pass
             print(f"     Actual fractions - Upper: {validation['actual_fractions']['upper_barrier']:.2f}, Lower: {validation['actual_fractions']['lower_barrier']:.2f}")
 
     return calculator
 
 
 def test_enhanced_tactician_labeling():
+    pass
+    pass
     """Test the enhanced Tactician labeling with dynamic barriers."""
-    print("\n🧪 Testing Enhanced Tactician Labeling (Dynamic)")
+    print("\\\n🧪 Testing Enhanced Tactician Labeling (Dynamic)")
     print("=" * 60)
 
     # Create test data for both timeframes
@@ -180,7 +199,7 @@ def test_enhanced_tactician_labeling():
     print(f"     Average precision: {precision_scores_1m.mean():.3f}")
 
     # Test 5m labeling
-    print(f"\n📊 Testing 5m Timeframe Labeling:")
+    print(f"\\\n📊 Testing 5m Timeframe Labeling:")
     labeler_5m = TacticianTripleBarrierLabeler(config)
     labeled_data_5m = labeler_5m.apply_labels(market_data_5m, analyst_signals_5m)
 
@@ -197,8 +216,10 @@ def test_enhanced_tactician_labeling():
 
 
 def test_enhanced_execution_manager():
+    pass
+    pass
     """Test the enhanced execution manager with dynamic barriers."""
-    print("\n🧪 Testing Enhanced Execution Manager (Dynamic)")
+    print("\\\n🧪 Testing Enhanced Execution Manager (Dynamic)")
     print("=" * 60)
 
     # Create test data
@@ -242,7 +263,7 @@ def test_enhanced_execution_manager():
     print(f"   Combined confidence: {validation.get('combined_confidence', 0.0):.3f}")
 
     # Test execution parameter calculation for 1m
-    print(f"\n📊 Testing 1m Execution Parameters:")
+    print(f"\\\n📊 Testing 1m Execution Parameters:")
     current_price_1m = market_data_1m['close'].iloc[-1]
 
     execution_params_1m = execution_manager.calculate_execution_parameters(
@@ -253,6 +274,8 @@ def test_enhanced_execution_manager():
     )
 
     if execution_params_1m.get("should_execute", False):
+    pass
+    pass
         print(f"   1m Execution Parameters:")
         print(f"     Trade direction: {execution_params_1m['trade_direction']}")
         print(f"     Entry price: {execution_params_1m['entry_price']:.4f}")
@@ -263,7 +286,7 @@ def test_enhanced_execution_manager():
         print(f"     Precision score: {execution_params_1m['precision_score']:.3f}")
 
     # Test execution parameter calculation for 5m
-    print(f"\n📊 Testing 5m Execution Parameters:")
+    print(f"\\\n📊 Testing 5m Execution Parameters:")
     current_price_5m = market_data_5m['close'].iloc[-1]
 
     execution_params_5m = execution_manager.calculate_execution_parameters(
@@ -274,6 +297,8 @@ def test_enhanced_execution_manager():
     )
 
     if execution_params_5m.get("should_execute", False):
+    pass
+    pass
         print(f"   5m Execution Parameters:")
         print(f"     Trade direction: {execution_params_5m['trade_direction']}")
         print(f"     Entry price: {execution_params_5m['entry_price']:.4f}")
@@ -288,7 +313,7 @@ def test_enhanced_execution_manager():
 
 async def test_supervisor_integration():
     """Test the Supervisor integration with dynamic barriers."""
-    print("\n🧪 Testing Supervisor Integration (Dynamic)")
+    print("\\\n🧪 Testing Supervisor Integration (Dynamic)")
     print("=" * 60)
 
     # Create test data
@@ -344,6 +369,8 @@ async def test_supervisor_integration():
     )
 
     if tactician_decision_1m.get("should_execute", False):
+    pass
+    pass
         print(f"   1m Supervisor Decision:")
         print(f"     Should execute: {tactician_decision_1m['should_execute']}")
         print(f"     Trade direction: {tactician_decision_1m.get('trade_direction', 'unknown')}")
@@ -354,7 +381,7 @@ async def test_supervisor_integration():
         print(f"     Barrier types: {tactician_decision_1m.get('barrier_types', [])}")
         print(f"     Timeframes: {tactician_decision_1m.get('timeframes', [])}")
 
-    print(f"\n📊 Testing 5m Supervisor Integration:")
+    print(f"\\\n📊 Testing 5m Supervisor Integration:")
     tactician_decision_5m = await supervisor._tactician_calculate_execution_parameters(
         market_data=market_data_5m,
         analyst_signals=analyst_signals,
@@ -364,6 +391,8 @@ async def test_supervisor_integration():
     )
 
     if tactician_decision_5m.get("should_execute", False):
+    pass
+    pass
         print(f"   5m Supervisor Decision:")
         print(f"     Should execute: {tactician_decision_5m['should_execute']}")
         print(f"     Trade direction: {tactician_decision_5m.get('trade_direction', 'unknown')}")
@@ -378,8 +407,10 @@ async def test_supervisor_integration():
 
 
 def test_barrier_consistency():
+    pass
+    pass
     """Test barrier consistency across all components."""
-    print("\n🧪 Testing Barrier Consistency")
+    print("\\\n🧪 Testing Barrier Consistency")
     print("=" * 60)
 
     # Test configuration
@@ -410,19 +441,23 @@ def test_barrier_consistency():
     calc_consistent = abs(calc_upper - labeler.upper_barrier_pct) < 0.0001 and abs(calc_lower - labeler.lower_barrier_pct) < 0.0001
     exec_consistent = abs(calc_upper - execution_manager.upper_barrier_pct) < 0.0001 and abs(calc_lower - execution_manager.lower_barrier_pct) < 0.0001
 
-    print(f"\n   Consistency Check:")
+    print(f"\\\n   Consistency Check:")
     print(f"     Calculator ↔ Labeler: {'✓' if calc_consistent else '✗'}")
     print(f"     Calculator ↔ Execution Manager: {'✓' if exec_consistent else '✗'}")
 
     if calc_consistent and exec_consistent:
+    pass
+    pass
         print(f"     All components use consistent barriers ✓")
     else:
         print(f"     Barrier inconsistency detected ✗")
 
 
 def test_fraction_verification():
+    pass
+    pass
     """Test that fractions are correctly applied."""
-    print("\n🧪 Testing Fraction Verification")
+    print("\\\n🧪 Testing Fraction Verification")
     print("=" * 60)
 
     # Test configuration
@@ -463,11 +498,13 @@ def test_fraction_verification():
     upper_correct = abs(actual_upper_fraction - 0.5) < 0.01
     lower_correct = abs(actual_lower_fraction - 0.25) < 0.01
 
-    print(f"\n   Fraction Verification:")
+    print(f"\\\n   Fraction Verification:")
     print(f"     Upper Barrier (50%): {'✓' if upper_correct else '✗'}")
     print(f"     Lower Barrier (25%): {'✓' if lower_correct else '✗'}")
 
     if upper_correct and lower_correct:
+    pass
+    pass
         print(f"     All fractions correctly applied ✓")
     else:
         print(f"     Fraction verification failed ✗")
@@ -484,6 +521,10 @@ async def main():
 
     try:
         # Test 1: Dynamic Barrier Calculator
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         calculator = test_dynamic_barrier_calculator()
 
         # Test 2: Enhanced Tactician Labeling
@@ -501,8 +542,8 @@ async def main():
         # Test 6: Fraction Verification
         test_fraction_verification()
 
-        print("\n✅ Full Dynamic Tactician Implementation Test Completed Successfully!")
-        print("\n📋 Implementation Summary:")
+        print("\\\n✅ Full Dynamic Tactician Implementation Test Completed Successfully!")
+        print("\\\n📋 Implementation Summary:")
         print("   ✓ Dynamic barrier calculation based on Analyst values")
         print("   ✓ Two sets of two barriers (upper and lower)")
         print("   ✓ 50% and 25% fractions of Analyst barriers")
@@ -511,7 +552,7 @@ async def main():
         print("   ✓ All components integrated and consistent")
         print("   ✓ Supervisor integration complete")
 
-        print("\n🎯 Key Features Verified:")
+        print("\\\n🎯 Key Features Verified:")
         print("   • Upper barrier: 50% of Analyst's upper barrier")
         print("   • Lower barrier: 25% of Analyst's lower barrier")
         print("   • Both 1m and 5m timeframes supported")
@@ -520,7 +561,7 @@ async def main():
         print("   • ML model decides timeframe usage")
         print("   • Complete integration across all components")
 
-        print("\n🔧 Technical Implementation:")
+        print("\\\n🔧 Technical Implementation:")
         print("   • DynamicBarrierCalculator: Core barrier calculation")
         print("   • TacticianTripleBarrierLabeler: Enhanced labeling")
         print("   • EnhancedExecutionManager: Execution parameters")
@@ -529,10 +570,12 @@ async def main():
         print("   • Testing: Comprehensive validation")
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

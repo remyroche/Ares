@@ -14,16 +14,19 @@ import pandas as pd
 
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
 from src.utils.intelligent_feature_cache import (
+import cache_feature_engineering,
 	cache_feature_engineering,
 	clear_feature_cache,
 	get_feature_cache,
 )
 from src.utils.parallel_processing_optimizer import (
+import get_parallel_optimizer,
 	get_parallel_optimizer,
 	optimize_for_m1_mac,
 	parallel_feature_engineering,
 )
 from src.utils.centralized_decorators import (
+import circuit_breaker_protection,
 	circuit_breaker_protection,
 	debug_training_step,
 	memory_efficient,
@@ -43,10 +46,14 @@ class OptimizationIntegrationTest:
 	"""
 
     def __init__(self) -> None:
+    pass
+    pass
 		self.logger, logger
 		self.test_results: Dict[str, Any] = {}
 
     def create_test_data(self, rows: int, 1000) -> pd.DataFrame:
+    pass
+    pass
 		"""
 		Create test data for integration testing.
 
@@ -124,6 +131,8 @@ class OptimizationIntegrationTest:
 		return optimized_features
 
 	def _calculate_rsi(self, prices: pd.Series, period: int, 14) -> pd.Series:
+    pass
+    pass
 		"""
 		Calculate RSI indicator.
 
@@ -174,12 +183,18 @@ class OptimizationIntegrationTest:
 
 		# Verify data types are optimized where expected
 		for col, series in result_df.items():
+    pass
+    pass
 			if series.dtype == "float64":
+    pass
+    pass
 				self.logger.warning(f"⚠️ Feature {col} still uses float64")
 
 		return {"features": result_df, "num_features": int(result_df.shape[1])}
 
 	def test_cache_integration(self) -> None:
+    pass
+    pass
 		"""Test cache integration."""
 		self.logger.info("💾 Testing cache integration")
 
@@ -203,6 +218,8 @@ class OptimizationIntegrationTest:
 		self.logger.info("✅ Cache integration test passed")
 
 	def test_parallel_processing_integration(self) -> None:
+    pass
+    pass
 		"""Test parallel processing integration."""
 		self.logger.info("⚡ Testing parallel processing integration")
 
@@ -216,12 +233,16 @@ class OptimizationIntegrationTest:
 
 		# Test M1 detection and apply optimizations (no - op on non - Mac)
 		if system_info["is_m1_mac"]:
+    pass
+    pass
 			self.logger.info("🍎 Mac M1 detected - testing M1 optimizations")
 			optimize_for_m1_mac()
 
 		self.logger.info("✅ Parallel processing integration test passed")
 
 	def test_data_type_optimization_integration(self) -> None:
+    pass
+    pass
 		"""Test data type optimization integration."""
 		self.logger.info("🔧 Testing data type optimization integration")
 
@@ -300,7 +321,7 @@ async def main() -> None:
 	tester, OptimizationIntegrationTest()
 	results, await tester.run_all_tests()
 
-	print("\n📊 Integration Test Results:")
+	print("\\\n📊 Integration Test Results:")
 	print(f"Test data shape: {results['test_data_shape']}")
 	print(f"Features generated: {results['features_generated']}")
 	print(f"Cache hit rate: {results['cache_stats']['hit_rate']:.1%}")
@@ -308,4 +329,6 @@ async def main() -> None:
 	print(f"M1 Mac detected: {results['system_info']['is_m1_mac']}")
 
 if __name__ == "__main__":
+    pass
+    pass
 	asyncio.run(main())

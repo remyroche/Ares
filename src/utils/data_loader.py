@@ -20,6 +20,10 @@ import pandas as pd
 
 try:
     PYARROW_AVAILABLE, True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except ImportError:
     PYARROW_AVAILABLE, False
 
@@ -27,6 +31,8 @@ class PartitionedDataLoader:
     """Enhanced utility class for loading data from partitioned Parquet datasets."""
 
     def __init__(self, logger: logging.Logger | None, None, cache_size: int, 128):
+    pass
+    pass
         self.logger, logger or system_logger
         self.cache_size, cache_size
         self._partition_cache = {}
@@ -72,10 +78,14 @@ class PartitionedDataLoader:
         """
         # Generate cache key if not provided
         if cache_key is None and use_cache:
+    pass
+    pass
             cache_key, f"{base_dir}_{exchange}_{symbol}_{data_type}_{timeframe}_{hash(str(filters))}_{hash(str(columns))}"
 
         # Check cache first
         if use_cache and cache_key in self._partition_cache:
+    pass
+    pass
         self.logger.info(f"📋 Loading from cache: {cache_key}")
         return self._partition_cache[cache_key]
 
@@ -83,11 +93,15 @@ class PartitionedDataLoader:
         dataset_path, os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
 
         if not os.path.exists(dataset_path):
+    pass
+    pass
             msg, f"Partitioned dataset not found: {dataset_path}"
             raise FileNotFoundError(msg)
 
         # Enhanced filter building with partition pruning
         if filters is None:
+    pass
+    pass
         # Fallback implementation for filters
             filters = []
 
@@ -96,24 +110,34 @@ class PartitionedDataLoader:
         symbol_filter = ("symbol", "==", symbol)
 
         if exchange_filter not in filters:
+    pass
+    pass
             filters.append(exchange_filter)
         if symbol_filter not in filters:
+    pass
+    pass
             filters.append(symbol_filter)
 
         # Add timeframe filter if applicable
         if timeframe and timeframe != "1m":  # Default timeframe
             timeframe_filter = ("timeframe", "==", timeframe)
         if timeframe_filter not in filters:
+    pass
+    pass
                 filters.append(timeframe_filter)
 
         # Apply partition pruning if enabled
         if enable_partition_pruning:
+    pass
+    pass
             filters, self._optimize_filters_for_pruning(filters, dataset_path)
 
         self.logger.info(f"📁 Loading partitioned data from: {dataset_path}")
         self.logger.info(f"🔍 Applying filters: {filters}")
 
         if use_streaming and PYARROW_AVAILABLE:
+    pass
+    pass
             result, self._load_with_pyarrow_streaming(
                 dataset_path = dataset_path, filters = filters, columns = columns, max_rows = max_rows, **kwargs
             )
@@ -124,9 +148,13 @@ class PartitionedDataLoader:
 
         # Cache the result
         if use_cache and cache_key:
+    pass
+    pass
         self._partition_cache[cache_key] = result
         # Maintain cache size
         if len(self._partition_cache) > self.cache_size:
+    pass
+    pass
         # Remove oldest entry
             oldest_key, next(iter(self._partition_cache))
             del self._partition_cache[oldest_key]
@@ -160,7 +188,11 @@ class PartitionedDataLoader:
         total_rows, 0
 
         for batch in scanner.to_batches():
+    pass
+    pass
         if max_rows and total_rows >= max_rows:
+    pass
+    pass
                 break
 
             chunk_df, batch.to_pandas()
@@ -173,8 +205,12 @@ class PartitionedDataLoader:
 
         # Final concatenation
         if chunks:
+    pass
+    pass
             result, pd.concat(chunks, ignore_index = True)
         if max_rows and len(result) > max_rows:
+    pass
+    pass
                 result, result.head(max_rows)
         else:
             result, pd.DataFrame()
@@ -202,6 +238,8 @@ class PartitionedDataLoader:
         result, table.to_pandas()
 
         if max_rows and len(result) > max_rows:
+    pass
+    pass
             result, result.head(max_rows)
 
         self.logger.info(f"✅ Loaded {len(result)} rows using PyArrow")
@@ -220,6 +258,8 @@ class PartitionedDataLoader:
         parquet_files, list(Path(dataset_path).rglob("*.parquet"))
 
         if not parquet_files:
+    pass
+    pass
             msg, f"No parquet files found in {dataset_path}"
             raise FileNotFoundError(msg)
 
@@ -230,11 +270,19 @@ class PartitionedDataLoader:
         total_rows, 0
 
         for file_path in parquet_files:
+    pass
+    pass
         if max_rows and total_rows >= max_rows:
+    pass
+    pass
                 break
 
         try:
                 chunk, pd.read_parquet(file_path, columns = columns)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 chunks.append(chunk)
                 total_rows += len(chunk)
         except Exception as e:
@@ -242,8 +290,12 @@ class PartitionedDataLoader:
                 continue
 
         if chunks:
+    pass
+    pass
             result, pd.concat(chunks, ignore_index = True)
         if max_rows and len(result) > max_rows:
+    pass
+    pass
                 result, result.head(max_rows)
         else:
             result, pd.DataFrame()
@@ -252,13 +304,21 @@ class PartitionedDataLoader:
         return result
 
     def _build_filter_expression(self, filters: list) -> ds.Expression | None:
+    pass
+    pass
         """Build PyArrow filter expression from filter list."""
         if not filters or not PYARROW_AVAILABLE:
+    pass
+    pass
         return None
 
         expressions = []
         for field, op, value in filters:
+    pass
+    pass
         if op == "==":
+    pass
+    pass
                 expressions.append(ds.field(field) == value)
             elif op == "!=":
                 expressions.append(ds.field(field) != value)
@@ -274,6 +334,8 @@ class PartitionedDataLoader:
                 expressions.append(ds.field(field).isin(value))
 
         if expressions:
+    pass
+    pass
         return (
                 expressions[0]
         if len(expressions) == 1
@@ -292,23 +354,37 @@ class PartitionedDataLoader:
         dataset_path, os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
 
         if not os.path.exists(dataset_path):
+    pass
+    pass
         return []
 
         partitions = []
         for year_dir in os.listdir(dataset_path):
+    pass
+    pass
             year_path, os.path.join(dataset_path, year_dir)
         if os.path.isdir(year_path) and year_dir.isdigit():
+    pass
+    pass
         for month_dir in os.listdir(year_path):
+    pass
+    pass
                     month_path, os.path.join(year_path, month_dir)
         if os.path.isdir(month_path) and month_dir.isdigit():
+    pass
+    pass
                         partitions.append(f"{year_dir}/{month_dir}")
         return sorted(partitions)
 
     def estimate_dataset_size(self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades") -> dict[str, Any]:
+    pass
+    pass
         """Estimate the size of a partitioned dataset."""
         dataset_path, os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
 
         if not os.path.exists(dataset_path):
+    pass
+    pass
         return {"total_rows": 0, "total_size_mb": 0, "partitions": 0}
 
         total_rows, 0
@@ -316,8 +392,14 @@ class PartitionedDataLoader:
         partition_count, 0
 
         for root, _, files in os.walk(dataset_path):
+    pass
+    pass
         for file in files:
+    pass
+    pass
         if file.endswith(".parquet"):
+    pass
+    pass
                     file_path, os.path.join(root, file)
         # Get file size
                     file_size, os.path.getsize(file_path)
@@ -325,8 +407,14 @@ class PartitionedDataLoader:
 
         # Estimate rows from file size (rough estimate)
         if PYARROW_AVAILABLE:
+    pass
+    pass
         try:
                 parquet_file, pq.ParquetFile(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 total_rows += parquet_file.metadata.num_rows
         except Exception:
         # Fallback estimate: ~1KB per row
@@ -343,6 +431,8 @@ class PartitionedDataLoader:
         }
 
     def _optimize_filters_for_pruning(self, filters: List[Tuple], dataset_path: str) -> List[Tuple]:
+    pass
+    pass
         """Optimize filters for better partition pruning."""
         optimized_filters = []
 
@@ -350,11 +440,17 @@ class PartitionedDataLoader:
         partition_info, self._get_partition_info(dataset_path)
 
         for filter_tuple in filters:
+    pass
+    pass
         if len(filter_tuple) == 3:
+    pass
+    pass
                 column, operator, value, filter_tuple
 
         # Check if this filter can be used for partition pruning
         if column in partition_info.get('partition_columns', []):
+    pass
+    pass
         # Keep partition filters as - is for optimal pruning
                 optimized_filters.append(filter_tuple)
             elif operator in ['==', 'in']:
@@ -367,16 +463,28 @@ class PartitionedDataLoader:
 
     @lru_cache(maxsize = 64)
     def _get_partition_info(self, dataset_path: str) -> Dict[str, Any]:
+    pass
+    pass
         """Get partition information for a dataset (cached)."""
         if PYARROW_AVAILABLE:
+    pass
+    pass
         try:
                 dataset, ds.dataset(dataset_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 schema, dataset.schema
 
         # Extract partition columns from schema
                 partition_columns = []
         for field in schema:
+    pass
+    pass
         if field.name in ['exchange', 'symbol', 'timeframe', 'year', 'month', 'day', 'hour']:
+    pass
+    pass
                         partition_columns.append(field.name)
 
         return {
@@ -390,10 +498,14 @@ class PartitionedDataLoader:
         return {'partition_columns': [], 'schema': None, 'dataset_path': dataset_path}
 
     def get_partition_statistics(self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades") -> Dict[str, Any]:
+    pass
+    pass
         """Get comprehensive statistics about partitioned data."""
         dataset_path, os.path.join(base_dir, f"{data_type}_{exchange}_{symbol}")
 
         if not os.path.exists(dataset_path):
+    pass
+    pass
         return {'error': 'Dataset not found'}
 
         try:
@@ -404,14 +516,22 @@ class PartitionedDataLoader:
                 'partition_counts': {},
                 'date_range': {},
                 'file_sizes': []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         # Walk through partition structure
         for root, dirs, files in os.walk(dataset_path):
+    pass
+    pass
                 parquet_files = [f for f in files if f.endswith('.parquet')]
                 stats['total_files'] += len(parquet_files)
 
         for file in parquet_files:
+    pass
+    pass
                     file_path, os.path.join(root, file)
                     file_size, os.path.getsize(file_path)
                     stats['total_size_bytes'] += file_size
@@ -420,20 +540,32 @@ class PartitionedDataLoader:
         # Extract partition information from path
                 rel_path, os.path.relpath(root, dataset_path)
         if '=' in rel_path:
+    pass
+    pass
                     partition_parts, rel_path.split(os.sep)
         for part in partition_parts:
+    pass
+    pass
         if '=' in part:
+    pass
+    pass
                             key, value, part.split('=', 1)
         if key not in stats['partition_counts']:
+    pass
+    pass
                                 stats['partition_counts'][key] = set()
                             stats['partition_counts'][key].add(value)
 
         # Convert sets to lists for JSON serialization
         for key in stats['partition_counts']:
+    pass
+    pass
                 stats['partition_counts'][key] = list(stats['partition_counts'][key])
 
         # Calculate additional statistics
         if stats['file_sizes']:
+    pass
+    pass
                 stats['avg_file_size'] = sum(stats['file_sizes']) / len(stats['file_sizes'])
                 stats['min_file_size'] = min(stats['file_sizes'])
                 stats['max_file_size'] = max(stats['file_sizes'])
@@ -444,10 +576,14 @@ class PartitionedDataLoader:
         return {'error': str(e)}
 
     def optimize_partition_access(self, base_dir: str, exchange: str, symbol: str, data_type: str = "aggtrades") -> Dict[str, Any]:
+    pass
+    pass
         """Analyze and suggest optimizations for partition access patterns."""
         stats, self.get_partition_statistics(base_dir, exchange, symbol, data_type)
 
         if 'error' in stats:
+    pass
+    pass
         return stats
 
         recommendations = {
@@ -457,8 +593,14 @@ class PartitionedDataLoader:
 
         # Analyze partition distribution
         if 'partition_counts' in stats:
+    pass
+    pass
         for partition_col, values in stats['partition_counts'].items():
+    pass
+    pass
         if len(values) > 100:
+    pass
+    pass
                     recommendations['recommendations'].append({
                         'type': 'high_cardinality',
                         'partition': partition_col,
@@ -475,6 +617,8 @@ class PartitionedDataLoader:
 
         # File size analysis
         if 'avg_file_size' in stats:
+    pass
+    pass
         if stats['avg_file_size'] > 100_000_000:  # 100MB
                 recommendations['recommendations'].append({
                     'type': 'large_files',

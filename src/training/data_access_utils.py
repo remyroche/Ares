@@ -12,6 +12,7 @@ from src.training.data_manager import UnifiedDataManager
 from src.utils.logger import system_logger
 
 
+import def get_data_manager
 def get_data_manager(
     data_dir: str,
     symbol: str = "ETHUSDT",
@@ -62,6 +63,10 @@ def load_training_data(
 
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return data_manager.get_features_and_labels(split_type, label_column)
     except Exception as e:
         error_msg = f"Error loading {split_type} data for {symbol} on {exchange}: {e}"
@@ -96,6 +101,10 @@ def load_validation_data_for_optimization(
             exchange,
             "validation",
             label_column,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         # Convert to numpy arrays and handle missing values
@@ -134,6 +143,10 @@ def get_dataset_metadata(
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return data_manager.get_metadata()
     except Exception as e:
         logger = system_logger.getChild("DataAccessUtils")
@@ -160,6 +173,10 @@ def validate_dataset_integrity(
     """
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return data_manager.validate_database_integrity()
     except Exception as e:
         logger = system_logger.getChild("DataAccessUtils")
@@ -195,6 +212,10 @@ def update_dataset_with_new_features(
 
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         data_manager.update_data_split(split_type, updated_data)
         logger.info(f"Successfully updated {split_type} dataset with new features")
     except Exception as e:
@@ -224,12 +245,20 @@ def check_unified_database_exists(
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if main database file exists
         if not os.path.exists(data_manager.database_file):
+    pass
+    pass
             return False
 
         # Check if metadata file exists
         if not os.path.exists(data_manager.metadata_file):
+    pass
+    pass
             return False
 
         # Try to load a small sample to verify accessibility
@@ -261,6 +290,10 @@ def get_time_splits_info(
     """
     try:
         metadata = get_dataset_metadata(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return metadata.get("splits", {})
     except Exception as e:
         logger = system_logger.getChild("DataAccessUtils")
@@ -289,6 +322,10 @@ def ensure_temporal_consistency(
 
     try:
         data_manager = get_data_manager(data_dir, symbol, exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         validation_results = data_manager.validate_database_integrity()
 
         # Check for temporal ordering issues
@@ -299,6 +336,8 @@ def ensure_temporal_consistency(
         ]
 
         if temporal_issues:
+    pass
+    pass
             return False
 
         logger.info("✅ Temporal consistency verified")
@@ -338,6 +377,8 @@ def get_test_features_and_labels(
 
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
+    pass
+    pass
     """Get the full dataset."""
     data_manager = get_data_manager(data_dir, **kwargs)
     return data_manager.load_data_split("full")

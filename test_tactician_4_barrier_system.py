@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add src to path
+import sys.path.append
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
@@ -21,7 +22,10 @@ from src.training.steps.step14_tactician_labeling import TacticianTripleBarrierL
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 
 
+import def create_test_config
 def create_test_config():
+    pass
+    pass
     """Create test configuration for 4-barrier system."""
     config = {
         "tactician_triple_barrier": {
@@ -43,6 +47,8 @@ def create_test_config():
 
 
 def create_test_market_data():
+    pass
+    pass
     """Create realistic test market data."""
     np.random.seed(42)
 
@@ -55,6 +61,8 @@ def create_test_market_data():
     prices = [base_price]
 
     for i in range(1, 1000):
+    pass
+    pass
         # Random walk with some trend
         change = np.random.normal(0, 0.001)  # 0.1% volatility
         if i > 100 and i < 200:  # Add some trend
@@ -68,6 +76,8 @@ def create_test_market_data():
     # Create OHLC data
     data = []
     for i, (timestamp, price) in enumerate(zip(timestamps, prices)):
+    pass
+    pass
         # Create realistic OHLC from price
         high = price * (1 + abs(np.random.normal(0, 0.0005)))
         low = price * (1 - abs(np.random.normal(0, 0.0005)))
@@ -89,6 +99,8 @@ def create_test_market_data():
 
 
 def create_test_analyst_signals():
+    pass
+    pass
     """Create test Analyst signals."""
     signals = pd.Series(0, index=pd.date_range("2024-01-01 09:00:00", periods=1000, freq="1min"))
 
@@ -104,6 +116,8 @@ def create_test_analyst_signals():
 
 
 def test_dynamic_barrier_calculator():
+    pass
+    pass
     """Test the dynamic barrier calculator with 4 barrier combinations."""
     print("🔧 Testing Dynamic Barrier Calculator (4 Barrier Combinations)")
     print("=" * 60)
@@ -116,29 +130,39 @@ def test_dynamic_barrier_calculator():
 
     print(f"📊 4 Barrier Combinations for 1m timeframe:")
     for name, (upper, lower) in barriers.items():
+    pass
+    pass
         print(f"   {name}: Upper={upper:.4f} ({upper*100:.3f}%), Lower={lower:.4f} ({lower*100:.3f}%)")
 
     # Test multi-timeframe barriers
     multi_tf_barriers = calculator.calculate_multi_timeframe_barriers()
-    print(f"\n📊 Multi-timeframe barriers:")
+    print(f"\\\n📊 Multi-timeframe barriers:")
     for tf, combinations in multi_tf_barriers.items():
+    pass
+    pass
         print(f"   {tf}:")
         for name, (upper, lower) in combinations.items():
+    pass
+    pass
             print(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
 
     # Test validation
     validation = calculator.validate_barrier_calculation("1m")
-    print(f"\n✅ Validation Results:")
+    print(f"\\\n✅ Validation Results:")
     print(f"   Overall Valid: {validation['overall_valid']}")
     for name, result in validation['barrier_combinations'].items():
+    pass
+    pass
         print(f"   {name}: Valid={result['is_valid']}")
 
     return barriers
 
 
 def test_enhanced_prediction_integrator():
+    pass
+    pass
     """Test the enhanced prediction integrator with 4 barrier combinations."""
-    print("\n🔧 Testing Enhanced Prediction Integrator")
+    print("\\\n🔧 Testing Enhanced Prediction Integrator")
     print("=" * 60)
 
     config = create_test_config()
@@ -153,7 +177,9 @@ def test_enhanced_prediction_integrator():
 
     # Test prediction enhancement for each type
     for prediction_type in integrator.prediction_types:
-        print(f"\n📈 Testing {prediction_type}:")
+    pass
+    pass
+        print(f"\\\n📈 Testing {prediction_type}:")
 
         # Test with base value
         base_value = 0.5 if "confidence" in prediction_type else 0.002
@@ -168,14 +194,18 @@ def test_enhanced_prediction_integrator():
 
         print(f"   Base value: {base_value}")
         for barrier_name, value in enhanced_values.items():
+    pass
+    pass
             print(f"   {barrier_name}: {value}")
 
     return integrator
 
 
 def test_step14_tactician_labeling():
+    pass
+    pass
     """Test Step 14 Tactician labeling with 4 barrier combinations."""
-    print("\n🔧 Testing Step 14 Tactician Labeling")
+    print("\\\n🔧 Testing Step 14 Tactician Labeling")
     print("=" * 60)
 
     config = create_test_config()
@@ -198,7 +228,9 @@ def test_step14_tactician_labeling():
     # Check multi-outcome predictions
     non_zero_deviations = labeled_data[labeled_data['tactician_price_deviation'] != 0]
     if len(non_zero_deviations) > 0:
-        print(f"\n📈 Multi-Outcome Predictions:")
+    pass
+    pass
+        print(f"\\\n📈 Multi-Outcome Predictions:")
         print(f"   Price deviations: {len(non_zero_deviations)}")
         print(f"   Average deviation: {non_zero_deviations['tactician_price_deviation'].mean():.4f}")
         print(f"   Average direction: {non_zero_deviations['tactician_price_direction'].mean():.1f}")
@@ -208,8 +240,10 @@ def test_step14_tactician_labeling():
 
 
 def test_enhanced_execution_manager():
+    pass
+    pass
     """Test the enhanced execution manager with 4 barrier combinations."""
-    print("\n🔧 Testing Enhanced Execution Manager")
+    print("\\\n🔧 Testing Enhanced Execution Manager")
     print("=" * 60)
 
     config = create_test_config()
@@ -256,6 +290,8 @@ def test_enhanced_execution_manager():
     print(f"   Valid: {validation_result['valid']}")
     print(f"   Should Execute: {validation_result['should_execute']}")
     if validation_result['valid']:
+    pass
+    pass
         print(f"   Trade Direction: {validation_result['trade_direction']}")
         print(f"   Combined Confidence: {validation_result['combined_confidence']:.3f}")
 
@@ -264,9 +300,11 @@ def test_enhanced_execution_manager():
         analyst_predictions, tactician_predictions
     )
 
-    print(f"\n📊 Execution Parameters:")
+    print(f"\\\n📊 Execution Parameters:")
     print(f"   Should Execute: {execution_params['should_execute']}")
     if execution_params['should_execute']:
+    pass
+    pass
         print(f"   Position Size: {execution_params['position_size']:.3f}")
         print(f"   Entry Price: {execution_params['entry_price']:.2f}")
         print(f"   Stop Loss: {execution_params['stop_loss']:.2f}")
@@ -276,12 +314,18 @@ def test_enhanced_execution_manager():
 
 
 def main():
+    pass
+    pass
     """Run all tests for the 4-barrier system."""
     print("🚀 Testing Tactician 4-Barrier System Implementation")
     print("=" * 80)
 
     try:
         # Test 1: Dynamic Barrier Calculator
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         barriers = test_dynamic_barrier_calculator()
 
         # Test 2: Enhanced Prediction Integrator
@@ -293,9 +337,9 @@ def main():
         # Test 4: Enhanced Execution Manager
         execution_manager = test_enhanced_execution_manager()
 
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
         print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("\n🎯 4-Barrier System Features Verified:")
+        print("\\\n🎯 4-Barrier System Features Verified:")
         print("   ✓ 4 barrier combinations: 50%/50%, 50%/25%, 25%/50%, 25%/25%")
         print("   ✓ Dynamic barrier calculation based on Analyst values")
         print("   ✓ Multi-outcome predictions for all barrier combinations")
@@ -307,7 +351,7 @@ def main():
         print("   ✓ Best barrier combination selection")
         print("   ✓ Multi-timeframe support (1m and 5m)")
 
-        print("\n🔧 Technical Implementation:")
+        print("\\\n🔧 Technical Implementation:")
         print("   • DynamicBarrierCalculator: 4 barrier combinations")
         print("   • TacticianEnhancedPredictionIntegrator: Multi-outcome predictions")
         print("   • TacticianTripleBarrierLabeler: 4-barrier labeling")
@@ -315,7 +359,7 @@ def main():
         print("   • Best performing barrier selection")
         print("   • ML model confidence calculation")
 
-        print("\n📊 Example Output:")
+        print("\\\n📊 Example Output:")
         print("   • upper_50_lower_50: Upper=0.0010 (0.100%), Lower=0.0005 (0.050%)")
         print("   • upper_50_lower_25: Upper=0.0010 (0.100%), Lower=0.0003 (0.025%)")
         print("   • upper_25_lower_50: Upper=0.0005 (0.050%), Lower=0.0005 (0.050%)")
@@ -324,12 +368,14 @@ def main():
         return True
 
     except Exception as e:
-        print(f"\n❌ TEST FAILED: {e}")
+        print(f"\\\n❌ TEST FAILED: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

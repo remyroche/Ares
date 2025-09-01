@@ -7,6 +7,8 @@ This script addresses the complex structural issues that couldn't be fixed with 
 import re
 
 def fix_state_manager():
+    pass
+    pass
     """Fix src/utils/state_manager.py"""
     file_path = "src/utils/state_manager.py"
 
@@ -14,24 +16,28 @@ def fix_state_manager():
         content = f.read()
 
     # Fix variable assignments
-    content = re.sub(r'(\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix function parameter syntax
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     # Fix indentation in try blocks
-    lines = content.split('\n')
+    lines = content.split('\\\n')
     fixed_lines = []
     in_try_block = False
     try_indent = 0
 
     for line in lines:
+    pass
+    pass
         stripped = line.strip()
 
         if stripped.startswith('try:'):
+    pass
+    pass
             in_try_block = True
             try_indent = len(line) - len(line.lstrip())
             fixed_lines.append(line)
@@ -41,12 +47,14 @@ def fix_state_manager():
         elif in_try_block and stripped and not stripped.startswith('#'):
             # Fix indentation for try block content
             if not line.startswith(' ' * (try_indent + 4)):
+    pass
+    pass
                 line = ' ' * (try_indent + 4) + stripped
             fixed_lines.append(line)
         else:
             fixed_lines.append(line)
 
-    content = '\n'.join(fixed_lines)
+    content = '\\\n'.join(fixed_lines)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -54,6 +62,8 @@ def fix_state_manager():
     print(f"✅ Fixed {file_path}")
 
 def fix_model_manager():
+    pass
+    pass
     """Fix src/utils/model_manager.py"""
     file_path = "src/utils/model_manager.py"
 
@@ -61,28 +71,32 @@ def fix_model_manager():
         content = f.read()
 
     # Fix variable assignments
-    content = re.sub(r'(\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix function parameter syntax
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     # Fix getattr calls
-    content = re.sub(r'getattr\((\w+) = (\w+)', r'getattr(\1, \2', content)
+    content = re.sub(r'getattr\\\((\\\w+) = (\\\w+)', r'getattr(\\\1, \\\2', content)
 
     # Fix indentation issues
-    lines = content.split('\n')
+    lines = content.split('\\\n')
     fixed_lines = []
 
     for line in lines:
+    pass
+    pass
         stripped = line.strip()
 
         # Fix excessive indentation
         if line.count(' ') > 40:
+    pass
+    pass
             line = ' ' * 8 + stripped
 
         fixed_lines.append(line)
 
-    content = '\n'.join(fixed_lines)
+    content = '\\\n'.join(fixed_lines)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -90,6 +104,8 @@ def fix_model_manager():
     print(f"✅ Fixed {file_path}")
 
 def fix_config_loader():
+    pass
+    pass
     """Fix src/utils/config_loader.py"""
     file_path = "src/utils/config_loader.py"
 
@@ -97,21 +113,25 @@ def fix_config_loader():
         content = f.read()
 
     # Fix function parameter syntax
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     # Fix function indentation inside classes
-    lines = content.split('\n')
+    lines = content.split('\\\n')
     fixed_lines = []
     in_class = False
     class_indent = 0
 
     for line in lines:
+    pass
+    pass
         stripped = line.strip()
 
         if stripped.startswith('class '):
+    pass
+    pass
             in_class = True
             class_indent = len(line) - len(line.lstrip())
             fixed_lines.append(line)
@@ -122,7 +142,7 @@ def fix_config_loader():
         else:
             fixed_lines.append(line)
 
-    content = '\n'.join(fixed_lines)
+    content = '\\\n'.join(fixed_lines)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -130,6 +150,8 @@ def fix_config_loader():
     print(f"✅ Fixed {file_path}")
 
 def fix_async_utils():
+    pass
+    pass
     """Fix src/utils/async_utils.py"""
     file_path = "src/utils/async_utils.py"
 
@@ -137,21 +159,25 @@ def fix_async_utils():
         content = f.read()
 
     # Fix variable assignments
-    content = re.sub(r'(\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     # Fix function indentation inside classes
-    lines = content.split('\n')
+    lines = content.split('\\\n')
     fixed_lines = []
     in_class = False
     class_indent = 0
 
     for line in lines:
+    pass
+    pass
         stripped = line.strip()
 
         if stripped.startswith('class '):
+    pass
+    pass
             in_class = True
             class_indent = len(line) - len(line.lstrip())
             fixed_lines.append(line)
@@ -162,7 +188,7 @@ def fix_async_utils():
         else:
             fixed_lines.append(line)
 
-    content = '\n'.join(fixed_lines)
+    content = '\\\n'.join(fixed_lines)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -170,6 +196,8 @@ def fix_async_utils():
     print(f"✅ Fixed {file_path}")
 
 def main():
+    pass
+    pass
     """Main function to fix all remaining files"""
     print("🔧 Fixing remaining syntax issues...")
 
@@ -182,4 +210,6 @@ def main():
     print("✅ All files processed!")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

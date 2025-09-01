@@ -22,11 +22,13 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.multi_timeframe_hmm_ensemble import (
+import MultiTimeframeHMMEnsemble,
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
 )
 from src.config.multi_timeframe_hmm_ensemble_config import (
+import get_multi_timeframe_hmm_ensemble_config,
     get_multi_timeframe_hmm_ensemble_config,
 )
 from src.utils.logger import system_logger
@@ -34,6 +36,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -137,6 +140,10 @@ async def run_step(
 
     try:
         logger.info(f"🚀 Starting Step 9.5: Multi - Timeframe HMM Ensemble Training")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info(f"📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
 
         start_time, time.time()
@@ -146,6 +153,8 @@ async def run_step(
         ensemble_config, ensemble_config_dict.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
 
         if not ensemble_config.get("enabled", False):
+    pass
+    pass
             logger.warning("⚠️ Multi - timeframe HMM ensemble is disabled in config")
         return {
                 "status": "SKIPPED",
@@ -158,6 +167,8 @@ async def run_step(
         timeframe_configs = []
 
         for tf, tf_config in timeframes_config.items():
+    pass
+    pass
             timeframe_configs.append(TimeframeConfig(
                 timeframe = tf,
                 weight = tf_config.get("weight", 0.25),
@@ -181,6 +192,8 @@ async def run_step(
         rf_dir, os.path.join(data_dir, "regime_forecasting")
 
         if not os.path.exists(rf_dir):
+    pass
+    pass
             logger.warning(f"⚠️ Regime forecasting directory not found: {rf_dir}")
         return {
                 "status": "FAILED",
@@ -190,14 +203,22 @@ async def run_step(
 
         # Load data for each timeframe
         for tf_config in timeframe_configs:
+    pass
+    pass
             tf, tf_config.timeframe
             rf_path, os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json")
 
         if os.path.exists(rf_path):
+    pass
+    pass
         try:
         with open(rf_path, 'r') as f:
                         rf_data, json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Convert to DataFrame format expected by ensemble
         # Create a simple DataFrame with regime data
                     regime_df, pd.DataFrame({
@@ -215,6 +236,8 @@ async def run_step(
                 logger.warning(f"⚠️ Regime forecasting file not found: {rf_path}")
 
         if not regime_forecasting_data:
+    pass
+    pass
             logger.error("❌ No regime forecasting data available for any timeframe")
         return {
                 "status": "FAILED",
@@ -230,6 +253,8 @@ async def run_step(
         training_success, ensemble.train_ensemble(regime_forecasting_data)
 
         if not training_success:
+    pass
+    pass
             logger.error("❌ Multi - timeframe HMM ensemble training failed")
         return {
                 "status": "FAILED",
@@ -292,6 +317,10 @@ async def validate_step(
     try:
         logger.info(f"🔍 Validating Step 9.5: Multi - Timeframe HMM Ensemble Training")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if ensemble models exist
         models_dir, os.path.join(
             "models", "multi_timeframe_hmm_ensemble", f"{exchange}_{symbol}"
@@ -304,11 +333,17 @@ async def validate_step(
 
         missing_files = []
         for file in required_files:
+    pass
+    pass
             file_path, os.path.join(models_dir, file)
         if not os.path.exists(file_path):
+    pass
+    pass
                 missing_files.append(file)
 
         if missing_files:
+    pass
+    pass
             logger.warning(f"⚠️ Missing ensemble files: {missing_files}")
         return {
                 "validation_passed": False,
@@ -322,11 +357,17 @@ async def validate_step(
         with open(metadata_path, 'r') as f:
                 metadata, json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Validate metadata structure
             required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]
             missing_keys = [key for key in required_keys if key not in metadata]
 
         if missing_keys:
+    pass
+    pass
                 logger.warning(f"⚠️ Missing metadata keys: {missing_keys}")
         return {
                     "validation_passed": False,
@@ -335,6 +376,8 @@ async def validate_step(
                 }
 
         if not metadata.get("trained", False):
+    pass
+    pass
                 logger.warning("⚠️ Ensemble not marked as trained")
         return {
                     "validation_passed": False,

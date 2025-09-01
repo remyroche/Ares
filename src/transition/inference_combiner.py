@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class EnsembleConfig:
     weights: dict[str, float]
@@ -24,6 +25,8 @@ class TransitionInferenceCombiner:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("TransitionInferenceCombiner")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         ens = tm.get("timeframe_ensemble", {}) or {}
@@ -46,22 +49,34 @@ class TransitionInferenceCombiner:
         )
 
     def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
+    pass
+    pass
         try:
             if path and os.path.exists(path):
+    pass
+    except Exception as e:
+        pass
+    pass
                 with open(path) as f:
                     data = json.load(f)
                 # Expecting {timeframe: {path_class: scale}}
                 if isinstance(data, dict):
+    pass
+    pass
                     return {
                         str(tf): {str(k): float(v) for k, v in d.items()}
                         for tf, d in data.items()
                         if isinstance(d, dict)
                     }
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.warning(f"Failed to load transition reliability: {e}")
         return {}
 
     def _apply_reliability(self, timeframe: str, cls: str, p: float) -> float:
+    pass
+    pass
         # Simple multiplicative scaling; can be replaced by calibrated curves later
         s = float(self.reliability.get(timeframe, {}).get(cls, 1.0))
         return max(0.0, min(1.0, p * s))
@@ -78,16 +93,26 @@ class TransitionInferenceCombiner:
         combined: dict[str, float] = {c: 0.0 for c in classes}
         weight_sum = 0.0
         for tf, probs in path_probs_by_timeframe.items():
+    pass
+    pass
             w = float(self.cfg.weights.get(tf, 0.0))
             if w <= 0.0:
+    pass
+    pass
                 continue
             weight_sum += w
             for c in classes:
+    pass
+    pass
                 p = float(probs.get(c, 0.0))
                 p_adj = self._apply_reliability(tf, c, p)
                 combined[c] += w * p_adj
         if weight_sum > 0:
+    pass
+    pass
             for c in combined:
+    pass
+    pass
                 combined[c] /= weight_sum
         return combined
 
@@ -105,14 +130,20 @@ class TransitionInferenceCombiner:
         bot = float(combined_probs.get("beginning_of_trend", 0.0))
         thr_map = self.cfg.timeframe_thresholds.get(timeframe, {})
         if macro_regime and macro_regime in self.cfg.macro_thresholds:
+    pass
+    pass
             thr_map = self.cfg.macro_thresholds[macro_regime].get(timeframe, thr_map)
         thr_cont = float(thr_map.get("continuation", 0.75))
         thr_bot = float(thr_map.get("beginning_of_trend", 0.75))
         allow = False
         trigger = None
         if cont >= thr_cont:
+    pass
+    pass
             allow, trigger = True, "continuation"
         if bot >= thr_bot and bot >= cont:
+    pass
+    pass
             allow, trigger = True, "beginning_of_trend"
         return {
             "allow_trade": allow,

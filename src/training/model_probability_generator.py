@@ -12,6 +12,7 @@ from datetime import datetime
 import logging
 
 from .probability_calculators import (
+import get_probability_calculator,
     get_probability_calculator,
     ClassificationProbabilityCalculator,
     RegressionProbabilityCalculator
@@ -33,6 +34,8 @@ class ModelProbabilityGenerator:
     """
 
     def __init__(self):
+    pass
+    pass
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.classification_calculator = ClassificationProbabilityCalculator()
         self.regression_calculator = RegressionProbabilityCalculator()
@@ -63,6 +66,10 @@ class ModelProbabilityGenerator:
         try:
             self.logger.info(f"Generating probability outputs for {model_type} model")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Get appropriate calculator
             calculator = get_probability_calculator(model_type)
 
@@ -105,10 +112,16 @@ class ModelProbabilityGenerator:
         """Calculate triple barrier probability."""
         try:
             profit_target = kwargs.get('profit_target', 0.02)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             stop_loss = kwargs.get('stop_loss', 0.01)
             volatility_window = kwargs.get('volatility_window', 20)
 
             if isinstance(calculator, ClassificationProbabilityCalculator):
+    pass
+    pass
                 return calculator.calculate_triple_barrier_probability(
                     model, X_test, market_data, profit_target, stop_loss, volatility_window
                 )
@@ -131,6 +144,10 @@ class ModelProbabilityGenerator:
         """Calculate direction probability."""
         try:
             return calculator.calculate_direction_probability(model, X_test, y_test)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
@@ -146,6 +163,10 @@ class ModelProbabilityGenerator:
         """Calculate magnitude probability."""
         try:
             threshold_factor = kwargs.get('threshold_factor', 0.8)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return calculator.calculate_magnitude_probability(
                 model, X_test, market_data, threshold_factor
             )
@@ -164,6 +185,10 @@ class ModelProbabilityGenerator:
         """Calculate barrier avoidance probability."""
         try:
             adverse_threshold = kwargs.get('adverse_threshold', 0.01)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return calculator.calculate_barrier_avoidance_probability(
                 model, X_test, market_data, adverse_threshold
             )
@@ -172,6 +197,8 @@ class ModelProbabilityGenerator:
             return 0.5
 
     def _get_default_probabilities(self, model_type: str) -> Dict[str, float]:
+    pass
+    pass
         """Get default probability values when calculation fails."""
         return {
             "triple_barrier_probability": 0.5,
@@ -184,6 +211,8 @@ class ModelProbabilityGenerator:
         }
 
     def validate_probabilities(self, probabilities: Dict[str, float]) -> bool:
+    pass
+    pass
         """
         Validate that all probability outputs are valid.
 
@@ -202,14 +231,22 @@ class ModelProbabilityGenerator:
 
         # Check all required keys exist
         for key in required_keys:
+    pass
+    pass
             if key not in probabilities:
+    pass
+    pass
                 self.logger.error(f"Missing required probability key: {key}")
                 return False
 
         # Check all probabilities are between 0 and 1
         for key in required_keys:
+    pass
+    pass
             prob = probabilities[key]
             if not isinstance(prob, (int, float)) or not 0.0 <= prob <= 1.0:
+    pass
+    pass
                 self.logger.error(f"Invalid probability value for {key}: {prob}")
                 return False
 
@@ -242,17 +279,29 @@ class ModelProbabilityGenerator:
         """
         try:
             if len(models) != len(model_types):
+    pass
+    except Exception as e:
+        pass
+    pass
                 raise ValueError("Number of models must match number of model types")
 
+    except Exception as e:
+        pass
             if weights is None:
+    pass
+    pass
                 weights = [1.0 / len(models)] * len(models)
 
             if len(weights) != len(models):
+    pass
+    pass
                 raise ValueError("Number of weights must match number of models")
 
             # Generate probabilities for each model
             all_probabilities = []
             for model, model_type in zip(models, model_types):
+    pass
+    pass
                 model_probs = self.generate_price_action_probabilities(
                     model, X_test, y_test, market_data, model_type, **kwargs
                 )
@@ -307,6 +356,10 @@ class ModelProbabilityGenerator:
         """
         try:
             # For now, use standard probability generation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # In the future, this could incorporate calibration-specific adjustments
             probabilities = self.generate_price_action_probabilities(
                 model, X_test, y_test, market_data, model_type, **kwargs

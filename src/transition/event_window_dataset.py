@@ -73,13 +73,19 @@ class EventWindowDatasetBuilder:
         return await self.state_builder.initialize()
 
     def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
+    pass
+    pass
         na = np.linalg.norm(a)
         nb = np.linalg.norm(b)
         if na == 0 or nb == 0:
+    pass
+    pass
             return 0.0
         return float(np.dot(a, b) / (na * nb))
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+    pass
+    pass
         # Summaries for RandomForest: mean/std of key numeric features
         out: dict[str, float] = {}
         for col in [
@@ -97,6 +103,8 @@ class EventWindowDatasetBuilder:
             "volatility_acceleration",
         ]:
             if col in seq_df.columns:
+    pass
+    pass
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
                 out[f"std_{col}"] = float(np.nanstd(s.values))
@@ -114,20 +122,30 @@ class EventWindowDatasetBuilder:
           - tensors: optional stacked arrays for model consumption (can be large; we keep lightweight here)
         """
         if klines_df.empty or combined_df.empty or event_index.empty:
+    pass
+    pass
             return {"samples": []}
 
         # Try dataset cache
         try:
             if self.cache_dir:
+    pass
+    except Exception as e:
+        pass
+    pass
                 os.makedirs(self.cache_dir, exist_ok=True)
                 key = f"dataset_{hash(tuple(klines_df.index))}_{len(event_index)}.npz"
                 p = os.path.join(self.cache_dir, key)
                 meta_p = os.path.join(self.cache_dir, key + ".meta.json")
                 if os.path.exists(p) and os.path.exists(meta_p):
+    pass
+    pass
                     with open(meta_p) as f:
                         meta = json.load(f)
                     # Minimal load path: return meta only; samples remain to be regenerated if needed
                     if meta.get("label_index"):
+    pass
+    pass
                         return {
                             "samples": [],
                             "label_index": meta.get("label_index", []),
@@ -136,12 +154,16 @@ class EventWindowDatasetBuilder:
                                 [],
                             ),
                         }
+    except Exception as e:
+        pass
         except Exception:
             pass
 
         # Infer states for the entire klines_df once
         states_df = self.state_builder.infer_states(klines_df)
         if states_df.empty:
+    pass
+    pass
             return {"samples": []}
         # Merge numeric features if present in combined_df for RF pooling
         # Align indices
@@ -184,16 +206,22 @@ class EventWindowDatasetBuilder:
             & (event_index["row_index"] < len(klines_df) - post)
         ]
         if valid_events.empty:
+    pass
+    pass
             return {"samples": []}
 
         # Optional cap per label
         capped = []
         for _lab, grp in valid_events.groupby("event_label"):
+    pass
+    pass
             capped.append(grp.head(self.ds_cfg.max_events_per_label))
         valid_events = pd.concat(capped).sort_values("row_index")
 
         # Loop and build windows
         for _, ev in valid_events.iterrows():
+    pass
+    pass
             i0 = int(ev["row_index"])
             t0 = klines_df.index[i0]
             # Pre window
@@ -203,6 +231,8 @@ class EventWindowDatasetBuilder:
             Y_states = states_df.iloc[post_slice]
             # Numeric sequence (compact set)
             if present_numeric:
+    pass
+    pass
                 X_num = (
                     pd.to_numeric(
                         combined_num[present_numeric].iloc[pre_slice],
@@ -215,8 +245,14 @@ class EventWindowDatasetBuilder:
                 X_num = np.zeros((pre, 0), dtype=float)
             # Macro context at t0 (static across pre-window for simplicity)
             if bool(self.ctx_cfg.get("enable_macro_context", True)):
+    pass
+    pass
                 try:
                     macro_cols = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     # 1h EMA50 and ATR pct if available
                     if (
                         bool(self.ctx_cfg.get("include_price_over_ema50", True))
@@ -247,6 +283,8 @@ class EventWindowDatasetBuilder:
                             [float(combined_num["4h_hmm_state"].iloc[i0])],
                         )
                     if macro_cols:
+    pass
+    pass
                         macro_vec = np.concatenate(macro_cols, axis=0).astype(float)
                         # replicate across pre timesteps
                         rep = np.repeat(macro_vec.reshape(1, -1), repeats=pre, axis=0)
@@ -261,7 +299,11 @@ class EventWindowDatasetBuilder:
             # Time to PT (approx using close path)
             tt_pt = -1
             for t, r in enumerate(ret_seq, start=1):
+    pass
+    pass
                 if r >= self.pt_mult:
+    pass
+    pass
                     tt_pt = t
                     break
             # Multi-hot labels at t0
@@ -269,7 +311,11 @@ class EventWindowDatasetBuilder:
             # include anchor and secondaries
             mh[label_to_idx[ev["event_label"]]] = 1.0
             for s in ev.get("secondary_labels") or []:
+    pass
+    pass
                 if s in label_to_idx:
+    pass
+    pass
                     mh[label_to_idx[s]] = 1.0
 
             # RF pooled features over pre slice using combined numeric features (when available)
@@ -295,20 +341,30 @@ class EventWindowDatasetBuilder:
 
         # Optional down-sampling of near-duplicate pre sequences using cosine similarity on rf_features vector
         if self.ds_cfg.downsample_near_duplicates and len(samples) > 1:
+    pass
+    pass
             kept: list[dict[str, Any]] = []
             vectors: list[np.ndarray] = []
             for s in samples:
+    pass
+    pass
                 v = np.array(list(s["rf_features"].values()), dtype=float)
                 if v.size == 0:
+    pass
+    pass
                     kept.append(s)
                     vectors.append(v)
                     continue
                 if not vectors:
+    pass
+    pass
                     kept.append(s)
                     vectors.append(v)
                 else:
                     sims = [self._cosine_sim(v, u) for u in vectors if u.size == v.size]
                     if sims and max(sims) >= self.ds_cfg.duplicate_similarity_threshold:
+    pass
+    pass
                         # skip duplicate
                         continue
                     kept.append(s)
@@ -318,6 +374,10 @@ class EventWindowDatasetBuilder:
         # Save minimal meta cache
         try:
             if self.cache_dir:
+    pass
+    except Exception as e:
+        pass
+    pass
                 with open(os.path.join(self.cache_dir, key + ".meta.json"), "w") as f:
                     json.dump(
                         {
@@ -326,6 +386,8 @@ class EventWindowDatasetBuilder:
                         },
                         f,
                     )
+    except Exception as e:
+        pass
         except Exception:
             pass
         return {

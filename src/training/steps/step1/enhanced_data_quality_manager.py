@@ -18,6 +18,7 @@ project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -30,12 +31,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("EnhancedDataQualityManager")
 
 class EnhancedDataQualityManager:
     """Comprehensive data quality manager with gap detection, filling, and validation."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -46,21 +50,41 @@ class EnhancedDataQualityManager:
         self._initialize_components()
 
     def _initialize_components(self) -> None:
+    pass
+    pass
         """Initialize all quality management components."""
         try:
             from .data_gap_detector import DataGapDetector
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.gap_detector, DataGapDetector
         self.gap_detector, DataGapDetector(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import DataGapDetector: {e}")
 
         try:
             from .comprehensive_gap_filler import ComprehensiveGapFiller
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.gap_filler, ComprehensiveGapFiller
         self.gap_filler, ComprehensiveGapFiller(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import ComprehensiveGapFiller: {e}")
 
         try:
             from .aggtrades_validator import AggtradesValidator
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.validator, AggtradesValidator
         self.validator, AggtradesValidator(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
@@ -114,20 +138,32 @@ class EnhancedDataQualityManager:
 
         try:
         # Step 1: Check for data gaps
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if check_gaps and self.gap_detector:
+    pass
+    pass
                 gap_results, await self._check_data_gaps(symbol, exchange, timeframe)
                 results["gaps_detected"] = gap_results.get("gaps", [])
 
         if gap_results.get("gaps"):
+    pass
+    pass
                     logger.warning(f"⚠️ Found {len(gap_results['gaps'])} data gaps")
                     results["recommendations"].append("Data gaps detected - consider filling them")
 
         # Step 2: Fill gaps if requested
         if fill_gaps and self.gap_filler:
+    pass
+    pass
                         fill_results, await self._fill_data_gaps(symbol, exchange, timeframe, gap_results["gaps"])
                         results["gaps_filled"] = fill_results.get("filled_gaps", [])
 
         if fill_results.get("success"):
+    pass
+    pass
                             logger.info(f"✅ Successfully filled {len(fill_results['filled_gaps'])} gaps")
                         else:
                             logger.error("❌ Failed to fill some data gaps")
@@ -135,11 +171,15 @@ class EnhancedDataQualityManager:
 
         # Step 3: Validate data format
         if validate_format and self.validator:
+    pass
+    pass
                 format_results, await self._validate_data_format(symbol, exchange, timeframe)
                 results["format_issues"] = format_results.get("issues", [])
                 results["quality_metrics"] = format_results.get("metrics", {})
 
         if format_results.get("issues"):
+    pass
+    pass
                     logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
                     results["recommendations"].append("Data format issues detected - consider fixing them")
 
@@ -149,6 +189,8 @@ class EnhancedDataQualityManager:
             results["missing_for_steps"] = completeness_results.get("missing", [])
 
         if not completeness_results.get("ready"):
+    pass
+    pass
                 results["recommendations"].append("Data not ready for step3 / step4 - additional data needed")
 
             logger.info(f"✅ Comprehensive quality check completed for {exchange}_{symbol}_{timeframe}")
@@ -165,6 +207,8 @@ class EnhancedDataQualityManager:
     async def _check_data_gaps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Check for data gaps using the gap detector."""
         if not self.gap_detector:
+    pass
+    pass
         return {"gaps": [], "error": "Gap detector not available"}
 
         try:
@@ -173,8 +217,14 @@ class EnhancedDataQualityManager:
 
             gaps = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Process missing aggtrades
         for day in missing_data.get("missing_aggtrades_days", []):
+    pass
+    pass
                 gaps.append({
                     "type": "aggtrades",
                     "date": day,
@@ -184,6 +234,8 @@ class EnhancedDataQualityManager:
 
         # Process missing klines
         for month in missing_data.get("missing_klines_months", []):
+    pass
+    pass
                 gaps.append({
                     "type": "klines",
                     "date": month,
@@ -193,6 +245,8 @@ class EnhancedDataQualityManager:
 
         # Process missing futures
         for month in missing_data.get("missing_futures_months", []):
+    pass
+    pass
                 gaps.append({
                     "type": "futures",
                     "date": month,
@@ -211,19 +265,35 @@ class EnhancedDataQualityManager:
     async def _fill_data_gaps(self, symbol: str, exchange: str, timeframe: str, gaps: List[Dict]) -> Dict[str, Any]:
         """Fill detected data gaps using the gap filler."""
         if not self.gap_filler:
+    pass
+    pass
         return {"filled_gaps": [], "error": "Gap filler not available"}
 
         try:
             filled_gaps = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for gap in gaps:
+    pass
+    pass
         try:
         if gap["type"] == "aggtrades":
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         # Fill aggtrades gap
                         success, await self.gap_filler.fill_aggtrades_gap(
                             symbol, exchange, gap["date"]
                         )
         if success:
+    pass
+    pass
                             filled_gaps.append(gap)
 
                     elif gap["type"] == "klines":
@@ -232,6 +302,8 @@ class EnhancedDataQualityManager:
                             symbol, exchange, timeframe, gap["date"]
                         )
         if success:
+    pass
+    pass
                             filled_gaps.append(gap)
 
                     elif gap["type"] == "futures":
@@ -240,6 +312,8 @@ class EnhancedDataQualityManager:
                             symbol, exchange, gap["date"]
                         )
         if success:
+    pass
+    pass
                             filled_gaps.append(gap)
 
         except Exception as e:
@@ -260,17 +334,27 @@ class EnhancedDataQualityManager:
     async def _validate_data_format(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate data format using the validator."""
         if not self.validator:
+    pass
+    pass
         return {"issues": [], "metrics": {}, "error": "Validator not available"}
 
         try:
             issues = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             metrics = {}
 
         # Validate aggtrades files
             aggtrades_files, self.validator.get_aggtrades_files(symbol, exchange)
         for file_path in aggtrades_files:
+    pass
+    pass
                 validation_result, self.validator.validate_file_format(file_path)
         if not validation_result.get("valid", False):
+    pass
+    pass
                     issues.extend(validation_result.get("issues", []))
 
         # Collect metrics
@@ -285,8 +369,14 @@ class EnhancedDataQualityManager:
             klines_files, list(self.data_cache_path.glob(klines_pattern))
 
         for file_path in klines_files:
+    pass
+    pass
         try:
                     df, pd.read_parquet(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     metrics[f"klines_{file_path.name}"] = {
                         "file_size": file_path.stat().st_size,
                         "row_count": len(df),
@@ -316,19 +406,31 @@ class EnhancedDataQualityManager:
         """Check if data is complete for step3 and step4 requirements."""
         try:
             missing = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ready, True
 
         # Check for unified data (required by step01_5)
             unified_path, self.data_cache_path / "unified" / exchange.lower() / symbol / timeframe
         if not unified_path.exists():
+    pass
+    pass
                 missing.append("Unified data directory not found")
                 ready, False
 
         # Check for minimum data requirements for HMM (step3)
             klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
+    pass
+    pass
         try:
                     df, pd.read_parquet(klines_file)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(df) < 10000:  # Minimum rows for HMM
                         missing.append("Insufficient klines data for HMM analysis")
                         ready, False
@@ -337,6 +439,8 @@ class EnhancedDataQualityManager:
                     required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
                     missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
+    pass
+    pass
                         missing.append(f"Missing required columns: {missing_columns}")
                         ready, False
 
@@ -350,6 +454,8 @@ class EnhancedDataQualityManager:
         # Check for aggtrades data (required for step4 labeling)
             aggtrades_file, self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
         if not aggtrades_file.exists():
+    pass
+    pass
                 missing.append("Aggtrades consolidated file not found")
                 ready, False
 
@@ -390,7 +496,13 @@ class EnhancedDataQualityManager:
                 check_gaps = True, fill_gaps = True, validate_format = True
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not quality_results.get("success", False):
+    pass
+    pass
                 logger.error("❌ Data quality check failed")
         return {
                     "success": False,
@@ -402,12 +514,16 @@ class EnhancedDataQualityManager:
             completeness_results, await self._check_step3_step4_completeness(symbol, exchange, timeframe)
 
         if not completeness_results.get("ready", False):
+    pass
+    pass
                 logger.warning("⚠️ Data not ready for step3 / step4, attempting to fix...")
 
         # Try to use step1 and step01_5 components to get missing data
                 fix_results, await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
 
         if not fix_results.get("success", False):
+    pass
+    pass
         return {
                         "success": False,
                         "error": "Failed to prepare data for step3 / step4",
@@ -441,9 +557,19 @@ class EnhancedDataQualityManager:
         try:
             logger.info("🔄 Attempting to fix missing data using step1 / step01_5 components...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Try to run step1 data collection if needed
         try:
                 from ..step1_data_collection import run_step as run_step1
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import step1_success, await run_step1
                 step1_success, await run_step1(
                     symbol = symbol,
                     exchange = exchange,
@@ -452,6 +578,8 @@ class EnhancedDataQualityManager:
                 )
 
         if step1_success:
+    pass
+    pass
                     logger.info("✅ Step1 data collection completed successfully")
                 else:
                     logger.warning("⚠️ Step1 data collection failed")
@@ -463,6 +591,12 @@ class EnhancedDataQualityManager:
         # Try to run step01_5 data conversion if needed
         try:
                 from ..step01_5_data_converter import run_step as run_step01_5
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import step01_5_success, await run_step01_5
                 step01_5_success, await run_step01_5(
                     symbol = symbol,
                     exchange = exchange,
@@ -471,6 +605,8 @@ class EnhancedDataQualityManager:
                 )
 
         if step01_5_success:
+    pass
+    pass
                     logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
                     logger.warning("⚠️ Step1_5 data conversion failed")

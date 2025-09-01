@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class LeverageConfig:
     """Optimizable leverage parameters."""
@@ -46,7 +47,11 @@ class LeverageConfig:
     leverage_decay_threshold: float = 0.8
 
     def __post_init__(self):
+    pass
+    pass
         if self.leverage_risk_levels is None:
+    pass
+    pass
             self.leverage_risk_levels = {
                 10: 0.1,   # 10x leverage: can handle 10% adverse movement
                 15: 0.08,  # 15x leverage: can handle 8% adverse movement
@@ -61,6 +66,8 @@ class LeverageConfig:
             }
 
         if self.confidence_leverage_thresholds is None:
+    pass
+    pass
             self.confidence_leverage_thresholds = {
                 "low_confidence": 0.6,
                 "medium_confidence": 0.75,
@@ -69,6 +76,8 @@ class LeverageConfig:
             }
 
         if self.confidence_leverage_multipliers is None:
+    pass
+    pass
             self.confidence_leverage_multipliers = {
                 "low_confidence": 0.5,
                 "medium_confidence": 0.8,
@@ -78,11 +87,15 @@ class LeverageConfig:
 
 
 def get_leverage_config() -> LeverageConfig:
+    pass
+    pass
     """Get leverage configuration."""
     return LeverageConfig()
 
 
 def get_leverage_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for leverage optimization."""
     return {
         "safe_leverage_multiplier": {"min": 0.5, "max": 1.0, "type": "float"},

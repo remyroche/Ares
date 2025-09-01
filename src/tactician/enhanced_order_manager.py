@@ -16,6 +16,7 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 # from src.utils.prometheus_metrics import metrics  # Temporarily commented due to syntax errors
 from src.utils.warning_symbols import (
+import failed,
     failed,
     missing,
 )
@@ -115,6 +116,8 @@ class EnhancedOrderManager:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize the enhanced order manager.
 
@@ -151,6 +154,10 @@ class EnhancedOrderManager:
         try:
             self.logger.info("Initializing Enhanced Order Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Clear any existing state
             self.active_orders.clear()
             self.order_history.clear()
@@ -179,7 +186,13 @@ class EnhancedOrderManager:
         """
         try:
             # Validate order request
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self._validate_order_request(order_request):
+    pass
+    pass
                 self.logger.error(invalid("Invalid order request"))
                 return None
 
@@ -210,6 +223,8 @@ class EnhancedOrderManager:
             return None
 
     def _validate_order_request(self, order_request: OrderRequest) -> bool:
+    pass
+    pass
         """
         Validate order request parameters.
 
@@ -221,20 +236,36 @@ class EnhancedOrderManager:
         """
         try:
             if not order_request.symbol:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(missing("Symbol is required"))
                 return False
 
+    except Exception as e:
+        pass
             if order_request.quantity <= 0:
+    pass
+    pass
                 self.logger.error(invalid("Quantity must be positive"))
                 return False
 
             if order_request.order_type in [OrderType.LIMIT, OrderType.STOP_LIMIT]:
+    pass
+    pass
                 if order_request.price is None or order_request.price <= 0:
+    pass
+    pass
                     self.logger.error(missing("Price is required for limit orders"))
                     return False
 
             if order_request.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
+    pass
+    pass
                 if order_request.stop_price is None or order_request.stop_price <= 0:
+    pass
+    pass
                     self.logger.error(missing("Stop price is required for stop orders"))
                     return False
 
@@ -262,14 +293,24 @@ class EnhancedOrderManager:
         """
         try:
             if order_id not in self.active_orders:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(missing(f"Order {order_id} not found"))
                 return None
 
+    except Exception as e:
+        pass
             order_state = self.active_orders[order_id]
 
             # Apply updates
             for key, value in updates.items():
+    pass
+    pass
                 if hasattr(order_state, key):
+    pass
+    pass
                     setattr(order_state, key, value)
 
             order_state.updated_time = datetime.now()
@@ -298,9 +339,15 @@ class EnhancedOrderManager:
         """
         try:
             if order_id not in self.active_orders:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(missing(f"Order {order_id} not found"))
                 return False
 
+    except Exception as e:
+        pass
             order_state = self.active_orders[order_id]
             order_state.status = OrderStatus.CANCELLED
             order_state.updated_time = datetime.now()
@@ -337,9 +384,15 @@ class EnhancedOrderManager:
         """
         try:
             if order_id not in self.active_orders:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(missing(f"Order {order_id} not found"))
                 return None
 
+    except Exception as e:
+        pass
             order_state = self.active_orders[order_id]
 
             # Add fill to order
@@ -355,6 +408,8 @@ class EnhancedOrderManager:
 
             # Update status
             if order_state.remaining_quantity <= 0:
+    pass
+    pass
                 order_state.status = OrderStatus.FILLED
                 # Move to history
                 self.order_history.append(order_state)
@@ -375,6 +430,8 @@ class EnhancedOrderManager:
             return None
 
     def get_active_orders(self) -> Dict[str, OrderState]:
+    pass
+    pass
         """
         Get all active orders.
 
@@ -384,6 +441,8 @@ class EnhancedOrderManager:
         return self.active_orders.copy()
 
     def get_order_history(self) -> List[OrderState]:
+    pass
+    pass
         """
         Get order history.
 
@@ -393,6 +452,8 @@ class EnhancedOrderManager:
         return self.order_history.copy()
 
     def get_order(self, order_id: str) -> Optional[OrderState]:
+    pass
+    pass
         """
         Get a specific order.
 
@@ -411,8 +472,14 @@ class EnhancedOrderManager:
         try:
             self.logger.info("Cleaning up Enhanced Order Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Cancel all active orders
             for order_id in list(self.active_orders.keys()):
+    pass
+    pass
                 await self.cancel_order(order_id)
 
             self.logger.info("✅ Enhanced Order Manager cleanup completed")

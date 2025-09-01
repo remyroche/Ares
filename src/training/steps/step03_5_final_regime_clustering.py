@@ -16,10 +16,12 @@ import pandas as pd
 from datetime import datetime
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -36,12 +38,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("Step3_5FinalRegimeClustering")
 
 class FinalRegimeClusteringStep:
     """Step 3.5: Final Regime Clustering with Advanced Reporting."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time, None
@@ -51,10 +56,16 @@ class FinalRegimeClusteringStep:
 
     @secure_step_execution
     def _initialize_components(self) -> None:
+    pass
+    pass
         """Initialize regime clustering components."""
         self.logger.info("🔧 Initializing final regime clustering components...")
         try:
         # Load optimized parameters from step3
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self._load_optimized_parameters()
         self.logger.info("✅ Final regime clustering components initialized successfully")
 
@@ -64,11 +75,19 @@ class FinalRegimeClusteringStep:
 
     @secure_data_processing
     def _load_optimized_parameters(self) -> None:
+    pass
+    pass
         """Load optimized parameters from step3."""
         try:
         # Load parameter optimization results
             param_file, Path("data / optimization / parameter_optimization_results.json")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if param_file.exists():
+    pass
+    pass
         with open(param_file, 'r') as f:
                     param_results, json.load(f)
         self.optimized_params, param_results.get("combined_parameters", {})
@@ -95,6 +114,10 @@ class FinalRegimeClusteringStep:
         """Initialize the final regime clustering step."""
         try:
         self.logger.info("🚀 Initializing final regime clustering step...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(f"📋 Optimized parameters loaded: {len(self.optimized_params)} parameters")
         self.logger.info("✅ Final regime clustering step initialized successfully")
         return True
@@ -115,11 +138,17 @@ class FinalRegimeClusteringStep:
         """Execute the final regime clustering step."""
         try:
         self.logger.info("🎯 Starting final regime clustering with advanced reporting...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.start_time, time.time()
 
         # Step 1: Load and prepare data
             data_loaded, await self._load_and_prepare_data()
         if not data_loaded.get("success", False):
+    pass
+    pass
         self.logger.error("Failed to load and prepare data")
         return False
 
@@ -159,6 +188,10 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("📊 Loading and preparing data for regime clustering...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get data parameters from config
             symbol, self.config.get("SYMBOL", "ETHUSDT")
             exchange, self.config.get("EXCHANGE", "BINANCE")
@@ -169,6 +202,8 @@ class FinalRegimeClusteringStep:
             klines_path, Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
 
         if not klines_path.exists():
+    pass
+    pass
         self.logger.error(f"❌ Klines file not found: {klines_path}")
         return {
                     "success": False,
@@ -179,6 +214,8 @@ class FinalRegimeClusteringStep:
             df, pd.read_parquet(klines_path)
 
         if df.empty:
+    pass
+    pass
         self.logger.error("❌ Data is empty")
         return {
                     "success": False,
@@ -220,8 +257,14 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("🔧 Preparing features with optimized parameters...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Ensure timestamp is datetime
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
+    pass
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
 
         # Sort by timestamp
@@ -286,6 +329,10 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("🧠 Performing HMM regime discovery...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get optimized HMM parameters
             n_components, self.optimized_params.get("n_components", 4)
             covariance_type, self.optimized_params.get("covariance_type", "full")
@@ -296,15 +343,23 @@ class FinalRegimeClusteringStep:
             features, await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
+    pass
+    pass
         self.logger.error("No features available for HMM analysis")
         return {}
 
         # Try to import hmmlearn
         try:
                 from hmmlearn import hmm
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
                 from sklearn.preprocessing import StandardScaler
 
         # Scale features
+import scaler, StandardScaler
                 scaler, StandardScaler()
                 features_scaled, scaler.fit_transform(features)
 
@@ -353,6 +408,10 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("📊 Performing simple regime detection...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Use volatility and momentum for regime classification
             volatility, features.get("volatility", pd.Series([0] * len(features)))
             momentum, features.get("price_momentum", pd.Series([0] * len(features)))
@@ -364,11 +423,15 @@ class FinalRegimeClusteringStep:
         # Classify regimes
             regimes = []
         for i in range(len(features)):
+    pass
+    pass
                 vol, volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
                 mom, momentum.iloc[i] if hasattr(momentum, 'iloc') else momentum[i]
 
         if vol > 0.02:  # High volatility
         if mom > 0.001:
+    pass
+    pass
                         regime, 0  # High volatility bull
                     elif mom < -0.001:
                         regime, 1  # High volatility bear
@@ -376,6 +439,8 @@ class FinalRegimeClusteringStep:
                         regime, 2  # High volatility neutral
                 else:  # Low volatility
         if mom > 0.001:
+    pass
+    pass
                         regime, 3  # Low volatility bull
                     elif mom < -0.001:
                         regime, 4  # Low volatility bear
@@ -410,6 +475,10 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("🎯 Performing final clustering...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get optimized clustering parameters
             n_clusters, self.optimized_params.get("n_clusters", 20)
             method, self.optimized_params.get("method", "kmeans")
@@ -419,29 +488,39 @@ class FinalRegimeClusteringStep:
             features, await self._prepare_features_with_optimized_params(data)
 
         if features.empty:
+    pass
+    pass
         self.logger.error("No features available for clustering")
         return {}
 
         # Create composite features with HMM states
         if hmm_results and "state_sequence" in hmm_results:
+    pass
+    pass
                 composite_features, features.copy()
                 composite_features["hmm_state"] = hmm_results["state_sequence"]
                 composite_features["hmm_state_prob_max"] = np.max(hmm_results["state_probs"], axis = 1)
 
         # Add HMM state interactions
         for col in features.columns:
+    pass
+    pass
                     composite_features[f"{col}_x_hmm_state"] = features[col] * hmm_results["state_sequence"]
             else:
                 composite_features, features
 
         # Scale features
             from sklearn.preprocessing import StandardScaler
+import scaler, StandardScaler
             scaler, StandardScaler()
             features_scaled, scaler.fit_transform(composite_features)
 
         # Perform clustering
         if method == "kmeans":
+    pass
+    pass
                 from sklearn.cluster import KMeans
+import clustering, KMeans
                 clustering, KMeans(
                     n_clusters = n_clusters,
                     random_state = random_state,
@@ -452,6 +531,7 @@ class FinalRegimeClusteringStep:
             else:
         # Default to K - means
                 from sklearn.cluster import KMeans
+import clustering, KMeans
                 clustering, KMeans(
                     n_clusters = n_clusters,
                     random_state = random_state,
@@ -488,7 +568,13 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("🔍 Analyzing regime characteristics...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not clustering_results or "cluster_labels" not in clustering_results:
+    pass
+    pass
         self.logger.error("No clustering results available for analysis")
         return {}
 
@@ -507,6 +593,8 @@ class FinalRegimeClusteringStep:
             unique_clusters, np.unique(cluster_labels)
 
         for cluster_id in unique_clusters:
+    pass
+    pass
                 cluster_mask, cluster_labels == cluster_id
                 cluster_data, data[cluster_mask]
                 cluster_features, features[cluster_mask] if not features.empty else pd.DataFrame()
@@ -523,6 +611,8 @@ class FinalRegimeClusteringStep:
 
         # Price characteristics
         if not cluster_data.empty:
+    pass
+    pass
                     cluster_stats["price_stats"] = {
                         "mean_price": float(cluster_data["close"].mean()),
                         "price_volatility": float(cluster_data["close"].pct_change().std()),
@@ -531,6 +621,8 @@ class FinalRegimeClusteringStep:
 
         # Volume characteristics
         if not cluster_data.empty:
+    pass
+    pass
                     cluster_stats["volume_stats"] = {
                         "mean_volume": float(cluster_data["volume"].mean()),
                         "volume_volatility": float(cluster_data["volume"].pct_change().std())
@@ -557,26 +649,42 @@ class FinalRegimeClusteringStep:
         context="analyze_regime_transitions"
     )
     def _analyze_regime_transitions(self, cluster_labels: np.ndarray) -> dict[str, Any]:
+    pass
+    pass
         """Analyze regime transition patterns."""
         try:
             transitions = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for i in range(len(cluster_labels) - 1):
+    pass
+    pass
                 current_regime, cluster_labels[i]
                 next_regime, cluster_labels[i + 1]
 
         if current_regime not in transitions:
+    pass
+    pass
                     transitions[current_regime] = {}
 
         if next_regime not in transitions[current_regime]:
+    pass
+    pass
                     transitions[current_regime][next_regime] = 0
 
                 transitions[current_regime][next_regime] += 1
 
         # Convert to probabilities
         for current_regime in transitions:
+    pass
+    pass
                 total, sum(transitions[current_regime].values())
         for next_regime in transitions[current_regime]:
+    pass
+    pass
                     transitions[current_regime][next_regime] /= total
 
         return transitions
@@ -591,17 +699,29 @@ class FinalRegimeClusteringStep:
         context="analyze_regime_persistence"
     )
     def _analyze_regime_persistence(self, cluster_labels: np.ndarray) -> dict[str, Any]:
+    pass
+    pass
         """Analyze how long regimes persist."""
         try:
             persistence = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             current_regime, cluster_labels[0]
             current_duration, 1
 
         for i in range(1, len(cluster_labels)):
+    pass
+    pass
         if cluster_labels[i] == current_regime:
+    pass
+    pass
                     current_duration += 1
                 else:
         if current_regime not in persistence:
+    pass
+    pass
                         persistence[current_regime] = []
                     persistence[current_regime].append(current_duration)
                     current_regime, cluster_labels[i]
@@ -609,12 +729,16 @@ class FinalRegimeClusteringStep:
 
         # Handle last regime
         if current_regime not in persistence:
+    pass
+    pass
                 persistence[current_regime] = []
             persistence[current_regime].append(current_duration)
 
         # Calculate statistics
             persistence_stats = {}
         for regime, durations in persistence.items():
+    pass
+    pass
                 persistence_stats[regime] = {
                     "mean_duration": np.mean(durations),
                     "median_duration": np.median(durations),
@@ -647,8 +771,14 @@ class FinalRegimeClusteringStep:
                 "recommendations": {}
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Clustering summary
         if clustering_results:
+    pass
+    pass
                 reports["clustering_summary"] = {
                     "n_clusters": clustering_results.get("n_clusters", 0),
                     "method": clustering_results.get("method", "unknown"),
@@ -658,6 +788,8 @@ class FinalRegimeClusteringStep:
 
         # Regime analysis summary
         if regime_analysis:
+    pass
+    pass
                 reports["regime_analysis"] = {
                     "total_clusters": len(regime_analysis.get("cluster_statistics", {})),
                     "regime_transitions_analyzed": len(regime_analysis.get("regime_transitions", {})),
@@ -697,6 +829,10 @@ class FinalRegimeClusteringStep:
         try:
         self.logger.info("💾 Saving final regime clustering results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create results directory
             results_dir, Path("data / regime_clustering")
             results_dir.mkdir(parents = True, exist_ok = True)
@@ -711,8 +847,12 @@ class FinalRegimeClusteringStep:
         # Convert numpy arrays to lists for JSON serialization
                 serializable_results, clustering_results.copy()
         if "cluster_labels" in serializable_results:
+    pass
+    pass
                     serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
         if "state_sequence" in serializable_results.get("hmm_results", {}):
+    pass
+    pass
                     serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
 
                 json.dump(serializable_results, f, indent = 2, default = str)
@@ -776,6 +916,8 @@ class FinalRegimeClusteringStep:
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series, window: int, 14) -> pd.Series:
+    pass
+    pass
         """Calculate Relative Strength Index."""
         delta, prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window = window).mean()
@@ -790,6 +932,8 @@ class FinalRegimeClusteringStep:
         context="calculate_macd"
     )
     def _calculate_macd(self, prices: pd.Series, fast: int, 12, slow: int, 26) -> pd.Series:
+    pass
+    pass
         """Calculate MACD."""
         ema_fast, prices.ewm(span = fast).mean()
         ema_slow, prices.ewm(span = slow).mean()
@@ -802,6 +946,8 @@ class FinalRegimeClusteringStep:
         context="calculate_atr"
     )
     def _calculate_atr(self, df: pd.DataFrame, window: int, 14) -> pd.Series:
+    pass
+    pass
         """Calculate Average True Range."""
         high, df["high"]
         low, df["low"]
@@ -825,6 +971,10 @@ class FinalRegimeClusteringStep:
         """Clean up resources after regime clustering."""
         try:
         self.logger.info("🧹 Cleaning up regime clustering resources...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Regime clustering cleanup completed")
         return True
 
@@ -843,11 +993,17 @@ async def run_step(config: dict[str, Any]) -> bool:
     try:
         logger.info("🚀 Starting Step 3.5: Final Regime Clustering with Advanced Reporting")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create and initialize the step
         step, FinalRegimeClusteringStep(config)
 
         # Initialize the step
         if not await step.initialize():
+    pass
+    pass
             logger.error("Failed to initialize regime clustering step")
         return False
 
@@ -858,6 +1014,8 @@ async def run_step(config: dict[str, Any]) -> bool:
         await step.cleanup()
 
         if success:
+    pass
+    pass
             logger.info("✅ Step 3.5: Final Regime Clustering completed successfully")
         else:
             logger.error("❌ Step 3.5: Final Regime Clustering failed")
@@ -869,6 +1027,8 @@ async def run_step(config: dict[str, Any]) -> bool:
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     import asyncio
 

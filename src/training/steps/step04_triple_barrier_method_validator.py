@@ -9,11 +9,13 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -55,6 +57,10 @@ async def run_validator(
 
     try:
         # Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -64,6 +70,8 @@ async def run_validator(
         triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
 
         if not triple_barrier_path.exists():
+    pass
+    pass
             logger.error(f"❌ Triple barrier labels file not found: {triple_barrier_path}")
             return {
                 "step_name": "step04_triple_barrier_method",
@@ -74,6 +82,8 @@ async def run_validator(
         # Check file size
         file_size = triple_barrier_path.stat().st_size
         if file_size == 0:
+    pass
+    pass
             logger.error(f"❌ Triple barrier labels file is empty: {triple_barrier_path}")
             return {
                 "step_name": "step04_triple_barrier_method",
@@ -84,6 +94,10 @@ async def run_validator(
         # Try to read the file to validate structure
         try:
             import pandas as pd
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             data = pd.read_parquet(triple_barrier_path)
 
             # Check required columns
@@ -91,6 +105,8 @@ async def run_validator(
             missing_columns = [col for col in required_columns if col not in data.columns]
 
             if missing_columns:
+    pass
+    pass
                 logger.error(f"❌ Missing required columns: {missing_columns}")
                 return {
                     "step_name": "step04_triple_barrier_method",
@@ -100,6 +116,8 @@ async def run_validator(
 
             # Check data quality
             if len(data) == 0:
+    pass
+    pass
                 logger.error("❌ No data rows found")
                 return {
                     "step_name": "step04_triple_barrier_method",
@@ -113,6 +131,8 @@ async def run_validator(
 
             # Check for reasonable label distribution (should have some non-zero labels)
             if 0 in label_counts and label_counts[0] == len(data):
+    pass
+    pass
                 logger.warning("⚠️ All labels are 0 (hold) - this might indicate an issue")
                 return {
                     "step_name": "step04_triple_barrier_method",
@@ -146,6 +166,8 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the validator
     async def test():
         test_input = {

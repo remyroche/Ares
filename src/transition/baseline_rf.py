@@ -10,6 +10,10 @@ import pandas as pd
 
 try:
     import shap  # type: ignore
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
 
@@ -26,6 +30,8 @@ class RFConfig:
 class TransitionRandomForest:
     pass  # TODO: Add proper implementation
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("TransitionRandomForest")
         tm = (config or {}).get("TRANSITION_MODELING", {})
         rfc = tm.get("baseline_random_forest", {})
@@ -50,10 +56,14 @@ class TransitionRandomForest:
         rows: list[dict[str, Any]] = []
         y: list[str] = []
         for s in samples:
+    pass
+    pass
             rf = dict(s.get("rf_features", {}))
             # attach multi-hot context as features
             mh = np.array(s.get("multi_hot_labels"), dtype=float)
             for i, lab in enumerate(label_index):
+    pass
+    pass
                 rf[f"ctx_label_{lab}"] = float(mh[i] if i < len(mh) else 0.0)
             # add event anchor
             rf["anchor_label"] = s.get("event_label", "")
@@ -72,10 +82,14 @@ class TransitionRandomForest:
         label_index: list[str],
     ) -> dict[str, Any]:
         if not self.cfg.enabled or not samples:
+    pass
+    pass
             return {"trained": False}
         X, y = self._assemble_features(samples, label_index)
         # cap size for speed
         if len(X) > self.cfg.max_train_samples:
+    pass
+    pass
             X = X.iloc[: self.cfg.max_train_samples]
             y = y.iloc[: self.cfg.max_train_samples]
         # FIXED: Use time-based split to prevent lookahead bias
@@ -100,6 +114,10 @@ class TransitionRandomForest:
         # Validation probabilities for reliability calibration
         try:
             proba = mdl.predict_proba(X_val)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             classes = list(mdl.classes_)
             # Build per-class prob list and true labels
             val_true = list(map(str, y_val.values))
@@ -108,18 +126,28 @@ class TransitionRandomForest:
             classes, val_true, val_proba = [], [], {}
         result = {"trained": True, "report": rep}
         if classes:
+    pass
+    pass
             result.update(
                 {"val_true": val_true, "val_proba": val_proba, "classes": classes},
             )
         # SHAP (optional)
         if self.cfg.enable_shap and shap is not None:
+    pass
+    pass
             try:
                 explainer = shap.TreeExplainer(mdl)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Sample a subset for SHAP speed
                 ns = min(2000, len(X_val))
                 shap_vals = explainer.shap_values(X_val.iloc[:ns])
                 # summarize mean |shap| per feature
                 if isinstance(shap_vals, list):
+    pass
+    pass
                     # multiclass returns list per class
                     abs_mean = np.mean(
                         [np.abs(v).mean(axis=0) for v in shap_vals],

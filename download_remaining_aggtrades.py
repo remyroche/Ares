@@ -29,9 +29,11 @@ shutdown_requested = False
 
 
 def signal_handler(signum = frame):
+    pass
+    pass
     """Handle interrupt signals gracefully"""
     global shutdown_requested
-    print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
+    print(f"\\\n⚠️ Received signal {signum}. Gracefully shutting down...")
     shutdown_requested = True
 
 
@@ -46,6 +48,8 @@ REMAINING_AGGTrades_DAYS = ["2025-02-04", "2025-03-06"]
 async def download_single_day_aggtrades(date_str: str) -> bool:
     """Download aggtrades data for a single specific day"""
     if shutdown_requested:
+    pass
+    pass
         print(f"⚠️ Download cancelled for {date_str} due to shutdown request")
         return False
 
@@ -59,17 +63,25 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
             interval="1m",
             lookback_years=2,
             start_date_str, date_str = end_date_str=date_str,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
+    pass
+    pass
             print(f"❌ Failed to initialize downloader for {date_str}")
             return False
         # Download only aggtrades data = not all data types
         success = await downloader.download_aggtrades_parallel()
 
         if success:
+    pass
+    pass
             print(f"✅ Successfully downloaded aggtrades data for {date_str}")
         else:
             print(f"❌ Failed to download aggtrades data for {date_str}")
@@ -84,6 +96,8 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
 async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     """Download aggtrades data for a date range"""
     if shutdown_requested:
+    pass
+    pass
         print("⚠️ Download cancelled due to shutdown request")
         return False
 
@@ -97,11 +111,17 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
             interval="1m",
             lookback_years=2,
             start_date_str, start_date = end_date_str=end_date,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         downloader = OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
+    pass
+    pass
             print(
                 f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
             )
@@ -110,6 +130,8 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
         success = await downloader.download_aggtrades_parallel()
 
         if success:
+    pass
+    pass
             print(
                 f"✅ Successfully downloaded aggtrades data from {start_date} to {end_date}"
             )
@@ -136,6 +158,8 @@ async def main():
     print("📊 Downloading:")
     print("   1. Remaining 2 missing aggtrades days:")
     for date in REMAINING_AGGTrades_DAYS:
+    pass
+    pass
         print(f"      - {date}")
     print("   2. Aggtrades from 2025-05-01 to 2025-08-18")
     print("=" * 80)
@@ -144,50 +168,68 @@ async def main():
 
     try:
         # Step 1: Download remaining missing days
-        print("\n📅 STEP 1: Downloading remaining missing aggtrades days")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+        print("\\\n📅 STEP 1: Downloading remaining missing aggtrades days")
         print("=" * 60)
 
         for i , date_str in enumerate(REMAINING_AGGTrades_DAYS, 1):
+    pass
+    pass
             if shutdown_requested:
+    pass
+    pass
                 print("⚠️ Download cancelled due to shutdown request")
                 break
 
             print(
-                f"\n📅 Processing day {i}/{len(REMAINING_AGGTrades_DAYS)}: {date_str}"
+                f"\\\n📅 Processing day {i}/{len(REMAINING_AGGTrades_DAYS)}: {date_str}"
             )
             success = await download_single_day_aggtrades(date_str)
 
             if not success:
+    pass
+    pass
                 print(f"❌ Failed to download {date_str}")
 
             # Add delay between downloads
             if i < len(REMAINING_AGGTrades_DAYS):
+    pass
+    pass
                 print("⏳ Waiting 3 seconds before next download...")
                 await asyncio.sleep(3)
 
         if shutdown_requested:
+    pass
+    pass
             print("⚠️ Download cancelled due to shutdown request")
             return
 
         # Step 2: Download aggtrades range
-        print("\n📅 STEP 2: Downloading aggtrades from 2025-05-01 to 2025-08-18")
+        print("\\\n📅 STEP 2: Downloading aggtrades from 2025-05-01 to 2025-08-18")
         print("=" * 60)
 
         success = await download_aggtrades_range("2025-05-01", "2025-08-18")
 
         if success:
-            print("\n🎉 All remaining aggtrades data downloaded successfully!")
+    pass
+    pass
+            print("\\\n🎉 All remaining aggtrades data downloaded successfully!")
         else:
-            print("\n⚠️ Some downloads failed. Check the logs above.")
+            print("\\\n⚠️ Some downloads failed. Check the logs above.")
 
     except KeyboardInterrupt:
-        print("\n⚠️ Download interrupted by user")
+        print("\\\n⚠️ Download interrupted by user")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\\\n❌ Unexpected error: {e}")
         logger.exception("Error in main")
     finally:
-        print("\n👋 Download process completed")
+        print("\\\n👋 Download process completed")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

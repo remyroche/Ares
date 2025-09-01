@@ -20,11 +20,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.append(str(project_root))
 
 def create_sample_financial_data(n_rows: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create sample financial data for testing."""
     np.random.seed(42)
 
@@ -38,12 +43,16 @@ def create_sample_financial_data(n_rows: int = 1000) -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
     # Create OHLCV data
     data = []
     for i, (timestamp, price) in enumerate(zip(timestamps, prices)):
+    pass
+    pass
         # Add some noise to create realistic OHLC
         noise = np.random.normal(0, price * 0.001, 4)
         open_price = price + noise[0]
@@ -69,6 +78,8 @@ def create_sample_financial_data(n_rows: int = 1000) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def create_sample_ml_data(n_rows: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create sample ML data with features and target for testing."""
     np.random.seed(42)
 
@@ -104,14 +115,22 @@ def create_sample_ml_data(n_rows: int = 1000) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def test_statistical_validation():
+    pass
+    pass
     """Test statistical data validation."""
-    print("\n🔍 Testing Statistical Data Validation")
+    print("\\\n🔍 Testing Statistical Data Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import StatisticalDataValidator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data
+import df = create_sample_ml_data
         df = create_sample_ml_data(1000)
 
         # Initialize validator
@@ -122,6 +141,8 @@ def test_statistical_validation():
         distribution_issues = validator.validate_data_distributions(df)
         print(f"   Distribution issues found: {len(distribution_issues)}")
         for issue in distribution_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         # Test outlier validation
@@ -129,6 +150,8 @@ def test_statistical_validation():
         outlier_issues = validator.validate_outliers(df)
         print(f"   Outlier issues found: {len(outlier_issues)}")
         for issue in outlier_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print("✅ Statistical validation test completed")
@@ -139,14 +162,22 @@ def test_statistical_validation():
         print(f"❌ Error in statistical validation test: {e}")
 
 def test_time_series_validation():
+    pass
+    pass
     """Test time series validation."""
-    print("\n⏰ Testing Time Series Validation")
+    print("\\\n⏰ Testing Time Series Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import TimeSeriesValidator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data
+import df = create_sample_financial_data
         df = create_sample_financial_data(1000)
 
         # Add some time series issues
@@ -161,6 +192,8 @@ def test_time_series_validation():
         time_series_issues = validator.validate_time_series_quality(df, 'timestamp')
         print(f"   Time series issues found: {len(time_series_issues)}")
         for issue in time_series_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print("✅ Time series validation test completed")
@@ -171,14 +204,22 @@ def test_time_series_validation():
         print(f"❌ Error in time series validation test: {e}")
 
 def test_financial_validation():
+    pass
+    pass
     """Test financial data validation."""
-    print("\n💰 Testing Financial Data Validation")
+    print("\\\n💰 Testing Financial Data Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import FinancialDataValidator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data
+import df = create_sample_financial_data
         df = create_sample_financial_data(1000)
 
         # Add some financial data issues
@@ -193,6 +234,8 @@ def test_financial_validation():
         financial_issues = validator.validate_financial_data(df)
         print(f"   Financial issues found: {len(financial_issues)}")
         for issue in financial_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print("✅ Financial validation test completed")
@@ -203,14 +246,22 @@ def test_financial_validation():
         print(f"❌ Error in financial validation test: {e}")
 
 def test_correlation_validation():
+    pass
+    pass
     """Test feature correlation validation."""
-    print("\n🔗 Testing Feature Correlation Validation")
+    print("\\\n🔗 Testing Feature Correlation Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import FeatureCorrelationValidator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data with correlated features
+import df = create_sample_ml_data
         df = create_sample_ml_data(1000)
 
         # Initialize validator
@@ -221,6 +272,8 @@ def test_correlation_validation():
         correlation_issues = validator.validate_feature_correlations(df)
         print(f"   Correlation issues found: {len(correlation_issues)}")
         for issue in correlation_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print("✅ Correlation validation test completed")
@@ -231,14 +284,22 @@ def test_correlation_validation():
         print(f"❌ Error in correlation validation test: {e}")
 
 def test_target_validation():
+    pass
+    pass
     """Test target variable validation."""
-    print("\n🎯 Testing Target Variable Validation")
+    print("\\\n🎯 Testing Target Variable Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import TargetVariableValidator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data
+import df = create_sample_ml_data
         df = create_sample_ml_data(1000)
 
         # Add some target issues
@@ -252,6 +313,8 @@ def test_target_validation():
         target_issues = validator.validate_target_variable(df, 'target', 'timestamp')
         print(f"   Target issues found: {len(target_issues)}")
         for issue in target_issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print("✅ Target validation test completed")
@@ -262,14 +325,22 @@ def test_target_validation():
         print(f"❌ Error in target validation test: {e}")
 
 def test_drift_detection():
+    pass
+    pass
     """Test data drift detection."""
-    print("\n🌊 Testing Data Drift Detection")
+    print("\\\n🌊 Testing Data Drift Detection")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import DataDriftDetector
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create reference data
+import reference_df = create_sample_ml_data
         reference_df = create_sample_ml_data(500)
 
         # Create current data with some drift
@@ -284,6 +355,8 @@ def test_drift_detection():
         drift_report = detector.detect_drift(current_df)
         print(f"   Drift issues found: {len(drift_report.issues)}")
         for issue in drift_report.issues[:3]:
+    pass
+    pass
             print(f"   - {issue}")
 
         print(f"   Drift severity: {drift_report.severity}")
@@ -295,12 +368,20 @@ def test_drift_detection():
         print(f"❌ Error in drift detection test: {e}")
 
 def test_quality_scoring():
+    pass
+    pass
     """Test quality scoring system."""
-    print("\n📊 Testing Quality Scoring System")
+    print("\\\n📊 Testing Quality Scoring System")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import DataQualityScorer,
             DataQualityScorer,
             MLValidationResult,
             QualityScore
@@ -339,15 +420,23 @@ def test_quality_scoring():
         print(f"❌ Error in quality scoring test: {e}")
 
 def test_alert_system():
+    pass
+    pass
     """Test alert system."""
-    print("\n🚨 Testing Alert System")
+    print("\\\n🚨 Testing Alert System")
     print("=" * 50)
 
     try:
         from src.utils.quality_alert_system import QualityAlertManager, create_alert_config
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         from src.utils.advanced_ml_validation import MLValidationResult, QualityScore
 
         # Create alert configuration (without actual webhooks)
+import alert_config = create_alert_config
         alert_config = create_alert_config(
             slack_webhook=None,  # Set to None for testing
             email_config=None,   # Set to None for testing
@@ -374,6 +463,8 @@ def test_alert_system():
         alerts = alert_manager.check_alerts(validation_result)
         print(f"   Alerts generated: {len(alerts)}")
         for alert in alerts[:3]:
+    pass
+    pass
             print(f"   - {alert.level}: {alert.message}")
 
         # Test alert sending (will fail gracefully without webhooks)
@@ -389,14 +480,22 @@ def test_alert_system():
         print(f"❌ Error in alert system test: {e}")
 
 def test_comprehensive_validation():
+    pass
+    pass
     """Test comprehensive ML validation."""
-    print("\n🔍 Testing Comprehensive ML Validation")
+    print("\\\n🔍 Testing Comprehensive ML Validation")
     print("=" * 50)
 
     try:
         from src.utils.advanced_ml_validation import validate_ml_data_quality
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         # Create sample data
+import df = create_sample_ml_data
         df = create_sample_ml_data(1000)
 
         # Test comprehensive validation
@@ -423,12 +522,20 @@ def test_comprehensive_validation():
 
         # Show detailed issues
         if validation_result.correlation_issues:
+    pass
+    pass
             print(f"   Correlation issues: {len(validation_result.correlation_issues)}")
         if validation_result.target_issues:
+    pass
+    pass
             print(f"   Target issues: {len(validation_result.target_issues)}")
         if validation_result.distribution_issues:
+    pass
+    pass
             print(f"   Distribution issues: {len(validation_result.distribution_issues)}")
         if validation_result.outlier_issues:
+    pass
+    pass
             print(f"   Outlier issues: {len(validation_result.outlier_issues)}")
 
         print("✅ Comprehensive validation test completed")
@@ -439,12 +546,18 @@ def test_comprehensive_validation():
         print(f"❌ Error in comprehensive validation test: {e}")
 
 def test_enhanced_decorators():
+    pass
+    pass
     """Test enhanced validation decorators."""
-    print("\n🎭 Testing Enhanced Validation Decorators")
+    print("\\\n🎭 Testing Enhanced Validation Decorators")
     print("=" * 50)
 
     try:
             validate_ml_data_quality_decorator,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             quality_gate,
             step_specific_ml_validation
         )
@@ -459,12 +572,18 @@ def test_enhanced_decorators():
             min_quality_score=0.7
         )
         def test_function(df):
+    pass
+    pass
             return df
 
         # Test with sample data
         df = create_sample_ml_data(100)
         try:
             result = test_function(df)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print("   ✅ Decorator applied successfully")
         except Exception as e:
             print(f"   ⚠️ Decorator raised exception (expected if quality gates not met): {e}")
@@ -477,6 +596,8 @@ def test_enhanced_decorators():
         print(f"❌ Error in enhanced decorators test: {e}")
 
 def main():
+    pass
+    pass
     """Run all tests."""
     print("🚀 Advanced ML Data Quality Validation Test Suite")
     print("=" * 60)
@@ -493,7 +614,7 @@ def main():
     test_comprehensive_validation()
     test_enhanced_decorators()
 
-    print("\n🎉 All tests completed!")
+    print("\\\n🎉 All tests completed!")
     print("=" * 60)
     print("📋 Summary:")
     print("   ✅ Statistical validation")
@@ -506,7 +627,9 @@ def main():
     print("   ✅ Alert system")
     print("   ✅ Comprehensive validation")
     print("   ✅ Enhanced decorators")
-    print("\n🔧 The advanced ML validation system is ready for production use!")
+    print("\\\n🔧 The advanced ML validation system is ready for production use!")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

@@ -20,17 +20,24 @@ from src.examples.enhanced_event_bus_example import main
 from src.utils.warning_symbols import warning
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 if __name__ == "__main__":
+    pass
+    pass
     print("🚀 Running Enhanced Event Bus Example")
     print("=" * 50)
 
     try:
         asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except KeyboardInterrupt:
-        print("\n⚠️ Example interrupted by user")
+        print("\\\n⚠️ Example interrupted by user")
     except Exception as e:
         print(warning(f"Error running example: {e}"))
         traceback.print_exc()

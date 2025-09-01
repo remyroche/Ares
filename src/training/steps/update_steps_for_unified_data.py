@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 # List of all training steps that need to be updated
+import TRAINING_STEPS: List[str] = [
 TRAINING_STEPS: List[str] = [
     "step02_market_regime_classification",
     "step03_regime_data_splitting",
@@ -30,6 +31,8 @@ TRAINING_STEPS: List[str] = [
 ]
 
 def get_unified_data_loader_import() -> str:
+    pass
+    pass
     """Get the import statement for the unified data loader."""
     return (
         "from src.training.steps.unified_data_loader import get_unified_data_loader"
@@ -70,6 +73,8 @@ def get_unified_data_loading_code(
         )
 
         if historical_data is None or historical_data.empty:
+    pass
+    pass
         self.logger.error("❌ No data found - check symbol and exchange configuration")
             raise ValueError(f"No data found for {{symbol}} on {{exchange}}")
 
@@ -84,13 +89,18 @@ def get_unified_data_loading_code(
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in historical_data.columns]
         if missing_columns:
+    pass
+    pass
         self.logger.error(f"❌ Missing required columns: {{missing_columns}}")
             raise ValueError(f"Missing required columns: {{missing_columns}}")
     """
 
 def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
+    pass
+    pass
     """Get step - specific guidance for updating."""
     from src.config.constants import (
+import BLANK_TRAINING_LOOKBACK_DAYS,
         BLANK_TRAINING_LOOKBACK_DAYS,
     )
 
@@ -180,6 +190,8 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
     )
 
 def generate_step_update_template(step_name: str) -> str:
+    pass
+    pass
     """Generate a template for updating a specific step."""
     guidance, get_step_specific_guidance(step_name)
 
@@ -194,7 +206,7 @@ def generate_step_update_template(step_name: str) -> str:
     pass
 {get_unified_data_loading_code(
     lookback_days = guidance['lookback_days'],
-    timeframe_var = f'\"{guidance["timeframe"]}\"',
+    timeframe_var = f'\\\"{guidance["timeframe"]}\\\"',
 )}
 
 ## 3. Step - specific considerations:
@@ -214,6 +226,8 @@ def generate_step_update_template(step_name: str) -> str:
 """
 
 def main() -> None:
+    pass
+    pass
     """Main function to generate update guidance."""
     high_complexity_areas = {
         "step01_data_collection": "❌ HIGH COMPLEXITY - consolidate_files (D - 23), run_step (C - 18)",
@@ -228,11 +242,15 @@ def main() -> None:
     }
 
     for i, step in enumerate(TRAINING_STEPS, 1):
+    pass
+    pass
         _, i  # preserved for clarity; index may be used later
         guidance, get_step_specific_guidance(step)
         _, guidance  # ensure call side effects are preserved if any
 
         if step in high_complexity_areas:
+    pass
+    pass
         # Here we would log or highlight complexity areas for the developer
             pass
 
@@ -241,4 +259,6 @@ def main() -> None:
         print(template)
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

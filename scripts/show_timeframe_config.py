@@ -14,11 +14,14 @@ from src.config import CONFIG
 from src.utils.warning_symbols import missing
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
 def show_timeframe_config():
+    pass
+    pass
     """Display the current timeframe configuration."""
     print("🎯 Ares Multi-Timeframe Configuration")
     print("=" * 60)
@@ -29,7 +32,7 @@ def show_timeframe_config():
     default_set, CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
     mtf_config, CONFIG.get("MULTI_TIMEFRAME_TRAINING", {})
 
-    print("\n📊 Multi-Timeframe Training Settings:")
+    print("\\\n📊 Multi-Timeframe Training Settings:")
     print("-" * 40)
     print(f"Parallel Training: {mtf_config.get('enable_parallel_training', True)}")
     print(f"Ensemble Creation: {mtf_config.get('enable_ensemble', True)}")
@@ -37,35 +40,45 @@ def show_timeframe_config():
     print(f"Ensemble Method: {mtf_config.get('ensemble_method', 'weighted_average')}")
     print(f"Max Parallel Workers: {mtf_config.get('max_parallel_workers', 3)}")
 
-    print(f"\n🎯 Individual Timeframes ({len(timeframes)} total):")
+    print(f"\\\n🎯 Individual Timeframes ({len(timeframes)} total):")
     print("-" * 40)
 
     # Group timeframes by trading style
     trading_styles = {}
     for tf, info in timeframes.items():
+    pass
+    pass
         style = info.get("trading_style", "unknown")
         if style not in trading_styles:
+    pass
+    pass
             trading_styles[style] = []
         trading_styles[style].append((tf, info))
 
     for style, tf_list in trading_styles.items():
-        print(f"\n📈 {style.upper().replace('_', ' ')}:")
+    pass
+    pass
+        print(f"\\\n📈 {style.upper().replace('_', ' ')}:")
         for tf, info in tf_list:
+    pass
+    pass
             print(
                 f"  {tf:>4} | {info.get('purpose', 'Unknown'):<50} | Weight: {info.get('ensemble_weight', 0):.2f}",
             )
 
-    print(f"\n📋 Predefined Timeframe Sets ({len(timeframe_sets)} total):")
+    print(f"\\\n📋 Predefined Timeframe Sets ({len(timeframe_sets)} total):")
     print("-" * 40)
 
     for set_name, set_info in timeframe_sets.items():
+    pass
+    pass
         is_default = " ⭐" if set_name == default_set else ""
-        print(f"\n{set_name}{is_default}:")
+        print(f"\\\n{set_name}{is_default}:")
         print(f"  Timeframes: {', '.join(set_info.get('timeframes', []))}")
         print(f"  Description: {set_info.get('description', 'No description')}")
         print(f"  Use Case: {set_info.get('use_case', 'No use case specified')}")
 
-    print("\n🔧 Current Configuration:")
+    print("\\\n🔧 Current Configuration:")
     print("-" * 40)
     print(f"Default timeframe set: {default_set}")
     print(
@@ -75,15 +88,19 @@ def show_timeframe_config():
     # Show ensemble weights for default set
     default_timeframes = timeframe_sets.get(default_set, {}).get("timeframes", [])
     if default_timeframes:
-        print("\n⚖️  Ensemble Weights for Default Set:")
+    pass
+    pass
+        print("\\\n⚖️  Ensemble Weights for Default Set:")
         total_weight = 0
         for tf in default_timeframes:
+    pass
+    pass
             weight = timeframes.get(tf, {}).get("ensemble_weight", 0)
             total_weight += weight
             print(f"  {tf}: {weight:.2f}")
         print(f"  Total: {total_weight:.2f}")
 
-    print("\n💡 Usage Examples:")
+    print("\\\n💡 Usage Examples:")
     print("-" * 40)
     print("# Use default swing trading timeframes")
     print(
@@ -105,10 +122,14 @@ def show_timeframe_config():
 
 
 def show_timeframe_details(timeframe: str):
+    pass
+    pass
     """Show detailed information about a specific timeframe."""
     timeframes, CONFIG.get("TIMEFRAMES", {})
 
     if timeframe not in timeframes:
+    pass
+    pass
         print(missing("Timeframe '{timeframe}' not found in configuration"))
         return
 
@@ -126,8 +147,12 @@ def show_timeframe_details(timeframe: str):
 
 
 def main():
+    pass
+    pass
     """Main function."""
     if len(sys.argv) > 1:
+    pass
+    pass
         timeframe = sys.argv[1]
         show_timeframe_details(timeframe)
     else:
@@ -135,4 +160,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

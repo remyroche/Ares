@@ -18,10 +18,17 @@ logger = logging.getLogger(__name__)
 # Import the probabilistic optimization framework
 try:
     from src.training.probabilistic_bayesian_optimizer import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ProbabilisticBayesianOptimizer,
         ProbabilisticBayesianOptimizer,
         ProbabilisticOptimizationConfig
     )
     from src.training.probabilistic_model_integration import ProbabilisticModelIntegrator
+import except ImportError as e:
 except ImportError as e:
     logger.error(f"Import error: {e}")
     logger.info("Please ensure the probabilistic optimization modules are in your Python path")
@@ -46,6 +53,8 @@ def create_realistic_market_data(
     prices = [base_price]
 
     for i in range(1, periods):
+    pass
+    pass
         # Add trend component
         trend = 0.0001 * np.sin(i / 100) + 0.00005 * np.cos(i / 50)
 
@@ -169,6 +178,8 @@ def create_historical_predictions(
 
 
 def test_probabilistic_bayesian_optimizer():
+    pass
+    pass
     """Test the probabilistic Bayesian optimizer directly."""
 
     logger.info("🧪 Testing Probabilistic Bayesian Optimizer")
@@ -186,7 +197,7 @@ def test_probabilistic_bayesian_optimizer():
     logger.info(f"Created test dataset: {len(market_data)} samples")
 
     # Test Tactician optimization
-    logger.info("\n🔍 Testing Tactician Model Optimization")
+    logger.info("\\\n🔍 Testing Tactician Model Optimization")
 
     tactician_config = ProbabilisticOptimizationConfig(
         objectives=['calibration', 'sharpness', 'discrimination'],
@@ -224,6 +235,10 @@ def test_probabilistic_bayesian_optimizer():
             y=y_tactician,
             model_factory=lambda params: tactician_optimizer._create_tactician_model_factory()(params),
             validation_split=0.2
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         logger.info("✅ Tactician optimization completed successfully!")
@@ -231,6 +246,8 @@ def test_probabilistic_bayesian_optimizer():
 
         # Show best parameters
         for objective, solution in tactician_results['best_solutions'].items():
+    pass
+    pass
             logger.info(f"  {objective}: {solution['value']:.4f}")
 
     except Exception as e:
@@ -238,7 +255,7 @@ def test_probabilistic_bayesian_optimizer():
         tactician_results = None
 
     # Test Analyst optimization
-    logger.info("\n🔍 Testing Analyst Model Optimization")
+    logger.info("\\\n🔍 Testing Analyst Model Optimization")
 
     analyst_config = ProbabilisticOptimizationConfig(
         objectives=['calibration', 'sharpness', 'discrimination'],
@@ -276,6 +293,10 @@ def test_probabilistic_bayesian_optimizer():
             y=y_analyst,
             model_factory=lambda params: analyst_optimizer._create_analyst_model_factory()(params),
             validation_split=0.2
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         logger.info("✅ Analyst optimization completed successfully!")
@@ -283,6 +304,8 @@ def test_probabilistic_bayesian_optimizer():
 
         # Show best parameters
         for objective, solution in analyst_results['best_solutions'].items():
+    pass
+    pass
             logger.info(f"  {objective}: {solution['value']:.4f}")
 
     except Exception as e:
@@ -298,7 +321,7 @@ def test_probabilistic_bayesian_optimizer():
 async def test_probabilistic_model_integrator():
     """Test the probabilistic model integrator."""
 
-    logger.info("\n🧪 Testing Probabilistic Model Integrator")
+    logger.info("\\\n🧪 Testing Probabilistic Model Integrator")
     logger.info("=" * 60)
 
     # Configuration
@@ -329,6 +352,10 @@ async def test_probabilistic_model_integrator():
     try:
         results = await integrator.run_comprehensive_optimization(
             market_data, historical_predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         logger.info("✅ Comprehensive optimization completed successfully!")
@@ -342,13 +369,17 @@ async def test_probabilistic_model_integrator():
         # Show recommendations
         recommendations = summary.get("recommendations", [])
         if recommendations:
-            logger.info("\n📋 Recommendations:")
+    pass
+    pass
+            logger.info("\\\n📋 Recommendations:")
             for rec in recommendations:
+    pass
+    pass
                 logger.info(f"  • {rec}")
 
         # Get optimization status
         status = integrator.get_optimization_status()
-        logger.info(f"\n📊 Optimization Status:")
+        logger.info(f"\\\n📊 Optimization Status:")
         logger.info(f"  Optimizers created: {status.get('optimizers_created', [])}")
 
         return results
@@ -359,9 +390,11 @@ async def test_probabilistic_model_integrator():
 
 
 def test_uncertainty_quantification():
+    pass
+    pass
     """Test uncertainty quantification capabilities."""
 
-    logger.info("\n🧪 Testing Uncertainty Quantification")
+    logger.info("\\\n🧪 Testing Uncertainty Quantification")
     logger.info("=" * 60)
 
     # Create test data
@@ -377,14 +410,21 @@ def test_uncertainty_quantification():
     uncertainty_methods = ["ensemble", "gaussian", "conformal"]
 
     for method in uncertainty_methods:
-        logger.info(f"\n🔍 Testing {method.upper()} uncertainty estimation")
+    pass
+    pass
+        logger.info(f"\\\n🔍 Testing {method.upper()} uncertainty estimation")
 
         try:
             # Create a simple ensemble model for demonstration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.model_selection import train_test_split
 
             # Prepare features
+import X = np.column_stack
             X = np.column_stack([
                 market_data['close'].pct_change().fillna(0),
                 market_data['volume'].pct_change().fillna(0),
@@ -404,9 +444,13 @@ def test_uncertainty_quantification():
             )
 
             if method == "ensemble":
+    pass
+    pass
                 # Create ensemble of models
                 models = []
                 for i in range(5):
+    pass
+    pass
                     model = RandomForestClassifier(
                         n_estimators=50,
                         max_depth=5,
@@ -419,6 +463,8 @@ def test_uncertainty_quantification():
                 # Get ensemble predictions
                 predictions = []
                 for model in models:
+    pass
+    pass
                     pred = model.predict_proba(X_test)[:, 1]
                     predictions.append(pred)
 
@@ -479,53 +525,63 @@ def test_uncertainty_quantification():
 
 
 def main():
+    pass
+    pass
     """Main test function."""
 
     logger.info("🚀 Starting Probabilistic Bayesian Optimization Tests")
     logger.info("=" * 80)
 
     # Test 1: Direct optimizer testing
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 1: Direct Optimizer Testing")
     logger.info("="*50)
 
     optimizer_results = test_probabilistic_bayesian_optimizer()
 
     # Test 2: Model integrator testing
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 2: Model Integrator Testing")
     logger.info("="*50)
 
     integrator_results = asyncio.run(test_probabilistic_model_integrator())
 
     # Test 3: Uncertainty quantification testing
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 3: Uncertainty Quantification Testing")
     logger.info("="*50)
 
     test_uncertainty_quantification()
 
     # Summary
-    logger.info("\n" + "="*80)
+    logger.info("\\\n" + "="*80)
     logger.info("🎯 TEST SUMMARY")
     logger.info("="*80)
 
     if optimizer_results:
+    pass
+    pass
         logger.info("✅ Direct optimizer tests completed")
         if optimizer_results["tactician"]:
+    pass
+    pass
             logger.info("  • Tactician optimization: SUCCESS")
         if optimizer_results["analyst"]:
+    pass
+    pass
             logger.info("  • Analyst optimization: SUCCESS")
 
     if integrator_results:
+    pass
+    pass
         logger.info("✅ Model integrator tests completed")
         summary = integrator_results.get("summary", {})
         logger.info(f"  • Models optimized: {summary.get('successful_optimizations', 0)}")
 
     logger.info("✅ Uncertainty quantification tests completed")
 
-    logger.info("\n🎉 All tests completed successfully!")
-    logger.info("\n💡 Next steps:")
+    logger.info("\\\n🎉 All tests completed successfully!")
+    logger.info("\\\n💡 Next steps:")
     logger.info("  1. Integrate with your actual Tactician and Analyst models")
     logger.info("  2. Use real market data and prediction outcomes")
     logger.info("  3. Tune optimization parameters for your specific use case")
@@ -533,4 +589,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

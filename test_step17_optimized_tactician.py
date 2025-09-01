@@ -26,6 +26,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def create_test_market_data(n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """
     Create comprehensive test market data with realistic patterns.
 
@@ -37,6 +39,10 @@ def create_test_market_data(n_samples: int = 1000) -> pd.DataFrame:
     """
     try:
         # Generate realistic price data with trends and volatility
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         np.random.seed(42)
 
         # Base price with trend and noise
@@ -48,6 +54,8 @@ def create_test_market_data(n_samples: int = 1000) -> pd.DataFrame:
         # Generate OHLCV data
         close_prices = [base_price]
         for change in price_changes[1:]:
+    pass
+    pass
             close_prices.append(close_prices[-1] * (1 + change))
 
         close_prices = np.array(close_prices)
@@ -87,6 +95,8 @@ def create_test_market_data(n_samples: int = 1000) -> pd.DataFrame:
         return pd.DataFrame()
 
 def create_test_config() -> dict:
+    pass
+    pass
     """
     Create comprehensive test configuration for step17 optimization.
 
@@ -316,6 +326,10 @@ def create_test_config() -> dict:
                     "risk_reward_cap": 5.0
                 }
             }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         }
 
         logger.info("✅ Created comprehensive test configuration")
@@ -332,17 +346,29 @@ async def test_step17_optimized_tactician():
     try:
         logger.info("🚀 Starting Step17 Optimized Tactician Test")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create test data and configuration
         market_data = create_test_market_data(1000)
         config = create_test_config()
 
         if market_data.empty or not config:
+    pass
+    pass
             logger.error("❌ Failed to create test data or configuration")
             return False
 
         # Import the step17 optimized Tactician
         try:
             from src.tactician.step17_optimized_tactician import Step17OptimizedTactician
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import logger.info
             logger.info("✅ Successfully imported Step17OptimizedTactician")
         except ImportError as e:
             logger.error(f"❌ Failed to import Step17OptimizedTactician: {e}")
@@ -353,6 +379,8 @@ async def test_step17_optimized_tactician():
         success = await tactician.initialize()
 
         if not success:
+    pass
+    pass
             logger.error("❌ Failed to initialize Step17OptimizedTactician")
             return False
 
@@ -555,6 +583,8 @@ async def test_step17_optimized_tactician():
         # Generate multiple predictions to test consistency
         predictions_list = []
         for i in range(5):
+    pass
+    pass
             pred = await tactician.generate_predictions(
                 market_data=market_data.iloc[-100:],  # Use last 100 samples
                 analyst_barriers=analyst_barriers,
@@ -566,6 +596,8 @@ async def test_step17_optimized_tactician():
 
         # Check that predictions are generated consistently
         for i, pred in enumerate(predictions_list):
+    pass
+    pass
             assert pred["metadata"]["model_type"] == "step17_optimized_tactician", f"Prediction {i} should have correct model type"
             assert pred["metadata"]["n_scenarios"] == 17, f"Prediction {i} should have 17 scenarios"
             assert pred["metadata"]["n_features"] == 350, f"Prediction {i} should have 350 features"
@@ -607,7 +639,13 @@ async def main():
     """Main test function."""
     try:
         success = await test_step17_optimized_tactician()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if success:
+    pass
+    pass
             logger.info("🎉 All tests passed successfully!")
             return 0
         else:
@@ -620,5 +658,7 @@ async def main():
         return 1
 
 if __name__ == "__main__":
+    pass
+    pass
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

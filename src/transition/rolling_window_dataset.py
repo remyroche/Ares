@@ -73,12 +73,20 @@ class RollingWindowDatasetBuilder:
         return await self.state_builder.initialize()
 
     def _compact_numeric_names(self, combined_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         return [c for c in FEATURE_POOL_COLUMNS if c in combined_df.columns]
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+    pass
+    pass
         out: dict[str, float] = {}
         for col in FEATURE_POOL_COLUMNS:
+    pass
+    pass
             if col in seq_df.columns:
+    pass
+    pass
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
                 out[f"std_{col}"] = float(np.nanstd(s.values))
@@ -90,6 +98,8 @@ class RollingWindowDatasetBuilder:
         combined_df: pd.DataFrame,
     ) -> dict[str, Any]:
         if klines_df is None or combined_df is None or len(klines_df) == 0:
+    pass
+    pass
             return {"samples": [], "numeric_feature_names": []}
 
         # Align and derive helper columns
@@ -99,6 +109,8 @@ class RollingWindowDatasetBuilder:
         # States/regimes
         states_df = self.state_builder.infer_states(klines_df)
         if states_df.empty:
+    pass
+    pass
             return {"samples": [], "numeric_feature_names": numeric_cols}
 
         pre = self.rw_cfg.pre_window
@@ -107,10 +119,14 @@ class RollingWindowDatasetBuilder:
         start = pre
         end = N - post - 1
         if end <= start:
+    pass
+    pass
             return {"samples": [], "numeric_feature_names": numeric_cols}
         # If max_samples is set, prefer the most recent windows
         loop_start = start
         if self.rw_cfg.max_samples:
+    pass
+    pass
             recent_start = end - int(self.rw_cfg.max_samples) + 1
             loop_start = max(start, recent_start)
 
@@ -121,6 +137,8 @@ class RollingWindowDatasetBuilder:
         # First pass: compute core sample info and immediate path class
         samples: list[dict[str, Any]] = []
         for t in range(loop_start, end + 1):
+    pass
+    pass
             pre_slice = slice(t - pre, t)
             post_slice = slice(t + 1, t + 1 + post)
             X_states = states_df.iloc[pre_slice][["hmm_state_id", "regime"]].copy()
@@ -141,7 +159,11 @@ class RollingWindowDatasetBuilder:
             # Direction targets per configured horizons
             dir_targets: dict[str, Any] = {}
             for H in self.rw_cfg.include_direction_horizons:
+    pass
+    pass
                 if t + H < len(close):
+    pass
+    pass
                     R = float((close[t + H] / close[t]) - 1.0)
                     dir_targets[f"direction_up_{H}"] = int(R > 0)
                     dir_targets[f"return_{H}"] = R
@@ -163,6 +185,8 @@ class RollingWindowDatasetBuilder:
         K = self.rw_cfg.onset_horizon_bars
         J = self.rw_cfg.end_horizon_bars
         for s in samples:
+    pass
+    pass
             t = int(s.get("t_index", 0))
             # Onset of trend (beginning_of_trend within K bars)
             s["onset_beginning"] = int(

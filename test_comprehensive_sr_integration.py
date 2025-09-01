@@ -17,7 +17,10 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 
 
+import def create_test_market_data
 def create_test_market_data(n_rows: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create test market data for validation."""
     np.random.seed(42)
 
@@ -30,6 +33,8 @@ def create_test_market_data(n_rows: int = 1000) -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
@@ -51,6 +56,8 @@ def create_test_market_data(n_rows: int = 1000) -> pd.DataFrame:
 
 
 def create_test_step7_results() -> dict:
+    pass
+    pass
     """Create test step7 matrix operations results."""
     return {
         "sr_analysis": {
@@ -81,6 +88,8 @@ def create_test_step7_results() -> dict:
 
 
 def create_test_step2_5_results() -> dict:
+    pass
+    pass
     """Create test step2_5 SR optimization results."""
     return {
         "sr_levels_result": {
@@ -119,6 +128,10 @@ async def test_sr_breakout_predictor_features():
     try:
         features = sr_predictor.extract_ml_features(market_data, current_price)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ SRBreakoutPredictor extracted {len(features)} features")
         print(f"   - Proximity features: {len([f for f in features.keys() if 'proximity' in f])}")
         print(f"   - Strength features: {len([f for f in features.keys() if 'strength' in f])}")
@@ -150,6 +163,10 @@ async def test_multi_output_model_trainer():
     # Test step7 feature loading
     try:
         # Create test step7 results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step7_results = create_test_step7_results()
         step7_path = Path("test_data/step7")
         step7_path.mkdir(parents=True, exist_ok=True)
@@ -168,6 +185,10 @@ async def test_multi_output_model_trainer():
     # Test step2_5 SR levels loading
     try:
         # Create test step2_5 results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step2_5_results = create_test_step2_5_results()
         step2_5_path = Path("test_data/step2_5")
         step2_5_path.mkdir(parents=True, exist_ok=True)
@@ -188,6 +209,10 @@ async def test_multi_output_model_trainer():
     try:
         comprehensive_data = await trainer._add_comprehensive_sr_features(market_data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sr_features = [col for col in comprehensive_data.columns if 'sr_' in col.lower()]
         print(f"✅ Comprehensive features added: {len(sr_features)} SR features")
         print(f"   - Total features: {len(comprehensive_data.columns)}")
@@ -196,6 +221,8 @@ async def test_multi_output_model_trainer():
         # Test feature validation
         missing_features = trainer.validate_feature_completeness(comprehensive_data)
         if missing_features:
+    pass
+    pass
             print(f"⚠️ Missing features: {missing_features}")
         else:
             print("✅ All required features present")
@@ -243,6 +270,10 @@ async def test_comprehensive_training_pipeline():
     try:
         pipeline = ComprehensiveSRTrainingPipeline(test_config)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Test feature summary
         feature_summary = pipeline.get_comprehensive_feature_summary()
         print(f"✅ Feature summary generated:")
@@ -280,6 +311,10 @@ async def test_feature_completeness():
     try:
         sr_feature_stats = trainer._analyze_sr_features(comprehensive_data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ SR feature analysis completed:")
         print(f"   - Total SR features: {sr_feature_stats['sr_feature_count']}")
         print(f"   - SR feature percentage: {sr_feature_stats['sr_feature_percentage']:.1f}%")
@@ -289,8 +324,12 @@ async def test_feature_completeness():
         missing_features = trainer.validate_feature_completeness(comprehensive_data)
 
         if missing_features:
+    pass
+    pass
             print(f"⚠️ Missing features by category:")
             for category, features in missing_features.items():
+    pass
+    pass
                 print(f"   - {category}: {len(features)} missing")
         else:
             print("✅ All required features present")
@@ -322,20 +361,24 @@ async def main():
     test_results['feature_completeness'] = await test_feature_completeness()
 
     # Summary
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("📊 Test Results Summary")
     print("=" * 60)
 
     for test_name, result in test_results.items():
+    pass
+    pass
         status = "✅ PASS" if result else "❌ FAIL"
         print(f"{test_name:.<30} {status}")
 
     passed_tests = sum(test_results.values())
     total_tests = len(test_results)
 
-    print(f"\nOverall: {passed_tests}/{total_tests} tests passed")
+    print(f"\\\nOverall: {passed_tests}/{total_tests} tests passed")
 
     if passed_tests == total_tests:
+    pass
+    pass
         print("🎉 All tests passed! Comprehensive SR feature integration is working correctly.")
     else:
         print("⚠️ Some tests failed. Please check the implementation.")
@@ -343,9 +386,17 @@ async def main():
     # Cleanup test data
     try:
         import shutil
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if Path("test_data").exists():
+    pass
+    pass
             shutil.rmtree("test_data")
         if Path("test_reports").exists():
+    pass
+    pass
             shutil.rmtree("test_reports")
         print("🧹 Test data cleaned up")
     except Exception as e:
@@ -353,4 +404,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

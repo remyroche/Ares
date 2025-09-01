@@ -11,6 +11,7 @@ import asyncio
 from typing import Any, Dict
 from pathlib import Path
 
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_artifact,
     log_step_dataframe,
@@ -28,6 +29,8 @@ class ExampleStep:
     """Example step showing enhanced MLflow integration pattern."""
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger
 
@@ -90,11 +93,17 @@ class ExampleStep:
         """Log step artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
 
             # Log processed data as DataFrame with standardized naming
             if hasattr(processed_data, 'to_parquet'):
+    pass
+    pass
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
                     step_name="example_step",
@@ -111,6 +120,8 @@ class ExampleStep:
 
             # Log trained model
             if trained_model:
+    pass
+    pass
                 log_step_model(
                     config=self.config,
                     step_name="example_step",
@@ -153,6 +164,8 @@ class ExampleStep:
 
             # Log metrics
             if metrics:
+    pass
+    pass
                 log_step_metrics(
                     config=self.config,
                     step_name="example_step",
@@ -166,7 +179,11 @@ class ExampleStep:
 
             # Log artifact files with standardized naming
             for artifact_name, artifact_path in artifacts.items():
+    pass
+    pass
                 if Path(artifact_path).exists():
+    pass
+    pass
                     artifact_file_name = log_step_artifact_with_standardized_name(
                         config=self.config,
                         step_name="example_step",
@@ -223,6 +240,8 @@ class ExampleStepWithManager:
     """Example step using EnhancedMLflowManager directly."""
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.mlflow_manager = EnhancedMLflowManager(config)
         self.logger = system_logger
@@ -239,6 +258,10 @@ class ExampleStepWithManager:
 
         try:
             # Step execution logic here
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -281,6 +304,8 @@ class ExampleStepWithManager:
             # Validate the run has all required metadata
             is_valid = self.mlflow_manager.validate_current_run()
             if is_valid:
+    pass
+    pass
                 self.logger.info("✅ MLflow run validation passed")
             else:
                 self.logger.warning("⚠️ MLflow run validation failed")
@@ -363,6 +388,10 @@ async def _log_function_artifacts_to_mlflow(
     """Log function step artifacts to MLflow."""
     try:
         # Create config for MLflow logging
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {
             "trading_symbol": symbol,
             "exchange_name": exchange,
@@ -371,6 +400,8 @@ async def _log_function_artifacts_to_mlflow(
 
         # Log processed data
         if hasattr(processed_data, 'to_parquet'):
+    pass
+    pass
             log_step_dataframe(
                 config=config,
                 step_name="example_function_step",
@@ -384,6 +415,8 @@ async def _log_function_artifacts_to_mlflow(
 
         # Log model
         if trained_model:
+    pass
+    pass
             log_step_model(
                 config=config,
                 step_name="example_function_step",
@@ -397,6 +430,8 @@ async def _log_function_artifacts_to_mlflow(
 
         # Log metrics
         if metrics:
+    pass
+    pass
             log_step_metrics(
                 config=config,
                 step_name="example_function_step",
@@ -500,6 +535,8 @@ async def example_function_step_usage():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run examples
     asyncio.run(example_class_step_usage())
     asyncio.run(example_manager_step_usage())

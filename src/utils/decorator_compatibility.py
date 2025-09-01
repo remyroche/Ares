@@ -5,6 +5,7 @@ from typing import Any, Callable, TypeVar
 
 # Import new decorators
 from .decorators import (
+import validate_call_or_runtime_types,
     validate_call_or_runtime_types,
     pa_check_input,
     pa_check_output,
@@ -19,6 +20,7 @@ from .decorators import (
 
 # Import new enhanced decorators
 from .enhanced_decorators import (
+import smart_error_recovery,
     smart_error_recovery,
     cached_validation,
     enhanced_validation,
@@ -29,9 +31,12 @@ from .enhanced_decorators import (
 from .decorator_registry import decorator_registry
 from .decorator_config import global_config
 
+import F, TypeVar
 F, TypeVar('F', bound = Callable[..., Any])
 
 def _deprecation_warning(old_name: str, new_name: str, removal_version: str = "3.0"):
+    pass
+    pass
     """Emit deprecation warning."""
     warnings.warn(
         f"Decorator '{old_name}' is deprecated and will be removed in version {removal_version}. "
@@ -42,99 +47,145 @@ def _deprecation_warning(old_name: str, new_name: str, removal_version: str = "3
 
 # Legacy decorator mappings for backwards compatibility
 def validate_call(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use validate_call_or_runtime_types instead."""
     _deprecation_warning("validate_call", "validate_call_or_runtime_types")
     return validate_call_or_runtime_types(*args, **kwargs)
 
 def check_input(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use pa_check_input instead."""
     _deprecation_warning("check_input", "pa_check_input")
     return pa_check_input(*args, **kwargs)
 
 def check_output(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use pa_check_output instead."""
     _deprecation_warning("check_output", "pa_check_output")
     return pa_check_output(*args, **kwargs)
 
 def check_io(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use pa_check_io instead."""
     _deprecation_warning("check_io", "pa_check_io")
     return pa_check_io(*args, **kwargs)
 
 def vectorize(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use auto_vectorize instead."""
     _deprecation_warning("vectorize", "auto_vectorize")
     return auto_vectorize(*args, **kwargs)
 
 def guard_nan_inf(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use guard_array_nan_inf instead."""
     _deprecation_warning("guard_nan_inf", "guard_array_nan_inf")
     return guard_array_nan_inf(*args, **kwargs)
 
 def guard_nulls(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use guard_dataframe_nulls instead."""
     _deprecation_warning("guard_nulls", "guard_dataframe_nulls")
     return guard_dataframe_nulls(*args, **kwargs)
 
 def error_handler(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use normalize_errors instead."""
     _deprecation_warning("error_handler", "normalize_errors")
     return normalize_errors(*args, **kwargs)
 
 def tracing(*args, **kwargs):
+    pass
+    pass
     """Deprecated: Use with_tracing_span instead."""
     _deprecation_warning("tracing", "with_tracing_span")
     return with_tracing_span(*args, **kwargs)
 
 # Enhanced decorator aliases for easier access
 def smart_recovery(*args, **kwargs):
+    pass
+    pass
     """Alias for smart_error_recovery."""
     return smart_error_recovery(*args, **kwargs)
 
 def cached(*args, **kwargs):
+    pass
+    pass
     """Alias for cached_validation."""
     return cached_validation(*args, **kwargs)
 
 def validation(*args, **kwargs):
+    pass
+    pass
     """Alias for enhanced_validation."""
     return enhanced_validation(*args, **kwargs)
 
 def performance(*args, **kwargs):
+    pass
+    pass
     """Alias for performance_monitor_v2."""
     return performance_monitor_v2(*args, **kwargs)
 
 # Configuration helpers for backwards compatibility
 def get_decorator_config():
+    pass
+    pass
     """Get global decorator configuration."""
     return global_config
 
 def set_decorator_config(**kwargs):
+    pass
+    pass
     """Update global decorator configuration."""
     for key, value in kwargs.items():
+    pass
+    pass
         if hasattr(global_config, key):
+    pass
+    pass
             setattr(global_config, key, value)
         else:
             warnings.warn(f"Unknown configuration key: {key}")
 
 def list_available_decorators(include_deprecated: bool, False):
+    pass
+    pass
     """List all available decorators."""
     return decorator_registry.list_decorators(include_deprecated = include_deprecated)
 
 def get_decorator_usage_stats():
+    pass
+    pass
     """Get usage statistics for all decorators."""
     return decorator_registry.get_usage_stats()
 
 def search_decorators(query: str):
+    pass
+    pass
     """Search decorators by name, description, or tags."""
     return decorator_registry.search(query)
 
 # Legacy decorator factory for easy migration
 def legacy_decorator_factory(legacy_name: str, new_name: str):
+    pass
+    pass
     """Create a legacy decorator that maps to a new one."""
     def decorator(*args, **kwargs):
+    pass
+    pass
         _deprecation_warning(legacy_name, new_name)
         # Import the new decorator dynamically to avoid circular imports
         if new_name == "smart_error_recovery":
+    pass
+    pass
         return smart_error_recovery(*args, **kwargs)
         elif new_name == "cached_validation":
         return cached_validation(*args, **kwargs)

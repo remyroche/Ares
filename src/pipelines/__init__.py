@@ -7,18 +7,37 @@ pipeline implementations (live trading, backtesting, training).
 
 from .base_pipeline import BasePipeline, PipelineConfig
 # Optional imports if modules exist; keep namespace clean
+import try:
 try:
     from .live_trading_pipeline import LiveTradingPipeline
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception:  # Module may be optional in minimal envs
 except Exception:  # Module may be optional in minimal envs
     LiveTradingPipeline = None  # type: ignore
 
 try:
     from .backtesting_pipeline import BacktestingPipeline
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception:
 except Exception:
     BacktestingPipeline = None  # type: ignore
 
 try:
     from .training_pipeline import TrainingPipeline
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception:
 except Exception:
     TrainingPipeline = None  # type: ignore
 

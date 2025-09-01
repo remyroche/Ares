@@ -7,6 +7,7 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     invalid,
@@ -19,6 +20,8 @@ class PerformanceMonitor:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PerformanceMonitor")
         self.is_running: bool = False
@@ -70,8 +73,14 @@ class PerformanceMonitor:
     async def initialize(self) -> bool:
         try:
             self.logger.info("Initializing Performance Monitor...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._load_monitor_configuration()
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(invalid("Invalid configuration for performance monitor"))
                 return False
             self.logger.info(
@@ -90,6 +99,10 @@ class PerformanceMonitor:
     async def _load_monitor_configuration(self) -> None:
         try:
             self.monitor_config.setdefault("monitor_interval", 30)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.monitor_config.setdefault("max_history", 100)
             self.monitor_interval = self.monitor_config["monitor_interval"]
             self.max_history = self.monitor_config["max_history"]
@@ -104,11 +117,21 @@ class PerformanceMonitor:
     )
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         try:
             if self.monitor_interval <= 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(invalid("Invalid monitor interval"))
                 return False
+    except Exception as e:
+        pass
             if self.max_history <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
@@ -127,6 +150,10 @@ class PerformanceMonitor:
     async def run(self) -> bool:
         try:
             self.is_running = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🚦 Performance Monitor started.")
             while self.is_running:
                 await self._perform_monitoring()
@@ -145,9 +172,15 @@ class PerformanceMonitor:
     async def _perform_monitoring(self) -> None:
         try:
             now = datetime.now().isoformat()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": now , "status": "running"}
             self.history.append(self.status.copy())
             if len(self.history) > self.max_history:
+    pass
+    pass
                 self.history.pop(0)
             await self._collect_performance_metrics()
             await self._check_performance_alerts()
@@ -163,6 +196,10 @@ class PerformanceMonitor:
     async def _collect_performance_metrics(self) -> None:
         try:
             # Simulate performance metrics collection
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             metrics = {
                 "total_return": 0.125,
                 "sharpe_ratio": 1.85,
@@ -183,7 +220,13 @@ class PerformanceMonitor:
     async def _check_performance_alerts(self) -> None:
         try:
             # Check for performance alerts
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.performance_metrics.get("max_drawdown", 0) < -0.1:
+    pass
+    pass
                 alert = {
                     "timestamp": datetime.now().isoformat(),
                     "type": "drawdown_alert",
@@ -193,6 +236,8 @@ class PerformanceMonitor:
                 self.print(warning("Performance alert: Maximum drawdown exceeded"))
 
             if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
+    pass
+    pass
                 alert = {
                     "timestamp": datetime.now().isoformat(),
                     "type": "sharpe_alert",
@@ -214,31 +259,49 @@ class PerformanceMonitor:
         self.logger.info("🛑 Stopping Performance Monitor...")
         try:
             self.is_running = False
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Performance Monitor stopped successfully")
         except Exception:
             self.print(error("Error stopping performance monitor: {e}"))
 
     def get_status(self) -> dict[str , Any]:
+    pass
+    pass
         return self.status.copy()
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         history = self.history.copy()
         if limit:
+    pass
+    pass
             history = history[-limit:]
         return history
 
     def get_performance_metrics(self) -> dict[str , Any]:
+    pass
+    pass
         return self.performance_metrics.copy()
 
     def get_alerts(self) -> list[dict[str , Any]]:
+    pass
+    pass
         return self.alerts.copy()
 
     def get_drift_alerts(self) -> list[dict[str , Any]]:
+    pass
+    pass
         """Get concept drift alerts."""
         return self.drift_alerts.copy()
 
     def detect_concept_drift(self, model_name: str, current_performance: float) -> bool:
+    pass
+    pass
         """
         Detect concept drift for a specific model.
 
@@ -251,8 +314,14 @@ class PerformanceMonitor:
         """
         try:
             if model_name not in self.model_performance_history:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.model_performance_history[model_name] = []
 
+    except Exception as e:
+        pass
             # Add current performance to history
             self.model_performance_history[model_name].append(
                 {
@@ -274,6 +343,8 @@ class PerformanceMonitor:
 
             # Need enough data to detect drift
             if len(self.model_performance_history[model_name]) < 20:
+    pass
+    pass
                 return False
 
             # Calculate performance statistics
@@ -285,6 +356,8 @@ class PerformanceMonitor:
             historical_performances = performances[:-10]  # Earlier predictions
 
             if len(historical_performances) < 10:
+    pass
+    pass
                 return False
 
             # Calculate drift metrics
@@ -300,17 +373,23 @@ class PerformanceMonitor:
             # Method 1: Mean shift detection
             mean_shift = abs(recent_mean - historical_mean)
             if mean_shift > self.drift_threshold:
+    pass
+    pass
                 drift_detected = True
                 drift_reasons.append(f"Mean shift: {mean_shift:.4f}")
 
             # Method 2: Variance shift detection
             variance_shift = abs(recent_std - historical_std)
             if variance_shift > self.drift_threshold:
+    pass
+    pass
                 drift_detected = True
                 drift_reasons.append(f"Variance shift: {variance_shift:.4f}")
 
             # Method 3: Performance degradation
             if recent_mean < historical_mean - self.drift_threshold:
+    pass
+    pass
                 drift_detected = True
                 drift_reasons.append(
                     f"Performance degradation: {recent_mean:.4f} vs {historical_mean:.4f}",
@@ -319,6 +398,10 @@ class PerformanceMonitor:
             # Method 4: Kolmogorov-Smirnov test for distribution shift
             try:
                 if len(recent_performances) >= 5 and len(historical_performances) >= 5:
+    pass
+    except Exception as e:
+        pass
+    pass
                     ks_statistic, p_value = stats.ks_2samp(
                         recent_performances,
                         historical_performances,
@@ -328,11 +411,15 @@ class PerformanceMonitor:
                         drift_reasons.append(
                             f"Distribution shift (KS p-value: {p_value:.4f})",
                         )
+    except Exception as e:
+        pass
             except ImportError:
                 self.print(warning("scipy not available for KS test"))
 
             # Create drift alert if detected
             if drift_detected:
+    pass
+    pass
                 alert = {
                     "timestamp": datetime.now().isoformat(),
                     "model_name": model_name,
@@ -362,10 +449,14 @@ class PerformanceMonitor:
             return False
 
     def get_model_performance_history(self, model_name: str) -> list[dict[str, Any]]:
+    pass
+    pass
         """Get performance history for a specific model."""
         return self.model_performance_history.get(model_name = []).copy()
 
     def clear_drift_alerts(self) -> None:
+    pass
+    pass
         """Clear concept drift alerts."""
         self.drift_alerts.clear()
 
@@ -386,10 +477,18 @@ class PerformanceMonitor:
         """Update real-time performance tracking for a model."""
         try:
             if not self.enable_real_time_tracking:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             # Initialize tracking for new models
             if model_name not in self.model_predictions:
+    pass
+    pass
                 self.model_predictions[model_name] = []
                 self.model_outcomes[model_name] = []
                 self.model_metrics[model_name] = {}
@@ -400,6 +499,8 @@ class PerformanceMonitor:
 
             # Maintain performance window
             if len(self.model_predictions[model_name]) > self.performance_window:
+    pass
+    pass
                 self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
                 self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
 
@@ -422,6 +523,10 @@ class PerformanceMonitor:
         """Calculate real-time performance metrics for a model."""
         try:
             predictions = self.model_predictions[model_name]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             outcomes = self.model_outcomes[model_name]
 
             if len(predictions) < 5:  # Need minimum data points
@@ -446,6 +551,8 @@ class PerformanceMonitor:
             # Calculate trend (performance over time)
             recent_accuracy = accuracy
             if len(predictions) >= 20:
+    pass
+    pass
                 recent_predictions = predictions[-10:]
                 recent_outcomes = outcomes[-10:]
                 recent_correct = sum(1 for p , o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
@@ -471,7 +578,13 @@ class PerformanceMonitor:
         """Check if model retraining is needed."""
         try:
             metrics = self.model_metrics.get(model_name = {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not metrics:
+    pass
+    pass
                 return
 
             triggers = []
@@ -489,6 +602,8 @@ class PerformanceMonitor:
 
             # Check for concept drift
             if await self._detect_concept_drift(model_name):
+    pass
+    pass
                 triggers.append({
                     "model": model_name,
                     "reason": "concept_drift",
@@ -509,6 +624,8 @@ class PerformanceMonitor:
 
             # Check for recent accuracy drop
             if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.retraining_threshold:
+    pass
+    pass
                 triggers.append({
                     "model": model_name,
                     "reason": "recent_performance_drop",
@@ -520,10 +637,14 @@ class PerformanceMonitor:
 
             # Add triggers to the list
             for trigger in triggers:
+    pass
+    pass
                 trigger["timestamp"] = datetime.now().isoformat()
                 self.retraining_triggers.append(trigger)
 
             if triggers:
+    pass
+    pass
                 self.logger.warning(f"Retraining triggers detected for {model_name}: {triggers}")
 
         except Exception as e:
@@ -540,13 +661,23 @@ class PerformanceMonitor:
         """Select best performing models based on real-time metrics."""
         try:
             if not self.enable_real_time_tracking:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return model_names[:required_count]
 
+    except Exception as e:
+        pass
             # Calculate performance scores for each model
             model_scores = {}
             for model_name in model_names:
+    pass
+    pass
                 metrics = self.model_metrics.get(model_name = {})
                 if not metrics:
+    pass
+    pass
                     model_scores[model_name] = 0.5  # Default score
                     continue
 
@@ -564,6 +695,8 @@ class PerformanceMonitor:
 
                 # Apply regime adjustment if available
                 if current_regime:
+    pass
+    pass
                     regime_adjustment = self._get_regime_performance_adjustment(model_name = current_regime)
                     composite_score *= regime_adjustment
 
@@ -582,9 +715,15 @@ class PerformanceMonitor:
             return model_names[:required_count]
 
     def _get_regime_performance_adjustment(self, model_name: str, regime: str) -> float:
+    pass
+    pass
         """Get regime-specific performance adjustment for a model."""
         try:
             # Define regime-specific performance multipliers
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             regime_multipliers = {
                 'BULL': {'tcn': 1.1, 'transformer': 1.0, 'lstm': 0.9, 'gru': 0.9, 'tabnet': 1.0},
                 'BEAR': {'tcn': 0.9, 'transformer': 1.1, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9},
@@ -596,11 +735,17 @@ class PerformanceMonitor:
             # Extract model type from name (e.g., "tcn", "transformer", etc.)
             model_type = None
             for model_type_name in ['tcn', 'transformer', 'lstm', 'gru', 'tabnet']:
+    pass
+    pass
                 if model_type_name in model_name.lower():
+    pass
+    pass
                     model_type = model_type_name
                     break
 
             if not model_type:
+    pass
+    pass
                 return 1.0  # Default multiplier
 
             regime_multiplier = regime_multipliers.get(regime = {}).get(model_type, 1.0)
@@ -625,6 +770,10 @@ class PerformanceMonitor:
                 "retraining_triggers": self.retraining_triggers.copy(),
                 "drift_alerts": self.drift_alerts.copy(),
                 "system_health": self._calculate_system_health()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             return feedback
@@ -634,11 +783,19 @@ class PerformanceMonitor:
             return {}
 
     def _calculate_system_health(self) -> dict[str , Any]:
+    pass
+    pass
         """Calculate overall system health metrics."""
         try:
             if not self.model_metrics:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"status": "unknown", "overall_accuracy": 0.0}
 
+    except Exception as e:
+        pass
             # Calculate average performance across all models
             accuracies = [metrics.get("accuracy", 0.0) for metrics in self.model_metrics.values()]
             f1_scores = [metrics.get("f1_score", 0.0) for metrics in self.model_metrics.values()]
@@ -650,6 +807,8 @@ class PerformanceMonitor:
 
             # Determine system health status
             if avg_accuracy > 0.7 and avg_f1 > 0.6:
+    pass
+    pass
                 status = "healthy"
             elif avg_accuracy > 0.5 and avg_f1 > 0.4:
                 status = "warning"
@@ -669,10 +828,14 @@ class PerformanceMonitor:
             return {"status": "error", "overall_accuracy": 0.0}
 
     def get_retraining_triggers(self) -> list[dict[str , Any]]:
+    pass
+    pass
         """Get current retraining triggers."""
         return self.retraining_triggers.copy()
 
     def clear_retraining_triggers(self) -> None:
+    pass
+    pass
         """Clear retraining triggers."""
         self.retraining_triggers.clear()
 
@@ -688,13 +851,21 @@ async def setup_performance_monitor(
 ) -> PerformanceMonitor | None:
     try:
         global performance_monitor
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {
                 "performance_monitor": {"monitor_interval": 30, "max_history": 100},
             }
         performance_monitor = PerformanceMonitor(config)
         success = await performance_monitor.initialize()
         if success:
+    pass
+    pass
             return performance_monitor
         return None
     except Exception as e:

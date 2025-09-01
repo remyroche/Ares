@@ -1,310 +1,317 @@
 #!/usr/bin/env python3
 """
-Comprehensive Syntax Fixer for Ares Repository
-
-This script automatically fixes common Python syntax errors:
-1. Unmatched parentheses, brackets, and braces
-2. Indentation errors
-3. Unterminated string literals
-4. Missing colons after control structures
-5. Invalid syntax patterns
-6. Await outside async functions
+Comprehensive Syntax Fixer
+Fixes common syntax errors in Python files.
 """
 
 import os
 import re
 import ast
-import logging
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+from pathlib import Path
+from typing import List, Dict, Set, Tuple
 
 
-class SyntaxFixer:
-    """Comprehensive syntax error fixer."""
+import class ComprehensiveSyntaxFixer:
+class ComprehensiveSyntaxFixer:
+    """Fixes common syntax errors in Python files."""
 
     def __init__(self):
-        self.fixes_applied = 0
-        self.files_fixed = 0
+    pass
+        self.fixed_files = 0
         self.errors_fixed = 0
 
-    def fix_unmatched_parentheses(self, content: str) -> str:
-        """Fix unmatched parentheses, brackets, and braces."""
-        original_content = content
-
-        # Count opening and closing characters
-        open_paren = content.count('(')
-        close_paren = content.count(')')
-        open_bracket = content.count('[')
-        close_bracket = content.count(']')
-        open_brace = content.count('{')
-        close_brace = content.count('}')
-
-        # Fix parentheses
-        if open_paren > close_paren:
-            content += ')' * (open_paren - close_paren)
-        elif close_paren > open_paren:
-            # Remove extra closing parentheses from the end
-            lines = content.split('\n')
-            for i in range(len(lines) - 1, -1, -1):
-                if close_paren > open_paren and lines[i].strip().endswith(')'):
-                    lines[i] = lines[i].rstrip(')')
-                    close_paren -= 1
-            content = '\n'.join(lines)
-
-        # Fix brackets
-        if open_bracket > close_bracket:
-            content += ']' * (open_bracket - close_bracket)
-        elif close_bracket > open_bracket:
-            lines = content.split('\n')
-            for i in range(len(lines) - 1, -1, -1):
-                if close_bracket > open_bracket and lines[i].strip().endswith(']'):
-                    lines[i] = lines[i].rstrip(']')
-                    close_bracket -= 1
-            content = '\n'.join(lines)
-
-        # Fix braces
-        if open_brace > close_brace:
-            content += '}' * (open_brace - close_brace)
-        elif close_brace > open_brace:
-            lines = content.split('\n')
-            for i in range(len(lines) - 1, -1, -1):
-                if close_brace > open_brace and lines[i].strip().endswith('}'):
-                    lines[i] = lines[i].rstrip('}')
-                    close_brace -= 1
-            content = '\n'.join(lines)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed unmatched parentheses/brackets/braces")
-
-        return content
-
-    def fix_unterminated_strings(self, content: str) -> str:
-        """Fix unterminated string literals."""
-        lines = content.split('\n')
-        fixed_lines = []
-
-        for i, line in enumerate(lines):
-            # Check for unterminated strings
-            quote_count = line.count('"') + line.count("'")
-            if quote_count % 2 != 0:
-                # Find the last quote and add a matching one
-                last_single = line.rfind("'")
-                last_double = line.rfind('"')
-
-                if last_single > last_double:
-                    # Single quote is last
-                    lines[i] = line + "'"
-                else:
-                    # Double quote is last
-                    lines[i] = line + '"'
-
-                self.fixes_applied += 1
-                logger.info(f"Fixed unterminated string on line {i+1}")
-
-        return '\n'.join(lines)
-
-    def fix_missing_colons(self, content: str) -> str:
-        """Fix missing colons after control structures."""
-        lines = content.split('\n')
-        fixed_lines = []
-
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-
-            # Check for missing colons after control structures
-            if (stripped.startswith(('if ', 'elif ', 'else', 'for ', 'while ', 'def ', 'class ', 'try:', 'except', 'finally')) and
-                not stripped.endswith(':') and
-                not stripped.endswith(':')):
-
-                # Don't add colon if line ends with comment or has a colon later
-                if '#' not in stripped and ':' not in stripped:
-                    lines[i] = line + ':'
-                    self.fixes_applied += 1
-                    logger.info(f"Added missing colon on line {i+1}")
-
-        return '\n'.join(lines)
-
-    def fix_indentation_errors(self, content: str) -> str:
-        """Fix common indentation errors."""
-        lines = content.split('\n')
-        fixed_lines = []
-        indent_stack = [0]  # Track indentation levels
-
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped:  # Empty line
-                fixed_lines.append(line)
-                continue
-
-            # Calculate current indentation
-            current_indent = len(line) - len(line.lstrip())
-
-            # Check for common indentation issues
-            if stripped.startswith(('def ', 'class ', 'if ', 'elif ', 'else:', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ')):
-                # These should be at the current indent level or start a new block
-                expected_indent = indent_stack[-1]
-                if current_indent < expected_indent:
-                    # Fix indentation
-                    lines[i] = ' ' * expected_indent + stripped
-                    self.fixes_applied += 1
-                    logger.info(f"Fixed indentation on line {i+1}")
-
-            # Update indent stack for next line
-            if stripped.endswith(':'):
-                indent_stack.append(indent_stack[-1] + 4)
-            elif stripped in ['pass', 'break', 'continue', 'return']:
-                # These don't increase indentation
-                pass
-            else:
-                # Check if we should decrease indentation
-                if current_indent < indent_stack[-1]:
-                    indent_stack.pop()
-
-        return '\n'.join(lines)
-
-    def fix_await_outside_async(self, content: str) -> str:
-        """Fix 'await' outside async function by wrapping in async function."""
-        if 'await ' in content and 'async def' not in content:
-            # Simple fix: wrap the file content in an async function
-            lines = content.split('\n')
-            fixed_lines = ['async def main():']
-
-            for line in lines:
-                if line.strip() and not line.strip().startswith('#'):
-                    fixed_lines.append('    ' + line)
-                else:
-                    fixed_lines.append(line)
-
-            fixed_lines.append('')
-            fixed_lines.append('if __name__ == "__main__":')
-            fixed_lines.append('    import asyncio')
-            fixed_lines.append('    asyncio.run(main())')
-
-            self.fixes_applied += 1
-            logger.info("Fixed await outside async function")
-            return '\n'.join(fixed_lines)
-
-        return content
-
-    def fix_positional_after_keyword(self, content: str) -> str:
-        """Fix positional arguments after keyword arguments."""
-        # This is a complex fix that requires parsing
-        # For now, we'll just log the issue
-        if re.search(r'=\w+\s+\w+\s*[^=]', content):
-            logger.warning("Found potential positional after keyword argument - manual review needed")
-
-        return content
-
-    def fix_invalid_syntax_patterns(self, content: str) -> str:
-        """Fix common invalid syntax patterns."""
-        original_content = content
-
-        # Fix common patterns
-        content = re.sub(r'==\s*=\s*', '== ', content)  # Fix ===
-        content = re.sub(r'!=\s*=\s*', '!= ', content)   # Fix !==
-        content = re.sub(r'&&', 'and', content)           # Fix && to and
-        content = re.sub(r'\|\|', 'or', content)         # Fix || to or
-
-        # Fix common typos
-        content = re.sub(r'\bTrue\s*=\s*', 'True == ', content)
-        content = re.sub(r'\bFalse\s*=\s*', 'False == ', content)
-        content = re.sub(r'\bNone\s*=\s*', 'None == ', content)
-
-        if content != original_content:
-            self.fixes_applied += 1
-            logger.info("Fixed invalid syntax patterns")
-
-        return content
-
-    def fix_file(self, file_path: str) -> bool:
+    def fix_file(self, filepath: str) -> bool:
+    pass
         """Fix syntax errors in a single file."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
 
+    except Exception as e:
+        pass
             original_content = content
 
             # Apply fixes
-            content = self.fix_unterminated_strings(content)
-            content = self.fix_unmatched_parentheses(content)
-            content = self.fix_missing_colons(content)
-            content = self.fix_invalid_syntax_patterns(content)
-            content = self.fix_await_outside_async(content)
-            content = self.fix_positional_after_keyword(content)
+            content = self._fix_missing_imports(content)
+            content = self._fix_indentation_issues(content)
+            content = self._fix_try_except_blocks(content)
+            content = self._fix_function_definitions(content)
+            content = self._fix_if_statements(content)
+            content = self._fix_for_statements(content)
+            content = self._fix_parameter_issues(content)
+            content = self._fix_syntax_errors(content)
 
-            # Try to fix indentation errors
-            try:
-                content = self.fix_indentation_errors(content)
-            except Exception as e:
-                logger.warning(f"Could not fix indentation in {file_path}: {e}")
+            # Only write if changes were made
+            if content != original_content:
+    pass
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.fixed_files += 1
+                return True
 
-            # Verify the fix worked by trying to parse
-            try:
-                ast.parse(content)
-                # If we get here, the syntax is valid
-                if content != original_content:
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    self.files_fixed += 1
-                    logger.info(f"✅ Fixed syntax errors in {file_path}")
-                    return True
-                else:
-                    logger.info(f"ℹ️  No fixes needed for {file_path}")
-                    return False
-            except SyntaxError as e:
-                logger.warning(f"⚠️  Could not fix all syntax errors in {file_path}: {e}")
-                return False
-
-        except Exception as e:
-            logger.error(f"❌ Error processing {file_path}: {e}")
             return False
 
-    def scan_and_fix_directory(self, directory: str) -> Dict:
-        """Scan and fix all Python files in a directory."""
-        logger.info(f"🔧 Starting syntax fixes in: {directory}")
+        except Exception as e:
+            print(f"Error fixing {filepath}: {e}")
+            return False
 
-        # Find all Python files
-        python_files = []
+    def _fix_missing_imports(self, content: str) -> str:
+    pass
+        """Fix missing import statements."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for i, line in enumerate(lines):
+    pass
+            # Fix missing imports after from statements
+            if line.strip().startswith('from ') and 'import' in line:
+    pass
+                # Check if next line is missing import
+                if i + 1 < len(lines) and not lines[i + 1].strip().startswith('import') and not lines[i + 1].strip().startswith('from'):
+    pass
+                    # Look for the actual import line
+                    for j in range(i + 1, min(i + 10, len(lines))):
+    pass
+                        if lines[j].strip().startswith('import') or lines[j].strip().startswith('from'):
+    pass
+                            break
+                        elif lines[j].strip() and not lines[j].strip().startswith('#'):
+                            # Insert missing import
+                            lines.insert(j, 'import ' + lines[j].strip().split('(')[0].strip())
+                            break
+
+            # Fix incomplete import statements
+            if line.strip().startswith('from ') and not line.strip().endswith('import'):
+    pass
+                if 'import' not in line:
+    pass
+                    # Add missing import keyword
+                    line = line + ' import *'
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_indentation_issues(self, content: str) -> str:
+    pass
+        """Fix indentation issues."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for line in lines:
+    pass
+            # Fix mixed tabs and spaces
+            if '\\t' in line and '    ' in line:
+    pass
+                line = line.replace('\\t', '    ')
+
+            # Fix trailing whitespace
+            line = line.rstrip()
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_try_except_blocks(self, content: str) -> str:
+    pass
+        """Fix incomplete try-except blocks."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for i, line in enumerate(lines):
+    pass
+            # Fix missing except blocks after try
+            if line.strip().startswith('try:') or line.strip().startswith('try '):
+    pass
+                # Check if next line is properly indented
+                if i + 1 < len(lines):
+    pass
+                    next_line = lines[i + 1].strip()
+                    if next_line and not next_line.startswith('except') and not next_line.startswith('finally'):
+    pass
+                        # Find the end of the try block
+                        try_end = i + 1
+                        indent_level = len(lines[i + 1]) - len(lines[i + 1].lstrip())
+
+                        for j in range(i + 2, len(lines)):
+    pass
+                            if lines[j].strip() == '':
+    pass
+                                continue
+                            current_indent = len(lines[j]) - len(lines[j].lstrip())
+                            if current_indent <= indent_level and lines[j].strip():
+    pass
+                                try_end = j
+                                break
+
+                        # Insert except block
+                        lines.insert(try_end, '    except Exception as e:')
+                        lines.insert(try_end + 1, '        pass')
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_function_definitions(self, content: str) -> str:
+    pass
+        """Fix incomplete function definitions."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for i, line in enumerate(lines):
+    pass
+            # Fix function definitions without body
+            if line.strip().startswith('def ') and line.strip().endswith(':'):
+    pass
+                # Check if next line is properly indented
+                if i + 1 < len(lines):
+    pass
+                    next_line = lines[i + 1].strip()
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
+    pass
+                        # Insert pass statement
+                        lines.insert(i + 1, '    pass')
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_if_statements(self, content: str) -> str:
+    pass
+        """Fix incomplete if statements."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for i, line in enumerate(lines):
+    pass
+            # Fix if statements without body
+            if line.strip().startswith('if ') and line.strip().endswith(':'):
+    pass
+                # Check if next line is properly indented
+                if i + 1 < len(lines):
+    pass
+                    next_line = lines[i + 1].strip()
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
+    pass
+                        # Insert pass statement
+                        lines.insert(i + 1, '    pass')
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_for_statements(self, content: str) -> str:
+    pass
+        """Fix incomplete for statements."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for i, line in enumerate(lines):
+    pass
+            # Fix for statements without body
+            if line.strip().startswith('for ') and line.strip().endswith(':'):
+    pass
+                # Check if next line is properly indented
+                if i + 1 < len(lines):
+    pass
+                    next_line = lines[i + 1].strip()
+                    if next_line and not next_line.startswith('    ') and not next_line.startswith('\\t'):
+    pass
+                        # Insert pass statement
+                        lines.insert(i + 1, '    pass')
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_parameter_issues(self, content: str) -> str:
+    pass
+        """Fix parameter ordering issues."""
+        lines = content.split('\\n')
+        fixed_lines = []
+
+        for line in lines:
+    pass
+            # Fix parameter without default follows parameter with default
+            if 'def ' in line and '=' in line:
+    pass
+                # This is a complex fix that would require parsing
+                # For now, just ensure basic syntax
+                pass
+
+            fixed_lines.append(line)
+
+        return '\\n'.join(fixed_lines)
+
+    def _fix_syntax_errors(self, content: str) -> str:
+    pass
+        """Fix common syntax errors."""
+        # Fix invalid decimal literals
+        content = re.sub(r'(\\d+)\\.(\\d+)\\.(\\d+)', r'\\1.\\2\\3', content)
+
+        # Fix unmatched parentheses
+        # This is complex and would require a proper parser
+        # For now, just fix obvious cases
+
+        # Fix invalid escape sequences
+        content = re.sub(r'\\\([^\\\])', r'\\\\\\1', content)
+
+        return content
+
+    def fix_directory(self, directory: str) -> Dict[str, int]:
+    pass
+        """Fix syntax errors in all Python files in a directory."""
+        results = {'files_fixed': 0, 'errors_fixed': 0}
+
         for root, dirs, files in os.walk(directory):
+    pass
             # Skip certain directories
-            dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', 'venv', 'env', 'backup_']]
+            dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', 'test_results', 'log']]
 
             for file in files:
+    pass
                 if file.endswith('.py'):
-                    python_files.append(os.path.join(root, file))
+    pass
+                    filepath = os.path.join(root, file)
 
-        logger.info(f"📁 Found {len(python_files)} Python files")
+                    # Skip certain files
+                    if any(skip in filepath for skip in ['test_models', 'data_cache']):
+    pass
+                        continue
 
-        # Fix each file
-        for file_path in python_files:
-            self.fix_file(file_path)
+                    print(f"Fixing: {filepath}")
+                    if self.fix_file(filepath):
+    pass
+                        results['files_fixed'] += 1
 
-        return {
-            'files_processed': len(python_files),
-            'files_fixed': self.files_fixed,
-            'fixes_applied': self.fixes_applied
-        }
+        return results
 
 
 def main():
-    """Main function to run the syntax fixer."""
-    logger.info("🚀 Starting comprehensive syntax fixer")
+    pass
+    """Main function."""
+    import sys
 
-    fixer = SyntaxFixer()
+    if len(sys.argv) < 2:
+    pass
+        print("Usage: python comprehensive_syntax_fixer.py <directory>")
+        sys.exit(1)
 
-    # Fix files in current directory
-    results = fixer.scan_and_fix_directory('.')
+    directory = sys.argv[1]
 
-    # Print summary
-    logger.info("📊 Fix Summary:")
-    logger.info(f"   Files processed: {results['files_processed']}")
-    logger.info(f"   Files fixed: {results['files_fixed']}")
-    logger.info(f"   Total fixes applied: {results['fixes_applied']}")
+    if not os.path.exists(directory):
+    pass
+        print(f"Directory {directory} does not exist")
+        sys.exit(1)
 
-    logger.info("✅ Syntax fixing completed!")
+    fixer = ComprehensiveSyntaxFixer()
+    results = fixer.fix_directory(directory)
+
+    print(f"\\nSyntax fixing completed:")
+    print(f"Files fixed: {results['files_fixed']}")
+    print(f"Errors fixed: {results['errors_fixed']}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    pass
     main()

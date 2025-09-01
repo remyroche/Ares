@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -16,6 +17,8 @@ class FractionalDifferentiationIntegrationTester:
     """Test fractional differentiation integration into feature engineering."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the tester."""
         self.output_dir = Path("data/fractional_performance/fractional_differentiation_test")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +39,8 @@ class FractionalDifferentiationIntegrationTester:
         }
 
     def generate_test_data(self, n_samples: int = 1000) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    pass
+    pass
         """Generate comprehensive test data.
 
         Args:
@@ -53,6 +58,8 @@ class FractionalDifferentiationIntegrationTester:
         regime_length = n_samples // 4
 
         for i in range(4):
+    pass
+    pass
             if i == 0:  # Trending up
                 trend = 0.0002
                 volatility = 0.015
@@ -73,7 +80,11 @@ class FractionalDifferentiationIntegrationTester:
         prices = [base_price]
 
         for i, (trend, volatility) in enumerate(regimes):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 noise = random.gauss(0, volatility)
                 new_price = prices[-1] * (1 + trend + noise)
                 prices.append(new_price)
@@ -88,6 +99,8 @@ class FractionalDifferentiationIntegrationTester:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             price_data['high'][i] = max(price_data['high'][i], price_data['close'][i])
             price_data['low'][i] = min(price_data['low'][i], price_data['close'][i])
 
@@ -122,10 +135,15 @@ class FractionalDifferentiationIntegrationTester:
 
         try:
             # Disable fractional differentiation for baseline test
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             test_config = self.test_config.copy()
             test_config["vectorized_advanced_features"]["enable_fractional_differentiation"] = False
 
             from src.training.steps.vectorized_advanced_feature_engineering import (
+import VectorizedAdvancedFeatureEngineering
                 VectorizedAdvancedFeatureEngineering
             )
 
@@ -169,10 +187,15 @@ class FractionalDifferentiationIntegrationTester:
 
         try:
             # Enable fractional differentiation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             test_config = self.test_config.copy()
             test_config["vectorized_advanced_features"]["enable_fractional_differentiation"] = True
 
             from src.training.steps.vectorized_advanced_feature_engineering import (
+import VectorizedAdvancedFeatureEngineering
                 VectorizedAdvancedFeatureEngineering
             )
 
@@ -211,6 +234,8 @@ class FractionalDifferentiationIntegrationTester:
             }
 
     def test_fractional_differentiation_standalone(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> Dict[str, Any]:
+    pass
+    pass
         """Test fractional differentiation standalone.
 
         Args:
@@ -225,13 +250,23 @@ class FractionalDifferentiationIntegrationTester:
         try:
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Initialize fractional feature generator
+import fractional_generator = FractionalFeatureGenerator
             fractional_generator = FractionalFeatureGenerator()
 
             # Combine data
             combined_data = price_data.copy()
             for col in volume_data.columns:
+    pass
+    pass
                 if col not in combined_data.columns:
+    pass
+    pass
                     combined_data[col] = volume_data[col]
 
             # Generate fractional differentiation features
@@ -240,7 +275,11 @@ class FractionalDifferentiationIntegrationTester:
             # Extract only fractional differentiation features
             frac_diff_features = {}
             for col in fractional_features.columns:
+    pass
+    pass
                 if 'frac_diff' in col and col not in combined_data.columns:
+    pass
+    pass
                     frac_diff_features[col] = fractional_features[col]
 
             standalone_results = {
@@ -265,6 +304,8 @@ class FractionalDifferentiationIntegrationTester:
             }
 
     def compare_results(self, baseline_results: Dict[str, Any], fractional_results: Dict[str, Any], standalone_results: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Compare feature engineering results.
 
         Args:
@@ -288,11 +329,15 @@ class FractionalDifferentiationIntegrationTester:
 
         # Calculate improvements
         if 'error' not in baseline_results and 'error' not in fractional_results:
+    pass
+    pass
             baseline_features = baseline_results.get('total_features', 0)
             fractional_features = fractional_results.get('total_features', 0)
             frac_diff_features = fractional_results.get('frac_diff_features', 0)
 
             if baseline_features > 0:
+    pass
+    pass
                 total_improvement = (fractional_features - baseline_features) / baseline_features
                 comparison['improvements'] = {
                     'total_feature_improvement': total_improvement,
@@ -319,6 +364,8 @@ class FractionalDifferentiationIntegrationTester:
 
         print(f"   📈 Comparison results:")
         if 'improvements' in comparison and comparison['improvements']:
+    pass
+    pass
             print(f"      Total feature improvement: {comparison['improvements']['total_feature_improvement']:+.2%}")
             print(f"      Additional fractional diff features: {comparison['improvements']['additional_frac_diff_features']}")
         print(f"      Integration success: {comparison['analysis']['integration_success']}")
@@ -409,13 +456,15 @@ class FractionalDifferentiationIntegrationTester:
 """)
 
             if 'improvements' in comparison and comparison['improvements']:
+    pass
+    pass
                 f.write(f"""
 - **Total Feature Improvement**: {comparison['improvements']['total_feature_improvement']:+.2%}
 - **Additional Fractional Diff Features**: {comparison['improvements']['additional_frac_diff_features']}
 - **Feature Increase Percentage**: {comparison['improvements']['feature_increase_percentage']:+.2f}%
 """)
             else:
-                f.write("- **No improvements calculated** (integration failed)\n")
+                f.write("- **No improvements calculated** (integration failed)\\\n")
 
             f.write(f"""
 ## Analysis
@@ -463,7 +512,7 @@ class FractionalDifferentiationIntegrationTester:
         # Export results
         self.export_results(test_data, baseline_results, fractional_results, standalone_results, comparison)
 
-        print("\n✅ Fractional differentiation integration test complete!")
+        print("\\\n✅ Fractional differentiation integration test complete!")
         print(f"📁 Results saved to: {self.output_dir}")
 
         return {
@@ -482,21 +531,25 @@ async def main():
     tester = FractionalDifferentiationIntegrationTester()
     results = await tester.run_complete_test(n_samples=1000)
 
-    print("\n🎯 Integration Test Summary:")
+    print("\\\n🎯 Integration Test Summary:")
     print(f"   Baseline Features: {results['baseline_results'].get('total_features', 0)}")
     print(f"   Fractional Integration Features: {results['fractional_results'].get('total_features', 0)}")
     print(f"   Standalone Fractional Features: {results['standalone_results'].get('total_features', 0)}")
 
     if 'improvements' in results['comparison'] and results['comparison']['improvements']:
+    pass
+    pass
         print(f"   Feature Improvement: {results['comparison']['improvements']['total_feature_improvement']:+.2%}")
 
-    print("\n📋 Key Findings:")
+    print("\\\n📋 Key Findings:")
     print("   • Fractional differentiation successfully integrated into feature engineering pipeline")
     print("   • Additional features provide more information for ML models")
     print("   • Ready for parameter optimization and performance testing")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio
     import pandas as pd
 

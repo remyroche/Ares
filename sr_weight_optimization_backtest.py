@@ -19,6 +19,7 @@ import sys
 
 from src.tactician.sr_weight_optimizer import (import numpy as np, import pandas as pd)
 # Add src to path)
+import sys.path.append
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
     WeightOptimizationResult , setup_sr_weight_optimizer,
@@ -36,6 +37,8 @@ class SRWeightOptimizationBacktest:
     """
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("SRWeightOptimizationBacktest")
 
@@ -71,9 +74,15 @@ class SRWeightOptimizationBacktest:
         try:
             self.logger.info("🚀 Initializing SR Weight Optimization Backtest...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize weight optimizer
             self.weight_optimizer = await setup_sr_weight_optimizer(self.config)
             if not self.weight_optimizer:
+    pass
+    pass
                 self.logger.error("❌ Failed to initialize weight optimizer")
                 return False
 
@@ -104,11 +113,17 @@ class SRWeightOptimizationBacktest:
         try:
             self.logger.info(
                 f"🎯 Starting comprehensive backtest for {symbol} on {exchange}",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             # Prepare data
             prepared_data = self._prepare_backtest_data(price_data)
             if prepared_data is None:
+    pass
+    pass
                 return None
 
             # Run multi-period optimization
@@ -140,9 +155,15 @@ class SRWeightOptimizationBacktest:
             return None
 
     def _prepare_backtest_data(self, price_data: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """Prepare data for backtesting."""
         try:
             # Calculate returns
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             price_data = price_data.copy()
             price_data["returns"] = price_data["close"].pct_change()
 
@@ -155,6 +176,8 @@ class SRWeightOptimizationBacktest:
             # Split data by market conditions
             period_data = {}
             for condition , mask in market_conditions.items():
+    pass
+    pass
                 period_data[condition] = price_data[mask].copy()
 
             self.logger.info(
@@ -174,6 +197,10 @@ class SRWeightOptimizationBacktest:
         """Identify different market conditions for period-specific optimization."""
         try:
             # Calculate rolling metrics
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             returns = price_data["returns"].dropna()
             rolling_volatility = returns.rolling(window=30).std()
             rolling_return = returns.rolling(window=30).mean()
@@ -216,8 +243,16 @@ class SRWeightOptimizationBacktest:
         try:
             period_results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for period_name , period_data in prepared_data["period_data"].items():
+    pass
+    pass
                 if len(period_data) < self.min_period_length:
+    pass
+    pass
                     self.logger.warning(
                         f"⚠️ Period {period_name} too short: {len(period_data)} < {self.min_period_length}",
                     )
@@ -234,6 +269,8 @@ class SRWeightOptimizationBacktest:
                 )
 
                 if result:
+    pass
+    pass
                     period_results[period_name] = result
                     self.logger.info(
                         f"✅ {period_name} optimization completed: score={result.optimization_score:.4f}",
@@ -257,9 +294,15 @@ class SRWeightOptimizationBacktest:
                 "performance_consistency": {},
                 "market_condition_analysis": {},
                 "recommended_weights": {},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             if not period_results:
+    pass
+    pass
                 return analysis
 
             # Analyze weight stability across periods
@@ -272,6 +315,8 @@ class SRWeightOptimizationBacktest:
             ]
 
             for component in weight_components:
+    pass
+    pass
                 weights = [
                     result.weights.get(component = 0)
                     for result in period_results.values()
@@ -295,6 +340,8 @@ class SRWeightOptimizationBacktest:
             ]
 
             for metric in performance_metrics:
+    pass
+    pass
                 values = [
                     getattr(result = metric, 0) for result in period_results.values()
                 ]
@@ -307,6 +354,8 @@ class SRWeightOptimizationBacktest:
 
             # Market condition analysis
             for period_name , result in period_results.items():
+    pass
+    pass
                 analysis["market_condition_analysis"][period_name] = {
                     "weights": result.weights,
                     "performance": {
@@ -335,9 +384,15 @@ class SRWeightOptimizationBacktest:
                 "balanced": {},
                 "aggressive": {},
                 "market_adaptive": {},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             if not period_results:
+    pass
+    pass
                 return recommendations
 
             # Conservative weights: average across all periods
@@ -350,6 +405,8 @@ class SRWeightOptimizationBacktest:
             ]
 
             for component in weight_components:
+    pass
+    pass
                 weights = [
                     result.weights.get(component = 0)
                     for result in period_results.values()
@@ -361,7 +418,11 @@ class SRWeightOptimizationBacktest:
                 result.optimization_score for result in period_results.values()
             )
             if total_score > 0:
+    pass
+    pass
                 for component in weight_components:
+    pass
+    pass
                     weighted_sum = sum(
                         result.weights.get(component = 0) * result.optimization_score
                         for result in period_results.values()
@@ -412,13 +473,21 @@ class SRWeightOptimizationBacktest:
                 "performance_insights": {},
                 "implementation_guidance": {},
                 "risk_warnings": {},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Weight stability recommendations
             weight_stability = cross_period_analysis.get("weight_stability", {})
             for component , stats in weight_stability.items():
+    pass
+    pass
                 cv = stats.get("cv", 0)
                 if cv < 0.2:
+    pass
+    pass
                     recommendations["weight_recommendations"][component] = (
                         "STABLE - Use balanced weights"
                     )
@@ -437,11 +506,17 @@ class SRWeightOptimizationBacktest:
                 {},
             )
             for metric, stats in performance_consistency.items():
+    pass
+    pass
                 mean_value = stats.get("mean", 0)
                 stats.get("std", 0)
 
                 if metric == "sharpe_ratio":
+    pass
+    pass
                     if mean_value > 1.0:
+    pass
+    pass
                         recommendations["performance_insights"][metric] = (
                             "EXCELLENT - Strong risk-adjusted returns"
                         )
@@ -456,6 +531,8 @@ class SRWeightOptimizationBacktest:
 
                 elif metric == "win_rate":
                     if mean_value > 0.6:
+    pass
+    pass
                         recommendations["performance_insights"][metric] = (
                             "EXCELLENT - High win rate"
                         )
@@ -471,6 +548,8 @@ class SRWeightOptimizationBacktest:
             # Implementation guidance
             recommended_weights = cross_period_analysis.get("recommended_weights", {})
             if recommended_weights:
+    pass
+    pass
                 recommendations["implementation_guidance"] = {
                     "primary_weights": recommended_weights.get("balanced", {}),
                     "fallback_weights": recommended_weights.get("conservative", {}),
@@ -496,6 +575,8 @@ class SRWeightOptimizationBacktest:
             return {}
 
     def _create_summary(self, recommendations: dict[str, Any]) -> dict[str , Any]:
+    pass
+    pass
         """Create executive summary of backtest results."""
         try:
             summary = {
@@ -504,6 +585,10 @@ class SRWeightOptimizationBacktest:
                 "recommended_action": "",
                 "confidence_level": "HIGH",
                 "next_steps": [],
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Key findings
@@ -514,6 +599,8 @@ class SRWeightOptimizationBacktest:
                 comp for comp, rec in weight_recommendations.items() if "STABLE" in rec
             ]
             if stable_components:
+    pass
+    pass
                 summary["key_findings"].append(
                     f"Stable weight components: {', '.join(stable_components)}",
                 )
@@ -524,12 +611,16 @@ class SRWeightOptimizationBacktest:
                 if "EXCELLENT" in insight
             ]
             if excellent_metrics:
+    pass
+    pass
                 summary["key_findings"].append(
                     f"Excellent performance in: {', '.join(excellent_metrics)}",
                 )
 
             # Recommended action
             if len(stable_components) >= 3 and len(excellent_metrics) >= 2:
+    pass
+    pass
                 summary["recommended_action"] = (
                     "IMPLEMENT - Strong optimization results with stable weights"
                 )
@@ -566,6 +657,10 @@ class SRWeightOptimizationBacktest:
         """Save backtest results to file."""
         try:
             # Create results directory
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results_dir = "backtest_results"
             os.makedirs(results_dir, exist_ok = True)
 
@@ -640,6 +735,8 @@ async def main():
     # Initialize backtest framework
     backtest = SRWeightOptimizationBacktest(config)
     if not await backtest.initialize():
+    pass
+    pass
         print("❌ Failed to initialize backtest framework")
         return
 
@@ -653,6 +750,8 @@ async def main():
     returns = np.random.normal(0, 0.02, len(dates))
     prices = [base_price]
     for ret in returns[1:]:
+    pass
+    pass
         prices.append(prices[-1] * (1 + ret))
 
     price_data = pd.DataFrame(
@@ -675,24 +774,32 @@ async def main():
         args.exchange = )
 
     if results:
+    pass
+    pass
         print("✅ Backtest completed successfully!")
-        print("\n📋 Executive Summary:")
+        print("\\\n📋 Executive Summary:")
         summary = results.get("summary", {})
         print(f"   Status: {summary.get('optimization_status', 'UNKNOWN')}")
         print(f"   Recommended Action: {summary.get('recommended_action', 'UNKNOWN')}")
         print(f"   Confidence Level: {summary.get('confidence_level', 'UNKNOWN')}")
 
-        print("\n🔍 Key Findings:")
+        print("\\\n🔍 Key Findings:")
         for finding in summary.get("key_findings", []):
+    pass
+    pass
             print(f"   • {finding}")
 
-        print("\n📈 Next Steps:")
+        print("\\\n📈 Next Steps:")
         for step in summary.get("next_steps", []):
+    pass
+    pass
             print(f"   • {step}")
 
-        print("\n📁 Results saved to: backtest_results/")
+        print("\\\n📁 Results saved to: backtest_results/")
     else:
         print("❌ Backtest failed")
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

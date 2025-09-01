@@ -35,15 +35,18 @@ import pandas as pd
 from optuna.visualization import plot_optimization_history, plot_param_importances
 
 # Ensure src on path
+import sys.path.append
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization import (  # noqa: E402
+import AdvancedOptunaManager,
     AdvancedOptunaManager,
 )
 from src.utils.logger import setup_logging  # noqa: E402
 
 
 # Initialize logging and suppress noisy warnings
+import setup_logging
 setup_logging()
 warnings.filterwarnings("ignore")
 
@@ -57,6 +60,8 @@ class UnifiedOptunaDemo:
     """
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger = logging.getLogger(__name__)
 
         # Configuration for different optimization types
@@ -106,6 +111,8 @@ class UnifiedOptunaDemo:
         )
 
     def prepare_sample_data(self, data_type: str, n_samples: int = 2000) -> tuple[pd.DataFrame, pd.Series]:
+    pass
+    pass
         """
         Prepare sample data for different optimization types.
 
@@ -123,6 +130,8 @@ class UnifiedOptunaDemo:
         rng = np.random.default_rng(42)
 
         if data_type == "price_data":
+    pass
+    pass
             # Create price-like data for S/R optimization
             base_price = 100.0
             X = pd.DataFrame(
@@ -195,8 +204,14 @@ class UnifiedOptunaDemo:
         config = self.configs["ml_models"]
 
         for model_type in models:
+    pass
+    pass
             try:
                 self.logger.info(f"  Optimizing {model_type}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 result = self.optimizer.optimize(
                     model_type,
                     X=X,
@@ -234,6 +249,10 @@ class UnifiedOptunaDemo:
                 cv_folds=5,
                 early_stopping_patience=20,
                 subsample_fraction=0.7,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(
                 f"✅ S/R optimization completed: best_value={result.get('best_value', float('nan')):.4f}",
@@ -263,6 +282,10 @@ class UnifiedOptunaDemo:
                 cv_folds=int(config["cv_folds"]),
                 early_stopping_patience=int(config["early_stopping_patience"]),
                 subsample_fraction=float(config["subsample_fraction"]),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(
                 f"✅ Autoencoder optimization completed: best_value={result.get('best_value', float('nan')):.4f}",
@@ -292,6 +315,10 @@ class UnifiedOptunaDemo:
                 cv_folds=int(config["cv_folds"]),
                 early_stopping_patience=int(config["early_stopping_patience"]),
                 subsample_fraction=float(config["subsample_fraction"]),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(
                 f"✅ Order execution optimization completed: best_value={result.get('best_value', float('nan')):.4f}",
@@ -311,6 +338,8 @@ class UnifiedOptunaDemo:
         self.logger.info("🔧 Running custom optimization example...")
 
         def custom_objective(trial: optuna.Trial, X_df: pd.DataFrame, y_sr: pd.Series) -> float:
+    pass
+    pass
             """Custom objective function for demonstration."""
             # Define custom hyperparameter space
             learning_rate = trial.suggest_float("learning_rate", 0.01, 0.3, log=True)
@@ -330,6 +359,10 @@ class UnifiedOptunaDemo:
 
         try:
             # Use manager's study infra with the custom objective by mapping to a supported model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # We directly run an Optuna study here to showcase custom objective
             study_name = f"{self.optimizer.study_name_prefix}_custom"
             study = optuna.create_study(
@@ -342,6 +375,8 @@ class UnifiedOptunaDemo:
             )
 
             def _objective(trial: optuna.Trial) -> float:
+    pass
+    pass
                 return custom_objective(trial, X, y)
 
             study.optimize(_objective, n_trials=n_trials, n_jobs=1)
@@ -377,17 +412,23 @@ class UnifiedOptunaDemo:
             return None
 
     def print_optimization_summary(self, results: dict[str, Optional[dict[str, Any]]]) -> None:
+    pass
+    pass
         """Print comprehensive optimization summary."""
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
         print("🎯 UNIFIED OPTUNA OPTIMIZATION SUMMARY")
         print("=" * 80)
 
         for optimization_type, result in results.items():
+    pass
+    pass
             if result is None:
-                print(f"\n❌ {optimization_type.upper()}: FAILED")
+    pass
+    pass
+                print(f"\\\n❌ {optimization_type.upper()}: FAILED")
                 continue
 
-            print(f"\n✅ {optimization_type.upper()}:")
+            print(f"\\\n✅ {optimization_type.upper()}:")
             print(f"   Study Name: {result.get('study_name', 'N/A')}")
             print(f"   Trials Completed: {result.get('total_trials', 'N/A')}")
             print(f"   Best Value: {result.get('best_value', float('nan')):.4f}")
@@ -395,6 +436,8 @@ class UnifiedOptunaDemo:
             # Show top parameters
             best_params = result.get("best_params", {})
             if best_params:
+    pass
+    pass
                 print("   Top Parameters:")
                 # Sort numeric params by value for display
                 try:
@@ -402,13 +445,19 @@ class UnifiedOptunaDemo:
                         best_params.items(),
                         key=lambda x: float(x[1]) if isinstance(x[1], (int, float)) else 0.0,
                         reverse=True,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     )[:5]
                 except Exception:
                     sorted_params = list(best_params.items())[:5]
                 for param, value in sorted_params:
+    pass
+    pass
                     print(f"     {param}: {value}")
 
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
 
     def create_visualizations(
         self, results: dict[str, Optional[dict[str, Any]]], save_dir: str = "optimization_results"
@@ -416,14 +465,26 @@ class UnifiedOptunaDemo:
         """Create visualizations for optimization results."""
         try:
             os.makedirs(save_dir, exist_ok=True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             plots_created = 0
 
             for optimization_type, result in results.items():
+    pass
+    pass
                 if result is None:
+    pass
+    pass
                     continue
 
                 try:
                     # Load study for visualization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     study = optuna.load_study(
                         study_name=str(result["study_name"]), storage=self.optimizer.storage_url
                     )
@@ -452,6 +513,8 @@ class UnifiedOptunaDemo:
             self.logger.exception(f"Error creating visualizations: {e}")
 
     def run_comprehensive_demo(self, optimization_type: str = "all", n_trials: int = 50) -> dict[str, Optional[dict[str, Any]]]:
+    pass
+    pass
         """
         Run comprehensive optimization demo.
 
@@ -464,12 +527,16 @@ class UnifiedOptunaDemo:
         results: dict[str, Optional[dict[str, Any]]] = {}
 
         if optimization_type in ["all", "ml_models"]:
+    pass
+    pass
             # ML Models optimization
             X_ml, y_ml = self.prepare_sample_data("ml_features", 2000)
             ml_results = self.optimize_ml_models(X_ml, y_ml, n_trials)
             results.update({f"ml_{k}": v for k, v in ml_results.items()})
 
         if optimization_type in ["all", "sr_parameters"]:
+    pass
+    pass
             # S/R Parameters optimization (surrogate)
             X_sr, y_sr = self.prepare_sample_data("price_data", 2000)
             sr_result = self.optimize_sr_parameters(
@@ -480,18 +547,24 @@ class UnifiedOptunaDemo:
             results["sr_parameters"] = sr_result
 
         if optimization_type in ["all", "autoencoder"]:
+    pass
+    pass
             # Autoencoder optimization (surrogate)
             X_ae, y_ae = self.prepare_sample_data("autoencoder_features", 2000)
             ae_result = self.optimize_autoencoder(X_ae, y_ae, n_trials)
             results["autoencoder"] = ae_result
 
         if optimization_type in ["all", "order_execution"]:
+    pass
+    pass
             # Order execution optimization (surrogate)
             X_oe, y_oe = self.prepare_sample_data("order_execution", 2000)
             oe_result = self.optimize_order_execution(X_oe, y_oe, n_trials)
             results["order_execution"] = oe_result
 
         if optimization_type in ["all", "custom"]:
+    pass
+    pass
             # Custom optimization
             X_custom, y_custom = self.prepare_sample_data("ml_features", 1000)
             custom_result = self.custom_optimization_example(
@@ -543,6 +616,10 @@ async def main() -> int:
 
     try:
         # Initialize demo
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         demo = UnifiedOptunaDemo()
 
         # Run comprehensive demo
@@ -550,7 +627,7 @@ async def main() -> int:
             optimization_type=args.optimization_type, n_trials=args.n_trials,
         )
 
-        print("\n🎯 Demo completed successfully!")
+        print("\\\n🎯 Demo completed successfully!")
         print(f"📊 Results saved to: {args.output_dir}")
         print(f"🔧 Optimization types tested: {list(results.keys())}")
 
@@ -561,6 +638,8 @@ async def main() -> int:
         )
 
         if successful_optimizations:
+    pass
+    pass
             # Use best_value field when available
             non_null_results = [v for v in results.values() if v is not None]
             best_result = max(
@@ -574,5 +653,7 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

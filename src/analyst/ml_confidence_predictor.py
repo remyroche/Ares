@@ -9,15 +9,18 @@ import pandas as pd
 
 # Import enhanced order manager for tactician order management
 from src.tactician.enhanced_order_manager import (
+import OrderSide,
     OrderSide,
 )
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_file_operations,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     warning,
     failed,
@@ -36,6 +39,8 @@ class MLConfidencePredictor:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize ML Confidence Predictor with enhanced type safety.
 
@@ -58,6 +63,7 @@ class MLConfidencePredictor:
         # Configuration
         from src.config_optuna import get_parameter_value
 
+import self.predictor_config: dict[str, Any] = self.config.get
         self.predictor_config: dict[str, Any] = self.config.get(
             "ml_confidence_predictor",
             {},
@@ -134,6 +140,7 @@ class MLConfidencePredictor:
         self.tactician_timeframes: list[str] = ["1m"]
         from src.config_optuna import get_parameter_value
 
+import self.analyst_confidence_threshold: float = get_parameter_value
         self.analyst_confidence_threshold: float = get_parameter_value(
             "confidence_thresholds.analyst_confidence_threshold",
             0.7,
@@ -203,6 +210,8 @@ class MLConfidencePredictor:
         self.label_timeframes: list[str] = ["30m", "15m", "5m", "1m"]
 
     def is_enhanced_training_available(self) -> bool:
+    pass
+    pass
         """
         Check if enhanced training manager is available and has trained models.
 
@@ -244,13 +253,21 @@ class MLConfidencePredictor:
         try:
             self.logger.info("Generating price target confidence predictions...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check model availability and prepare for prediction
             if not await self._prepare_for_prediction():
+    pass
+    pass
                 return self._generate_fallback_predictions(current_price)
 
             # Prepare features for prediction
             features = await self._prepare_prediction_features(market_data)
             if features is None or features.empty:
+    pass
+    pass
                 self.logger.warning(
                     "Could not prepare features for prediction, using fallback",
                 )
@@ -306,6 +323,8 @@ class MLConfidencePredictor:
         """
         # Check if enhanced training manager is available and has models
         if not self.is_enhanced_training_available():
+    pass
+    pass
             self.logger.warning(
                 "Enhanced training manager not available or no models loaded - using fallback predictions",
             )
@@ -313,6 +332,8 @@ class MLConfidencePredictor:
 
         # Try to refresh models from enhanced training manager if not trained
         if not self.is_trained:
+    pass
+    pass
             self.logger.info(
                 "Attempting to refresh models from enhanced training manager...",
             )
@@ -320,6 +341,8 @@ class MLConfidencePredictor:
 
         # Check if we have trained models from enhanced training manager
         if not self._has_trained_models():
+    pass
+    pass
             self.logger.warning(
                 "No trained models available, using fallback predictions",
             )
@@ -328,6 +351,8 @@ class MLConfidencePredictor:
         return True
 
     def _has_trained_models(self) -> bool:
+    pass
+    pass
         """
         Check if trained models are available.
 
@@ -363,6 +388,8 @@ class MLConfidencePredictor:
         price_target_confidences = {}
 
         for target in self.price_movement_levels:
+    pass
+    pass
             model_key = f"price_target_{target:.1f}"
             confidence = self._get_prediction_for_target(
                 features,
@@ -395,6 +422,8 @@ class MLConfidencePredictor:
         adversarial_confidences = {}
 
         for level in self.adversarial_movement_levels:
+    pass
+    pass
             model_key = f"adversarial_{level:.1f}"
             confidence = self._get_prediction_for_target(
                 features,
@@ -426,6 +455,8 @@ class MLConfidencePredictor:
             float: Prediction confidence
         """
         if model_type == "price_target":
+    pass
+    pass
             models = self.price_target_models
             fallback_func = self._get_fallback_confidence
         else:  # adversarial
@@ -433,6 +464,8 @@ class MLConfidencePredictor:
             fallback_func = self._get_fallback_decrease_probability
 
         if model_key in models and models[model_key] is not None:
+    pass
+    pass
             return self._predict_single_target(features, model_key, model_type)
         return fallback_func(target_level)
 
@@ -455,6 +488,8 @@ class MLConfidencePredictor:
             dict: Ensemble predictions
         """
         if self.ensemble_models:
+    pass
+    pass
             return await self._generate_ensemble_predictions(features)
         return {}
 
@@ -510,19 +545,29 @@ class MLConfidencePredictor:
         """
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Meta-labeling system not available"))
                 return None
 
+    except Exception as e:
+        pass
             # Generate base confidence predictions
             base_predictions = await self.predict_confidence_table(
                 market_data,
                 current_price,
             )
             if not base_predictions:
+    pass
+    pass
                 return None
 
             # Generate meta-labels
             if model_type == "analyst":
+    pass
+    pass
                 meta_labels = await self._generate_analyst_meta_labels(market_data)
             else:
                 meta_labels = await self._generate_tactician_meta_labels(market_data)
@@ -537,12 +582,24 @@ class MLConfidencePredictor:
             )
             active_meta = 0
             if isinstance(meta_labels, dict):
+    pass
+    pass
                 for k in label_whitelist:
+    pass
+    pass
                     if k == "NO_SETUP":
+    pass
+    pass
                         continue
                     try:
                         if float(meta_labels.get(k, 0) or 0) > 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                             active_meta += 1
+    except Exception as e:
+        pass
                     except (ValueError, TypeError):
                         continue
             routing = {
@@ -575,14 +632,28 @@ class MLConfidencePredictor:
         """Generate predictions using ensemble models from enhanced training manager."""
         try:
             if not self.ensemble_models:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             ensemble_predictions = {}
 
             for ensemble_name, ensemble_model in self.ensemble_models.items():
+    pass
+    pass
                 try:
                     # Use the ensemble model to make predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if hasattr(ensemble_model, "predict"):
+    pass
+    pass
                         prediction = ensemble_model.predict(features)
                         ensemble_predictions[ensemble_name] = prediction
                     elif hasattr(ensemble_model, "predict_proba"):
@@ -612,8 +683,14 @@ class MLConfidencePredictor:
         """Generate analyst meta-labels for setup identification."""
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             # Create volume data (assuming volume column exists)
             volume_data = (
                 market_data[["volume"]]
@@ -636,9 +713,15 @@ class MLConfidencePredictor:
         """Refresh models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Enhanced training manager not available"))
                 return False
 
+    except Exception as e:
+        pass
             self.logger.info("Refreshing models from enhanced training manager...")
 
             # Clear existing models
@@ -654,6 +737,8 @@ class MLConfidencePredictor:
 
             # Update training status
             if self.is_trained:
+    pass
+    pass
                 self.logger.info(
                     "✅ Models refreshed successfully from enhanced training manager",
                 )
@@ -670,15 +755,27 @@ class MLConfidencePredictor:
             return False
 
     def get_enhanced_training_model_info(self) -> dict[str, Any]:
+    pass
+    pass
         """Get information about models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "Enhanced training manager not available"}
 
+    except Exception as e:
+        pass
             # Get training results from enhanced training manager
             try:
                 training_results = (
                     self.enhanced_training_manager.get_enhanced_training_results()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
             except AttributeError:
                 training_results = {}
@@ -687,6 +784,10 @@ class MLConfidencePredictor:
             try:
                 training_status = (
                     self.enhanced_training_manager.get_enhanced_training_status()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
             except AttributeError:
                 training_status = {"status": "unknown"}
@@ -694,6 +795,8 @@ class MLConfidencePredictor:
             # Get analyst models info
             analyst_models_info = {}
             if hasattr(self.enhanced_training_manager, "analyst_models"):
+    pass
+    pass
                 analyst_models = self.enhanced_training_manager.analyst_models
                 analyst_models_info = {
                     "count": len(analyst_models),
@@ -703,6 +806,8 @@ class MLConfidencePredictor:
             # Get tactician models info
             tactician_models_info = {}
             if hasattr(self.enhanced_training_manager, "tactician_models"):
+    pass
+    pass
                 tactician_models = self.enhanced_training_manager.tactician_models
                 tactician_models_info = {
                     "count": len(tactician_models),
@@ -739,8 +844,14 @@ class MLConfidencePredictor:
         """Generate tactician meta-labels for entry optimization."""
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             # Create volume data (assuming volume column exists)
             volume_data = (
                 market_data[["volume"]]
@@ -768,9 +879,14 @@ class MLConfidencePredictor:
         """Initialize integration with enhanced training manager."""
         try:
             # Import enhanced training manager
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.training.enhanced_training_manager import EnhancedTrainingManager
 
             # Initialize enhanced training manager
+import self.enhanced_training_manager = EnhancedTrainingManager
             self.enhanced_training_manager = EnhancedTrainingManager(self.config)
             await self.enhanced_training_manager.initialize()
 
@@ -793,6 +909,10 @@ class MLConfidencePredictor:
         """Initialize model training capabilities."""
         try:
             # Set up training configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.training_config = self.config.get(
                 "model_training",
                 {
@@ -832,13 +952,20 @@ class MLConfidencePredictor:
         """Initialize feature engineering integration."""
         try:
             # Import feature engineering components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.analyst.advanced_feature_engineering import (
+import AdvancedFeatureEngineering,
                 AdvancedFeatureEngineering,
             )
             from src.analyst.feature_engineering_orchestrator import (
+import FeatureEngineeringOrchestrator,
                 FeatureEngineeringOrchestrator,
             )
             from src.analyst.multi_timeframe_feature_engineering import (
+import MultiTimeframeFeatureEngineering,
                 MultiTimeframeFeatureEngineering,
             )
 
@@ -895,9 +1022,14 @@ class MLConfidencePredictor:
         """Initialize meta-labeling system integration."""
         try:
             # Import meta-labeling system
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 
             # Get configuration for meta-labeling
+import meta_config = self.config.get
             meta_config = self.config.get(
                 "meta_labeling",
                 {
@@ -947,9 +1079,17 @@ class MLConfidencePredictor:
         """
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             if timeframes is None:
+    pass
+    pass
                 timeframes = ["30m", "15m", "5m"]
 
             analyst_labels = {}
@@ -960,6 +1100,8 @@ class MLConfidencePredictor:
             )
 
             for timeframe in timeframes:
+    pass
+    pass
                 labels = await self.meta_labeling_system.generate_analyst_labels(
                     market_data,
                     volume_data,
@@ -990,8 +1132,14 @@ class MLConfidencePredictor:
         """
         try:
             if not self.meta_labeling_system:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             volume_data = (
                 market_data[["volume"]]
                 if "volume" in market_data.columns
@@ -1018,9 +1166,15 @@ class MLConfidencePredictor:
         """Load trained models from enhanced training manager."""
         try:
             if not self.enhanced_training_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("Enhanced training manager not available"))
                 return
 
+    except Exception as e:
+        pass
             # Get trained models from enhanced training manager
             with contextlib.suppress(AttributeError):
                 (self.enhanced_training_manager.get_enhanced_training_results())
@@ -1042,23 +1196,37 @@ class MLConfidencePredictor:
             raise
 
     def _load_analyst_models(self) -> None:
+    pass
+    pass
         """Load analyst models (multi-timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "analyst_models"):
+    pass
+    pass
             return
 
         analyst_models = self.enhanced_training_manager.analyst_models
         if not analyst_models:
+    pass
+    pass
             self.logger.warning(
                 "No analyst models available in enhanced training manager",
             )
             return
 
         for timeframe in self.analyst_timeframes:
+    pass
+    pass
             for model_name in ["tcn", "tabnet", "transformer"]:
+    pass
+    pass
                 model_key = f"{timeframe}_{model_name}"
                 if model_key in analyst_models:
+    pass
+    pass
                     # Create price target models for different confidence levels
                     for level in self.price_movement_levels:
+    pass
+    pass
                         target_key = f"price_target_{level:.1f}"
                         self.price_target_models[target_key] = analyst_models[model_key]
                     self.logger.info(f"Loaded analyst model: {model_key}")
@@ -1066,22 +1234,34 @@ class MLConfidencePredictor:
                     self.logger.debug(f"Analyst model not found: {model_key}")
 
     def _load_tactician_models(self) -> None:
+    pass
+    pass
         """Load tactician models (1m timeframe models) from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "tactician_models"):
+    pass
+    pass
             return
 
         tactician_models = self.enhanced_training_manager.tactician_models
         if not tactician_models:
+    pass
+    pass
             self.logger.warning(
                 "No tactician models available in enhanced training manager",
             )
             return
 
         for model_name in ["lstm", "gru", "transformer"]:
+    pass
+    pass
             model_key = f"1m_{model_name}"
             if model_key in tactician_models:
+    pass
+    pass
                 # Create adversarial models for different risk levels
                 for level in self.adversarial_movement_levels:
+    pass
+    pass
                     adversarial_key = f"adversarial_{level:.1f}"
                     self.adversarial_models[adversarial_key] = tactician_models[
                         model_key
@@ -1091,6 +1271,8 @@ class MLConfidencePredictor:
                 self.logger.debug(f"Tactician model not found: {model_key}")
 
     def _load_ensemble_models(self) -> None:
+    pass
+    pass
         """Load ensemble models from enhanced training manager."""
         if not (
             hasattr(self.enhanced_training_manager, "ensemble_creator")
@@ -1101,8 +1283,14 @@ class MLConfidencePredictor:
         try:
             ensemble_models = (
                 self.enhanced_training_manager.ensemble_creator.get_ensembles()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             if ensemble_models:
+    pass
+    pass
                 self.ensemble_models = ensemble_models
                 self.logger.info(f"Loaded {len(ensemble_models)} ensemble models")
             else:
@@ -1111,18 +1299,26 @@ class MLConfidencePredictor:
             self.print(warning("Could not load ensemble models: {e}"))
 
     def _load_calibrated_models(self) -> None:
+    pass
+    pass
         """Load calibrated models from enhanced training manager."""
         if not hasattr(self.enhanced_training_manager, "calibration_systems"):
+    pass
+    pass
             return
 
         calibration_systems = self.enhanced_training_manager.calibration_systems
         if calibration_systems:
+    pass
+    pass
             self.calibrated_models = calibration_systems
             self.logger.info(f"Loaded {len(calibration_systems)} calibrated models")
         else:
             self.logger.debug("No calibrated models available")
 
     def _load_regime_models(self) -> None:
+    pass
+    pass
         """Load regime-specific models from enhanced training manager."""
         if not (
             hasattr(self.enhanced_training_manager, "regime_training_manager")
@@ -1132,7 +1328,13 @@ class MLConfidencePredictor:
 
         try:
             regime_models = self.enhanced_training_manager.regime_training_manager.get_regime_models()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if regime_models:
+    pass
+    pass
                 self.regime_models = regime_models
                 self.logger.info(f"Loaded {len(regime_models)} regime models")
             else:
@@ -1141,6 +1343,8 @@ class MLConfidencePredictor:
             self.print(warning("Could not load regime models: {e}"))
 
     def _load_multi_timeframe_models(self) -> None:
+    pass
+    pass
         """Load multi-timeframe models from enhanced training manager."""
         if not (
             hasattr(self.enhanced_training_manager, "multi_timeframe_manager")
@@ -1150,7 +1354,13 @@ class MLConfidencePredictor:
 
         try:
             multi_timeframe_models = self.enhanced_training_manager.multi_timeframe_manager.get_timeframe_models()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if multi_timeframe_models:
+    pass
+    pass
                 self.multi_timeframe_models = multi_timeframe_models
                 self.logger.info(
                     f"Loaded {len(multi_timeframe_models)} multi-timeframe models",
@@ -1161,10 +1371,18 @@ class MLConfidencePredictor:
             self.print(warning("Could not load multi-timeframe models: {e}"))
 
     def _load_label_expert_models(self) -> None:
+    pass
+    pass
         """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
         try:
             etm = self.enhanced_training_manager
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if etm is None:
+    pass
+    pass
                 # attempt to load from disk if ETM is not provided
                 self._load_label_experts_from_disk()
                 return
@@ -1176,6 +1394,10 @@ class MLConfidencePredictor:
             elif hasattr(etm, "get_label_expert_models"):
                 try:
                     self.label_expert_models = etm.get_label_expert_models() or {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except Exception:
                     self.label_expert_models = {}
             # Calibrators
@@ -1187,6 +1409,10 @@ class MLConfidencePredictor:
                 try:
                     self.label_expert_calibrators = (
                         etm.get_label_expert_calibrators() or {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     )
                 except Exception:
                     self.label_expert_calibrators = {}
@@ -1198,11 +1424,17 @@ class MLConfidencePredictor:
             elif hasattr(etm, "get_label_reliability"):
                 try:
                     self.label_reliability = etm.get_label_reliability() or {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except Exception:
                     self.label_reliability = {}
 
             # Fallback to disk if ETM had nothing
             if not self.label_expert_models:
+    pass
+    pass
                 self._load_label_experts_from_disk()
 
             self.logger.info(
@@ -1215,6 +1447,8 @@ class MLConfidencePredictor:
             self.logger.warning(f"Could not load label expert models: {e}")
 
     def _load_label_experts_from_disk(self) -> None:
+    pass
+    pass
         """Load label expert models from data_dir/label_experts if present."""
         import os
         import pickle
@@ -1222,18 +1456,32 @@ class MLConfidencePredictor:
         base_dir = self.config.get("data_dir", "data/training")
         experts_dir = os.path.join(base_dir, "label_experts")
         if not os.path.isdir(experts_dir):
+    pass
+    pass
             return
         for tf in os.listdir(experts_dir):
+    pass
+    pass
             tf_dir = os.path.join(experts_dir, tf)
             if not os.path.isdir(tf_dir):
+    pass
+    pass
                 continue
             for fname in os.listdir(tf_dir):
+    pass
+    pass
                 if not fname.endswith(".pkl"):
+    pass
+    pass
                     continue
                 path = os.path.join(tf_dir, fname)
                 try:
                     with open(path, "rb") as f:
                         model = pickle.load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     # expected filename pattern: <LABEL>_<model>.pkl
                     base = fname[:-4]
                     label = base.rsplit("_", 1)[0].upper()
@@ -1242,6 +1490,8 @@ class MLConfidencePredictor:
                     continue
 
     def _log_model_loading_summary(self) -> None:
+    pass
+    pass
         """Log a summary of all loaded models."""
         self.logger.info("Model loading summary:")
         self.logger.info(f"  - Price target models: {len(self.price_target_models)}")
@@ -1283,6 +1533,8 @@ class MLConfidencePredictor:
         # Ensure model directory exists
         model_dir = os.path.dirname(self.model_path)
         if not os.path.exists(model_dir):
+    pass
+    pass
             os.makedirs(model_dir, exist_ok=True)
 
         # Initialize performance metrics
@@ -1300,8 +1552,14 @@ class MLConfidencePredictor:
     async def _load_existing_model(self) -> None:
         """Load existing model if available."""
         if os.path.exists(self.model_path):
+    pass
+    pass
             try:
                 self.model = joblib.load(self.model_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 self.is_trained = True
                 self.logger.info("✅ Loaded existing confidence predictor model")
             except Exception:
@@ -1315,6 +1573,8 @@ class MLConfidencePredictor:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate predictor configuration.
 
@@ -1323,18 +1583,28 @@ class MLConfidencePredictor:
         """
         try:
             # Validate required parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_params = [
                 "model_path",
                 "min_samples_for_training",
             ]
 
             for param in required_params:
+    pass
+    pass
                 if param not in self.predictor_config:
+    pass
+    pass
                     self.print(missing("Missing required parameter: {param}"))
                     return False
 
             # Validate parameter values
             if self.predictor_config["min_samples_for_training"] < 100:
+    pass
+    pass
                 self.print(error("Minimum samples for training must be at least 100"))
                 return False
 
@@ -1368,7 +1638,13 @@ class MLConfidencePredictor:
         try:
             self.logger.info("🎯 Generating ensemble confidence predictions")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not ensemble_models:
+    pass
+    pass
                 self.logger.warning("No ensemble models provided")
                 return None
 
@@ -1383,9 +1659,17 @@ class MLConfidencePredictor:
             weighted_predictions = {}
 
             for model_name, model in ensemble_models.items():
+    pass
+    pass
                 try:
                     # Generate predictions for this model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if hasattr(model, "predict_proba"):
+    pass
+    pass
                         # Use model's predict_proba method
                         features = self._prepare_features_for_prediction(market_data)
                         predictions = model.predict_proba(features)
@@ -1465,10 +1749,16 @@ class MLConfidencePredictor:
         """Prepare features for model prediction."""
         try:
             # Basic feature preparation - in practice, this would be more sophisticated
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             features = market_data.copy()
 
             # Remove target column if present
             if "target" in features.columns:
+    pass
+    pass
                 features = features.drop("target", axis=1)
 
             # Ensure numeric columns only
@@ -1480,11 +1770,19 @@ class MLConfidencePredictor:
             return pd.DataFrame()
 
     def _calculate_ensemble_diversity(self, predictions: dict[str, float]) -> float:
+    pass
+    pass
         """Calculate ensemble diversity score."""
         try:
             if len(predictions) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             values = list(predictions.values())
             return np.std(values) / np.mean(values) if np.mean(values) > 0 else 0.0
 
@@ -1493,11 +1791,19 @@ class MLConfidencePredictor:
             return 0.0
 
     def _calculate_ensemble_agreement(self, predictions: dict[str, float]) -> float:
+    pass
+    pass
         """Calculate ensemble agreement score."""
         try:
             if len(predictions) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 1.0
 
+    except Exception as e:
+        pass
             values = list(predictions.values())
             np.mean(values)
 
@@ -1512,10 +1818,16 @@ class MLConfidencePredictor:
             return 0.5
 
     def _assess_ensemble_risk(self, predictions: dict[str, float]) -> dict[str, Any]:
+    pass
+    pass
         """Assess risk based on ensemble predictions."""
         try:
             values = list(predictions.values())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             risk_assessment = {
                 "risk_level": "LOW",
                 "confidence_range": np.max(values) - np.min(values),
@@ -1525,14 +1837,20 @@ class MLConfidencePredictor:
 
             # Assess risk factors
             if np.std(values) > 0.2:
+    pass
+    pass
                 risk_assessment["risk_factors"].append("HIGH_VARIANCE")
                 risk_assessment["risk_level"] = "MEDIUM"
 
             if np.min(values) < 0.3:
+    pass
+    pass
                 risk_assessment["risk_factors"].append("LOW_CONFIDENCE_MODELS")
                 risk_assessment["risk_level"] = "HIGH"
 
             if np.max(values) - np.min(values) > 0.4:
+    pass
+    pass
                 risk_assessment["risk_factors"].append("HIGH_DISAGREEMENT")
                 risk_assessment["risk_level"] = "HIGH"
 
@@ -1568,6 +1886,10 @@ class MLConfidencePredictor:
         try:
             self.logger.info(
                 "Generating directional prediction with adversarial analysis...",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             # Step 1: Determine most likely price direction
@@ -1626,6 +1948,8 @@ class MLConfidencePredictor:
         )
 
         if not base_predictions:
+    pass
+    pass
             msg = "Unable to generate base predictions - model may not be trained"
             raise ValueError(
                 msg,
@@ -1636,6 +1960,8 @@ class MLConfidencePredictor:
         adversarial_confidences = base_predictions.get("adversarial_confidences", {})
 
         if not price_target_confidences and not adversarial_confidences:
+    pass
+    pass
             msg = "No valid prediction data available"
             raise ValueError(msg)
 
@@ -1651,6 +1977,8 @@ class MLConfidencePredictor:
 
         # Determine primary direction
         if up_confidence > down_confidence:
+    pass
+    pass
             primary_direction = "up"
             primary_confidence = up_confidence
             magnitude_levels = self._get_magnitude_levels(
@@ -1692,16 +2020,24 @@ class MLConfidencePredictor:
         """
         try:
             primary_direction = directional_prediction["direction"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             magnitude_levels = directional_prediction["magnitude_levels"]
 
             adversarial_analysis = {}
 
             # For each magnitude level in the primary direction
             for magnitude in magnitude_levels:
+    pass
+    pass
                 # Calculate probability of adverse movement at different levels
                 adverse_probabilities = {}
 
                 for adverse_level in self.adversarial_movement_levels:
+    pass
+    pass
                     probability = await self._calculate_adverse_probability(
                         primary_direction,
                         magnitude,
@@ -1756,6 +2092,8 @@ class MLConfidencePredictor:
         )
 
         if not base_predictions:
+    pass
+    pass
             msg = "Unable to generate base predictions for adverse probability calculation"
             raise ValueError(
                 msg,
@@ -1763,6 +2101,8 @@ class MLConfidencePredictor:
 
         # Determine which prediction set to use based on primary direction
         if primary_direction == "up":
+    pass
+    pass
             # For upward primary prediction, use expected decreases for adverse
             predictions = base_predictions.get("adversarial_confidences", {})
         else:
@@ -1770,6 +2110,8 @@ class MLConfidencePredictor:
             predictions = base_predictions.get("price_target_confidences", {})
 
         if not predictions:
+    pass
+    pass
             msg = (
                 f"No valid prediction data available for {primary_direction} direction"
             )
@@ -1780,6 +2122,8 @@ class MLConfidencePredictor:
         # Find the closest available level
         available_levels = [float(k.replace("%", "")) for k in predictions]
         if not available_levels:
+    pass
+    pass
             msg = "No prediction levels available"
             raise ValueError(msg)
 
@@ -1812,12 +2156,20 @@ class MLConfidencePredictor:
         """
         try:
             if not predictions:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             total_weight = 0.0
             weighted_sum = 0.0
 
             for level_str, probability in predictions.items():
+    pass
+    pass
                 level = float(level_str.replace("%", ""))
                 weight = level  # Higher levels get higher weight
 
@@ -1846,11 +2198,15 @@ class MLConfidencePredictor:
             List of magnitude levels
         """
         if not predictions:
+    pass
+    pass
             msg = f"No predictions available for {direction} direction"
             raise ValueError(msg)
 
         levels = []
         for level_str in predictions:
+    pass
+    pass
             level = float(level_str.replace("%", ""))
             if (
                 predictions[level_str] > 0.1
@@ -1858,6 +2214,8 @@ class MLConfidencePredictor:
                 levels.append(level)
 
         if not levels:
+    pass
+    pass
             msg = f"No significant probability levels found for {direction} direction"
             raise ValueError(
                 msg,
@@ -1866,6 +2224,8 @@ class MLConfidencePredictor:
         return sorted(levels)
 
     def _calculate_risk_score(self, adverse_probabilities: dict[str, float]) -> float:
+    pass
+    pass
         """
         Calculate overall risk score based on adverse probabilities.
 
@@ -1876,6 +2236,8 @@ class MLConfidencePredictor:
             Risk score (0-1, higher = more risky)
         """
         if not adverse_probabilities:
+    pass
+    pass
             msg = "No adverse probabilities provided for risk calculation"
             raise ValueError(msg)
 
@@ -1884,6 +2246,8 @@ class MLConfidencePredictor:
         total_weight = 0.0
 
         for level_str, probability in adverse_probabilities.items():
+    pass
+    pass
             level = float(level_str.replace("%", ""))
             weight = level  # Higher levels get higher weight
 
@@ -1891,6 +2255,8 @@ class MLConfidencePredictor:
             total_weight += weight
 
         if total_weight <= 0:
+    pass
+    pass
             msg = "Invalid adverse probability data - no valid weights"
             raise ValueError(msg)
 
@@ -1912,6 +2278,8 @@ class MLConfidencePredictor:
             Recommended stop loss level
         """
         if not adverse_probabilities:
+    pass
+    pass
             msg = "No adverse probabilities provided for stop loss calculation"
             raise ValueError(
                 msg,
@@ -1919,7 +2287,11 @@ class MLConfidencePredictor:
 
         # Find the level where adverse probability exceeds 30%
         for level_str, probability in adverse_probabilities.items():
+    pass
+    pass
             if probability > 0.3:
+    pass
+    pass
                 return float(level_str.replace("%", ""))
 
         # If no level exceeds 30%, use 50% of primary magnitude
@@ -1941,6 +2313,8 @@ class MLConfidencePredictor:
             Risk assessment dictionary
         """
         if not adversarial_analysis:
+    pass
+    pass
             msg = "No adversarial analysis data provided for risk assessment"
             raise ValueError(
                 msg,
@@ -1951,6 +2325,8 @@ class MLConfidencePredictor:
         risk_levels = []
 
         for magnitude, analysis in adversarial_analysis.items():
+    pass
+    pass
             risk_score = analysis["risk_score"]
             total_risk_score += risk_score
             risk_levels.append(
@@ -1965,6 +2341,8 @@ class MLConfidencePredictor:
 
         # Determine risk category
         if avg_risk_score < 0.3:
+    pass
+    pass
             risk_category = "LOW"
         elif avg_risk_score < 0.6:
             risk_category = "MEDIUM"
@@ -2000,10 +2378,16 @@ class MLConfidencePredictor:
         confidence = directional_prediction["confidence"]
 
         if confidence < 0.4:
+    pass
+    pass
             return "LOW_CONFIDENCE: Consider staying out of position"
         if risk_score > 0.7:
+    pass
+    pass
             return f"HIGH_RISK: {direction.upper()} position with tight stop loss recommended"
         if risk_score > 0.5:
+    pass
+    pass
             return (
                 f"MEDIUM_RISK: {direction.upper()} position with moderate position size"
             )
@@ -2013,8 +2397,13 @@ class MLConfidencePredictor:
         """Initialize enhanced order manager and async order executor for tactician order management."""
         try:
             # Import order management components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.tactician.async_order_executor import setup_async_order_executor
             from src.tactician.enhanced_order_manager import (
+import setup_enhanced_order_manager,
                 setup_enhanced_order_manager,
             )
 
@@ -2051,6 +2440,8 @@ class MLConfidencePredictor:
                 order_config,
             )
             if self.enhanced_order_manager:
+    pass
+    pass
                 self.logger.info("✅ Enhanced order manager initialized successfully")
             else:
                 self.print(failed("Failed to initialize enhanced order manager"))
@@ -2058,6 +2449,8 @@ class MLConfidencePredictor:
             # Initialize async order executor
             self.async_order_executor = await setup_async_order_executor(order_config)
             if self.async_order_executor:
+    pass
+    pass
                 self.logger.info("✅ Async order executor initialized successfully")
             else:
                 self.print(failed("Failed to initialize async order executor"))
@@ -2096,12 +2489,18 @@ class MLConfidencePredictor:
         """
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced order manager not initialized",
                     "order_id": None,
                 }
 
+    except Exception as e:
+        pass
             # Convert side string to OrderSide enum
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
 
@@ -2119,6 +2518,8 @@ class MLConfidencePredictor:
             )
 
             if order_state:
+    pass
+    pass
                 return {
                     "success": True,
                     "order_id": order_state.order_id,
@@ -2166,12 +2567,18 @@ class MLConfidencePredictor:
         """
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced order manager not initialized",
                     "order_id": None,
                 }
 
+    except Exception as e:
+        pass
             # Convert side string to OrderSide enum
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
 
@@ -2187,6 +2594,8 @@ class MLConfidencePredictor:
             )
 
             if order_state:
+    pass
+    pass
                 return {
                     "success": True,
                     "order_id": order_state.order_id,
@@ -2208,13 +2617,23 @@ class MLConfidencePredictor:
             return {"success": False, "error": str(e), "order_id": None}
 
     def get_order_status(self, order_id: str) -> dict[str, Any] | None:
+    pass
+    pass
         """Get the status of an order."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return None
 
+    except Exception as e:
+        pass
             order_state = self.enhanced_order_manager.get_order_status(order_id)
             if order_state:
+    pass
+    pass
                 return {
                     "order_id": order_state.order_id,
                     "symbol": order_state.symbol,
@@ -2238,11 +2657,19 @@ class MLConfidencePredictor:
             return None
 
     def get_strategy_orders(self, strategy_id: str) -> list[dict[str, Any]]:
+    pass
+    pass
         """Get all orders for a specific strategy."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return []
 
+    except Exception as e:
+        pass
             order_states = self.enhanced_order_manager.get_strategy_orders(strategy_id)
             return [
                 {
@@ -2269,11 +2696,19 @@ class MLConfidencePredictor:
             return []
 
     def get_order_manager_performance(self) -> dict[str, Any]:
+    pass
+    pass
         """Get enhanced order manager performance metrics."""
         try:
             if not self.enhanced_order_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {}
 
+    except Exception as e:
+        pass
             return self.enhanced_order_manager.get_performance_metrics()
 
         except Exception:
@@ -2309,14 +2744,21 @@ class MLConfidencePredictor:
         """
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Async order executor not available",
                     "execution_id": None,
                 }
 
+    except Exception as e:
+        pass
             # Import required components
             from src.tactician.async_order_executor import (
+import ExecutionRequest,
                 ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,
@@ -2378,15 +2820,25 @@ class MLConfidencePredictor:
             return {"success": False, "error": str(e), "execution_id": None}
 
     def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
+    pass
+    pass
         """Get execution status for a specific execution ID."""
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "Async order executor not available"}
 
+    except Exception as e:
+        pass
             execution_result = self.async_order_executor.get_execution_status(
                 execution_id,
             )
             if execution_result:
+    pass
+    pass
                 return {
                     "execution_id": execution_result.execution_id,
                     "status": execution_result.status.value,
@@ -2403,11 +2855,19 @@ class MLConfidencePredictor:
             return {"error": str(e)}
 
     def get_execution_performance(self) -> dict[str, Any]:
+    pass
+    pass
         """Get overall execution performance metrics."""
         try:
             if not self.async_order_executor:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "Async order executor not available"}
 
+    except Exception as e:
+        pass
             return self.async_order_executor.get_performance_metrics()
 
         except Exception as e:
@@ -2433,13 +2893,21 @@ class MLConfidencePredictor:
         """
         try:
             if not self.enhanced_training_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "success": False,
                     "error": "Enhanced training manager not available",
                 }
 
+    except Exception as e:
+        pass
             # Check if training is needed
             if not force_training and not self._should_trigger_training():
+    pass
+    pass
                 return {
                     "success": False,
                     "reason": "Training conditions not met",
@@ -2488,6 +2956,8 @@ class MLConfidencePredictor:
             )
 
             if training_success:
+    pass
+    pass
                 # Update training state
                 self.last_training_time = datetime.now()
                 self.training_history.append(
@@ -2514,10 +2984,18 @@ class MLConfidencePredictor:
             return {"success": False, "error": str(e)}
 
     def _should_trigger_training(self) -> bool:
+    pass
+    pass
         """Determine if training should be triggered based on conditions."""
         try:
             # Check time-based conditions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.last_training_time is None:
+    pass
+    pass
                 return True  # First training
 
             hours_since_training = (
@@ -2548,14 +3026,24 @@ class MLConfidencePredictor:
             return False
 
     def _calculate_performance_degradation(self) -> float:
+    pass
+    pass
         """Calculate model performance degradation."""
         try:
             if len(self.model_performance_history) < 2:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             # Calculate average performance over last 10 samples
             recent_performance = self.model_performance_history[-10:]
             if not recent_performance:
+    pass
+    pass
                 return 0.0
 
             avg_recent = sum(p.get("accuracy", 0.0) for p in recent_performance) / len(
@@ -2578,16 +3066,24 @@ class MLConfidencePredictor:
         try:
             self.model_performance_history.append(
                 {"timestamp": datetime.now(), "metrics": performance_metrics},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             # Keep only last 100 performance records
             if len(self.model_performance_history) > 100:
+    pass
+    pass
                 self.model_performance_history = self.model_performance_history[-100:]
 
         except Exception:
             self.print(error("Error updating model performance: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get current training status and history."""
         try:
             return {
@@ -2603,6 +3099,10 @@ class MLConfidencePredictor:
                 "training_config": self.training_config,
                 "should_trigger_training": self._should_trigger_training(),
                 "performance_degradation": self._calculate_performance_degradation(),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         except Exception as e:
@@ -2618,6 +3118,10 @@ class MLConfidencePredictor:
         """Clean up resources."""
         try:
             self.logger.info("Stopping ML Confidence Predictor...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Cleanup code here if needed
             self.logger.info("✅ ML Confidence Predictor stopped successfully")
         except Exception:
@@ -2633,8 +3137,12 @@ class MLConfidencePredictor:
         If a meta-model is available, use it for weighting; otherwise, use recent accuracy.
         """
         if performance_history:
+    pass
+    pass
             total = sum(performance_history.values())
             if total > 0:
+    pass
+    pass
                 self.ensemble_weights = {
                     k: v / total for k, v in performance_history.items()
                 }
@@ -2647,14 +3155,20 @@ class MLConfidencePredictor:
         self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
 
     def ablation_study(self, features: pd.DataFrame, y_true: np.ndarray) -> dict:
+    pass
+    pass
         """
         Perform ablation study: remove each ensemble member in turn and measure performance drop.
         Returns a dict of member: performance_with_removal.
         """
         results = {}
         for member in self.ensemble_models:
+    pass
+    pass
             others = {k: v for k, v in self.ensemble_models.items() if k != member}
             if not others:
+    pass
+    pass
                 continue
             preds = np.mean([m.predict(features) for m in others.values()], axis=0)
             acc = np.mean((preds > 0.5) == y_true)
@@ -2678,10 +3192,14 @@ class MLConfidencePredictor:
         """
         # Ensure models are ready
         if not await self._prepare_for_prediction():
+    pass
+    pass
             return {label: 0.5 for label in self.analyst_labels}
         # Build features according to predictor's schema
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
+    pass
+    pass
             return {label: 0.5 for label in self.analyst_labels}
 
         tf = timeframe or (
@@ -2689,13 +3207,25 @@ class MLConfidencePredictor:
         )
         confidences: dict[str, float] = {}
         for label in self.analyst_labels:
+    pass
+    pass
             try:
                 # Select model for label/timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 model = None
                 if label in self.label_expert_models:
+    pass
+    pass
                     model_map = self.label_expert_models[label]
                     if isinstance(model_map, dict):
+    pass
+    pass
                         if tf in model_map:
+    pass
+    pass
                             model = model_map[tf]
                         elif len(model_map) > 0:
                             # fallback to any available timeframe
@@ -2703,10 +3233,14 @@ class MLConfidencePredictor:
                     else:
                         model = model_map  # single model for all timeframes
                 if model is None:
+    pass
+    pass
                     confidences[label] = 0.5
                     continue
                 # Predict probability/confidence
                 if hasattr(model, "predict_proba"):
+    pass
+    pass
                     proba = model.predict_proba(features)
                     # assume binary classifier: take positive class probability
                     if (
@@ -2726,8 +3260,14 @@ class MLConfidencePredictor:
                 # Apply calibrator if present
                 calibrator = self.label_expert_calibrators.get(label)
                 if calibrator is not None:
+    pass
+    pass
                     try:
                         if hasattr(calibrator, "predict_proba"):
+    pass
+    except Exception as e:
+        pass
+    pass
                             conf_val = float(
                                 np.clip(
                                     calibrator.predict_proba([[conf_val]])[0][-1],
@@ -2735,6 +3275,8 @@ class MLConfidencePredictor:
                                     1.0,
                                 )
                             )
+    except Exception as e:
+        pass
                         elif hasattr(calibrator, "predict"):
                             conf_val = float(
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
@@ -2763,6 +3305,8 @@ class MLConfidencePredictor:
         scores: dict[str, float] = {}
         rel_map = reliability or {}
         for label, inten in intensities.items():
+    pass
+    pass
             c = float(np.clip(confidences.get(label, 0.5), 0.0, 1.0))
             r = float(np.clip(rel_map.get(label, 1.0), 0.0, 1.0))
             s = float(
@@ -2772,13 +3316,19 @@ class MLConfidencePredictor:
             )
             scores[label] = float(np.clip(s, 0.0, 1.0))
         if top_k > 0 and len(scores) > top_k:
+    pass
+    pass
             ranked = sorted(scores.items(), key=lambda t: t[1], reverse=True)
             keep = {k for k, _ in ranked[:top_k]}
         else:
             keep = set(scores.keys())
         weights: dict[str, float] = {}
         for label, s in scores.items():
+    pass
+    pass
             if label in keep:
+    pass
+    pass
                 lo = w_min if w_min > 0 else 0.0
                 hi = w_max if w_max < 1.0 else 1.0
                 w = float(np.clip(s, lo, hi))
@@ -2786,8 +3336,12 @@ class MLConfidencePredictor:
                 w = 0.0
             weights[label] = w
         if normalize:
+    pass
+    pass
             total = float(sum(weights.values()))
             if total > 0:
+    pass
+    pass
                 weights = {k: float(v / total) for k, v in weights.items()}
         return weights
 
@@ -2809,8 +3363,12 @@ class MLConfidencePredictor:
         tf_list = timeframes or list(self.analyst_timeframes)
         all_conf: dict[str, float] = {}
         for tf in tf_list:
+    pass
+    pass
             confs = await self.predict_label_confidences(market_data, timeframe=tf)
             for label, val in confs.items():
+    pass
+    pass
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf
 
@@ -2829,30 +3387,50 @@ class MLConfidencePredictor:
         Uses label-specific MoE models if available; falls back to 0.5 per label.
         """
         if not await self._prepare_for_prediction():
+    pass
+    pass
             return {label: 0.5 for label in self.tactician_labels}
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
+    pass
+    pass
             return {label: 0.5 for label in self.tactician_labels}
         tf = timeframe or (
             self.tactician_timeframes[0] if self.tactician_timeframes else "1m"
         )
         confidences: dict[str, float] = {}
         for label in self.tactician_labels:
+    pass
+    pass
             try:
                 model = None
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if label in self.label_expert_models:
+    pass
+    pass
                     model_map = self.label_expert_models[label]
                     if isinstance(model_map, dict):
+    pass
+    pass
                         if tf in model_map:
+    pass
+    pass
                             model = model_map[tf]
                         elif len(model_map) > 0:
                             model = next(iter(model_map.values()))
                     else:
                         model = model_map
                 if model is None:
+    pass
+    pass
                     confidences[label] = 0.5
                     continue
                 if hasattr(model, "predict_proba"):
+    pass
+    pass
                     proba = model.predict_proba(features)
                     if (
                         isinstance(proba, (list, np.ndarray))
@@ -2869,8 +3447,14 @@ class MLConfidencePredictor:
                     conf_val = 0.5
                 calibrator = self.label_expert_calibrators.get(label)
                 if calibrator is not None:
+    pass
+    pass
                     try:
                         if hasattr(calibrator, "predict_proba"):
+    pass
+    except Exception as e:
+        pass
+    pass
                             conf_val = float(
                                 np.clip(
                                     calibrator.predict_proba([[conf_val]])[0][-1],
@@ -2878,6 +3462,8 @@ class MLConfidencePredictor:
                                     1.0,
                                 )
                             )
+    except Exception as e:
+        pass
                         elif hasattr(calibrator, "predict"):
                             conf_val = float(
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
@@ -2903,10 +3489,14 @@ class MLConfidencePredictor:
         tf_list = timeframes or list(self.tactician_timeframes)
         all_conf: dict[str, float] = {}
         for tf in tf_list:
+    pass
+    pass
             confs = await self.predict_tactician_label_confidences(
                 market_data, timeframe=tf
             )
             for label, val in confs.items():
+    pass
+    pass
                 all_conf[f"{tf}_{label}"] = float(val)
         return all_conf
 
@@ -2930,10 +3520,18 @@ async def setup_ml_confidence_predictor(
     """
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         predictor = MLConfidencePredictor(config)
         if await predictor.initialize():
+    pass
+    pass
             return predictor
         return None
 

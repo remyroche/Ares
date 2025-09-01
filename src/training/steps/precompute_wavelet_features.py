@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
+import VectorizedAdvancedFeatureEngineering,
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
@@ -22,6 +23,7 @@ from src.utils.data_optimizer import ohlcv_columns
 from src.utils.centralized_decorators import validate_wavelet_data_quality
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -33,6 +35,8 @@ class WaveletFeaturePrecomputer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("WaveletFeaturePrecomputer")
 
@@ -64,6 +68,10 @@ class WaveletFeaturePrecomputer:
                 "🚀 Initializing wavelet feature pre - computation system...",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Initialize feature engineering
         self.feature_engineer, VectorizedAdvancedFeatureEngineering(self.config)
         await self.feature_engineer.initialize()
@@ -102,9 +110,15 @@ class WaveletFeaturePrecomputer:
         try:
         self.logger.info(f"📊 Starting pre - computation for dataset: {data_path}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Load dataset
             dataset, await self._load_dataset(data_path, symbol, start_date, end_date)
         if dataset is None or dataset.empty:
+    pass
+    pass
         self.print(error("No data to process"))
         return False
 
@@ -112,6 +126,8 @@ class WaveletFeaturePrecomputer:
             success, await self._process_dataset(dataset, output_path)
 
         if success:
+    pass
+    pass
         self.logger.info("✅ Dataset pre - computation completed successfully")
             else:
         self.print(failed("❌ Dataset pre - computation failed"))
@@ -130,22 +146,37 @@ class WaveletFeaturePrecomputer:
         # Load dataset based on file extension
             file_path, Path(data_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
         # Prefer dataset scan with projection if a directory is provided
         try:
                     from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                         ParquetDatasetManager,
                     )
 
                     pdm, ParquetDatasetManager(logger = self.logger)
                     columns, ohlcv_columns()
         if file_path.is_dir():
+    pass
+    pass
                         dataset, pdm.scan_dataset(
                             str(file_path), columns = columns, to_pandas = True
                         )
                     else:
                         from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger,
                             "read_parquet",
@@ -156,11 +187,13 @@ class WaveletFeaturePrecomputer:
         except Exception:
                     from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(self.logger, "read_parquet", data_path):
                         dataset, pd.read_parquet(data_path)
             elif file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(self.logger, "read_csv", data_path):
                     dataset, pd.read_csv(data_path, parse_dates = True)
             elif file_path.suffix.lower() == ".h5":
@@ -171,12 +204,18 @@ class WaveletFeaturePrecomputer:
 
         # Apply filters
         if symbol:
+    pass
+    pass
                 dataset, dataset[dataset.get("symbol", "") == symbol]
 
         if start_date:
+    pass
+    pass
                 dataset, dataset[dataset.index >= start_date]
 
         if end_date:
+    pass
+    pass
                 dataset, dataset[dataset.index <= end_date]
 
         self.logger.info(
@@ -195,6 +234,10 @@ class WaveletFeaturePrecomputer:
         """Process dataset in batches."""
         try:
             total_rows, len(dataset)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             total_batches = (total_rows + self.batch_size - 1) // self.batch_size
 
         self.logger.info(
@@ -203,6 +246,8 @@ class WaveletFeaturePrecomputer:
 
         # Process in batches
         for batch_idx in range(total_batches):
+    pass
+    pass
                 start_idx, batch_idx * self.batch_size
                 end_idx, min(start_idx + self.batch_size, total_rows)
 
@@ -216,6 +261,8 @@ class WaveletFeaturePrecomputer:
                 )
 
         if not batch_success:
+    pass
+    pass
         self.logger.error(
                         f"❌ Failed to process batch {batch_idx + 1}/{total_batches}",
                     )
@@ -223,6 +270,8 @@ class WaveletFeaturePrecomputer:
 
         # Progress tracking
         if self.enable_progress_tracking:
+    pass
+    pass
                     progress = (batch_idx + 1) / total_batches * 100
         self.logger.info(
                         f"📊 Progress: {progress:.1f}% ({batch_idx + 1}/{total_batches} batches)",
@@ -243,7 +292,13 @@ class WaveletFeaturePrecomputer:
             price_data, self._extract_price_data(batch_data)
             volume_data, self._extract_volume_data(batch_data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if price_data.empty:
+    pass
+    pass
         self.print(error("Empty price data in batch {batch_idx + 1}"))
         return True
 
@@ -256,6 +311,8 @@ class WaveletFeaturePrecomputer:
             )
 
         if not wavelet_features:
+    pass
+    pass
         self.logger.warning(
                     f"No wavelet features generated for batch {batch_idx + 1}",
                 )
@@ -274,12 +331,18 @@ class WaveletFeaturePrecomputer:
         return False
 
     def _extract_price_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Extract price data from dataset."""
         try:
         # Look for OHLCV columns
             price_columns = ["open", "high", "low", "close", "volume"]
             available_columns = [col for col in price_columns if col in data.columns]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(available_columns) < 4:  # Need at least OHLC
         self.print(error("Insufficient price columns: {available_columns}"))
         return pd.DataFrame()
@@ -288,6 +351,8 @@ class WaveletFeaturePrecomputer:
 
         # Ensure numeric data
         for col in price_data.columns:
+    pass
+    pass
                 price_data[col] = pd.to_numeric(price_data[col], errors="coerce")
 
         # Remove rows with NaN values
@@ -298,14 +363,22 @@ class WaveletFeaturePrecomputer:
         return pd.DataFrame()
 
     def _extract_volume_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Extract volume data from dataset."""
         try:
         if "volume" in data.columns:
+    pass
+    except Exception as e:
+        pass
+    pass
                 volume_data, data[["volume"]].copy()
                 volume_data["volume"] = pd.to_numeric(
                     volume_data["volume"],
                     errors="coerce"
                 )
+    except Exception as e:
+        pass
         return volume_data.dropna()
         # Create synthetic volume data if not available
         return pd.DataFrame(
@@ -324,6 +397,10 @@ class WaveletFeaturePrecomputer:
         # Generate cache key for batch
             cache_key, f"batch_{batch_idx:04d}_of_{total_batches:04d}"
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Save to cache
             metadata = {
                 "batch_idx": batch_idx,
@@ -340,6 +417,8 @@ class WaveletFeaturePrecomputer:
             )
 
         if cache_success:
+    pass
+    pass
         self.logger.debug(f"💾 Cached batch {batch_idx + 1}/{total_batches}")
             else:
         self.logger.warning(
@@ -370,7 +449,13 @@ class WaveletFeaturePrecomputer:
             success_count, 0
             total_count, len(dataset_configs)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for i, config in enumerate(dataset_configs):
+    pass
+    pass
         self.logger.info(
                     f"📊 Processing dataset {i + 1}/{total_count}: {config.get('data_path', 'Unknown')}",
                 )
@@ -384,6 +469,8 @@ class WaveletFeaturePrecomputer:
                 )
 
         if success:
+    pass
+    pass
                     success_count += 1
                 else:
         self.print(failed("❌ Failed to process dataset {i + 1}"))
@@ -398,9 +485,15 @@ class WaveletFeaturePrecomputer:
         return False
 
     def get_precomputation_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get pre - computation statistics."""
         try:
             cache_stats = (
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.wavelet_cache.get_cache_stats() if self.wavelet_cache else {}
             )
 
@@ -420,9 +513,17 @@ class WaveletFeaturePrecomputer:
         return {"error": str(e)}
 
     def clear_all_cache(self) -> bool:
+    pass
+    pass
         """Clear all cached wavelet features."""
         try:
         if self.wavelet_cache:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return self.wavelet_cache.clear_cache()
         return False
 
@@ -434,6 +535,10 @@ async def main() -> None:
     """Main function for pre - computation script."""
     try:
         # Configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {
             "wavelet_cache": {
                 "cache_enabled": True,
@@ -496,4 +601,6 @@ async def main() -> None:
         pass
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

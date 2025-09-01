@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -22,13 +23,18 @@ from src.analyst.enhanced_regime_predictor import EnhancedRegimePredictor
 from src.utils.logger import system_logger
 
 
+import class EnhancedHMMTester:
 class EnhancedHMMTester:
     """Test class for enhanced HMM capabilities."""
 
     def __init__(self):
+    pass
+    pass
         self.logger = system_logger.getChild("EnhancedHMMTester")
 
     def generate_test_data(self, n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
         """Generate synthetic test data for HMM analysis."""
         self.logger.info(f"📊 Generating {n_samples} synthetic test samples...")
 
@@ -46,6 +52,8 @@ class EnhancedHMMTester:
         regime_lengths = [200, 300, 250, 250]  # Different regime durations
         regimes = []
         for i, length in enumerate(regime_lengths):
+    pass
+    pass
             regimes.extend([i] * length)
 
         # Ensure we have enough samples
@@ -59,6 +67,8 @@ class EnhancedHMMTester:
         volumes = [1000.0]  # Starting volume
 
         for i in range(1, n_samples):
+    pass
+    pass
             regime = regimes[i]
 
             # Different characteristics for each regime
@@ -85,6 +95,8 @@ class EnhancedHMMTester:
         # Create OHLC data
         data = []
         for i in range(n_samples):
+    pass
+    pass
             price = prices[i]
             volume = volumes[i]
 
@@ -116,6 +128,10 @@ class EnhancedHMMTester:
 
         try:
             # Initialize Step 3
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             config = {
                 "SYMBOL": "TEST",
                 "EXCHANGE": "TEST",
@@ -143,6 +159,8 @@ class EnhancedHMMTester:
             )
 
             if regime_changes.get("success", False):
+    pass
+    pass
                 self.logger.info("✅ Enhanced regime change detection successful")
                 self.logger.info(f"📊 Detected {len(regime_changes['regime_changes'])} regime changes")
                 self.logger.info(f"📈 Stability metrics: {regime_changes['stability_metrics']}")
@@ -158,6 +176,8 @@ class EnhancedHMMTester:
             adaptive_boundaries = step3._calculate_adaptive_regime_boundaries(features)
 
             if adaptive_boundaries:
+    pass
+    pass
                 self.logger.info("✅ Adaptive regime boundaries calculated")
                 self.logger.info(f"📊 Boundary stats: {len(adaptive_boundaries.get('boundary_stats', {}))} boundaries")
             else:
@@ -169,6 +189,8 @@ class EnhancedHMMTester:
             persistence_model = step3._model_regime_persistence(hmm_states)
 
             if persistence_model:
+    pass
+    pass
                 self.logger.info("✅ Regime persistence model fitted")
                 self.logger.info(f"📈 Best distribution: {persistence_model.get('best_distribution')}")
                 self.logger.info(f"📊 Persistence stats: {persistence_model.get('persistence_stats', {})}")
@@ -187,6 +209,10 @@ class EnhancedHMMTester:
 
         try:
             # Initialize Step 9.5
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             config = {
                 "HMM_LM": {
                     "generalist": {
@@ -223,6 +249,8 @@ class EnhancedHMMTester:
             )
 
             if regime_events:
+    pass
+    pass
                 self.logger.info("✅ Enhanced regime change detection successful")
                 self.logger.info(f"📊 Detected {len(regime_events)} regime events")
 
@@ -252,6 +280,10 @@ class EnhancedHMMTester:
 
         try:
             # Initialize enhanced predictor
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             config = {
                 "stability_threshold": 0.1,
                 "min_persistence": 3,
@@ -288,6 +320,8 @@ class EnhancedHMMTester:
             persistence_success = predictor.fit_persistence_model(hmm_states)
 
             if persistence_success:
+    pass
+    pass
                 self.logger.info("✅ Persistence model fitted successfully")
                 persistence_summary = predictor.get_model_summary()
                 self.logger.info(f"📈 Persistence model: {persistence_summary['persistence_model']}")
@@ -299,6 +333,8 @@ class EnhancedHMMTester:
             boundaries_success = predictor.fit_adaptive_boundaries(features)
 
             if boundaries_success:
+    pass
+    pass
                 self.logger.info("✅ Adaptive boundaries fitted successfully")
                 boundaries_summary = predictor.get_model_summary()
                 self.logger.info(f"📊 Adaptive boundaries: {boundaries_summary['adaptive_boundaries']}")
@@ -311,12 +347,16 @@ class EnhancedHMMTester:
             predictions = predictor.predict_regime_changes(features, hmm_probs, hmm_states)
 
             if predictions.get("success", False):
+    pass
+    pass
                 self.logger.info("✅ Regime change prediction successful")
                 self.logger.info(f"📊 High-confidence predictions: {len(predictions['predictions'])}")
                 self.logger.info(f"📈 All predictions: {len(predictions['all_predictions'])}")
 
                 # Analyze prediction quality
                 if predictions['predictions']:
+    pass
+    pass
                     confidences = [pred['confidence'] for pred in predictions['predictions']]
                     transition_probs = [pred['transition_probability'] for pred in predictions['predictions']]
 
@@ -326,6 +366,8 @@ class EnhancedHMMTester:
 
                     # Show sample predictions
                     for i, pred in enumerate(predictions['predictions'][:3]):
+    pass
+    pass
                         self.logger.info(f"🎯 Prediction {i+1}: {pred}")
 
             else:
@@ -339,6 +381,8 @@ class EnhancedHMMTester:
             return False
 
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+    pass
+    pass
         """Calculate RSI indicator."""
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
@@ -348,6 +392,8 @@ class EnhancedHMMTester:
         return rsi
 
     def _calculate_adx(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+    pass
+    pass
         """Calculate ADX indicator."""
         high = df['high']
         low = df['low']
@@ -382,6 +428,8 @@ class EnhancedHMMTester:
         return adx
 
     def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+    pass
+    pass
         """Calculate ATR indicator."""
         high = df['high']
         low = df['low']
@@ -430,6 +478,8 @@ class EnhancedHMMTester:
         self.logger.info("=" * 60)
 
         for test_name, success in results.items():
+    pass
+    pass
             status = "✅ PASSED" if success else "❌ FAILED"
             self.logger.info(f"{test_name.upper()}: {status}")
 
@@ -449,17 +499,21 @@ async def main():
     success = await tester.run_comprehensive_test()
 
     if success:
-        print("\n🎉 All enhanced HMM capabilities tests passed!")
+    pass
+    pass
+        print("\\\n🎉 All enhanced HMM capabilities tests passed!")
         print("✅ Enhanced regime change detection is working properly")
         print("✅ Adaptive regime boundaries are functioning")
         print("✅ Regime persistence modeling is operational")
         print("✅ Multi-signal regime change detection is effective")
     else:
-        print("\n💥 Some enhanced HMM capabilities tests failed!")
+        print("\\\n💥 Some enhanced HMM capabilities tests failed!")
         print("Please check the logs for detailed error information")
 
     return success
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

@@ -17,6 +17,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def create_mock_market_data(n_samples: int = 100) -> pd.DataFrame:
+    pass
+    pass
     """Create mock market data for testing."""
     np.random.seed(42)
 
@@ -26,6 +28,8 @@ def create_mock_market_data(n_samples: int = 100) -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         prices.append(prices[-1] * (1 + ret))
 
     # Create OHLCV data
@@ -41,6 +45,8 @@ def create_mock_market_data(n_samples: int = 100) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def create_mock_analyst_barriers() -> Dict[str, float]:
+    pass
+    pass
     """Create mock Analyst barriers."""
     return {
         "upper_barrier": 0.02,  # 2% profit target
@@ -51,6 +57,8 @@ class MockMLTacticsManager:
     """Mock ML Tactics Manager for testing."""
 
     def __init__(self):
+    pass
+    pass
         self.barrier_config = {
             "fifty_percent": {
                 "profit_target_multiplier": 0.5,
@@ -77,6 +85,8 @@ class MockMLTacticsManager:
         }
 
     def _calculate_tactician_barriers(self, analyst_barriers: Dict[str, float]) -> Dict[str, Dict[str, float]]:
+    pass
+    pass
         """Calculate Tactician barriers as 50% and 25% of Analyst barriers."""
         analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
         analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
@@ -100,8 +110,12 @@ class MockMLTacticsManager:
         return tactician_barriers
 
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """Extract features from market data for prediction."""
         if len(market_data) < 20:
+    pass
+    pass
             return np.array([0.5] * 10)
 
         close_prices = market_data['close'].values
@@ -154,44 +168,66 @@ class MockMLTacticsManager:
         return np.array(features)
 
     def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:
+    pass
+    pass
         """Generate fallback confidence score."""
         base_confidence = 0.5
 
         # Adjust based on price momentum
         if len(features) > 0:
+    pass
+    pass
             momentum = features[0]
             if abs(momentum) > 0.01:
+    pass
+    pass
                 base_confidence += 0.2
             elif abs(momentum) > 0.005:
                 base_confidence += 0.1
 
         # Adjust based on volatility
         if len(features) > 1:
+    pass
+    pass
             volatility = features[1]
             if volatility < 0.01:
+    pass
+    pass
                 base_confidence += 0.1
             elif volatility > 0.03:
                 base_confidence -= 0.1
 
         # Adjust based on RSI
         if len(features) > 5:
+    pass
+    pass
             rsi = features[5]
             if 0.3 < rsi < 0.7:
+    pass
+    pass
                 base_confidence += 0.1
             elif rsi < 0.2 or rsi > 0.8:
                 base_confidence -= 0.1
 
         # Adjust for barrier type
         if barrier_type == "twenty_five_percent":
+    pass
+    pass
             base_confidence *= 0.9
 
         return np.clip(base_confidence, 0.0, 1.0)
 
     def _determine_direction(self, features: np.ndarray) -> str:
+    pass
+    pass
         """Determine price direction based on features."""
         if len(features) > 0:
+    pass
+    pass
             momentum = features[0]
             if momentum > 0:
+    pass
+    pass
                 return "UP"
             else:
                 return "DOWN"
@@ -199,23 +235,35 @@ class MockMLTacticsManager:
             return "UP"
 
     def _calculate_combined_confidence(self, predictions: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate combined confidence from all predictions."""
         confidences = []
         weights = []
 
         for barrier_type, prediction in predictions.items():
+    pass
+    pass
             if prediction and "confidence" in prediction:
+    pass
+    pass
                 confidences.append(prediction["confidence"])
                 if barrier_type == "fifty_percent":
+    pass
+    pass
                     weights.append(0.6)
                 else:
                     weights.append(0.4)
 
         if not confidences:
+    pass
+    pass
             return 0.5
 
         total_weight = sum(weights)
         if total_weight > 0:
+    pass
+    pass
             combined_confidence = sum(c * w for c, w in zip(confidences, weights)) / total_weight
         else:
             combined_confidence = np.mean(confidences)
@@ -223,21 +271,29 @@ class MockMLTacticsManager:
         return np.clip(combined_confidence, 0.0, 1.0)
 
     def _evaluate_green_light_signal(self, predictions: Dict[str, Any], combined_confidence: float) -> Dict[str, Any]:
+    pass
+    pass
         """Evaluate green light signal based on predictions and thresholds."""
         fifty_percent_ok = False
         twenty_five_percent_ok = False
 
         if "fifty_percent" in predictions and predictions["fifty_percent"]:
+    pass
+    pass
             fifty_confidence = predictions["fifty_percent"]["confidence"]
             fifty_percent_ok = fifty_confidence >= self.green_light_thresholds["fifty_percent"]
 
         if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
+    pass
+    pass
             twenty_five_confidence = predictions["twenty_five_percent"]["confidence"]
             twenty_five_percent_ok = twenty_five_confidence >= self.green_light_thresholds["twenty_five_percent"]
 
         combined_ok = combined_confidence >= self.green_light_thresholds["combined_threshold"]
 
         if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
+    pass
+    pass
             signal = "GREEN_LIGHT"
             reason = "All thresholds met"
         elif combined_ok:
@@ -272,6 +328,8 @@ class MockMLTacticsManager:
         predictions = {}
 
         for barrier_type in ["fifty_percent", "twenty_five_percent"]:
+    pass
+    pass
             # Extract features
             features = self._extract_features(market_data)
 
@@ -414,7 +472,7 @@ async def test_multi_output_system():
 
 async def test_integration_with_position_sizing():
     """Test integration with position sizing."""
-    print("\n🧪 Testing Integration with Position Sizing")
+    print("\\\n🧪 Testing Integration with Position Sizing")
     print("=" * 60)
 
     # Generate predictions
@@ -434,6 +492,8 @@ async def test_integration_with_position_sizing():
 
     # Simple position sizing logic
     if combined_confidence >= 0.8:
+    pass
+    pass
         position_size = 0.5  # 50% of account
     elif combined_confidence >= 0.7:
         position_size = 0.3  # 30% of account
@@ -444,6 +504,8 @@ async def test_integration_with_position_sizing():
 
     # Simple leverage calculation
     if combined_confidence >= 0.8:
+    pass
+    pass
         leverage = 3.0
     elif combined_confidence >= 0.7:
         leverage = 2.0
@@ -461,6 +523,8 @@ async def test_integration_with_position_sizing():
     # Check if we should open position
     green_light = predictions["green_light_signal"]["signal"]
     if green_light == "GREEN_LIGHT":
+    pass
+    pass
         print("🟢 GREEN LIGHT: Position can be opened")
         print(f"  Action: {predictions['fifty_percent']['direction']}")
         print(f"  Size: {position_size:.2%} of account")
@@ -468,9 +532,11 @@ async def test_integration_with_position_sizing():
     else:
         print("🔴 RED LIGHT: No position should be opened")
 
-    print("\n✅ Integration test completed!")
+    print("\\\n✅ Integration test completed!")
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run tests
     asyncio.run(test_multi_output_system())
     asyncio.run(test_integration_with_position_sizing())

@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from src.training.steps.data_preparation_components.training_validation_config import (
+import VALIDATION_FUNCTIONS,
     VALIDATION_FUNCTIONS,
     can_proceed_to_step,
     get_progression_rules,
@@ -15,14 +16,20 @@ class TrainingStepValidator:
     """Validates training steps and prevents progression on significant errors."""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.step_errors = {}
         self.critical_errors = []
         self.warnings = []
         self.step_status = {}
 
     def add_error(self, step_name: str, error: str, severity: str = "ERROR") -> None:
+    pass
+    pass
         """Add an error for a specific step."""
         if step_name not in self.step_errors:
+    pass
+    pass
             self.step_errors[step_name] = []
 
         self.step_errors[step_name].append(
@@ -30,15 +37,23 @@ class TrainingStepValidator:
         )
 
         if severity == "CRITICAL":
+    pass
+    pass
             self.critical_errors.append(f"{step_name}: {error}")
 
     def add_warning(self, step_name: str, warning: str) -> None:
+    pass
+    pass
         """Add a warning for a specific step."""
         if step_name not in self.warnings:
+    pass
+    pass
             self.warnings[step_name] = []
         self.warnings[step_name].append(warning)
 
     def set_step_status(self, step_name: str, status: str, details: str = "") -> None:
+    pass
+    pass
         """Set the status of a step."""
         self.step_status[step_name] = {
             "status": status,  # SUCCESS, FAILED, WARNING, SKIPPED
@@ -57,10 +72,14 @@ class TrainingStepValidator:
 
         # Additional checks for critical errors
         if current_step in self.step_errors:
+    pass
+    pass
             critical_errors = [
                 e for e in self.step_errors[current_step] if e["severity"] == "CRITICAL"
             ]
             if critical_errors:
+    pass
+    pass
                 return (
                     False,
                     f"Cannot proceed to {next_step}: {len(critical_errors)} critical errors in {current_step}",
@@ -68,11 +87,17 @@ class TrainingStepValidator:
 
         # Check step status
         if current_step in self.step_status:
+    pass
+    pass
             status = self.step_status[current_step]["status"]
             if status == "FAILED":
+    pass
+    pass
                 # Check if the step can be skipped according to configuration
                 current_rules = get_progression_rules(current_step)
                 if not current_rules.get("can_skip", False):
+    pass
+    pass
                     return (
                         False,
                         f"Cannot proceed to {next_step}: {current_step} failed and cannot be skipped",
@@ -83,6 +108,8 @@ class TrainingStepValidator:
         return can_proceed, message
 
     def get_step_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """Get a summary of all step statuses and errors."""
         return {
             "step_status": self.step_status,
@@ -92,10 +119,14 @@ class TrainingStepValidator:
         }
 
     def has_critical_errors(self) -> bool:
+    pass
+    pass
         """Check if there are any critical errors."""
         return len(self.critical_errors) > 0
 
     def get_critical_errors(self) -> list:
+    pass
+    pass
         """Get all critical errors."""
         return self.critical_errors.copy()
 
@@ -106,6 +137,8 @@ class TrainingStepValidator:
     ) -> tuple[bool, list[str]]:
         """Validate step results using the validation configuration."""
         if step_name in VALIDATION_FUNCTIONS:
+    pass
+    pass
             return VALIDATION_FUNCTIONS[step_name](results)
         return True, []
 
@@ -117,16 +150,24 @@ class TrainingStepValidator:
         """Validate step metrics against configured thresholds."""
         config = get_validation_config(step_name)
         if not config or "thresholds" not in config:
+    pass
+    pass
             return True, []
 
         failed_thresholds = []
         for metric_name, threshold_config in config["thresholds"].items():
+    pass
+    pass
             if metric_name in metrics:
+    pass
+    pass
                 value = metrics[metric_name]
                 min_val = threshold_config.get("min")
                 max_val = threshold_config.get("max")
 
                 if min_val is not None and value < min_val:
+    pass
+    pass
                     failed_thresholds.append(
                         f"{metric_name} ({value}) below minimum threshold ({min_val})",
                     )
@@ -138,25 +179,37 @@ class TrainingStepValidator:
         return len(failed_thresholds) == 0, failed_thresholds
 
     def clear_step_errors(self, step_name: str) -> None:
+    pass
+    pass
         """Clear errors for a specific step."""
         if step_name in self.step_errors:
+    pass
+    pass
             del self.step_errors[step_name]
 
     def clear_all_errors(self) -> None:
+    pass
+    pass
         """Clear all errors and warnings."""
         self.step_errors.clear()
         self.critical_errors.clear()
         self.warnings.clear()
 
     def get_step_errors(self, step_name: str) -> list:
+    pass
+    pass
         """Get all errors for a specific step."""
         return self.step_errors.get(step_name, [])
 
     def get_step_warnings(self, step_name: str) -> list:
+    pass
+    pass
         """Get all warnings for a specific step."""
         return self.warnings.get(step_name, [])
 
     def get_failed_steps(self) -> list[str]:
+    pass
+    pass
         """Get list of steps that have failed."""
         return [
             step_name
@@ -165,6 +218,8 @@ class TrainingStepValidator:
         ]
 
     def get_successful_steps(self) -> list[str]:
+    pass
+    pass
         """Get list of steps that have succeeded."""
         return [
             step_name

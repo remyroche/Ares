@@ -129,6 +129,8 @@ class HMMRegimeBarrierOptimizer:
 
         # Validation
         if self.min_barrier >= self.max_barrier:
+    pass
+    pass
             raise ValueError("min_barrier must be less than max_barrier")
 
         self.logger.info(f"✅ HMM Regime Barrier Optimizer initialized")
@@ -137,6 +139,8 @@ class HMMRegimeBarrierOptimizer:
         self.logger.info(f"   Trials per regime: {self.n_trials_per_regime}")
 
     def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
+    pass
+    pass
         """Extract HMM regime names from data."""
 
         # Look for HMM regime column
@@ -147,11 +151,17 @@ class HMMRegimeBarrierOptimizer:
 
         regime_column = None
         for col in regime_columns:
+    pass
+    pass
             if col in data.columns:
+    pass
+    pass
                 regime_column = col
                 break
 
         if regime_column is None:
+    pass
+    pass
             self.logger.warning("⚠️ No regime column found in data")
             return []
 
@@ -160,10 +170,16 @@ class HMMRegimeBarrierOptimizer:
         regime_names = []
 
         for regime in unique_regimes:
+    pass
+    pass
             if pd.isna(regime):
+    pass
+    pass
                 continue
 
             if isinstance(regime, (int, np.integer)):
+    pass
+    pass
                 regime_name = f"HMM_Cluster_{regime}"
             else:
                 regime_name = str(regime)
@@ -181,10 +197,16 @@ class HMMRegimeBarrierOptimizer:
         """Create objective function for a specific HMM regime."""
 
         def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
             """Objective function for regime-specific barrier optimization."""
 
             try:
                 # Suggest barrier parameters within 0.2-1.5% range
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 upper_barrier = trial.suggest_float(
                     "upper_barrier",
                     self.min_barrier,
@@ -200,6 +222,8 @@ class HMMRegimeBarrierOptimizer:
 
                 # Ensure upper barrier is greater than lower barrier
                 if upper_barrier <= lower_barrier:
+    pass
+    pass
                     return -np.inf
 
                 # Simulate trades with these barriers (both long and short)
@@ -216,6 +240,8 @@ class HMMRegimeBarrierOptimizer:
 
                 # Check minimum trades requirement
                 if (long_metrics["trades"] + short_metrics["trades"]) < self.min_trades_per_regime:
+    pass
+    pass
                     return -np.inf
 
                 # Objective: maximize total profit after fees
@@ -276,14 +302,20 @@ class HMMRegimeBarrierOptimizer:
         entry_index = 0
 
         for i in range(1, len(data)):
+    pass
+    pass
             current_price = data.iloc[i]["close"]
             high_price = data.iloc[i]["high"]
             low_price = data.iloc[i]["low"]
             current_time = data.index[i]
 
             if not position_open:
+    pass
+    pass
                 # Simple long entry: upward close
                 if current_price > data.iloc[i - 1]["close"]:
+    pass
+    pass
                     position_open = True
                     entry_price = current_price
                     entry_time = current_time
@@ -294,7 +326,11 @@ class HMMRegimeBarrierOptimizer:
                 sl_hit = low_price <= entry_price * (1 - lower_barrier)
 
                 if tp_hit or sl_hit:
+    pass
+    pass
                     if tp_hit:
+    pass
+    pass
                         exit_price = entry_price * (1 + upper_barrier)
                         profit_pct = upper_barrier
                         exit_type = "upper_barrier"
@@ -338,14 +374,20 @@ class HMMRegimeBarrierOptimizer:
         entry_index = 0
 
         for i in range(1, len(data)):
+    pass
+    pass
             current_price = data.iloc[i]["close"]
             high_price = data.iloc[i]["high"]
             low_price = data.iloc[i]["low"]
             current_time = data.index[i]
 
             if not position_open:
+    pass
+    pass
                 # Simple short entry: downward close
                 if current_price < data.iloc[i - 1]["close"]:
+    pass
+    pass
                     position_open = True
                     entry_price = current_price
                     entry_time = current_time
@@ -356,7 +398,11 @@ class HMMRegimeBarrierOptimizer:
                 sl_hit = high_price >= entry_price * (1 + lower_barrier)
 
                 if tp_hit or sl_hit:
+    pass
+    pass
                     if tp_hit:
+    pass
+    pass
                         exit_price = entry_price * (1 - upper_barrier)
                         profit_pct = upper_barrier
                         exit_type = "upper_barrier_short_tp"
@@ -386,17 +432,25 @@ class HMMRegimeBarrierOptimizer:
         return trades
 
     def _calculate_total_profit(self, trades: List[Dict[str, Any]]) -> float:
+    pass
+    pass
         """Calculate total profit from trades."""
 
         if not trades:
+    pass
+    pass
             return 0.0
 
         total_profit = sum(trade["net_profit_pct"] for trade in trades)
         return total_profit
 
     def _compute_trade_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str, float]:
+    pass
+    pass
         """Compute aggregate metrics for a list of trades."""
         if not trades:
+    pass
+    pass
             return {
                 "profit": 0.0,
                 "trades": 0,
@@ -436,15 +490,23 @@ class HMMRegimeBarrierOptimizer:
         try:
             self.logger.info("🚀 Starting HMM regime barrier optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Get regime names
             regime_names = self._get_regime_names(data)
 
             if not regime_names:
+    pass
+    pass
                 self.logger.error("❌ No regimes found in data")
                 return {}
 
             # Optimize each regime
             for regime_name in regime_names:
+    pass
+    pass
                 await self._optimize_single_regime(data, regime_name, regime_column)
 
             # Generate summary report
@@ -468,6 +530,10 @@ class HMMRegimeBarrierOptimizer:
         try:
             self.logger.info(f"🎯 Optimizing barriers for regime: {regime_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Filter data for this regime
             regime_data = self._filter_regime_data(data, regime_name, regime_column)
 
@@ -529,6 +595,8 @@ class HMMRegimeBarrierOptimizer:
             long_short_ratio = (long_metrics["trades"] / short_metrics["trades"]) if short_metrics["trades"] > 0 else float('inf')
             long_short_profit_ratio = (long_metrics["profit"] / short_metrics["profit"]) if short_metrics["profit"] != 0 else float('inf')
             if long_metrics["profit"] > short_metrics["profit"] * 1.05:
+    pass
+    pass
                 preferred_direction = "long"
             elif short_metrics["profit"] > long_metrics["profit"] * 1.05:
                 preferred_direction = "short"
@@ -592,13 +660,21 @@ class HMMRegimeBarrierOptimizer:
 
         # Try to match regime name
         if regime_name in data[regime_column].values:
+    pass
+    pass
             return data[data[regime_column] == regime_name].copy()
 
         # Try to extract numeric ID from regime name
         try:
             if regime_name.startswith("HMM_Cluster_"):
+    pass
+    except Exception as e:
+        pass
+    pass
                 regime_id = int(regime_name.split("_")[-1])
                 return data[data[regime_column] == regime_id].copy()
+    except Exception as e:
+        pass
         except:
             pass
 
@@ -611,7 +687,13 @@ class HMMRegimeBarrierOptimizer:
         try:
             self.logger.info("📊 Generating optimization summary...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self.regime_results:
+    pass
+    pass
                 self.logger.warning("⚠️ No optimization results to summarize")
                 return
 
@@ -675,6 +757,10 @@ class HMMRegimeBarrierOptimizer:
 
         try:
             output_dir = Path("hmm_regime_barrier_results")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             output_dir.mkdir(exist_ok=True)
 
             # Create comprehensive visualization
@@ -770,8 +856,14 @@ class HMMRegimeBarrierOptimizer:
 
             # Create parameter importance plots for each regime
             for regime_name, study in self.studies.items():
+    pass
+    pass
                 try:
                     fig = plot_param_importances(study)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     fig.update_layout(title=f"Parameter Importance - {regime_name}")
                     fig.write_html(output_dir / f"param_importance_{regime_name}.html")
 
@@ -788,11 +880,15 @@ class HMMRegimeBarrierOptimizer:
             self.logger.exception(f"❌ Error creating visualizations: {e}")
 
     def get_optimized_barriers(self) -> Dict[str, Dict[str, float]]:
+    pass
+    pass
         """Get optimized barriers for all regimes."""
 
         optimized_barriers = {}
 
         for regime_name, result in self.regime_results.items():
+    pass
+    pass
             optimized_barriers[regime_name] = {
                 "upper_barrier": result.optimal_upper_barrier,
                 "lower_barrier": result.optimal_lower_barrier,
@@ -807,9 +903,13 @@ class HMMRegimeBarrierOptimizer:
         return optimized_barriers
 
     def get_regime_barriers(self, regime_name: str) -> Optional[Dict[str, float]]:
+    pass
+    pass
         """Get optimized barriers for a specific regime."""
 
         if regime_name not in self.regime_results:
+    pass
+    pass
             return None
 
         result = self.regime_results[regime_name]
@@ -822,9 +922,13 @@ class HMMRegimeBarrierOptimizer:
         }
 
     def build_barrier_map(self) -> Dict[str, Dict[str, float]]:
+    pass
+    pass
         """Build a compact map of regime -> {upper_barrier, lower_barrier} in decimals and %."""
         barrier_map: Dict[str, Dict[str, float]] = {}
         for regime_name, res in self.regime_results.items():
+    pass
+    pass
             barrier_map[regime_name] = {
                 "upper_barrier": res.optimal_upper_barrier,
                 "lower_barrier": res.optimal_lower_barrier,
@@ -834,8 +938,12 @@ class HMMRegimeBarrierOptimizer:
         return barrier_map
 
     def export_barrier_map(self, output_path: Optional[Path] = None) -> Path:
+    pass
+    pass
         """Export the barrier map to JSON for downstream steps."""
         if output_path is None:
+    pass
+    pass
             output_dir = Path("hmm_regime_barrier_results")
             output_dir.mkdir(exist_ok=True)
             output_path = output_dir / "barriers.json"
@@ -847,6 +955,8 @@ class HMMRegimeBarrierOptimizer:
         return output_path
 
     def load_barrier_map(self, input_path: Path) -> Dict[str, Dict[str, float]]:
+    pass
+    pass
         """Load a barrier map from JSON."""
         import json
         with open(input_path) as f:
@@ -899,6 +1009,8 @@ def get_optimized_hmm_barriers(
     """
 
     if regime_name not in optimization_results:
+    pass
+    pass
         return None
 
     result = optimization_results[regime_name]
@@ -912,6 +1024,8 @@ def get_optimized_hmm_barriers(
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Example usage
     print("🎯 HMM Regime Barrier Optimizer")
     print("This optimizer finds optimal upper and lower barrier limits")
@@ -925,11 +1039,11 @@ if __name__ == "__main__":
         "min_trades_per_regime": 10
     }
 
-    print(f"\n📊 Configuration:")
+    print(f"\\\n📊 Configuration:")
     print(f"   Trials per regime: {config['n_trials_per_regime']}")
     print(f"   Timeout per regime: {config['timeout_minutes_per_regime']} minutes")
     print(f"   Min trades per regime: {config['min_trades_per_regime']}")
     print(f"   Barrier range: 0.2% - 1.5%")
     print(f"   Trading fee: 0.1% per trade")
 
-    print("\n🚀 Ready to optimize HMM regime barriers!")
+    print("\\\n🚀 Ready to optimize HMM regime barriers!")

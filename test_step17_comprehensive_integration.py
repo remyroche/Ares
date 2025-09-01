@@ -23,11 +23,16 @@ logger = logging.getLogger(__name__)
 # Import the step17 components
 try:
         Step17ProbabilisticBayesianOptimization,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         create_step17_probabilistic_bayesian_optimization,
         ComprehensiveParameterIntegration,
         create_comprehensive_parameter_integration
     )
     from src.training.probabilistic_bayesian_optimizer import (
+import ProbabilisticBayesianOptimizer,
         ProbabilisticBayesianOptimizer,
         ProbabilisticOptimizationConfig
     )
@@ -38,6 +43,8 @@ except ImportError as e:
 
 
 def create_comprehensive_test_config():
+    pass
+    pass
     """Create comprehensive test configuration for step17."""
 
     return {
@@ -62,6 +69,8 @@ def create_comprehensive_test_config():
 
 
 def create_realistic_market_data(periods: int = 2000) -> pd.DataFrame:
+    pass
+    pass
     """Create realistic market data for testing."""
 
     dates = pd.date_range(start="2024-01-01", periods=periods, freq="1min")
@@ -74,6 +83,8 @@ def create_realistic_market_data(periods: int = 2000) -> pd.DataFrame:
     prices = [100.0]  # Start at $100
 
     for i in range(1, periods):
+    pass
+    pass
         # Add trend component
         trend = 0.0001 * np.sin(i / 100) + 0.00005 * np.cos(i / 50)
 
@@ -106,6 +117,8 @@ def create_realistic_market_data(periods: int = 2000) -> pd.DataFrame:
 
 
 def create_historical_trading_data(market_data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
     """Create realistic historical trading data for optimization targets."""
 
     # Calculate some technical indicators
@@ -134,11 +147,15 @@ def create_historical_trading_data(market_data: pd.DataFrame) -> pd.DataFrame:
 
     trades = []
     for idx in trade_indices:
+    pass
+    pass
         # Trade parameters based on market conditions
         entry_price = close.iloc[idx]
 
         # Determine trade outcome based on market conditions
         if idx < len(close) - 20:
+    pass
+    pass
             future_price = close.iloc[idx + 20]
             returns = (future_price - entry_price) / entry_price
 
@@ -196,19 +213,29 @@ async def test_step17_probabilistic_optimization():
     try:
         results = await step17.execute(context)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("✅ Step17 execution completed successfully!")
         logger.info(f"Results: {results.get('status', 'unknown')}")
 
         # Show optimization results
         if 'results' in results:
+    pass
+    pass
             optimization_summary = results['results'].get('optimization_summary', {})
             logger.info(f"Total parameters optimized: {optimization_summary.get('total_parameters_optimized', 0)}")
 
             # Show performance improvements
             performance_improvements = optimization_summary.get('performance_improvements', {})
             if performance_improvements:
+    pass
+    pass
                 logger.info("Performance improvements:")
                 for metric, improvement in performance_improvements.items():
+    pass
+    pass
                     logger.info(f"  {metric}: {improvement.get('improvement', 0):.3f}")
 
         return results
@@ -221,7 +248,7 @@ async def test_step17_probabilistic_optimization():
 async def test_comprehensive_parameter_integration():
     """Test the comprehensive parameter integration."""
 
-    logger.info("\n🧪 Testing Comprehensive Parameter Integration")
+    logger.info("\\\n🧪 Testing Comprehensive Parameter Integration")
     logger.info("=" * 80)
 
     # Create test configuration
@@ -235,23 +262,35 @@ async def test_comprehensive_parameter_integration():
 
     # Show some example parameters
     for step_name, step_params in list(integration.step_parameter_mapping.items())[:3]:
-        logger.info(f"\n{step_name}:")
+    pass
+    pass
+        logger.info(f"\\\n{step_name}:")
         total_params = sum(len(category_params) for category_params in step_params.values())
         logger.info(f"  Total parameters: {total_params}")
 
         for category, params in list(step_params.items())[:2]:
+    pass
+    pass
             logger.info(f"  {category}: {len(params)} parameters")
 
     # Test parameter extraction
     try:
-        logger.info("\n🔍 Testing parameter extraction...")
+        logger.info("\\\n🔍 Testing parameter extraction...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         all_parameters = await integration.extract_all_step_parameters()
 
         logger.info(f"✅ Successfully extracted parameters from {len(all_parameters)} steps")
 
         # Show extraction results
         for step_name, step_result in list(all_parameters.items())[:3]:
+    pass
+    pass
             if "error" not in step_result:
+    pass
+    pass
                 logger.info(f"  {step_name}: Parameters extracted successfully")
             else:
                 logger.info(f"  {step_name}: {step_result['error']}")
@@ -266,12 +305,16 @@ async def test_comprehensive_parameter_integration():
 async def test_mlflow_integration():
     """Test MLflow integration for experiment tracking."""
 
-    logger.info("\n🧪 Testing MLflow Integration")
+    logger.info("\\\n🧪 Testing MLflow Integration")
     logger.info("=" * 80)
 
     try:
         import mlflow
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Set up MLflow
         mlflow.set_tracking_uri("sqlite:///mlflow.db")
         mlflow.set_experiment("step17_mlflow_test")
@@ -314,7 +357,7 @@ async def test_mlflow_integration():
 async def test_objective_weights_validation():
     """Test that the 50/25/25 objective weights are correctly implemented."""
 
-    logger.info("\n🧪 Testing Objective Weights (50/25/25)")
+    logger.info("\\\n🧪 Testing Objective Weights (50/25/25)")
     logger.info("=" * 80)
 
     # Create optimizer with specific configuration
@@ -333,10 +376,16 @@ async def test_objective_weights_validation():
     # Test objective weights
     try:
         # Get recommended hyperparameters with default weights
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         recommended_params = tactician_optimizer.get_recommended_hyperparameters()
 
         # Check if weights are correctly applied
         if recommended_params:
+    pass
+    pass
             logger.info("✅ Objective weights validation passed")
             logger.info(f"Default weights: 50% total_profit, 25% win_rate, 25% sharpe_ratio")
 
@@ -357,7 +406,7 @@ async def test_objective_weights_validation():
 async def test_expanded_parameter_spaces():
     """Test that parameter search spaces are significantly expanded."""
 
-    logger.info("\n🧪 Testing Expanded Parameter Search Spaces")
+    logger.info("\\\n🧪 Testing Expanded Parameter Search Spaces")
     logger.info("=" * 80)
 
     # Create optimizers
@@ -379,6 +428,10 @@ async def test_expanded_parameter_spaces():
 
     try:
         # Get parameter configurations
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         tactician_params = tactician_optimizer._get_model_configurations()
         analyst_params = analyst_optimizer._get_model_configurations()
 
@@ -392,17 +445,21 @@ async def test_expanded_parameter_spaces():
         logger.info(f"  Total parameters: {tactician_total + analyst_total}")
 
         # Show some expanded ranges
-        logger.info("\n📊 Example expanded parameter ranges:")
+        logger.info("\\\n📊 Example expanded parameter ranges:")
 
         # Tactician examples
         barrier_params = tactician_params.get("barrier_system", {})
         if "upper_barrier_multiplier" in barrier_params:
+    pass
+    pass
             range_info = barrier_params["upper_barrier_multiplier"]
             logger.info(f"  Tactician upper_barrier_multiplier: {range_info[0]} to {range_info[1]}")
 
         # Analyst examples
         regime_params = analyst_params.get("regime_detection", {})
         if "regime_threshold" in regime_params:
+    pass
+    pass
             range_info = regime_params["regime_threshold"]
             logger.info(f"  Analyst regime_threshold: {range_info[0]} to {range_info[1]}")
 
@@ -422,7 +479,7 @@ async def run_comprehensive_test():
     test_results = {}
 
     # Test 1: Step17 Probabilistic Optimization
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 1: Step17 Probabilistic Bayesian Optimization")
     logger.info("="*50)
 
@@ -430,7 +487,7 @@ async def run_comprehensive_test():
     test_results["step17_optimization"] = step17_results is not None
 
     # Test 2: Comprehensive Parameter Integration
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 2: Comprehensive Parameter Integration")
     logger.info("="*50)
 
@@ -438,7 +495,7 @@ async def run_comprehensive_test():
     test_results["parameter_integration"] = integration is not None
 
     # Test 3: MLflow Integration
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 3: MLflow Integration")
     logger.info("="*50)
 
@@ -446,7 +503,7 @@ async def run_comprehensive_test():
     test_results["mlflow_integration"] = mlflow_success
 
     # Test 4: Objective Weights Validation
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 4: Objective Weights (50/25/25)")
     logger.info("="*50)
 
@@ -454,7 +511,7 @@ async def run_comprehensive_test():
     test_results["objective_weights"] = weights_validation
 
     # Test 5: Expanded Parameter Spaces
-    logger.info("\n" + "="*50)
+    logger.info("\\\n" + "="*50)
     logger.info("TEST 5: Expanded Parameter Search Spaces")
     logger.info("="*50)
 
@@ -462,7 +519,7 @@ async def run_comprehensive_test():
     test_results["parameter_spaces"] = parameter_spaces
 
     # Summary
-    logger.info("\n" + "="*100)
+    logger.info("\\\n" + "="*100)
     logger.info("🎯 COMPREHENSIVE TEST SUMMARY")
     logger.info("="*100)
 
@@ -476,13 +533,17 @@ async def run_comprehensive_test():
 
     # Show individual test results
     for test_name, result in test_results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         logger.info(f"  {test_name}: {status}")
 
     # Generate recommendations
-    logger.info("\n💡 RECOMMENDATIONS:")
+    logger.info("\\\n💡 RECOMMENDATIONS:")
 
     if all(test_results.values()):
+    pass
+    pass
         logger.info("  🎉 All tests passed! Step17 is ready for production use.")
         logger.info("  • Monitor optimization performance in live environment")
         logger.info("  • Schedule regular parameter re-optimization")
@@ -494,7 +555,7 @@ async def run_comprehensive_test():
         logger.info("  • Review error logs for specific issues")
         logger.info("  • Fix issues before proceeding to production")
 
-    logger.info("\n🔮 NEXT STEPS:")
+    logger.info("\\\n🔮 NEXT STEPS:")
     logger.info("  1. Integrate with your actual Tactician and Analyst models")
     logger.info("  2. Connect with your real market data sources")
     logger.info("  3. Set up automated optimization schedules")
@@ -510,11 +571,17 @@ async def main():
     try:
         results = await run_comprehensive_test()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if all(results.values()):
-            logger.info("\n🎉 COMPREHENSIVE TEST COMPLETED SUCCESSFULLY!")
+    pass
+    pass
+            logger.info("\\\n🎉 COMPREHENSIVE TEST COMPLETED SUCCESSFULLY!")
             logger.info("Step17 is fully integrated and ready for production use!")
         else:
-            logger.info("\n⚠️ SOME TESTS FAILED - Review and fix issues before production use")
+            logger.info("\\\n⚠️ SOME TESTS FAILED - Review and fix issues before production use")
 
     except Exception as e:
         logger.error(f"❌ Comprehensive test failed: {e}")
@@ -522,5 +589,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the comprehensive test
     asyncio.run(main())

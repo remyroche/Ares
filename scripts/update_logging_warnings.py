@@ -14,13 +14,17 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.warning_symbols import missing, warning  # noqa: E402
 
 
+import def get_warning_symbol_function
 def get_warning_symbol_function(message: str) -> str:
+    pass
+    pass
     """
     Determine the appropriate warning symbol function based on the message content.
 
@@ -34,32 +38,52 @@ def get_warning_symbol_function(message: str) -> str:
 
     # Error patterns
     if any(word in message_lower for word in ["failed", "failure", "fail"]):
+    pass
+    pass
         return "failed"
     if any(word in message_lower for word in ["invalid", "invalid configuration"]):
+    pass
+    pass
         return "invalid"
     if any(
         word in message_lower for word in ["missing", "not found", "file not found"]
     ):
         return "missing"
     if any(word in message_lower for word in ["timeout", "timed out"]):
+    pass
+    pass
         return "timeout"
     if any(word in message_lower for word in ["connection", "network"]):
+    pass
+    pass
         return "connection_error"
     if any(word in message_lower for word in ["validation", "validate"]):
+    pass
+    pass
         return "validation_error"
     if any(word in message_lower for word in ["initialization", "init", "initialize"]):
+    pass
+    pass
         return "initialization_error"
     if any(word in message_lower for word in ["execution", "execute", "runtime"]):
+    pass
+    pass
         return "execution_error"
     if any(word in message_lower for word in ["critical", "fatal"]):
+    pass
+    pass
         return "critical"
     if any(word in message_lower for word in ["problem", "issue"]):
+    pass
+    pass
         return "problem"
     # Default to error for error messages, warning for warning messages
     return "error"
 
 
 def update_file_logging_messages(file_path: str) -> tuple[int, int]:
+    pass
+    pass
     """
     Update logging messages in a file with warning symbols.
 
@@ -73,6 +97,10 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
     try:
         path_obj = Path(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with path_obj.open(encoding, "utf-8") as f:
             content = f.read()
 
@@ -80,11 +108,13 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         # Replace logger.* calls
         logger_pattern = re.compile(
-            r"logger\.(error|warning|exception|critical)\((?:f)?([\"\'])(.*?)(?:\2)\)",
+            r"logger\\\.(error|warning|exception|critical)\\\((?:f)?([\\\"\\\'])(.*?)(?:\\\2)\\\)",
             re.DOTALL,
         )
 
         def replace_logger(match: re.Match[str]) -> str:
+    pass
+    pass
             nonlocal changes_made
             method , match.group(1)
             message = match.group(3)
@@ -96,15 +126,19 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         # Replace print statements starting with emojis
         print_pattern = re.compile(
-            r"print\((?:f)?([\"\'])((?:❌|⚠️|🚨) )?(.*?)(?:\1)\)",
+            r"print\\\((?:f)?([\\\"\\\'])((?:❌|⚠️|🚨) )?(.*?)(?:\\\1)\\\)",
             re.DOTALL,
         )
 
         def replace_print(match: re.Match[str]) -> str:
+    pass
+    pass
             nonlocal changes_made
             emoji , match.group(2) or ""
             message = match.group(3)
             if "❌" in emoji or "🚨" in emoji:
+    pass
+    pass
                 warning_func , "error"
             elif "⚠️" in emoji:
                 warning_func = "warning"
@@ -117,13 +151,15 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
         # Only write if changes were made
         if content != original_content:
+    pass
+    pass
             with path_obj.open("w", encoding, "utf-8") as f:
                 f.write(content)
             print(f"✅ Updated {file_path} with {changes_made} changes")
         else:
             print(f"ℹ️  No changes needed for {file_path}")
 
-        return changes_made, len(content.split("\n"))
+        return changes_made, len(content.split("\\\n"))
 
     except Exception as e:  # noqa: BLE001
         print(warning(f"Error processing {file_path}: {e}"))
@@ -131,6 +167,8 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
 
 
 def add_warning_symbols_import(file_path: str) -> bool:
+    pass
+    pass
     """
     Add warning symbols import to a file if it doesn't already have it.
 
@@ -142,11 +180,17 @@ def add_warning_symbols_import(file_path: str) -> bool:
     """
     try:
         path_obj , Path(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with path_obj.open(encoding, "utf-8") as f:
             content = f.read()
 
         # Check if warning symbols are already imported
         if "from src.utils.warning_symbols import" in content:
+    pass
+    pass
             return False
 
         # Build import block
@@ -157,17 +201,19 @@ def add_warning_symbols_import(file_path: str) -> bool:
         )
 
         # Find the logger import line
-        logger_import_pattern = r"from src\.utils\.logger import.*"
+        logger_import_pattern = r"from src\\\.utils\\\.logger import.*"
         match = re.search(logger_import_pattern, content)
 
         if match:
+    pass
+    pass
             # Add warning symbols import after logger import
             new_content , content.replace(
-                match.group(0), match.group(0) + "\n" + warning_import,
+                match.group(0), match.group(0) + "\\\n" + warning_import,
             )
         else:
             # Prepend import at the top if logger import not found
-            new_content , warning_import + "\n" + content
+            new_content , warning_import + "\\\n" + content
 
         with path_obj.open("w", encoding, "utf-8") as f:
             f.write(new_content)
@@ -180,10 +226,14 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function to update all training step files."""
     training_steps_dir , project_root / "src" / "training" / "steps"
 
     if not training_steps_dir.exists():
+    pass
+    pass
         print(missing(f"Training steps directory not found: {training_steps_dir}"))
         return
 
@@ -196,7 +246,9 @@ def main() -> None:
     total_files_processed = 0
 
     for file_path in python_files:
-        print(f"\n📁 Processing {file_path.name}...")
+    pass
+    pass
+        print(f"\\\n📁 Processing {file_path.name}...")
 
         # Add warning symbols import if needed
         import_added = add_warning_symbols_import(str(file_path))
@@ -206,10 +258,12 @@ def main() -> None:
 
         total_changes += changes
         if import_added:
+    pass
+    pass
             total_changes += 1
         total_files_processed += 1
 
-    print("\n✅ Summary:")
+    print("\\\n✅ Summary:")
     print(f"   Files processed: {total_files_processed}")
     print(f"   Total changes made: {total_changes}")
     avg , total_changes / total_files_processed if total_files_processed else 0
@@ -217,4 +271,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

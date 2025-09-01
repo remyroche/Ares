@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import (
+import TYPE_CHECKING,
     TYPE_CHECKING,
     Any,
 )
@@ -13,11 +14,13 @@ from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 
 # Import dual model system and other components
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -28,11 +31,14 @@ from src.utils.warning_symbols import (
 )
 
 if TYPE_CHECKING:
+    pass
+    pass
     from src.analyst.liquidation_risk_model import LiquidationRiskModel
     from src.analyst.market_health_analyzer import MarketHealthAnalyzer
     from src.training.dual_model_system import DualModelSystem
 
 
+import class Analyst:
 class Analyst:
     """
     Analyst with comprehensive error handling and type safety.
@@ -41,6 +47,8 @@ class Analyst:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize analyst with enhanced type safety.
 
@@ -140,6 +148,8 @@ class Analyst:
 
         # Validate configuration
         if not self._validate_configuration():
+    pass
+    pass
             self.logger.error("Invalid configuration for analyst")
             return False
 
@@ -148,22 +158,32 @@ class Analyst:
 
         # Initialize Dual Model System
         if self.enable_dual_model_system:
+    pass
+    pass
             await self._initialize_dual_model_system()
 
         # Initialize Market Health Analyzer
         if self.enable_market_health_analysis:
+    pass
+    pass
             await self._initialize_market_health_analyzer()
 
         # Initialize Liquidation Risk Model
         if self.enable_liquidation_risk_analysis:
+    pass
+    pass
             await self._initialize_liquidation_risk_model()
 
         # Initialize Feature Engineering Orchestrator
         if self.enable_feature_engineering:
+    pass
+    pass
             await self._initialize_feature_engineering_orchestrator()
 
         # Initialize ML Confidence Predictor
         if self.enable_ml_predictions:
+    pass
+    pass
             await self._initialize_ml_confidence_predictor()
 
         # Enhanced predictions are now handled by the supervisor
@@ -171,6 +191,8 @@ class Analyst:
 
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
+    pass
+    pass
             await self._initialize_regime_classifier()
 
         self.logger.info("✅ Analyst initialization completed successfully")
@@ -194,12 +216,20 @@ class Analyst:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate analyst configuration."""
         try:
             if self.analysis_interval <= 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("analysis_interval must be positive")
                 return False
 
+    except Exception as e:
+        pass
             self.logger.info("Analyst configuration validation passed")
             return True
 
@@ -217,9 +247,13 @@ class Analyst:
         self.logger.info("Initializing analyst modules...")
 
         if self.enable_technical_analysis:
+    pass
+    pass
             await self._initialize_technical_analysis()
 
         if self.enable_risk_analysis:
+    pass
+    pass
             await self._initialize_risk_analysis()
 
         self.logger.info("Analyst modules initialized successfully")
@@ -256,8 +290,16 @@ class Analyst:
         try:
             from src.training.dual_model_system import setup_dual_model_system
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.dual_model_system = await setup_dual_model_system
             self.dual_model_system = await setup_dual_model_system(self.config)
             if self.dual_model_system:
+    pass
+    pass
                 self.logger.info("✅ Dual Model System initialized successfully")
             else:
                 self.print(failed("❌ Failed to initialize Dual Model System"))
@@ -276,10 +318,18 @@ class Analyst:
         try:
             from src.analyst.market_health_analyzer import setup_market_health_analyzer
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.market_health_analyzer = await setup_market_health_analyzer
             self.market_health_analyzer = await setup_market_health_analyzer(
                 self.config,
             )
             if self.market_health_analyzer:
+    pass
+    pass
                 self.logger.info("✅ Market Health Analyzer initialized successfully")
             else:
                 self.print(failed("❌ Failed to initialize Market Health Analyzer"))
@@ -298,10 +348,18 @@ class Analyst:
         try:
             from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.liquidation_risk_model = await setup_liquidation_risk_model
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
             )
             if self.liquidation_risk_model:
+    pass
+    pass
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
             else:
                 self.print(failed("❌ Failed to initialize Liquidation Risk Model"))
@@ -320,6 +378,10 @@ class Analyst:
         try:
             self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
                 self.config,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(
                 "✅ Feature Engineering Orchestrator initialized successfully",
@@ -378,9 +440,15 @@ class Analyst:
         """
         try:
             if not self._validate_analysis_inputs(analysis_input):
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Invalid analysis inputs")
                 return False
 
+    except Exception as e:
+        pass
             self.is_analyzing = True
             self.logger.info("Starting comprehensive analysis...")
 
@@ -391,6 +459,8 @@ class Analyst:
 
             # 1. Generate features using orchestrator
             if self.feature_engineering_orchestrator:
+    pass
+    pass
                 self.logger.info("Generating features...")
                 features_df = (
                     self.feature_engineering_orchestrator.generate_all_features(
@@ -406,6 +476,8 @@ class Analyst:
             # 2. Perform market health analysis
             market_health_results = {}
             if self.market_health_analyzer:
+    pass
+    pass
                 self.logger.info("Performing market health analysis...")
                 health_input = {
                     "market_data": features_df,
@@ -421,6 +493,8 @@ class Analyst:
             # 3. Perform liquidation risk analysis
             liquidation_risk_results = {}
             if self.liquidation_risk_model and self.ml_confidence_predictor:
+    pass
+    pass
                 self.logger.info("Performing liquidation risk analysis...")
                 # Get ML predictions first
                 ml_predictions = await self._get_ml_predictions(
@@ -428,6 +502,8 @@ class Analyst:
                     current_price,
                 )
                 if ml_predictions:
+    pass
+    pass
                     liquidation_risk_results = (
                         await self.liquidation_risk_model.calculate_liquidation_risk(
                             ml_predictions,
@@ -439,6 +515,8 @@ class Analyst:
             # 4. Make trading decision using dual model system
             trading_decision = {}
             if self.dual_model_system:
+    pass
+    pass
                 self.logger.info("Making trading decision with dual model system...")
                 trading_decision = await self.dual_model_system.make_trading_decision(
                     features_df,
@@ -449,6 +527,8 @@ class Analyst:
             # 5. Get enhanced predictions from supervisor if available
             enhanced_predictions = {}
             if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
+    pass
+    pass
                 enhanced_predictions = await self.supervisor.get_analyst_predictions(
                     features_df, regime_info, symbol, exchange, timeframe
                 )
@@ -491,6 +571,8 @@ class Analyst:
     ) -> dict[str, Any]:
         """Get ML predictions for liquidation risk analysis."""
         if self.ml_confidence_predictor:
+    pass
+    pass
             return await self.ml_confidence_predictor.predict_confidence_table(
                 features_df,
                 current_price,
@@ -508,21 +590,35 @@ class Analyst:
         context="analysis inputs validation",
     )
     def _validate_analysis_inputs(self, analysis_input: dict[str, Any]) -> bool:
+    pass
+    pass
         """Validate analysis input data."""
         try:
             required_keys = ["market_data", "current_price"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for key in required_keys:
+    pass
+    pass
                 if key not in analysis_input:
+    pass
+    pass
                     self.logger.error("Missing required analysis input: %s", key)
                     return False
 
             market_data = analysis_input.get("market_data")
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
+    pass
+    pass
                 self.logger.error("Invalid market data provided")
                 return False
 
             current_price = analysis_input.get("current_price")
             if not isinstance(current_price, (int, float)) or current_price <= 0:
+    pass
+    pass
                 self.logger.error("Invalid current price provided")
                 return False
 
@@ -572,9 +668,15 @@ class Analyst:
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("price_analysis")
     def _perform_price_analysis(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         """Perform price analysis."""
         try:
             market_data = analysis_input.get("market_data")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             current_price = analysis_input.get("current_price")
 
             # Simple price analysis
@@ -605,7 +707,13 @@ class Analyst:
         try:
             market_data = analysis_input.get("market_data")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if "volume" not in market_data.columns:
+    pass
+    pass
                 return {}
 
             return {
@@ -633,6 +741,10 @@ class Analyst:
         try:
             market_data = analysis_input.get("market_data")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "rsi": market_data.get("rsi", {}).iloc[-1]
                 if "rsi" in market_data.columns
@@ -665,6 +777,10 @@ class Analyst:
         """Perform pattern analysis."""
         try:
             # Simple pattern analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "patterns_detected": [],
                 "pattern_confidence": 0.0,
@@ -684,6 +800,10 @@ class Analyst:
         try:
             market_data = analysis_input.get("market_data")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             returns = market_data["close"].pct_change()
             return {
                 "current_volatility": returns.rolling(window=20).std().iloc[-1],
@@ -709,6 +829,10 @@ class Analyst:
         """Perform correlation analysis."""
         try:
             # Simple correlation analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "price_volume_correlation": 0.0,
                 "correlation_regime": "normal",
@@ -728,6 +852,10 @@ class Analyst:
         try:
             market_data = analysis_input.get("market_data")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             rolling_max = market_data["close"].rolling(window=20).max()
             drawdown = (market_data["close"] - rolling_max) / rolling_max
             return {
@@ -745,9 +873,15 @@ class Analyst:
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("risk_scoring")
     def _perform_risk_scoring(self, analysis_input: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         """Perform risk scoring."""
         try:
             # Simple risk scoring
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "overall_risk_score": 0.5,
                 "risk_level": "medium",
@@ -778,9 +912,15 @@ class Analyst:
         """
         try:
             market_data = analysis_input.get("market_data")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             current_price = analysis_input.get("current_price")
 
             if self.ml_confidence_predictor:
+    pass
+    pass
                 ml_results = (
                     await self.ml_confidence_predictor.predict_confidence_table(
                         market_data,
@@ -827,9 +967,15 @@ class Analyst:
         """
         try:
             market_data = analysis_input.get("market_data")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             analysis_input.get("current_price")
 
             if self.regime_classifier:
+    pass
+    pass
                 # Use the new unified regime classifier for both regime and location
                 regime, location, confidence, additional_info = (
                     self.regime_classifier.predict_regime_and_location(market_data)
@@ -882,11 +1028,17 @@ class Analyst:
         try:
             self.logger.info("Storing analysis results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Add to history
             self.analysis_history.append(self.analysis_results.copy())
 
             # Limit history size
             if len(self.analysis_history) > self.max_analysis_history:
+    pass
+    pass
                 self.analysis_history.pop(0)
 
             self.logger.info("Analysis results stored successfully")
@@ -899,6 +1051,8 @@ class Analyst:
         context="analysis results getting",
     )
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
+    pass
+    pass
         """
         Get analysis results.
 
@@ -910,7 +1064,13 @@ class Analyst:
         """
         try:
             if analysis_type is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.analysis_results
+    except Exception as e:
+        pass
             return self.analysis_results.get(analysis_type, {})
 
         except Exception:
@@ -923,6 +1083,8 @@ class Analyst:
         context="analysis history getting",
     )
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         """
         Get analysis history.
 
@@ -934,7 +1096,13 @@ class Analyst:
         """
         try:
             if limit is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.analysis_history
+    except Exception as e:
+        pass
             return self.analysis_history[-limit:]
 
         except Exception:
@@ -942,6 +1110,8 @@ class Analyst:
             return []
 
     def get_analysis_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get analysis status."""
         return {
             "is_analyzing": self.is_analyzing,
@@ -968,16 +1138,26 @@ class Analyst:
         """Clean up analyst resources."""
         try:
             self.logger.info("Stopping Analyst...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_analyzing = False
 
             # Stop sub-components
             if self.dual_model_system:
+    pass
+    pass
                 await self.dual_model_system.stop()
 
             if self.market_health_analyzer:
+    pass
+    pass
                 await self.market_health_analyzer.stop()
 
             if self.liquidation_risk_model:
+    pass
+    pass
                 await self.liquidation_risk_model.stop()
 
             self.analysis_results = {}
@@ -1005,11 +1185,19 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
     """
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         analyst = Analyst(config)
 
         if await analyst.initialize():
+    pass
+    pass
             system_logger.info("✅ Analyst setup completed successfully")
             return analyst
         system_logger.error("❌ Analyst setup failed")

@@ -35,6 +35,7 @@ from src.utils.logger import setup_logging, system_logger  # noqa: E402
 from src.utils.warning_symbols import failed, warning  # noqa: E402
 
 
+import async def export_database
 async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
     """Export database for trading computer."""
     logger = system_logger.getChild("MigrationScript")
@@ -42,6 +43,10 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
 
     try:
         # Initialize database manager
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -52,6 +57,8 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
         export_path = await migration_utils.export_for_trading()
 
         if export_path:
+    pass
+    pass
             print("✅ Database exported successfully!")
             print(f"📁 Export file: {export_path}")
             print(f"📊 File size: {os.path.getsize(export_path) / 1024 / 1024:.2f} MB")
@@ -60,7 +67,7 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
             with open(export_path, "rb") as f:
                 checksum = hashlib.md5(f.read()).hexdigest()
             print(f"🔍 Checksum: {checksum}")
-            print("\n📋 Next steps:")
+            print("\\\n📋 Next steps:")
             print("   1. Copy the export file to your trading computer")
             print(
                 f"   2. Run: python scripts/database_migration.py import {export_path}"
@@ -73,8 +80,14 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
         print(failed(f"Export failed: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover - best-effort close
                 logger.warning("Error closing DB manager after export")
 
@@ -86,6 +99,10 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
 
     try:
         # Validate the import file first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         db_manager = SQLiteManager(db_path)
         await db_manager.initialize()
 
@@ -93,9 +110,13 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         validation_result = await migration_utils.validate_migration_file(import_path)
 
         if not validation_result["valid"]:
+    pass
+    pass
             print(failed("Import file validation failed!"))
             print("Errors:")
             for error_msg in validation_result["errors"]:
+    pass
+    pass
                 print(f"   - {error_msg}")
             return
 
@@ -105,10 +126,12 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         success = await migration_utils.import_for_trading(import_path)
 
         if success:
+    pass
+    pass
             print("✅ Database imported successfully!")
             print(f"📁 Database location: {db_path}")
             print(f"📊 Database size: {os.path.getsize(db_path) / 1024 / 1024:.2f} MB")
-            print("\n🚀 You can now start the trading bot!")
+            print("\\\n🚀 You can now start the trading bot!")
         else:
             print(failed("Database import failed!"))
 
@@ -117,8 +140,14 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         print(failed(f"Import failed: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover - best-effort close
                 logger.warning("Error closing DB manager after import")
 
@@ -130,6 +159,10 @@ async def validate_file(file_path: str) -> None:
 
     try:
         db_manager = SQLiteManager("data/ares_local_db.sqlite")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await db_manager.initialize()
 
         migration_utils = DatabaseMigrationUtils(db_manager)
@@ -146,26 +179,40 @@ async def validate_file(file_path: str) -> None:
         )
 
         if validation_result.get("checksum"):
+    pass
+    pass
             print(f"   Checksum: {validation_result['checksum']}")
         if validation_result.get("file_size"):
+    pass
+    pass
             print(
                 f"   File size: {validation_result['file_size'] / 1024 / 1024:.2f} MB",
             )
 
         if validation_result.get("errors"):
-            print("\n❌ Errors found:")
+    pass
+    pass
+            print("\\\n❌ Errors found:")
             for error_msg in validation_result["errors"]:
+    pass
+    pass
                 print(f"   - {error_msg}")
         else:
-            print("\n✅ File is valid and ready for import!")
+            print("\\\n✅ File is valid and ready for import!")
 
     except Exception as exc:  # pragma: no cover - defensive CLI wrapper
         logger.error("Validation failed: %s", exc, exc_info=True)
         print(failed(f"Validation failed: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover
                 logger.warning("Error closing DB manager after validation")
 
@@ -177,11 +224,17 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
 
     try:
         db_manager = SQLiteManager(db_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await db_manager.initialize()
 
         backup_path = await db_manager.create_backup()
 
         if backup_path:
+    pass
+    pass
             print("✅ Backup created successfully!")
             print(f"📁 Backup file: {backup_path}")
             print(f"📊 File size: {os.path.getsize(backup_path) / 1024 / 1024:.2f} MB")
@@ -193,8 +246,14 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
         print(failed(f"Backup failed: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover
                 logger.warning("Error closing DB manager after backup")
 
@@ -206,12 +265,18 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
 
     try:
         db_manager = SQLiteManager(db_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await db_manager.initialize()
 
         migration_utils = DatabaseMigrationUtils(db_manager)
         migrations = await migration_utils.list_migrations()
 
         if not migrations:
+    pass
+    pass
             print("📋 No migrations found.")
             return
 
@@ -219,6 +284,8 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
         print("-" * 80)
 
         for migration in migrations:
+    pass
+    pass
             migration_id = migration.get("migration_id", "Unknown")
             migration_type = migration.get("migration_type", "Unknown")
             status = migration.get("status", "Unknown")
@@ -237,8 +304,14 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
         print(failed(f"Failed to list migrations: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover
                 logger.warning("Error closing DB manager after listing migrations")
 
@@ -250,6 +323,10 @@ async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite") -> None
 
     try:
         db_manager = SQLiteManager(db_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await db_manager.initialize()
 
         migration_utils = DatabaseMigrationUtils(db_manager)
@@ -262,16 +339,24 @@ async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite") -> None
         print(failed(f"Cleanup failed: {exc}"))
     finally:
         if db_manager is not None:
+    pass
+    pass
             try:
                 await db_manager.close()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception:  # pragma: no cover
                 logger.warning("Error closing DB manager after cleanup")
 
 
 def print_usage() -> None:
+    pass
+    pass
     """Print usage information."""
     print(__doc__)
-    print("\nExamples:")
+    print("\\\nExamples:")
     print("  # Export database from backtesting computer")
     print("  python scripts/database_migration.py export")
     print()
@@ -301,17 +386,23 @@ async def main() -> None:
     setup_logging()
 
     if len(sys.argv) < 2:
+    pass
+    pass
         print_usage()
         sys.exit(1)
 
     command = sys.argv[1]
 
     if command == "export":
+    pass
+    pass
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await export_database(db_path)
 
     elif command == "import":
         if len(sys.argv) < 3:
+    pass
+    pass
             print(warning("Import path required"))
             print_usage()
             sys.exit(1)
@@ -321,6 +412,8 @@ async def main() -> None:
 
     elif command == "validate":
         if len(sys.argv) < 3:
+    pass
+    pass
             print(warning("File path required"))
             print_usage()
             sys.exit(1)
@@ -346,4 +439,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

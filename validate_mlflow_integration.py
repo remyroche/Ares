@@ -65,35 +65,51 @@ REQUIRED_COMPONENTS = [
 
 
 def extract_step_number(filename: str) -> str:
+    pass
+    pass
     """Extract step number from filename."""
-    match = re.search(r'step(\d+(?:_\d+)?)', filename)
+    match = re.search(r'step(\\\d+(?:_\\\d+)?)', filename)
     if match:
+    pass
+    pass
         return match.group(1)
     return "unknown"
 
 
 def find_execute_methods(file_path: Path) -> List[Tuple[str, int]]:
+    pass
+    pass
     """Find all execute methods in a step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         methods = []
-        lines = content.split('\n')
+        lines = content.split('\\\n')
 
         # Look for different execute method patterns
         patterns = [
-            r'async def execute\s*\([^)]*\)\s*->[^:]*:',
-            r'def execute\s*\([^)]*\)\s*->[^:]*:',
-            r'async def execute_[a-zA-Z_]*\s*\([^)]*\)\s*->[^:]*:',
-            r'def execute_[a-zA-Z_]*\s*\([^)]*\)\s*->[^:]*:',
-            r'async def run_step\s*\([^)]*\)\s*->[^:]*:',
-            r'def run_step\s*\([^)]*\)\s*->[^:]*:',
+            r'async def execute\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'def execute\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'async def execute_[a-zA-Z_]*\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'def execute_[a-zA-Z_]*\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'async def run_step\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'def run_step\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
         ]
 
         for i, line in enumerate(lines):
+    pass
+    pass
             for pattern in patterns:
+    pass
+    pass
                 if re.search(pattern, line):
+    pass
+    pass
                     methods.append((line.strip(), i))
 
         return methods
@@ -104,11 +120,17 @@ def find_execute_methods(file_path: Path) -> List[Tuple[str, int]]:
 
 
 def validate_mlflow_imports(file_path: Path) -> Dict[str, bool]:
+    pass
+    pass
     """Validate MLflow imports in a step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         results = {}
 
         # Check for enhanced MLflow integration imports
@@ -126,11 +148,17 @@ def validate_mlflow_imports(file_path: Path) -> Dict[str, bool]:
 
 
 def validate_mlflow_decorator(file_path: Path) -> Dict[str, bool]:
+    pass
+    pass
     """Validate MLflow decorator presence in execute methods."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         results = {}
 
         # Check if decorator exists anywhere in the file
@@ -142,20 +170,30 @@ def validate_mlflow_decorator(file_path: Path) -> Dict[str, bool]:
 
         # Check if decorator is applied to execute methods
         if execute_methods:
-            lines = content.split('\n')
+    pass
+    pass
+            lines = content.split('\\\n')
             decorated_methods = 0
 
             for method_line, line_num in execute_methods:
+    pass
+    pass
                 # Check if decorator is present before this method
                 decorator_found = False
                 for i in range(line_num - 1, max(0, line_num - 10), -1):
+    pass
+    pass
                     if lines[i].strip().startswith('@with_enhanced_mlflow_logging'):
+    pass
+    pass
                         decorator_found = True
                         break
                     elif lines[i].strip() and not lines[i].strip().startswith('@'):
                         break
 
                 if decorator_found:
+    pass
+    pass
                     decorated_methods += 1
 
             results["methods_decorated"] = decorated_methods
@@ -177,11 +215,17 @@ def validate_mlflow_decorator(file_path: Path) -> Dict[str, bool]:
 
 
 def validate_artifact_logging_method(file_path: Path) -> Dict[str, bool]:
+    pass
+    pass
     """Validate artifact logging method presence."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step_num = extract_step_number(file_path.name)
         method_name = f"_log_step{step_num}_artifacts_and_report"
 
@@ -190,6 +234,8 @@ def validate_artifact_logging_method(file_path: Path) -> Dict[str, bool]:
 
         # Check for specific components in the method
         if results["method_present"]:
+    pass
+    pass
             results["create_detailed_step_report_call"] = "create_detailed_step_report" in content
             results["log_step_report_call"] = "log_step_report" in content
             results["log_step_metrics_call"] = "log_step_metrics" in content
@@ -211,11 +257,17 @@ def validate_artifact_logging_method(file_path: Path) -> Dict[str, bool]:
 
 
 def validate_metadata_completeness(file_path: Path) -> Dict[str, bool]:
+    pass
+    pass
     """Validate metadata completeness in artifact logging methods."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         step_num = extract_step_number(file_path.name)
         method_name = f"_log_step{step_num}_artifacts_and_report"
 
@@ -223,21 +275,29 @@ def validate_metadata_completeness(file_path: Path) -> Dict[str, bool]:
 
         # Check if method exists
         if method_name not in content:
+    pass
+    pass
             return {field: False for field in REQUIRED_METADATA_FIELDS}
 
         # Extract the method content - look for the entire method
         method_start = content.find(method_name)
         if method_start == -1:
+    pass
+    pass
             return {field: False for field in REQUIRED_METADATA_FIELDS}
 
         # Find method end by looking for the next method that's at the same indentation level
-        lines = content.split('\n')
-        method_start_line = content[:method_start].count('\n')
+        lines = content.split('\\\n')
+        method_start_line = content[:method_start].count('\\\n')
 
         method_end = len(content)
         for i in range(method_start_line + 1, len(lines)):
+    pass
+    pass
             line = lines[i]
             if line.strip().startswith('def ') and line.strip() != method_name:
+    pass
+    pass
                 # Found next method, calculate end position
                 method_end = content.find(line, method_start)
                 break
@@ -259,11 +319,17 @@ def validate_metadata_completeness(file_path: Path) -> Dict[str, bool]:
 
 
 def validate_standardized_naming(file_path: Path) -> Dict[str, bool]:
+    pass
+    pass
     """Validate standardized naming patterns."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         results = {}
 
         # Check for standardized naming functions
@@ -272,7 +338,7 @@ def validate_standardized_naming(file_path: Path) -> Dict[str, bool]:
 
         # Check for standardized naming patterns in strings and comments
         results["standardized_naming_pattern"] = (
-            re.search(r'[A-Z]+_[A-Z]+_\d{8}_\d{4}_\d+', content) is not None or
+            re.search(r'[A-Z]+_[A-Z]+_\\\d{8}_\\\d{4}_\\\d+', content) is not None or
             'Standardized naming pattern' in content or
             'exchange_token_date_hourminute_NumberOfStep_Artifact' in content
         )
@@ -289,8 +355,10 @@ def validate_standardized_naming(file_path: Path) -> Dict[str, bool]:
 
 
 def validate_step_file(file_path: Path) -> Dict[str, Any]:
+    pass
+    pass
     """Validate a single step file."""
-    print(f"\n🔍 Validating {file_path.name}...")
+    print(f"\\\n🔍 Validating {file_path.name}...")
 
     results = {
         "file_exists": file_path.exists(),
@@ -303,6 +371,8 @@ def validate_step_file(file_path: Path) -> Dict[str, Any]:
     }
 
     if not results["file_exists"]:
+    pass
+    pass
         print(f"❌ File not found: {file_path.name}")
         return results
 
@@ -325,8 +395,12 @@ def validate_step_file(file_path: Path) -> Dict[str, Any]:
 
 
 def calculate_integration_score(results: Dict[str, Any]) -> float:
+    pass
+    pass
     """Calculate integration completeness score (0-100)."""
     if not results["file_exists"]:
+    pass
+    pass
         return 0.0
 
     score = 0.0
@@ -366,6 +440,8 @@ def calculate_integration_score(results: Dict[str, Any]) -> float:
 
 
 def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
+    pass
+    pass
     """Generate a comprehensive validation report."""
     report = []
     report.append("# MLflow Integration Validation Report")
@@ -393,6 +469,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
     report.append("")
 
     for step_file, results in all_results.items():
+    pass
+    pass
         score = calculate_integration_score(results)
         status = "✅ Complete" if score >= 90 else "⚠️ Partial" if score >= 50 else "❌ Incomplete"
 
@@ -400,6 +478,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         report.append("")
 
         if not results["file_exists"]:
+    pass
+    pass
             report.append("- ❌ File not found")
             report.append("")
             continue
@@ -408,6 +488,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         import_score = sum(results["imports"].values()) / len(results["imports"]) * 100
         report.append(f"- **Imports**: {import_score:.1f}%")
         for import_name, present in results["imports"].items():
+    pass
+    pass
             status_icon = "✅" if present else "❌"
             report.append(f"  - {status_icon} {import_name}")
 
@@ -415,6 +497,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         decorator_score = sum(results["decorator"].values()) / len(results["decorator"]) * 100
         report.append(f"- **Decorator**: {decorator_score:.1f}%")
         for decorator_name, present in results["decorator"].items():
+    pass
+    pass
             status_icon = "✅" if present else "❌"
             report.append(f"  - {status_icon} {decorator_name}")
 
@@ -422,6 +506,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         artifact_score = sum(results["artifact_logging"].values()) / len(results["artifact_logging"]) * 100
         report.append(f"- **Artifact Logging**: {artifact_score:.1f}%")
         for artifact_name, present in results["artifact_logging"].items():
+    pass
+    pass
             status_icon = "✅" if present else "❌"
             report.append(f"  - {status_icon} {artifact_name}")
 
@@ -429,6 +515,8 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         metadata_score = sum(results["metadata"].values()) / len(results["metadata"]) * 100
         report.append(f"- **Metadata**: {metadata_score:.1f}%")
         for metadata_name, present in results["metadata"].items():
+    pass
+    pass
             status_icon = "✅" if present else "❌"
             report.append(f"  - {status_icon} {metadata_name}")
 
@@ -436,19 +524,25 @@ def generate_validation_report(all_results: Dict[str, Dict[str, Any]]) -> str:
         naming_score = sum(results["standardized_naming"].values()) / len(results["standardized_naming"]) * 100
         report.append(f"- **Standardized Naming**: {naming_score:.1f}%")
         for naming_name, present in results["standardized_naming"].items():
+    pass
+    pass
             status_icon = "✅" if present else "❌"
             report.append(f"  - {status_icon} {naming_name}")
 
         report.append("")
 
-    return "\n".join(report)
+    return "\\\n".join(report)
 
 
 def main():
+    pass
+    pass
     """Main validation function."""
     steps_dir = Path("src/training/steps")
 
     if not steps_dir.exists():
+    pass
+    pass
         print(f"❌ Steps directory not found: {steps_dir}")
         return
 
@@ -459,6 +553,8 @@ def main():
     all_results = {}
 
     for step_file in ALL_STEPS:
+    pass
+    pass
         file_path = steps_dir / step_file
         all_results[step_file] = validate_step_file(file_path)
 
@@ -469,7 +565,7 @@ def main():
     incomplete_steps = sum(1 for results in all_results.values() if calculate_integration_score(results) < 50)
 
     # Print summary
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("📊 VALIDATION SUMMARY")
     print("="*60)
     print(f"Total Steps: {total_steps}")
@@ -479,11 +575,13 @@ def main():
     print(f"Overall Completion: {(completed_steps + partial_steps) / total_steps * 100:.1f}%")
 
     # Print detailed results
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("📋 DETAILED RESULTS")
     print("="*60)
 
     for step_file, results in all_results.items():
+    pass
+    pass
         score = calculate_integration_score(results)
         status = "✅ Complete" if score >= 90 else "⚠️ Partial" if score >= 50 else "❌ Incomplete"
         print(f"{status} {step_file} ({score:.1f}%)")
@@ -494,7 +592,7 @@ def main():
     with open("mlflow_integration_validation_report.md", "w") as f:
         f.write(report)
 
-    print(f"\n📄 Detailed report saved to: mlflow_integration_validation_report.md")
+    print(f"\\\n📄 Detailed report saved to: mlflow_integration_validation_report.md")
 
     # Save JSON results
     with open("mlflow_integration_validation_results.json", "w") as f:
@@ -504,4 +602,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

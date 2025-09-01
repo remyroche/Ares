@@ -23,6 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("TestEnhancedDataQualitySystem")
 
 class TestEnhancedDataQualityManager:
@@ -30,12 +31,16 @@ class TestEnhancedDataQualityManager:
 
     @pytest.fixture
     def temp_data_dir(self):
+    pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
 
     @pytest.fixture
     def sample_data(self):
+    pass
+    pass
         """Create sample data for testing."""
         # Create sample klines data
         klines_data, pd.DataFrame({
@@ -69,6 +74,12 @@ class TestEnhancedDataQualityManager:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
             assert manager.data_cache_path == temp_data_dir
@@ -86,6 +97,12 @@ class TestEnhancedDataQualityManager:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
@@ -123,6 +140,12 @@ class TestEnhancedDataQualityManager:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
@@ -156,6 +179,8 @@ class TestDataQualityMonitor:
 
     @pytest.fixture
     def temp_data_dir(self):
+    pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
@@ -166,6 +191,12 @@ class TestDataQualityMonitor:
         try:
             from .data_quality_monitor import DataQualityMonitor
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import monitor, DataQualityMonitor
             monitor, DataQualityMonitor(str(temp_data_dir))
 
             assert monitor.data_cache_path == temp_data_dir
@@ -185,6 +216,12 @@ class TestDataQualityMonitor:
         try:
             from .data_quality_monitor import DataQualityMonitor, DataQualityAlert
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import monitor, DataQualityMonitor
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Create test alert
@@ -229,6 +266,12 @@ class TestDataQualityMonitor:
         try:
             from .data_quality_monitor import DataQualityMonitor
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import monitor, DataQualityMonitor
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Test starting monitoring
@@ -261,6 +304,12 @@ class TestDataQualityMonitor:
         try:
             from .data_quality_monitor import DataQualityMonitor, DataQualityAlert
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import monitor, DataQualityMonitor
             monitor, DataQualityMonitor(str(temp_data_dir))
 
         # Create test alerts
@@ -313,6 +362,8 @@ class TestDataQualityDashboard:
 
     @pytest.fixture
     def temp_data_dir(self):
+    pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
@@ -323,11 +374,17 @@ class TestDataQualityDashboard:
         try:
             from .data_quality_dashboard import DataQualityDashboard, DashboardConfig
 
-            config, DashboardConfig(host="127.0.0.1", port = 8081)
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import config, DashboardConfig
+            config, DashboardConfig(host="127.001", port = 8081)
             dashboard, DataQualityDashboard(str(temp_data_dir), config)
 
             assert dashboard.data_cache_path == temp_data_dir
-            assert dashboard.config.host == "127.0.0.1"
+            assert dashboard.config.host == "127.001"
             assert dashboard.config.port == 8081
 
             logger.info("✅ Data Quality Dashboard initialization test passed")
@@ -342,6 +399,12 @@ class TestDataQualityDashboard:
         try:
             from .data_quality_dashboard import DataQualityDashboard
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import dashboard, DataQualityDashboard
             dashboard, DataQualityDashboard(str(temp_data_dir))
 
         # Test HTML generation
@@ -364,12 +427,16 @@ class TestIntegration:
 
     @pytest.fixture
     def temp_data_dir(self):
+    pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
 
     @pytest.fixture
     def sample_data(self):
+    pass
+    pass
         """Create sample data for testing."""
         # Create sample klines data
         klines_data, pd.DataFrame({
@@ -402,9 +469,15 @@ class TestIntegration:
         """Test end - to - end data quality pipeline."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             from .data_quality_monitor import DataQualityMonitor
 
         # Initialize components
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
             monitor, DataQualityMonitor(str(temp_data_dir))
 
@@ -457,6 +530,12 @@ class TestIntegration:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Save sample data
@@ -505,6 +584,8 @@ class TestPerformance:
 
     @pytest.fixture
     def temp_data_dir(self):
+    pass
+    pass
         """Create temporary data directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
@@ -515,6 +596,12 @@ class TestPerformance:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Create large dataset
@@ -561,12 +648,20 @@ class TestPerformance:
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(str(temp_data_dir))
 
         # Create sample data for multiple symbols
             symbols = ["ETHUSDT", "BTCUSDT", "ADAUSDT"]
 
         for symbol in symbols:
+    pass
+    pass
                 klines_data, pd.DataFrame({
                     "timestamp": pd.date_range("2023 - 01 - 01", periods = 1000, freq="1min"),
                     "open": [100 + i * 0.01 for i in range(1000)],
@@ -584,6 +679,8 @@ class TestPerformance:
 
             tasks = []
         for symbol in symbols:
+    pass
+    pass
                 task, manager.comprehensive_quality_check(
                     symbol = symbol,
                     exchange="BINANCE",
@@ -597,6 +694,8 @@ class TestPerformance:
 
         # Verify all checks completed successfully
         for result in results:
+    pass
+    pass
                 assert result["success"] == True
 
             assert duration < 10  # Should complete within 10 seconds
@@ -608,6 +707,8 @@ class TestPerformance:
             pytest.skip("Components not available")
 
 def run_comprehensive_tests():
+    pass
+    pass
     """Run all comprehensive tests."""
     logger.info("🚀 Starting comprehensive data quality system tests")
 
@@ -621,6 +722,10 @@ def run_comprehensive_tests():
 
     try:
         # Run tests
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_results = {
             "total_tests": 0,
             "passed_tests": 0,
@@ -632,6 +737,12 @@ def run_comprehensive_tests():
         logger.info("📊 Testing Enhanced Data Quality Manager...")
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import manager, EnhancedDataQualityManager
             manager, EnhancedDataQualityManager(test_config["temp_data_dir"])
             test_results["passed_tests"] += 1
             logger.info("✅ Enhanced Data Quality Manager test passed")
@@ -643,6 +754,12 @@ def run_comprehensive_tests():
         logger.info("📊 Testing Data Quality Monitor...")
         try:
             from .data_quality_monitor import DataQualityMonitor
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import monitor, DataQualityMonitor
             monitor, DataQualityMonitor(test_config["temp_data_dir"])
             test_results["passed_tests"] += 1
             logger.info("✅ Data Quality Monitor test passed")
@@ -654,6 +771,12 @@ def run_comprehensive_tests():
         logger.info("📊 Testing Data Quality Dashboard...")
         try:
             from .data_quality_dashboard import DataQualityDashboard
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import dashboard, DataQualityDashboard
             dashboard, DataQualityDashboard(test_config["temp_data_dir"])
             test_results["passed_tests"] += 1
             logger.info("✅ Data Quality Dashboard test passed")
@@ -671,6 +794,8 @@ def run_comprehensive_tests():
         logger.info(f"📊 Total: {test_results['total_tests']}")
 
         if test_results["failed_tests"] == 0:
+    pass
+    pass
             logger.info("🎉 All tests passed!")
         else:
             logger.warning(f"⚠️ {test_results['failed_tests']} tests failed")
@@ -683,5 +808,7 @@ def run_comprehensive_tests():
         shutil.rmtree(test_config["temp_data_dir"], ignore_errors = True)
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run comprehensive tests
     run_comprehensive_tests()

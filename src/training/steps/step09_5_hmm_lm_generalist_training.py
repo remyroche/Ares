@@ -16,6 +16,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
 from src.utils.centralized_decorators import (
+import artifact_versioning,
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -39,6 +40,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -56,6 +58,8 @@ class HMMLMGeneralistTrainingStep:
     """Step 9.5: Generalist HMM - LM Model Training for Regime Change Prediction."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild(self.__class__.__name__)
         self.models: dict[str, Any] = {}
@@ -84,17 +88,23 @@ class HMMLMGeneralistTrainingStep:
         self.regime_change_vocab, self._create_regime_change_vocabulary()
 
     def _create_regime_change_vocabulary(self) -> dict[str, int]:
+    pass
+    pass
         """Create vocabulary for regime change events."""
         vocab: dict[str, int] = {}
         vocab_id, 0
 
         # Add regime entry events
         for state in range(self.hmm_states):
+    pass
+    pass
             vocab[f"enter_regime_{state}"] = vocab_id
             vocab_id += 1
 
         # Add regime exit events
         for state in range(self.hmm_states):
+    pass
+    pass
             vocab[f"exit_regime_{state}"] = vocab_id
             vocab_id += 1
 
@@ -144,6 +154,10 @@ class HMMLMGeneralistTrainingStep:
         try:
         self.logger.info("🔄 Executing HMM - LM Generalist Training...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -154,18 +168,24 @@ class HMMLMGeneralistTrainingStep:
                 exchange = exchange, symbol = symbol, data_dir = data_dir
             )
         if not hmm_data:
+    pass
+    pass
                 msg = "Failed to load multi - timeframe HMM data"
                 raise ValueError(msg)
 
         # Create regime change sequences
             regime_sequences, await self._create_regime_change_sequences(hmm_data)
         if not regime_sequences:
+    pass
+    pass
                 msg = "Failed to create regime change sequences"
                 raise ValueError(msg)
 
         # Train HMM - LM model
             model_result, await self._train_hmm_lm_model(regime_sequences)
         if not model_result:
+    pass
+    pass
                 msg = "Failed to train HMM - LM model"
                 raise ValueError(msg)
 
@@ -202,6 +222,10 @@ class HMMLMGeneralistTrainingStep:
         """Log step 9.5 artifacts and create detailed report."""
         try:
             symbol, training_input.get("symbol", "ETHUSDT")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange, training_input.get("exchange", "BINANCE")
             data_dir, training_input.get("data_dir", "data / training")
 
@@ -264,13 +288,15 @@ class HMMLMGeneralistTrainingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
         self.logger.info(f"✅ Logged HMM - LM generalist training report: {report_name}")
 
         # Log model result
         if model_result:
+    pass
+    pass
                 model_report_name, log_step_report(
                     config = self.config,
                     step_name="step09_5_hmm_lm_generalist_training",
@@ -282,7 +308,7 @@ class HMMLMGeneralistTrainingStep:
                     ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
                 )
         self.logger.info(f"✅ Logged HMM - LM model result: {model_report_name}")
@@ -297,7 +323,7 @@ class HMMLMGeneralistTrainingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
 
@@ -319,7 +345,13 @@ class HMMLMGeneralistTrainingStep:
         try:
         # Load cluster assignments
                 cluster_path, f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(cluster_path):
+    pass
+    pass
         return timeframe, None
 
         # Use ThreadPoolExecutor for I / O operations
@@ -337,6 +369,8 @@ class HMMLMGeneralistTrainingStep:
                     f"{data_dir}/{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet"
                 )
         if os.path.exists(intensity_path):
+    pass
+    pass
                     loop, asyncio.get_running_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
                         intensity_df, await loop.run_in_executor(
@@ -373,7 +407,11 @@ class HMMLMGeneralistTrainingStep:
 
         # Build result dictionary
         for timeframe, df in results:
+    pass
+    pass
         if df is not None:
+    pass
+    pass
                 hmm_data[timeframe] = df
 
         return hmm_data
@@ -387,11 +425,21 @@ class HMMLMGeneralistTrainingStep:
         try:
         # Combine all timeframe data
             all_data: list[pd.DataFrame] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for df in hmm_data.values():
+    pass
+    pass
         if not df.empty:
+    pass
+    pass
                     all_data.append(df)
 
         if not all_data:
+    pass
+    pass
         return []
 
             combined_df, pd.concat(all_data, axis = 0).sort_index()
@@ -401,7 +449,11 @@ class HMMLMGeneralistTrainingStep:
 
         # Create sequences around regime changes
         for change_idx, event_data in enumerate(regime_events):
+    pass
+    pass
         if change_idx < self.sequence_length:
+    pass
+    pass
                     continue
 
         # Get sequence before the change
@@ -409,6 +461,8 @@ class HMMLMGeneralistTrainingStep:
                 end_idx, change_idx
 
         if start_idx >= 0 and end_idx < len(combined_df):
+    pass
+    pass
                     sequence_data, combined_df.iloc[start_idx:end_idx]
 
                     sequences.append(
@@ -450,9 +504,15 @@ class HMMLMGeneralistTrainingStep:
             )  # 0.1%
             _, tpsl_config.get("time_barrier_minutes", 30)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get regime column
             regime_col = "composite_cluster_id"
         if regime_col not in df.columns:
+    pass
+    pass
         self.logger.warning(f"⚠️ No regime column {regime_col} found")
         return events
 
@@ -481,6 +541,10 @@ class HMMLMGeneralistTrainingStep:
             regime_col = "composite_cluster_id"
             regimes, df[regime_col].fillna(-1).astype(int)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Calculate regime probabilities if available
             regime_probs, self._calculate_regime_probabilities(df)
 
@@ -495,6 +559,8 @@ class HMMLMGeneralistTrainingStep:
 
         # Process each potential regime change
         for i in range(len(regimes)):
+    pass
+    pass
                 event: dict[str, Any] = {
                     "regime_change": "<PAD>",
                     "price_direction": 1,  # Sideways
@@ -506,10 +572,14 @@ class HMMLMGeneralistTrainingStep:
                 }
 
         if i > 0 and regime_changes[i]:
+    pass
+    pass
                     prev_regime, int(regimes.iloc[i - 1])
                     curr_regime, int(regimes.iloc[i])
 
         if prev_regime >= 0 and curr_regime >= 0:
+    pass
+    pass
         # Calculate transition probability
                         transition_prob, self._calculate_transition_probability(
                             prev_regime, curr_regime, regime_probs, i
@@ -517,6 +587,8 @@ class HMMLMGeneralistTrainingStep:
 
         # Determine regime change type
         if 0 <= prev_regime < self.hmm_states and 0 <= curr_regime < self.hmm_states:
+    pass
+    pass
                             event["regime_change"] = f"transition_{prev_regime}_to_{curr_regime}"
                             event["transition_probability"] = transition_prob
 
@@ -538,12 +610,20 @@ class HMMLMGeneralistTrainingStep:
         return []
 
     def _calculate_regime_probabilities(self, df: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """Calculate regime probabilities from available features."""
         try:
         # Look for probability features
             prob_cols = [col for col in df.columns if col.endswith("_p_state_")]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if prob_cols:
+    pass
+    pass
         # Use existing probability features
                 probs, df[prob_cols].values
         # Normalize to ensure probabilities sum to 1
@@ -554,12 +634,18 @@ class HMMLMGeneralistTrainingStep:
         # Create dummy probabilities based on regime ID
                 regime_col = "composite_cluster_id"
         if regime_col in df.columns:
+    pass
+    pass
                     regimes, df[regime_col].fillna(-1).astype(int)
                     n_states, max(regimes.max() + 1, self.hmm_states)
                     probs, np.zeros((len(regimes), n_states))
 
         for i, regime in enumerate(regimes):
+    pass
+    pass
         if regime >= 0:
+    pass
+    pass
                             probs[i, regime] = 1.0
 
         return probs
@@ -571,19 +657,31 @@ class HMMLMGeneralistTrainingStep:
         return np.zeros((len(df), self.hmm_states))
 
     def _calculate_regime_stability(self, regime_probs: np.ndarray) -> np.ndarray:
+    pass
+    pass
         """Calculate regime stability (max probability for each timepoint)."""
         try:
         return np.max(regime_probs, axis = 1)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.warning(f"⚠️ Error calculating regime stability: {e}")
         return np.zeros(len(regime_probs))
 
     def _calculate_regime_entropy(self, regime_probs: np.ndarray) -> np.ndarray:
+    pass
+    pass
         """Calculate regime entropy (uncertainty measure)."""
         try:
         # Add small epsilon to avoid log(0)
             eps, 1e - 10
             entropy = -np.sum(regime_probs * np.log(regime_probs + eps), axis = 1)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return entropy
         except Exception as e:
         self.logger.warning(f"⚠️ Error calculating regime entropy: {e}")
@@ -599,6 +697,10 @@ class HMMLMGeneralistTrainingStep:
         try:
             changes, np.zeros(len(regimes), dtype = bool)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Signal 1: Simple state comparison
             state_changes, np.diff(regimes.values, prepend = regimes.iloc[0]) != 0
 
@@ -612,7 +714,11 @@ class HMMLMGeneralistTrainingStep:
 
         # Combine signals with persistence filter
         for i in range(1, len(regimes)):
+    pass
+    pass
         if state_changes[i] and stability_changes[i] and entropy_changes[i]:
+    pass
+    pass
         # Check persistence (avoid noise)
         if i >= 3:  # Minimum persistence of 3 bars
                         changes[i] = True
@@ -633,6 +739,12 @@ class HMMLMGeneralistTrainingStep:
         """Calculate transition probability between regimes."""
         try:
         if index < len(regime_probs) and from_regime < regime_probs.shape[1] and to_regime < regime_probs.shape[1]:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         # Use the probability of the target regime
         return float(regime_probs[index, to_regime])
             else:
@@ -656,13 +768,21 @@ class HMMLMGeneralistTrainingStep:
                 "stop_loss_hit": 0,
                 "time_to_target": 0,
                 "tpsl_confidence": 0.0,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         if "close" in df.columns and index < len(df) - 1:
+    pass
+    pass
                 current_price, float(df.iloc[index]["close"])
                 future_prices, df.iloc[index + 1 : index + 31]["close"].values
 
         if len(future_prices) > 0:
+    pass
+    pass
         # Calculate profit target and stop loss levels
                     profit_target, current_price * (1 + profit_take_multiplier)
                     stop_loss, current_price * (1 - stop_loss_multiplier)
@@ -674,9 +794,13 @@ class HMMLMGeneralistTrainingStep:
                     confidence_factors = []
 
         for j, future_price in enumerate(future_prices):
+    pass
+    pass
                         fp, float(future_price)
 
         if fp >= profit_target and profit_target_hit == 0:
+    pass
+    pass
                             profit_target_hit, 1
                             time_to_target, j + 1
                             confidence_factors.append(1.0 - (j / 30))  # Higher confidence for earlier hits
@@ -684,21 +808,29 @@ class HMMLMGeneralistTrainingStep:
                         elif fp <= stop_loss and stop_loss_hit == 0:
                             stop_loss_hit, 1
         if time_to_target == 0:
+    pass
+    pass
                                 time_to_target, j + 1
                             confidence_factors.append(1.0 - (j / 30))
 
         # Calculate TPSL confidence
         if confidence_factors:
+    pass
+    pass
                         outcomes["tpsl_confidence"] = float(np.mean(confidence_factors))
 
         # Enhanced price direction determination
         if profit_target_hit == 1 and stop_loss_hit == 0:
+    pass
+    pass
                         outcomes["price_direction"] = 0  # Up
                     elif stop_loss_hit == 1 and profit_target_hit == 0:
                         outcomes["price_direction"] = 2  # Down
                     elif profit_target_hit == 1 and stop_loss_hit == 1:
         # Both hit - use timing and confidence
         if time_to_target <= 15 and outcomes["tpsl_confidence"] > 0.5:
+    pass
+    pass
                             outcomes["price_direction"] = 0  # Up
                         else:
                             outcomes["price_direction"] = 2  # Down
@@ -730,7 +862,13 @@ class HMMLMGeneralistTrainingStep:
                 f"🔄 Training HMM - LM model with {len(sequences)} sequences",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(sequences) < 100:
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Insufficient sequences for training: {len(sequences)}",
                 )
@@ -797,7 +935,13 @@ class HMMLMGeneralistTrainingStep:
             stop_hits: list[int] = []
             times_to_target: list[int] = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for seq_data in sequences:
+    pass
+    pass
                 sequence: pd.DataFrame, seq_data["sequence"]
                 target: str, seq_data["target"]
 
@@ -807,6 +951,8 @@ class HMMLMGeneralistTrainingStep:
 
         # Extract regime ID from target (e.g., "enter_regime_2" -> 2)
         if "enter_regime_" in target or "exit_regime_" in target:
+    pass
+    pass
                     regime_id, int(str(target).split("_")[-1])
                 else:
                     regime_id, 0  # Default regime
@@ -842,13 +988,21 @@ class HMMLMGeneralistTrainingStep:
         return np.array([]), {}, np.array([]), {}
 
     def _sequence_to_features(self, sequence: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """Convert sequence to feature tensor."""
         try:
         # Extract HMM - related features
             feature_cols: list[np.ndarray] = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Add cluster ID
         if "composite_cluster_id" in sequence.columns:
+    pass
+    pass
                 feature_cols.append(sequence["composite_cluster_id"].values.astype(float))
 
         # Add intensity features
@@ -856,6 +1010,8 @@ class HMMLMGeneralistTrainingStep:
                 col for col in sequence.columns if str(col).startswith("intensity_cluster_")
             ]
         for col in intensity_cols:
+    pass
+    pass
                 feature_cols.append(sequence[col].values.astype(float))
 
         # Add regime probability features
@@ -863,10 +1019,14 @@ class HMMLMGeneralistTrainingStep:
                 col for col in sequence.columns if str(col).endswith("_p_state_")
             ]
         for col in regime_cols:
+    pass
+    pass
                 feature_cols.append(sequence[col].values.astype(float))
 
         # Stack features
         if feature_cols:
+    pass
+    pass
                 features, np.column_stack(feature_cols)
             else:
         # Fallback: use basic features
@@ -874,6 +1034,8 @@ class HMMLMGeneralistTrainingStep:
 
         # Pad or truncate to sequence length
         if len(features) < self.sequence_length:
+    pass
+    pass
         # Pad with zeros at the beginning
                 padding, np.zeros(
                     (self.sequence_length - len(features), features.shape[1]),
@@ -898,6 +1060,10 @@ class HMMLMGeneralistTrainingStep:
         # Create models directory
             os.makedirs("models", exist_ok = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Save metadata
             metadata: dict[str, Any] = {
                 "exchange": exchange,
@@ -975,6 +1141,8 @@ class EfficientRegimePredictor(nn.Module):
         self.dropout, nn.Dropout(0.1)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    pass
+    pass
         # x shape: (batch, sequence_length, input_dim)
 
         # Multi - scale feature extraction
@@ -1033,6 +1201,8 @@ class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
     def __init__(self, d_model: int, max_len: int, 5000) -> None:
+    pass
+    pass
         super().__init__()
 
         pe, torch.zeros(max_len, d_model)
@@ -1048,6 +1218,8 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+    pass
+    pass
         return x + self.pe[: x.size(0), :]
 
 class EfficientRegimeDataset(Dataset[Tuple[torch.Tensor, Dict[str, torch.Tensor]]]):
@@ -1064,6 +1236,8 @@ class EfficientRegimeDataset(Dataset[Tuple[torch.Tensor, Dict[str, torch.Tensor]
         return self.X.size(0)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    pass
+    pass
         return self.X[idx], {k: v[idx] for k, v in self.targets.items()}
 
 class EfficientRegimeTrainer:
@@ -1129,6 +1303,8 @@ class EfficientRegimeTrainer:
         patience_counter, 0
 
         for epoch in range(epochs):
+    pass
+    pass
         # Training
         self.model.train()
             train_loss_sum, 0.0
@@ -1136,10 +1312,14 @@ class EfficientRegimeTrainer:
             train_total, 0
 
         for batch_X, batch_y in train_loader:
+    pass
+    pass
         self.optimizer.zero_grad()
 
         # Mixed precision training
         if self.scaler:
+    pass
+    pass
         with torch.cuda.amp.autocast():  # type: ignore[attr - defined]
                         outputs, self.model(batch_X)
                         loss, self._compute_loss(outputs, batch_y)
@@ -1170,6 +1350,8 @@ class EfficientRegimeTrainer:
 
         # Early stopping
         if val_loss < best_val_loss:
+    pass
+    pass
                 best_val_loss, val_loss
                 patience_counter, 0
         # Save best model
@@ -1179,6 +1361,8 @@ class EfficientRegimeTrainer:
                 patience_counter += 1
 
         if patience_counter >= patience:
+    pass
+    pass
                 break
 
         # Learning rate scheduling
@@ -1327,6 +1511,10 @@ async def run_step(
     """
     try:
         # Create step instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, HMMLMGeneralistTrainingStep(config)
         await step.initialize()
@@ -1341,7 +1529,7 @@ async def run_step(
         ,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1.00"),  # Default version
             }
 
         pipeline_state: dict[str, Any] = {}
@@ -1354,6 +1542,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")

@@ -19,6 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from src.training.enhanced_dynamic_feature_selection import EnhancedDynamicFeatureSelection
 from src.config.enhanced_feature_selection_config import (
+import get_default_enhanced_feature_selection_config,
     get_default_enhanced_feature_selection_config,
     get_optimized_feature_selection_config,
     get_comprehensive_feature_selection_config,
@@ -29,6 +30,8 @@ warnings.filterwarnings('ignore')
 
 
 def generate_synthetic_features(n_samples: int = 1000, n_features: int = 200) -> tuple[pd.DataFrame, pd.Series]:
+    pass
+    pass
     """Generate synthetic features for testing."""
     np.random.seed(42)
 
@@ -37,48 +40,70 @@ def generate_synthetic_features(n_samples: int = 1000, n_features: int = 200) ->
 
     # Momentum features (trending)
     for i in range(20):
+    pass
+    pass
         features[f'momentum_{i}'] = np.cumsum(np.random.randn(n_samples) * 0.1)
 
     # Volatility features (mean-reverting)
     for i in range(20):
+    pass
+    pass
         features[f'volatility_{i}'] = np.abs(np.random.randn(n_samples) * 0.5)
 
     # Liquidity features
     for i in range(15):
+    pass
+    pass
         features[f'volume_{i}'] = np.random.exponential(100, n_samples)
 
     # Microstructure features
     for i in range(15):
+    pass
+    pass
         features[f'microstructure_{i}'] = np.random.randn(n_samples) * 0.3
 
     # Wavelet features
     for i in range(10):
+    pass
+    pass
         features[f'wavelet_{i}'] = np.sin(np.linspace(0, 4*np.pi, n_samples)) + np.random.randn(n_samples) * 0.1
 
     # Support/Resistance features
     for i in range(10):
+    pass
+    pass
         features[f'sr_distance_{i}'] = np.random.uniform(-1, 1, n_samples)
 
     # Statistical features
     for i in range(10):
+    pass
+    pass
         features[f'statistical_{i}'] = np.random.randn(n_samples)
 
     # Candlestick features
     for i in range(10):
+    pass
+    pass
         features[f'candlestick_{i}'] = np.random.choice([-1, 0, 1], n_samples)
 
     # Add some highly correlated features (to test correlation filtering)
     for i in range(20):
+    pass
+    pass
         base_feature = features[f'momentum_{i % 5}']
         noise = np.random.randn(n_samples) * 0.01
         features[f'correlated_momentum_{i}'] = base_feature + noise
 
     # Add some low variance features (to test variance filtering)
     for i in range(20):
+    pass
+    pass
         features[f'low_variance_{i}'] = np.random.randn(n_samples) * 0.001
 
     # Add some features with NaN values (to test data quality filtering)
     for i in range(10):
+    pass
+    pass
         feature_values = np.random.randn(n_samples)
         # Add 15% NaN values
         nan_indices = np.random.choice(n_samples, size=int(n_samples * 0.15), replace=False)
@@ -101,6 +126,8 @@ def generate_synthetic_features(n_samples: int = 1000, n_features: int = 200) ->
 
 
 def test_dynamic_thresholds():
+    pass
+    pass
     """Test 1: Verify that thresholds are computed dynamically, not fixed."""
     print("🧪 Testing Dynamic Threshold Computation...")
 
@@ -135,8 +162,10 @@ def test_dynamic_thresholds():
 
 
 def test_correlation_filtering():
+    pass
+    pass
     """Test 2: Verify that selected features aren't too correlated."""
-    print("\n🧪 Testing Correlation Filtering...")
+    print("\\\n🧪 Testing Correlation Filtering...")
 
     # Use results from previous test
     selector, selected_features, metadata = test_dynamic_thresholds()
@@ -153,8 +182,12 @@ def test_correlation_filtering():
     print(f"   📊 High correlation pairs found: {len(high_corr_pairs)}")
 
     if high_corr_pairs:
+    pass
+    pass
         print("   📊 Top 5 high correlation pairs:")
         for i, pair in enumerate(high_corr_pairs[:5]):
+    pass
+    pass
             print(f"      {pair['feature1']} <-> {pair['feature2']}: {pair['correlation']:.4f}")
 
     # Verify that correlations are reasonable (not too high)
@@ -166,8 +199,10 @@ def test_correlation_filtering():
 
 
 def test_interaction_features():
+    pass
+    pass
     """Test 3: Verify that interaction features are generated between top features."""
-    print("\n🧪 Testing Interaction Feature Generation...")
+    print("\\\n🧪 Testing Interaction Feature Generation...")
 
     # Use results from previous test
     selector, selected_features, metadata = test_correlation_filtering()
@@ -183,8 +218,12 @@ def test_interaction_features():
 
     print(f"   🔗 Interaction feature names found: {len(interaction_feature_names)}")
     if interaction_feature_names:
+    pass
+    pass
         print("   🔗 Sample interaction features:")
         for feature in interaction_feature_names[:5]:
+    pass
+    pass
             print(f"      {feature}")
 
     # Verify that interaction features were actually created
@@ -196,8 +235,10 @@ def test_interaction_features():
 
 
 def test_feature_categories():
+    pass
+    pass
     """Test 4: Verify category-aware feature selection."""
-    print("\n🧪 Testing Category-Aware Feature Selection...")
+    print("\\\n🧪 Testing Category-Aware Feature Selection...")
 
     # Use results from previous test
     selector, selected_features, metadata = test_interaction_features()
@@ -207,7 +248,11 @@ def test_feature_categories():
 
     print("   📊 Feature distribution by category:")
     for category, features in feature_categories.items():
+    pass
+    pass
         if features:
+    pass
+    pass
             print(f"      {category}: {len(features)} features")
 
     # Verify that features are selected from multiple categories
@@ -220,6 +265,8 @@ def test_feature_categories():
 
     print("   📊 Features selected per category:")
     for category, count in category_selection.items():
+    pass
+    pass
         print(f"      {category}: {count} features")
 
     print("   ✅ Category-aware feature selection verified!")
@@ -227,8 +274,10 @@ def test_feature_categories():
 
 
 def test_performance_metrics():
+    pass
+    pass
     """Test 5: Verify performance and monitoring capabilities."""
-    print("\n🧪 Testing Performance and Monitoring...")
+    print("\\\n🧪 Testing Performance and Monitoring...")
 
     # Use results from previous test
     selector, selected_features, metadata = test_feature_categories()
@@ -238,7 +287,11 @@ def test_performance_metrics():
 
     print("   📊 Feature importance summary:")
     for method, summary in importance_summary.items():
+    pass
+    pass
         if isinstance(summary, dict) and "top_5_features" in summary:
+    pass
+    pass
             print(f"      {method}: {len(summary['top_5_features'])} top features")
             print(f"         Top feature: {summary['top_5_features'][0]}")
             print(f"         Mean score: {summary['mean_score']:.4f}")
@@ -252,6 +305,8 @@ def test_performance_metrics():
 
     stages = metadata.get("stages", {})
     for stage in required_stages:
+    pass
+    pass
         assert stage in stages, f"Missing stage: {stage}"
 
     print("   ✅ Performance monitoring verified!")
@@ -259,8 +314,10 @@ def test_performance_metrics():
 
 
 def test_configuration_variants():
+    pass
+    pass
     """Test 6: Test different configuration variants."""
-    print("\n🧪 Testing Configuration Variants...")
+    print("\\\n🧪 Testing Configuration Variants...")
 
     # Test default configuration
     default_config = get_default_enhanced_feature_selection_config()
@@ -291,12 +348,18 @@ def test_configuration_variants():
 
 
 def run_comprehensive_test():
+    pass
+    pass
     """Run comprehensive test of the enhanced dynamic feature selection system."""
     print("🚀 Starting Comprehensive Test of Enhanced Dynamic Feature Selection")
     print("=" * 80)
 
     try:
         # Test 1: Dynamic thresholds
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_dynamic_thresholds()
 
         # Test 2: Correlation filtering
@@ -314,13 +377,13 @@ def run_comprehensive_test():
         # Test 6: Configuration variants
         test_configuration_variants()
 
-        print("\n" + "=" * 80)
+        print("\\\n" + "=" * 80)
         print("🎉 All Tests Passed! Enhanced Dynamic Feature Selection System Verified!")
-        print("\n✅ Key Improvements Implemented:")
+        print("\\\n✅ Key Improvements Implemented:")
         print("   1. Dynamic selection process without fixed arbitrary thresholds")
         print("   2. Ensures selected features aren't too correlated")
         print("   3. Adds interaction features between top features")
-        print("\n✅ Additional Features:")
+        print("\\\n✅ Additional Features:")
         print("   - Category-aware feature selection")
         print("   - Multi-method feature importance ranking")
         print("   - Hierarchical clustering for correlation filtering")
@@ -330,22 +393,26 @@ def run_comprehensive_test():
         return True
 
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        print(f"\\\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run comprehensive test
     success = run_comprehensive_test()
 
     if success:
-        print("\n🎯 Step 7 Implementation Complete!")
+    pass
+    pass
+        print("\\\n🎯 Step 7 Implementation Complete!")
         print("The enhanced dynamic feature selection system successfully addresses all three requirements:")
         print("1. ✅ Dynamic selection process without fixed arbitrary thresholds")
         print("2. ✅ Ensures selected features aren't too correlated")
         print("3. ✅ Adds interaction features between top features")
     else:
-        print("\n❌ Step 7 Implementation Failed!")
+        print("\\\n❌ Step 7 Implementation Failed!")
         sys.exit(1)

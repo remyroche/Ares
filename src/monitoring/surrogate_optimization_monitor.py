@@ -24,6 +24,7 @@ import queue
 from src.utils.logger import system_logger
 
 
+import @dataclass
 @dataclass
 class OptimizationMetrics:
     """Data class for optimization metrics."""
@@ -54,6 +55,8 @@ class SurrogateOptimizationMonitor:
     """Comprehensive monitoring system for surrogate optimization."""
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("SurrogateOptimizationMonitor")
 
@@ -85,21 +88,33 @@ class SurrogateOptimizationMonitor:
 
         # Initialize monitoring
         if self.monitoring_enabled:
+    pass
+    pass
             self._start_monitoring()
 
     def _start_monitoring(self) -> None:
+    pass
+    pass
         """Start real-time monitoring thread."""
         if self.monitoring_thread is None or not self.monitoring_thread.is_alive():
+    pass
+    pass
             self.is_monitoring = True
             self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
             self.monitoring_thread.start()
             self.logger.info("Started real-time monitoring")
 
     def _monitoring_loop(self) -> None:
+    pass
+    pass
         """Main monitoring loop."""
         while self.is_monitoring:
             try:
                 # Process metrics from queue
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 while not self.metrics_queue.empty():
                     metrics = self.metrics_queue.get_nowait()
                     self._process_metrics(metrics)
@@ -115,8 +130,12 @@ class SurrogateOptimizationMonitor:
                 time.sleep(5.0)
 
     def record_metrics(self, metrics: OptimizationMetrics) -> None:
+    pass
+    pass
         """Record optimization metrics."""
         if self.monitoring_enabled:
+    pass
+    pass
             self.metrics_queue.put(metrics)
 
         # Also store directly for immediate access
@@ -125,11 +144,15 @@ class SurrogateOptimizationMonitor:
         # Update counters
         self.total_trials += 1
         if metrics.evaluation_type == 'expensive':
+    pass
+    pass
             self.expensive_evaluations += 1
         else:
             self.surrogate_evaluations += 1
 
     def _process_metrics(self, metrics: OptimizationMetrics) -> None:
+    pass
+    pass
         """Process and analyze metrics."""
         # Check for immediate alerts
         self._check_immediate_alerts(metrics)
@@ -138,13 +161,19 @@ class SurrogateOptimizationMonitor:
         self._update_performance_tracking(metrics)
 
     def _check_immediate_alerts(self, metrics: OptimizationMetrics) -> None:
+    pass
+    pass
         """Check for immediate alerts based on current metrics."""
         alerts = []
 
         # Check surrogate accuracy
         if metrics.actual_score is not None:
+    pass
+    pass
             accuracy = self._calculate_surrogate_accuracy(metrics)
             if accuracy < self.alert_thresholds['surrogate_accuracy_threshold']:
+    pass
+    pass
                 alerts.append(PerformanceAlert(
                     timestamp=time.time(),
                     alert_type="low_surrogate_accuracy",
@@ -155,6 +184,8 @@ class SurrogateOptimizationMonitor:
 
         # Check training time
         if metrics.training_time > self.alert_thresholds['training_time_threshold']:
+    pass
+    pass
             alerts.append(PerformanceAlert(
                 timestamp=time.time(),
                 alert_type="slow_training",
@@ -165,6 +196,8 @@ class SurrogateOptimizationMonitor:
 
         # Check memory usage
         if metrics.memory_usage > self.alert_thresholds['memory_usage_threshold']:
+    pass
+    pass
             alerts.append(PerformanceAlert(
                 timestamp=time.time(),
                 alert_type="high_memory_usage",
@@ -175,12 +208,18 @@ class SurrogateOptimizationMonitor:
 
         # Add alerts
         for alert in alerts:
+    pass
+    pass
             self.alerts.append(alert)
             self.logger.warning(f"Alert: {alert.message}")
 
     def _calculate_surrogate_accuracy(self, metrics: OptimizationMetrics) -> float:
+    pass
+    pass
         """Calculate surrogate accuracy for current trial."""
         if metrics.actual_score is None:
+    pass
+    pass
             return 0.0
 
         # Simple accuracy based on relative error
@@ -188,13 +227,19 @@ class SurrogateOptimizationMonitor:
         return max(0.0, 1.0 - relative_error)
 
     def _update_performance_tracking(self, metrics: OptimizationMetrics) -> None:
+    pass
+    pass
         """Update performance tracking statistics."""
         # This could be extended with more sophisticated tracking
         pass
 
     def _check_alerts(self) -> None:
+    pass
+    pass
         """Check for periodic alerts."""
         if len(self.metrics_history) < 10:
+    pass
+    pass
             return
 
         # Check for convergence stall
@@ -202,6 +247,8 @@ class SurrogateOptimizationMonitor:
         recent_scores = [m.actual_score or m.surrogate_score for m in recent_metrics]
 
         if len(recent_scores) >= 5:
+    pass
+    pass
             improvement = max(recent_scores) - min(recent_scores)
             if improvement < 0.001:  # No significant improvement
                 stall_alert = PerformanceAlert(
@@ -215,8 +262,12 @@ class SurrogateOptimizationMonitor:
                 self.logger.warning("Convergence stall detected")
 
     def get_performance_summary(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get comprehensive performance summary."""
         if not self.metrics_history:
+    pass
+    pass
             return {}
 
         # Calculate basic statistics
@@ -226,7 +277,11 @@ class SurrogateOptimizationMonitor:
         # Surrogate accuracy
         accuracy_metrics = []
         for metrics in self.metrics_history:
+    pass
+    pass
             if metrics.actual_score is not None:
+    pass
+    pass
                 accuracy = self._calculate_surrogate_accuracy(metrics)
                 accuracy_metrics.append(accuracy)
 
@@ -265,21 +320,31 @@ class SurrogateOptimizationMonitor:
         }
 
     def _calculate_convergence_rate(self, scores: List[float]) -> float:
+    pass
+    pass
         """Calculate convergence rate."""
         if len(scores) < 2:
+    pass
+    pass
             return 0.0
 
         # Calculate improvement rate
         improvements = []
         for i in range(1, len(scores)):
+    pass
+    pass
             improvement = scores[i] - scores[i-1]
             improvements.append(max(0, improvement))
 
         return np.mean(improvements) if improvements else 0.0
 
     def _calculate_performance_efficiency(self) -> float:
+    pass
+    pass
         """Calculate overall performance efficiency."""
         if not self.metrics_history:
+    pass
+    pass
             return 0.0
 
         # Combine multiple factors
@@ -293,7 +358,11 @@ class SurrogateOptimizationMonitor:
         # Accuracy efficiency
         accuracy_metrics = []
         for metrics in self.metrics_history:
+    pass
+    pass
             if metrics.actual_score is not None:
+    pass
+    pass
                 accuracy = self._calculate_surrogate_accuracy(metrics)
                 accuracy_metrics.append(accuracy)
         accuracy_efficiency = np.mean(accuracy_metrics) if accuracy_metrics else 0.0
@@ -306,6 +375,8 @@ class SurrogateOptimizationMonitor:
         return np.mean(factors)
 
     def generate_performance_report(self, filepath: Optional[str] = None) -> str:
+    pass
+    pass
         """Generate comprehensive performance report."""
         summary = self.get_performance_summary()
 
@@ -342,14 +413,18 @@ class SurrogateOptimizationMonitor:
 
         # Add recent alerts
         if self.alerts:
+    pass
+    pass
             report_lines.append("  Recent Alerts:")
             for alert in self.alerts[-5:]:  # Last 5 alerts
                 report_lines.append(f"    [{alert.severity.upper()}] {alert.message}")
 
-        report = "\n".join(report_lines)
+        report = "\\\n".join(report_lines)
 
         # Save to file if specified
         if filepath:
+    pass
+    pass
             with open(filepath, 'w') as f:
                 f.write(report)
             self.logger.info(f"Performance report saved to {filepath}")
@@ -357,8 +432,12 @@ class SurrogateOptimizationMonitor:
         return report
 
     def create_performance_visualizations(self, save_dir: Optional[str] = None) -> Dict[str, plt.Figure]:
+    pass
+    pass
         """Create performance visualization plots."""
         if not self.metrics_history:
+    pass
+    pass
             return {}
 
         # Set up plotting style
@@ -418,12 +497,18 @@ class SurrogateOptimizationMonitor:
         accuracy_metrics = []
         accuracy_trials = []
         for i, metrics in enumerate(self.metrics_history):
+    pass
+    pass
             if metrics.actual_score is not None:
+    pass
+    pass
                 accuracy = self._calculate_surrogate_accuracy(metrics)
                 accuracy_metrics.append(accuracy)
                 accuracy_trials.append(metrics.trial_id)
 
         if accuracy_metrics:
+    pass
+    pass
             axes[0].plot(accuracy_trials, accuracy_metrics, 'g-', alpha=0.7, linewidth=2)
             axes[0].axhline(y=self.alert_thresholds['surrogate_accuracy_threshold'],
                            color='r', linestyle='--', alpha=0.7, label='Threshold')
@@ -435,6 +520,8 @@ class SurrogateOptimizationMonitor:
 
         # Accuracy distribution
         if accuracy_metrics:
+    pass
+    pass
             axes[1].hist(accuracy_metrics, bins=15, alpha=0.7, color='orange')
             axes[1].axvline(x=self.alert_thresholds['surrogate_accuracy_threshold'],
                            color='r', linestyle='--', alpha=0.7, label='Threshold')
@@ -449,8 +536,12 @@ class SurrogateOptimizationMonitor:
 
         # Save figures if directory specified
         if save_dir:
+    pass
+    pass
             os.makedirs(save_dir, exist_ok=True)
             for name, fig in figures.items():
+    pass
+    pass
                 filepath = os.path.join(save_dir, f"{name}.png")
                 fig.savefig(filepath, dpi=300, bbox_inches='tight')
                 self.logger.info(f"Saved visualization: {filepath}")
@@ -458,11 +549,15 @@ class SurrogateOptimizationMonitor:
         return figures
 
     def get_recent_alerts(self, hours: int = 24) -> List[PerformanceAlert]:
+    pass
+    pass
         """Get alerts from the last N hours."""
         cutoff_time = time.time() - (hours * 3600)
         return [alert for alert in self.alerts if alert.timestamp >= cutoff_time]
 
     def clear_old_metrics(self, days: int = 7) -> None:
+    pass
+    pass
         """Clear metrics older than N days."""
         cutoff_time = time.time() - (days * 24 * 3600)
         self.metrics_history = [
@@ -472,14 +567,20 @@ class SurrogateOptimizationMonitor:
         self.logger.info(f"Cleared metrics older than {days} days")
 
     def export_metrics(self, filepath: str) -> None:
+    pass
+    pass
         """Export metrics to CSV file."""
         if not self.metrics_history:
+    pass
+    pass
             self.logger.warning("No metrics to export")
             return
 
         # Convert to DataFrame
         data = []
         for metrics in self.metrics_history:
+    pass
+    pass
             data.append(asdict(metrics))
 
         df = pd.DataFrame(data)
@@ -487,12 +588,18 @@ class SurrogateOptimizationMonitor:
         self.logger.info(f"Exported {len(data)} metrics to {filepath}")
 
     def stop_monitoring(self) -> None:
+    pass
+    pass
         """Stop real-time monitoring."""
         self.is_monitoring = False
         if self.monitoring_thread and self.monitoring_thread.is_alive():
+    pass
+    pass
             self.monitoring_thread.join(timeout=5.0)
         self.logger.info("Stopped real-time monitoring")
 
     def __del__(self):
+    pass
+    pass
         """Cleanup when object is destroyed."""
         self.stop_monitoring()

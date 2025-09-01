@@ -15,20 +15,31 @@ import sys
 from functools import wraps
 
 # Add the src directory to the Python path
+import current_dir = Path
 current_dir = Path(__file__).parent
 src_dir = current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 
 def _log_exceptions(logger_name: str):
+    pass
+    pass
     """Decorator to log exceptions and return False for failures."""
 
     def decorator(func):
+    pass
+    pass
         @wraps(func)
         def wrapper(*args, **kwargs):
+    pass
+    pass
             logger = system_logger.getChild(logger_name)
             try:
                 return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception as e:  # noqa: BLE001
                 logger.exception(f"Error in {func.__name__}: {e}")
                 return False
@@ -40,6 +51,8 @@ def _log_exceptions(logger_name: str):
 
 @_log_exceptions("MulticollinearityFix")
 def fix_feature_engineering_code() -> bool:
+    pass
+    pass
     """Fix the critical multicollinearity issue in the feature engineering code."""
 
     logger = system_logger.getChild("MulticollinearityFix")
@@ -51,6 +64,8 @@ def fix_feature_engineering_code() -> bool:
     )
 
     if not feature_eng_file.exists():
+    pass
+    pass
         logger.error(f"❌ Feature engineering file not found: {feature_eng_file}")
         return False
 
@@ -77,6 +92,8 @@ def fix_feature_engineering_code() -> bool:
     )
 
     if old_price_change in content:
+    pass
+    pass
         content = content.replace(old_price_change, new_price_change)
         logger.info("✅ Fixed price_change calculation")
 
@@ -87,6 +104,8 @@ def fix_feature_engineering_code() -> bool:
     )
 
     if old_volume_change in content:
+    pass
+    pass
         content = content.replace(old_volume_change, new_volume_change)
         logger.info("✅ Fixed volume_change calculation")
 
@@ -100,12 +119,16 @@ def fix_feature_engineering_code() -> bool:
 
 @_log_exceptions("MulticollinearityFixMain")
 def main() -> bool:
+    pass
+    pass
     """Main function to fix the multicollinearity issue."""
 
     logger = system_logger.getChild("MulticollinearityFixMain")
     logger.info("🚀 Starting multicollinearity fix...")
 
     if fix_feature_engineering_code():
+    pass
+    pass
         logger.info("🎉 Multicollinearity fix completed successfully!")
         logger.info(
             "📋 The issue was in the _calculate_timeframe_features_vectorized method",
@@ -122,10 +145,14 @@ def main() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     if not success:
-        print("\n❌ MULTICOLLINEARITY FIX FAILED!")
+    pass
+    pass
+        print("\\\n❌ MULTICOLLINEARITY FIX FAILED!")
         sys.exit(1)
     else:
-        print("\n🎉 MULTICOLLINEARITY FIX COMPLETED SUCCESSFULLY!")
+        print("\\\n🎉 MULTICOLLINEARITY FIX COMPLETED SUCCESSFULLY!")
         print("✅ Your feature engineering should now work correctly.")

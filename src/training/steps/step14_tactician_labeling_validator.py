@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     missing,
@@ -25,10 +26,13 @@ sys.path.insert(0, str(project_root))
 from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
 
+import class Step8TacticianLabelingValidator
 class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step08_tactician_labeling", config)
 
     async def validate(
@@ -59,6 +63,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
+    pass
+    pass
         self.print(error("❌ Tactician labeling step had errors"))
         return False
 
@@ -69,6 +75,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not labeling_files_passed:
+    pass
+    pass
         self.print(failed("❌ Tactician labeling files validation failed"))
         return False
 
@@ -79,6 +87,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not signal_quality_passed:
+    pass
+    pass
         self.print(failed("❌ Signal quality validation failed"))
         return False
 
@@ -89,6 +99,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not consistency_passed:
+    pass
+    pass
         self.print(failed("❌ Labeling consistency validation failed"))
         return False
 
@@ -99,6 +111,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
             data_dir,
         )
         if not distribution_passed:
+    pass
+    pass
         self.print(failed("❌ Signal distribution validation failed"))
         return False
 
@@ -109,6 +123,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
+    pass
         self.print(error("⚠️ Tactician labeling outcome is not favorable"))
         return False
 
@@ -138,15 +154,25 @@ class Step8TacticianLabelingValidator(BaseValidator):
             ]
 
             missing_files: list[str] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for file_path in expected_files:
+    pass
+    pass
                 file_passed, _file_metrics, self.validate_file_exists(
                     file_path,
                     "tactician_labeling_files",
                 )
         if not file_passed:
+    pass
+    pass
                     missing_files.append(file_path)
 
         if missing_files:
+    pass
+    pass
         self.logger.error(
                     f"❌ Missing tactician labeling files: {missing_files}",
                 )
@@ -181,17 +207,33 @@ class Step8TacticianLabelingValidator(BaseValidator):
             signals_pickle, f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
             signals_data: pd.DataFrame | Any
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
+    pass
+    pass
         if os.path.exists(signals_parquet):
+    pass
+    pass
         # Prefer dataset scan if labeled partition exists
         try:
                         from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                             ParquetDatasetManager,
                         )
 
                         pdm, ParquetDatasetManager(logger = self.logger)
                         part_base, os.path.join(data_dir, "parquet", "labeled")
         if os.path.isdir(part_base):
+    pass
+    pass
                             filters: list[tuple[str, str, Any]] = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
@@ -199,8 +241,12 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             t0, getattr(self, "t0_ms", None)
                             t1, getattr(self, "t1_ms", None)
         if t0 is not None:
+    pass
+    pass
                                 filters.append(("timestamp", ">=", int(t0)))
         if t1 is not None:
+    pass
+    pass
                                 filters.append(("timestamp", "<", int(t1)))
         # Project only signal - related columns if present
                             columns = ["timestamp", "signal", "confidence"]
@@ -212,6 +258,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             )
                         else:
                             from src.utils.logger import (
+import log_dataframe_overview,
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -233,6 +280,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         except Exception:
                         from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger, "read_parquet", signals_parquet,
                         ):
@@ -242,6 +290,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         signals_data, pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
+    pass
+    pass
                     signals_data, pd.DataFrame(signals_data)
 
         # Check for required signal columns
@@ -251,6 +301,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 ]
 
         if missing_columns:
+    pass
+    pass
         self.logger.error(
                         f"❌ Missing required signal columns: {missing_columns}",
                     )
@@ -262,10 +314,14 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check for reasonable signal values (typically - 1, 0, 1 or similar)
         if len(unique_signals) < 2:
+    pass
+    pass
         self.print(error("❌ Insufficient signal diversity"))
         return False
 
         if len(unique_signals) > 10:
+    pass
+    pass
         self.print(error(f"⚠️ Many signal types: {len(unique_signals)}"))
 
         # Check signal consistency
@@ -286,10 +342,14 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check confidence values
         if "confidence" in signals_data.columns:
+    pass
+    pass
                     confidence, signals_data["confidence"]
 
         # Check confidence range (should be 0 - 1 or similar)
         if confidence.min() < 0 or confidence.max() > 1:
+    pass
+    pass
         self.logger.warning(
                             "⚠️ Confidence values outside expected range [0, 1]",
                         )
@@ -299,9 +359,13 @@ class Step8TacticianLabelingValidator(BaseValidator):
                     high_confidence = (confidence > 0.7).sum()
 
         if low_confidence > total_signals * 0.8:
+    pass
+    pass
         self.print(error("⚠️ Too many low confidence signals"))
 
         if high_confidence < total_signals * 0.1:
+    pass
+    pass
         self.print(error("⚠️ Too few high confidence signals"))
 
         # Check for signal continuity
@@ -309,6 +373,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 change_ratio, signal_changes / total_signals
 
         if change_ratio > 0.5:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ High signal change frequency: {change_ratio:.3f}",
                     )
@@ -349,16 +415,32 @@ class Step8TacticianLabelingValidator(BaseValidator):
             labels_pickle, f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl"
 
             labels_data: pd.DataFrame | Any
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
+    pass
+    pass
         if os.path.exists(labels_parquet):
+    pass
+    pass
         try:
                         from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                             ParquetDatasetManager,
                         )
 
                         pdm, ParquetDatasetManager(logger = self.logger)
                         part_base, os.path.join(data_dir, "parquet", "labeled")
         if os.path.isdir(part_base):
+    pass
+    pass
                             filters = [
                                 ("exchange", "==", exchange),
                                 ("symbol", "==", symbol),
@@ -366,8 +448,12 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             t0, getattr(self, "t0_ms", None)
                             t1, getattr(self, "t1_ms", None)
         if t0 is not None:
+    pass
+    pass
                                 filters.append(("timestamp", ">=", int(t0)))
         if t1 is not None:
+    pass
+    pass
                                 filters.append(("timestamp", "<", int(t1)))
                             columns = ["timestamp", "label"]
                             labels_data, pdm.scan_dataset(
@@ -378,6 +464,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             )
                         else:
                             from src.utils.logger import (
+import log_dataframe_overview,
                                 log_dataframe_overview,
                                 log_io_operation,
                             )
@@ -398,6 +485,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         except Exception:
                         from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger, "read_parquet", labels_parquet,
                         ):
@@ -407,10 +495,14 @@ class Step8TacticianLabelingValidator(BaseValidator):
                         labels_data, pickle.load(f)
 
         if not isinstance(labels_data, pd.DataFrame):
+    pass
+    pass
                     labels_data, pd.DataFrame(labels_data)
 
         # Check for required label columns
         if "label" not in labels_data.columns:
+    pass
+    pass
         self.print(error("❌ No label column found in tactician labels"))
         return False
 
@@ -420,6 +512,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 unique_labels, labels.unique()
 
         if len(unique_labels) < 2:
+    pass
+    pass
         self.print(error("❌ Insufficient label diversity"))
         return False
 
@@ -431,10 +525,20 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
                 signals_data: pd.DataFrame | Any
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
+    pass
+    pass
         if os.path.exists(signals_parquet):
+    pass
+    pass
         try:
                             from src.utils.logger import log_io_operation
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import with log_io_operation
         with log_io_operation(
         self.logger,
                                 "read_parquet",
@@ -448,6 +552,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         except Exception:
                             from src.utils.logger import log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger, "read_parquet", signals_parquet,
                             ):
@@ -457,10 +562,14 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             signals_data, pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
+    pass
+    pass
                         signals_data, pd.DataFrame(signals_data)
 
         # Check if labels and signals have same length
         if len(labels) != len(signals_data):
+    pass
+    pass
         self.logger.error(
                             "❌ Labels and signals have different lengths",
                         )
@@ -468,6 +577,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check for reasonable label - signal correlation
         if "signal" in signals_data.columns:
+    pass
+    pass
                         signals, signals_data["signal"]
 
         # Calculate correlation between labels and signals
@@ -475,9 +586,15 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             correlation, np.corrcoef(
                                 labels.astype(float),
                                 signals.astype(float),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             )[0, 1]
 
         if abs(correlation) < 0.1:
+    pass
+    pass
         self.logger.warning(
                                     f"⚠️ Low correlation between labels and signals: {correlation:.3f}",
                                 )
@@ -501,6 +618,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 )
 
         if balance_ratio < 0.1:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Imbalanced label distribution: {balance_ratio:.3f}",
                     )
@@ -508,6 +627,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
         # Check for missing labels
                 null_labels, labels.isnull().sum()
         if null_labels > 0:
+    pass
+    pass
         self.print(missing(f"⚠️ Found {null_labels} missing labels"))
 
         self.logger.info(
@@ -544,7 +665,13 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(metadata_file):
+    pass
+    pass
                 import json
 
         with open(metadata_file) as f:
@@ -552,17 +679,25 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check signal distribution metrics
         if "signal_distribution" in metadata:
+    pass
+    pass
                     signal_dist, metadata["signal_distribution"]
 
         # Check for reasonable signal distribution
         for signal_type, count in signal_dist.items():
+    pass
+    pass
         if count < 10:
+    pass
+    pass
         self.logger.warning(
                                 f"⚠️ Very few signals of type {signal_type}: {count}",
                             )
 
         # Check signal frequency
         if "signal_frequency" in metadata:
+    pass
+    pass
                     signal_freq, metadata["signal_frequency"]
 
         if signal_freq < 0.01:  # Very low signal frequency
@@ -576,27 +711,39 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         # Check signal quality metrics
         if "signal_quality_score" in metadata:
+    pass
+    pass
                     quality_score, metadata["signal_quality_score"]
 
         if quality_score < 0.6:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low signal quality score: {quality_score:.3f}",
                         )
 
         # Check labeling accuracy
         if "labeling_accuracy" in metadata:
+    pass
+    pass
                     labeling_acc, metadata["labeling_accuracy"]
 
         if labeling_acc < 0.7:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low labeling accuracy: {labeling_acc:.3f}",
                         )
 
         # Check signal consistency
         if "signal_consistency" in metadata:
+    pass
+    pass
                     consistency, metadata["signal_consistency"]
 
         if consistency < 0.6:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low signal consistency: {consistency:.3f}",
                         )
@@ -605,13 +752,19 @@ class Step8TacticianLabelingValidator(BaseValidator):
             signals_file, f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
         if os.path.exists(signals_file):
+    pass
+    pass
         with open(signals_file, "rb") as f:
                     signals_data, pickle.load(f)
 
         if not isinstance(signals_data, pd.DataFrame):
+    pass
+    pass
                     signals_data, pd.DataFrame(signals_data)
 
         if "signal" in signals_data.columns:
+    pass
+    pass
                     signals, signals_data["signal"]
 
         # Check for signal clustering
@@ -619,6 +772,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                     unique_clusters, signal_changes.nunique()
 
         if unique_clusters < 5:
+    pass
+    pass
         self.print(error(f"⚠️ Few signal clusters: {unique_clusters}"))
                     elif unique_clusters > 100:
         self.logger.warning(
@@ -630,6 +785,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
                     avg_persistence, signal_persistence.mean()
 
         if avg_persistence < 5:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low signal persistence: {avg_persistence:.1f}",
                         )
@@ -672,6 +829,8 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio as _asyncio
 
     # Example usage

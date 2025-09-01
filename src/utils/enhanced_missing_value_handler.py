@@ -16,6 +16,7 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 from .logger import system_logger
 from .error_handler import handle_errors
 
+import class GapType
 class GapType(Enum):
     """Types of data gaps."""
     SMALL = "small"      # <= 5 seconds, use forward fill
@@ -27,6 +28,8 @@ class GapInfo:
     """Information about a data gap."""
 
     def __init__(self, start_time: int, end_time: int, gap_size: int, gap_type: GapType):
+    pass
+    pass
         self.start_time, start_time
         self.end_time, end_time
         self.gap_size, gap_size
@@ -36,12 +39,16 @@ class GapInfo:
         self.downloaded_data, None
 
     def __str__(self):
+    pass
+    pass
         return f"Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})"
 
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
 
     def __init__(self, max_forward_fill_gap: int, 5, download_threshold: int, 5):
+    pass
+    pass
         """Initialize enhanced missing value handler.
 
         Args:
@@ -90,6 +97,8 @@ class EnhancedMissingValueHandler:
             Data with intelligently filled missing values
         """
         if timestamp_column not in data.columns:
+    pass
+    pass
         self.logger.error(f"Timestamp column '{timestamp_column}' not found")
         return data
 
@@ -100,6 +109,8 @@ class EnhancedMissingValueHandler:
         gaps, self._analyze_gaps(data, timestamp_column)
 
         if not gaps:
+    pass
+    pass
         self.logger.info("No gaps detected in data")
         return data
 
@@ -110,10 +121,16 @@ class EnhancedMissingValueHandler:
         filled_data, data.copy()
 
         for gap in gaps:
+    pass
+    pass
         if gap.gap_type == GapType.SMALL:
+    pass
+    pass
                 filled_data, self._handle_small_gap(filled_data, gap, timestamp_column)
             elif gap.gap_type in [GapType.MEDIUM, GapType.LARGE]:
         if symbol and exchange:
+    pass
+    pass
                     filled_data, self._handle_large_gap_with_download(
                         filled_data, gap, timestamp_column, symbol, exchange, timeframe
                     )
@@ -128,6 +145,8 @@ class EnhancedMissingValueHandler:
         # Final validation
         final_gaps, self._analyze_gaps(filled_data, timestamp_column)
         if final_gaps:
+    pass
+    pass
         self.logger.warning(f"Remaining gaps after filling: {len(final_gaps)}")
         else:
         self.logger.info("All gaps successfully filled")
@@ -135,6 +154,8 @@ class EnhancedMissingValueHandler:
         return filled_data
 
     def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
+    pass
+    pass
         """Analyze gaps in the data.
 
         Args:
@@ -148,6 +169,8 @@ class EnhancedMissingValueHandler:
         timestamps, data[timestamp_column].values
 
         for i in range(len(timestamps) - 1):
+    pass
+    pass
             current_time, timestamps[i]
             next_time, timestamps[i + 1]
 
@@ -156,6 +179,8 @@ class EnhancedMissingValueHandler:
             expected_next_time, current_time + 60
 
         if next_time > expected_next_time:
+    pass
+    pass
                 gap_size, next_time - expected_next_time
                 gap_type, self._classify_gap(gap_size)
 
@@ -170,6 +195,8 @@ class EnhancedMissingValueHandler:
         return gaps
 
     def _classify_gap(self, gap_size: int) -> GapType:
+    pass
+    pass
         """Classify gap based on size.
 
         Args:
@@ -179,6 +206,8 @@ class EnhancedMissingValueHandler:
             Gap type
         """
         if gap_size <= self.gap_thresholds[GapType.SMALL]:
+    pass
+    pass
         return GapType.SMALL
         elif gap_size <= self.gap_thresholds[GapType.MEDIUM]:
         return GapType.MEDIUM
@@ -188,19 +217,29 @@ class EnhancedMissingValueHandler:
         return GapType.CRITICAL
 
     def _log_gap_analysis(self, gaps: List[GapInfo]) -> None:
+    pass
+    pass
         """Log gap analysis results."""
         gap_counts = {}
         for gap in gaps:
+    pass
+    pass
             gap_type, gap.gap_type.value
         if gap_type not in gap_counts:
+    pass
+    pass
                 gap_counts[gap_type] = 0
             gap_counts[gap_type] += 1
 
         self.logger.info(f"Gap analysis: {len(gaps)} total gaps")
         for gap_type, count in gap_counts.items():
+    pass
+    pass
         self.logger.info(f"  {gap_type}: {count} gaps")
 
     def _handle_small_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
+    pass
+    pass
         """Handle small gap with forward fill.
 
         Args:
@@ -229,12 +268,16 @@ class EnhancedMissingValueHandler:
         # Create new rows with forward - filled values
         new_rows = []
         for timestamp in missing_timestamps:
+    pass
+    pass
             new_row, data.iloc[before_gap_idx].copy()
             new_row[timestamp_column] = timestamp
             new_rows.append(new_row)
 
         # Insert new rows
         if new_rows:
+    pass
+    pass
             new_df, pd.DataFrame(new_rows)
             filled_data, pd.concat([filled_data, new_df], ignore_index = True)
             filled_data, filled_data.sort_values(timestamp_column).reset_index(drop = True)
@@ -267,7 +310,13 @@ class EnhancedMissingValueHandler:
                 symbol, exchange, timeframe, gap.start_time, gap.end_time
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if downloaded_data is not None and len(downloaded_data) > 0:
+    pass
+    pass
         # Insert downloaded data
                 filled_data, self._insert_downloaded_data(data, downloaded_data, timestamp_column)
 
@@ -304,11 +353,18 @@ class EnhancedMissingValueHandler:
             start_dt, datetime.fromtimestamp(start_time)
             end_dt, datetime.fromtimestamp(end_time)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(f"Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}")
 
         # Import exchange - specific downloader
         if exchange.lower() == "binance":
+    pass
+    pass
                 from src.training.steps.data_downloader import DataDownloader
+import downloader, DataDownloader
                 downloader, DataDownloader()
 
         # Download klines data
@@ -320,6 +376,8 @@ class EnhancedMissingValueHandler:
                 )
 
         if downloaded_data is not None and len(downloaded_data) > 0:
+    pass
+    pass
         # Ensure timestamp column is int64
                     downloaded_data['timestamp'] = pd.to_datetime(downloaded_data['timestamp']).astype(np.int64) // 10**9
 
@@ -386,6 +444,8 @@ class EnhancedMissingValueHandler:
 
         # Interpolate values for each column
         for timestamp in missing_timestamps:
+    pass
+    pass
         # Calculate interpolation weight
             time_diff, timestamp - data.iloc[before_gap_idx][timestamp_column]
             total_gap, data.iloc[after_gap_idx][timestamp_column] - data.iloc[before_gap_idx][timestamp_column]
@@ -398,7 +458,11 @@ class EnhancedMissingValueHandler:
         # Interpolate numeric columns
             numeric_columns, data.select_dtypes(include=[np.number]).columns
         for col in numeric_columns:
+    pass
+    pass
         if col != timestamp_column:
+    pass
+    pass
                     before_val, data.iloc[before_gap_idx][col]
                     after_val, data.iloc[after_gap_idx][col]
                     interpolated_val, before_val + weight * (after_val - before_val)
@@ -435,6 +499,8 @@ class EnhancedMissingValueHandler:
         return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
 
     def get_gap_report(self, data: pd.DataFrame, timestamp_column: str = "timestamp") -> Dict[str, Any]:
+    pass
+    pass
         """Generate gap analysis report.
 
         Args:
@@ -455,6 +521,8 @@ class EnhancedMissingValueHandler:
 
         # Summarize gaps by type
         for gap_type in GapType:
+    pass
+    pass
             gap_type_gaps = [g for g in gaps if g.gap_type == gap_type]
             report["gap_summary"][gap_type.value] = {
                 "count": len(gap_type_gaps),
@@ -464,6 +532,8 @@ class EnhancedMissingValueHandler:
 
         # Detailed gap information
         for gap in gaps:
+    pass
+    pass
             report["gap_details"].append({
                 "start_time": gap.start_time,
                 "end_time": gap.end_time,
@@ -488,6 +558,8 @@ class EnhancedMissingValueHandler:
             Continuity validation report
         """
         if timestamp_column not in data.columns:
+    pass
+    pass
         return {"valid": False, "error": f"Timestamp column '{timestamp_column}' not found"}
 
         # Sort data by timestamp
@@ -498,11 +570,15 @@ class EnhancedMissingValueHandler:
         total_intervals, len(timestamps) - 1
 
         for i in range(total_intervals):
+    pass
+    pass
             current_time, timestamps[i]
             next_time, timestamps[i + 1]
             interval, next_time - current_time
 
         if interval != expected_interval:
+    pass
+    pass
                 issues.append({
                     "position": i,
                     "current_time": current_time,

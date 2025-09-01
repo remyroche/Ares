@@ -14,25 +14,43 @@ import torch
 
 try:
     pass
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except Exception:  # pragma: no cover
     pl = None  # type: ignore
 
 if TYPE_CHECKING:
+    pass
+    pass
     pass  # TODO: Add proper implementation
 # Hint to speed CPU matmul on Apple Accelerate
 with contextlib.suppress(Exception):
     torch.set_float32_matmul_precision("high")
 
 def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    pass
+    pass
     return torch.as_tensor(x, dtype=dtype)
 
 def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
+    pass
+    pass
     try:
         n, m = len(a), len(b)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         dtw = np.full((n + 1, m + 1), np.inf, dtype=float)
         dtw[0, 0] = 0.0
         for i in range(1, n + 1):
+    pass
+    pass
             for j in range(1, m + 1):
+    pass
+    pass
                 cost = abs(a[i - 1] - b[j - 1])
                 dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
         return float(dtw[n, m] / (n + m))
@@ -52,9 +70,13 @@ class TransitionSeqDataset(Dataset):
         self.label_index = label_index
 
     def __len__(self) -> int:
+    pass
+    pass
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    pass
+    pass
         s = self.samples[idx]
         # Inputs
         X_states_df: pd.DataFrame = s["X_pre_states"]
@@ -99,6 +121,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         focal_gamma: float = 0.0,
     ):
         if pl:
+    pass
+    pass
             super().__init__()
         else:
             super().__init__()
@@ -132,6 +156,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         self.mse = nn.SmoothL1Loss()
         # class weights
         if path_class_weights:
+    pass
+    pass
             w_map = {
                 "continuation": 0,
                 "reversal": 1,
@@ -140,7 +166,11 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
             }
             w = torch.ones(4, dtype=torch.float32)
             for k, v in path_class_weights.items():
+    pass
+    pass
                 if k in w_map:
+    pass
+    pass
                     w[w_map[k]] = float(v)
             self.ce = nn.CrossEntropyLoss(weight=w)
         else:
@@ -148,6 +178,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         self.focal_gamma = float(focal_gamma)
 
     def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
+    pass
+    pass
         # hmm_ids: [B = L_pre] ; x_num: [B, L_pre = F]
         x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)
         x = self.enc_ln(x)
@@ -177,6 +209,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
         # optional focal loss on path head
         if self.focal_gamma > 0.0:
+    pass
+    pass
             ce = self.ce(pred_path, y_path)
             with torch.no_grad():
                 p = (
@@ -199,6 +233,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         return loss
 
     def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
+    pass
+    pass
         hmm_ids = batch["hmm_ids"]
         x_num = batch["x_num"]
         y_ret = batch["y_ret"]
@@ -212,6 +248,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         loss_ret = self.mse(pred_ret, y_ret)
         loss_hmm = self.ce(pred_hmm.reshape(-1, pred_hmm.size(-1)), y_hmm.reshape(-1))
         if self.focal_gamma > 0.0:
+    pass
+    pass
             ce = self.ce(pred_path, y_path)
             with torch.no_grad():
                 p = (
@@ -235,6 +273,8 @@ class SmallTransformer(pl.LightningModule if pl else nn.Module):
         )
 
     def configure_optimizers(self):
+    pass
+    pass
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=5)
         return {
@@ -265,6 +305,8 @@ class SmallTCN(SmallTransformer):
         # Replace encoder with TCN
         blocks: list[nn.Module] = []
         for i in range(layers):
+    pass
+    pass
             dilation = 2**i
             blocks.append(
                 nn.Sequential(
@@ -282,9 +324,13 @@ class SmallTCN(SmallTransformer):
         self.tcn = nn.ModuleList(blocks)
 
     def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
+    pass
+    pass
         x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B = L,D]
         y = x.transpose(1, 2)  # [B = D,L]
         for block in self.tcn:
+    pass
+    pass
             y = y + block(y)
         h = y.transpose(1, 2)  # [B = L,D]
         cls = h.mean(dim=1)
@@ -322,6 +368,8 @@ def evaluate_samples(
     device: str | None = None,
 ) -> dict[str, float]:
     if device is None:
+    pass
+    pass
         device = "mps" if torch.backends.mps.is_available() else "cpu"
     model.eval().to(device)
     mse_list: list[float] = []
@@ -330,6 +378,8 @@ def evaluate_samples(
     ttpt_mae_list: list[float] = []
     with torch.no_grad():
         for batch in dataloader:
+    pass
+    pass
             hmm_ids = batch["hmm_ids"].to(device)
             x_num = batch["x_num"].to(device)
             y_ret = batch["y_ret"].to(device)
@@ -345,19 +395,29 @@ def evaluate_samples(
             pr = pred_ret.detach().cpu().numpy()
             yr = y_ret.detach().cpu().numpy()
             for i in range(min(len(pr), 64)):
+    pass
+    pass
                 dtw_list.append(_dtw_distance(pr[i], yr[i]))
             acc_list.append((pred_hmm.argmax(-1) == y_hmm).float().mean().item())
             # ttpt prediction from returns path
             ttpt_pred = []
             for seq in pr:
+    pass
+    pass
                 ttp = -1
                 for t, r in enumerate(seq, start=1):
+    pass
+    pass
                     if r >= pt_mult:
+    pass
+    pass
                         ttp = t
                         break
                 ttpt_pred.append(ttp)
             mask = y_ttpt >= 0
             if mask.any():
+    pass
+    pass
                 mae = torch.mean(
                     torch.abs(
                         torch.tensor(ttpt_pred, device=device, dtype=torch.float32)
@@ -392,12 +452,18 @@ def train_seq2seq(
 ) -> dict[str, Any]:
     logger = system_logger.getChild("TransitionSeq2SeqTrainer")
     if pl is None:
+    pass
+    pass
         logger.warning("PyTorch Lightning not available; skip seq2seq training.")
         return {"trained": False}
     numeric_dim = len(numeric_feature_names)
 
     def _make_model() -> SmallTransformer:
+    pass
+    pass
         if model_type.lower() == "tcn":
+    pass
+    pass
             return SmallTCN(
                 hmm_vocab=numeric_dim, num_features=numeric_dim,
                 post_len=post_window, d_model=d_model,
@@ -416,6 +482,8 @@ def train_seq2seq(
         )
 
     def _train_one(train_s: list[dict[str, Any]]) -> tuple[SmallTransformer, dict]:
+    pass
+    pass
         train_loader, val_loader = build_dataloaders(
             samples=train_s,
             numeric_dim=numeric_dim,
@@ -424,8 +492,14 @@ def train_seq2seq(
         model = _make_model()
         callbacks = []
         if artifact_dir_models:
+    pass
+    pass
             try:
                 os.makedirs(artifact_dir_models, exist_ok=True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 callbacks.append(
                     ModelCheckpoint(
                         dirpath=artifact_dir_models,
@@ -448,26 +522,38 @@ def train_seq2seq(
         trainer.fit(model, train_loader, val_loader)
         try:
             if artifact_dir_models:
+    pass
+    except Exception as e:
+        pass
+    pass
                 os.makedirs(artifact_dir_models, exist_ok=True)
                 trainer.save_checkpoint(os.path.join(artifact_dir_models, "last.ckpt"))
+    except Exception as e:
+        pass
         except Exception:
             pass
         metrics = evaluate_samples(model, val_loader, pt_mult=pt_mult)
         return model, metrics
 
     if cv_folds and cv_folds > 1:
+    pass
+    pass
         n = len(samples)
         fold_size = max(1, n // cv_folds)
         all_metrics: list[dict] = []
         best_idx = 0
         best_mse = float("inf")
         for k in range(cv_folds):
+    pass
+    pass
             end = n - (cv_folds - 1 - k) * fold_size
             start = max(0, end - fold_size)
             fold_samples = samples[start:end]
             model, m = _train_one(fold_samples)
             all_metrics.append(m)
             if m.get("mse", float("inf")) < best_mse:
+    pass
+    pass
                 best_mse = m.get("mse", float("inf"))
                 best_idx = k
         return {

@@ -26,9 +26,11 @@ from src.utils.logger import setup_logging, system_logger
 from src.utils.error_handler import handle_errors
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.training.steps.data_preparation_components.aggtrades_data_formatting import (
+import auto_reformat_aggtrades_files_for_exchange,
     auto_reformat_aggtrades_files_for_exchange,
 )
 from src.training.steps.data_preparation_components.training_validation_config import (
+import validate_data_format,
     validate_data_format,
     validate_data_quality,
 )
@@ -36,6 +38,8 @@ from src.training.steps.data_preparation_components.training_validation_config i
 # Ensure project root in path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(project_root))
 
 
@@ -92,6 +96,8 @@ async def main() -> bool:
 
     # Attempt to initialize internal components
     if hasattr(training_manager, "initialize_components"):
+    pass
+    pass
         await training_manager.initialize_components()
 
     # Use existing data only
@@ -105,10 +111,14 @@ async def main() -> bool:
     required_files = [klines_filename, agg_trades_filename, futures_filename]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     if missing_files:
+    pass
+    pass
         logger.error(f"Missing required data files: {missing_files}")
         logger.error("Please ensure data files exist before running the blank pipeline.")
         logger.error("Expected files:")
         for _file in required_files:
+    pass
+    pass
             logger.error(f"  - {_file}")
         return False
 
@@ -121,6 +131,8 @@ async def main() -> bool:
     # Load the CSV data and validate
     csv_data_file = klines_filename
     if not os.path.exists(csv_data_file):
+    pass
+    pass
         logger.error(f"CSV data file not found: {csv_data_file}")
         return False
 
@@ -134,12 +146,16 @@ async def main() -> bool:
     validation_data: dict[str, Any] = {"klines": klines_df}
 
     if os.path.exists(agg_trades_filename):
+    pass
+    pass
         validation_data["agg_trades"] = pd.read_csv(agg_trades_filename)
         logger.info("Loaded aggregated trades for validation")
     else:
         logger.warning("Aggregated trades file not found, skipping that part of validation")
 
     if os.path.exists(futures_filename):
+    pass
+    pass
         validation_data["futures"] = pd.read_csv(futures_filename)
         logger.info("Loaded futures data for validation")
     else:
@@ -147,11 +163,15 @@ async def main() -> bool:
 
     format_valid, format_errors = validate_data_format(validation_data)
     if not format_valid:
+    pass
+    pass
         logger.error(f"Data format validation failed: {format_errors}")
         return False
 
     quality_valid, quality_errors = validate_data_quality(validation_data)
     if not quality_valid:
+    pass
+    pass
         logger.error(f"Data quality validation failed: {quality_errors}")
         return False
 
@@ -164,6 +184,10 @@ async def main() -> bool:
     try:
         import pickle  # local import to avoid overhead if unused
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with open(pickle_file, "wb") as f:
             pickle.dump({"klines": klines_df}, f)
         logger.info(f"Created pickle file: {pickle_file}")
@@ -174,6 +198,8 @@ async def main() -> bool:
     logger.info("Starting lightweight optimized training execution...")
     result: dict[str, Any] = {}
     if hasattr(training_manager, "execute_optimized_training"):
+    pass
+    pass
         result = await training_manager.execute_optimized_training(
             args.symbol, args.exchange, timeframe="1m"
         )
@@ -187,6 +213,8 @@ async def main() -> bool:
     logger.info(f"Training pipeline completed in {duration:.2f} seconds")
 
     if result is not None:
+    pass
+    pass
         logger.info("'Blank' training pipeline completed successfully!")
         logger.info("Training summary:")
         logger.info(f"   Symbol: {args.symbol}")
@@ -199,4 +227,6 @@ async def main() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

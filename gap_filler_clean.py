@@ -16,6 +16,8 @@ class CleanGapFiller:
     """Clean gap filling that continues until gaps are fully filled."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path = Path(data_cache_path)
         self.session = None
         self.max_calls = 20  # Maximum calls to prevent infinite loops
@@ -23,10 +25,14 @@ class CleanGapFiller:
 
     async def _ensure_session(self) -> None:
         if self.session is None:
+    pass
+    pass
             self.session = aiohttp.ClientSession()
 
     async def close_session(self) -> None:
         if self.session:
+    pass
+    pass
             await self.session.close()
 
     def detect_gaps_in_file(
@@ -36,7 +42,13 @@ class CleanGapFiller:
         try:
             df = pd.read_parquet(file_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if df.empty or "timestamp" not in df.columns:
+    pass
+    pass
                 return []
 
             # Sort by timestamp and calculate time differences
@@ -48,7 +60,11 @@ class CleanGapFiller:
             gap_rows = df[df["time_diff"] > min_gap_seconds]
 
             for idx, row in gap_rows.iterrows():
+    pass
+    pass
                 if idx > 0:
+    pass
+    pass
                     gap_start = df.loc[idx - 1, "timestamp"]
                     gap_end = row["timestamp"]
                     gap_duration = (gap_end - gap_start).total_seconds()
@@ -80,14 +96,22 @@ class CleanGapFiller:
         try:
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             async with self.session.get(url, ssl=ssl_context) as resp:
                 if resp.status != 200:
+    pass
+    pass
                     return []
                 content = await resp.read()
 
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
+    pass
+    pass
                     return []
 
                 with zf.open(csv_names[0]) as f:
@@ -99,12 +123,18 @@ class CleanGapFiller:
                     )
 
             if df.empty:
+    pass
+    pass
                 return []
 
             # Process data types
             for col in ["a", "f", "l", "T"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             for col in ["p", "q"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
             df["m"] = (
@@ -126,8 +156,12 @@ class CleanGapFiller:
             return []
 
     def _standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Standardize data format."""
         if "a" in df.columns:
+    pass
+    pass
             column_mapping = {
                 "a": "agg_trade_id",
                 "p": "price",
@@ -140,6 +174,8 @@ class CleanGapFiller:
             df = df.rename(columns=column_mapping)
 
         if "timestamp" in df.columns and df["timestamp"].dtype in ["int64", "float64"]:
+    pass
+    pass
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         expected_columns = [
@@ -160,6 +196,10 @@ class CleanGapFiller:
         """Fill a gap with multiple API calls until it's fully filled."""
         try:
             gap_start = gap_info["gap_start"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             gap_end = gap_info["gap_end"]
             file_name = gap_info["file"]
             gap_duration = gap_info["gap_duration_seconds"]
@@ -186,32 +226,44 @@ class CleanGapFiller:
                 )
 
                 if trades:
+    pass
+    pass
                     all_trades.extend(trades)
                     consecutive_empty = 0
 
                     # Check if we have enough data
                     expected_trades = max(1, int(gap_duration / 2))
                     if len(all_trades) >= expected_trades:
+    pass
+    pass
                         break
                 else:
                     consecutive_empty += 1
 
                     if consecutive_empty >= max_consecutive_empty:
+    pass
+    pass
                         break
 
                 await asyncio.sleep(self.call_delay)
 
             if all_trades:
+    pass
+    pass
                 # Remove duplicates
                 unique_trades = []
                 seen = set()
 
                 for trade in all_trades:
+    pass
+    pass
                     trade_id = trade.get("a", 0)
                     timestamp = trade.get("T", 0)
                     unique_id = (trade_id, timestamp)
 
                     if unique_id not in seen:
+    pass
+    pass
                         seen.add(unique_id)
                         unique_trades.append(trade)
 
@@ -222,6 +274,8 @@ class CleanGapFiller:
 
                 file_path = self.data_cache_path / file_name
                 if file_path.exists():
+    pass
+    pass
                     df_existing = pd.read_parquet(file_path)
                     df_combined = pd.concat(
                         [df_existing, df_missing], ignore_index=True,
@@ -257,6 +311,8 @@ class CleanGapFiller:
         files = list(self.data_cache_path.glob(pattern))
 
         if not files:
+    pass
+    pass
             return
 
 
@@ -268,20 +324,28 @@ class CleanGapFiller:
         total_calls = 0
 
         for file_path in files:
+    pass
+    pass
     pass  # TODO: Add proper implementation
             gaps = self.detect_gaps_in_file(file_path)
             total_files += 1
 
             if gaps:
+    pass
+    pass
                 total_files_with_gaps += 1
                 total_gaps += len(gaps)
 
                 for _i, gap in enumerate(gaps):
+    pass
+    pass
     pass  # TODO: Add proper implementation
                     result = await self.fill_gap_until_complete(gap, symbol)
                     total_calls += result.get("calls_made", 0)
 
                     if result["success"]:
+    pass
+    pass
                         total_filled += 1
                     else:
                         total_failed += 1
@@ -293,6 +357,8 @@ class CleanGapFiller:
         # Summary
 
         if total_gaps > 0:
+    pass
+    pass
             (total_filled / total_gaps) * 100
 
 
@@ -301,9 +367,15 @@ async def main() -> None:
     gap_filler = CleanGapFiller()
     try:
         await gap_filler.process_all_gaps()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     finally:
         await gap_filler.close_session()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

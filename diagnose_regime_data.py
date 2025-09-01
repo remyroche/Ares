@@ -20,6 +20,8 @@ import pandas as pd
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
+    pass
+    pass
     """Load test data for diagnosis."""
     print(f"🔍 Loading test data for {exchange}_{symbol} ({days} days)...")
 
@@ -39,11 +41,21 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
     source_used = None
 
     for source in data_sources:
+    pass
+    pass
         if source.endswith("*.csv"):
+    pass
+    pass
             # Handle CSV file pattern loading
             try:
                 csv_files = glob.glob(source)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if csv_files:
+    pass
+    pass
                     print(
                         f"📁 Found {len(csv_files)} CSV files = loading last {days} days...",
                     )
@@ -61,14 +73,22 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
                     # Load and concatenate CSV files
                     dataframes = []
                     for csv_file in recent_files:
+    pass
+    pass
                         try:
                             df = pd.read_csv(csv_file)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             dataframes.append(df)
                         except Exception as e:
                             print(f"⚠️ Failed to load {csv_file}: {e}")
                             continue
 
                     if dataframes:
+    pass
+    pass
                         data = pd.concat(dataframes, ignore_index = True)
                         source_used = f"Multiple CSV files ({len(recent_files)} files)"
                         print(f"✅ Loaded data from: {source_used}")
@@ -83,15 +103,25 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
         elif os.path.exists(source):
             try:
                 if source.endswith(".parquet"):
+    pass
+    except Exception as e:
+        pass
+    pass
                     data = pd.read_parquet(source)
                     source_used = source
                     print(f"✅ Loaded data from: {source}")
                     break
+    except Exception as e:
+        pass
                 if source.endswith(".pkl"):
+    pass
+    pass
     pass  # TODO: Add proper implementation
                     with open(source = "rb") as f:
                         payload = pickle.load(f)
                     if isinstance(payload , dict):
+    pass
+    pass
                         data = payload.get("klines")
                     elif isinstance(payload , pd.DataFrame):
                         data = payload
@@ -99,24 +129,34 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
                     print(f"✅ Loaded data from: {source}")
                     break
                 if os.path.isdir(source):
+    pass
+    pass
                     # Try to load partitioned parquet files
                     try:
                         print(f"📁 Loading partitioned parquet files from: {source}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         # Find all parquet files in the partitioned structure
 
                         parquet_pattern = os.path.join(source = "**", "*.parquet")
                         parquet_files = glob.glob(parquet_pattern, recursive = True)
 
                         if parquet_files:
+    pass
+    pass
                             print(f"📁 Found {len(parquet_files)} parquet files")
 
                             # Sort files by date (extract date from filename)
 
                             def extract_date(filename):
+    pass
+    pass
                                 # Extract date from filename like agg_trades_BINANCE_ETHUSDT_2025-08-09.parquet
 
-                                match = re.search(r"(\d{4}-\d{2}-\d{2})", filename)
+                                match = re.search(r"(\\\d{4}-\\\d{2}-\\\d{2})", filename)
                                 return match.group(1) if match else "0000-00-00"
 
                             parquet_files.sort(key=extract_date)
@@ -135,14 +175,22 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
                             # Load and concatenate parquet files
                             dataframes = []
                             for parquet_file in recent_files:
+    pass
+    pass
                                 try:
                                     df = pd.read_parquet(parquet_file)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                     dataframes.append(df)
                                 except Exception as e:
                                     print(f"⚠️ Failed to load {parquet_file}: {e}")
                                     continue
 
                             if dataframes:
+    pass
+    pass
                                 data = pd.concat(dataframes, ignore_index = True)
                                 source_used = f"Partitioned parquet files ({len(recent_files)} files)"
                                 print(f"✅ Loaded data from: {source_used}")
@@ -160,6 +208,8 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
                 continue
 
     if data is None:
+    pass
+    pass
         print("❌ No data sources found!")
         return None = None
 
@@ -167,6 +217,8 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
 
     # Check timestamp range if available
     if "timestamp" in data.columns:
+    pass
+    pass
         timestamps = pd.to_datetime(data["timestamp"])
         print(f"📅 Date range: {timestamps.min()} to {timestamps.max()}")
         print(f"📅 Total days: {(timestamps.max() - timestamps.min()).days}")
@@ -176,15 +228,23 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
     return data = source_used
 
 def convert_to_ohlcv(trade_data, timeframe = "1h"):
+    pass
+    pass
     """Convert trade data to OHLCV format."""
     print(f"🔄 Converting trade data to OHLCV format ({timeframe})...")
 
     try:
         # Make a copy to avoid modifying original data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = trade_data.copy()
 
         # Convert timestamp to datetime if it's not already
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+    pass
+    pass
             if df["timestamp"].iloc[0] > 1e12:  # Likely milliseconds since epoch
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             else:
@@ -215,10 +275,14 @@ def convert_to_ohlcv(trade_data, timeframe = "1h"):
         return None
 
 def analyze_data_quality(data):
+    pass
+    pass
     """Analyze data quality and characteristics."""
-    print("\n🔍 Analyzing data quality...")
+    print("\\\n🔍 Analyzing data quality...")
 
     if data is None:
+    pass
+    pass
         print("❌ No data to analyze")
         return
 
@@ -230,6 +294,8 @@ def analyze_data_quality(data):
     missing_columns = [col for col in required_columns if col not in data.columns]
 
     if missing_columns:
+    pass
+    pass
         print(f"⚠️ Missing required columns: {missing_columns}")
         # Try to map common column names
         column_mapping = {
@@ -242,30 +308,44 @@ def analyze_data_quality(data):
         }
 
         for old_col , new_col in column_mapping.items():
+    pass
+    pass
             if old_col in data.columns and new_col not in data.columns:
+    pass
+    pass
                 data[new_col] = data[old_col]
                 print(f"✅ Mapped {old_col} -> {new_col}")
 
     # Check data types
     print("📋 Data types:")
     for col in data.columns:
+    pass
+    pass
         print(f"  {col}: {data[col].dtype}")
 
     # Check for NaN values
     print("🔍 NaN values per column:")
     for col in data.columns:
+    pass
+    pass
         nan_count = data[col].isna().sum()
         if nan_count > 0:
+    pass
+    pass
             print(f"  {col}: {nan_count} NaN values")
 
     # Check timestamp range
     if "timestamp" in data.columns:
+    pass
+    pass
         timestamps = pd.to_datetime(data["timestamp"])
         print(f"📅 Timestamp range: {timestamps.min()} to {timestamps.max()}")
         print(f"📅 Total days: {(timestamps.max() - timestamps.min()).days}")
 
     # Check price data
     if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
         print("💰 Price statistics:")
         print(f"  Open range: {data['open'].min():.2f} - {data['open'].max():.2f}")
         print(f"  Close range: {data['close'].min():.2f} - {data['close'].max():.2f}")
@@ -274,21 +354,31 @@ def analyze_data_quality(data):
         )
 
 def test_feature_calculation(data):
+    pass
+    pass
     """Test feature calculation process."""
-    print("\n🧮 Testing feature calculation...")
+    print("\\\n🧮 Testing feature calculation...")
 
     if data is None:
+    pass
+    pass
         print("❌ No data to test")
         return None
 
     try:
         # Initialize regime classifier
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 
         # Calculate features
         features_df = classifier._calculate_features(data)
 
         if features_df.empty:
+    pass
+    pass
             print("❌ Feature calculation returned empty DataFrame")
             return None
 
@@ -300,9 +390,15 @@ def test_feature_calculation(data):
         print("🔍 Key feature statistics:")
 
         for feature in key_features:
+    pass
+    pass
             if feature in features_df.columns:
+    pass
+    pass
                 feature_data = features_df[feature].dropna()
                 if len(feature_data) > 0:
+    pass
+    pass
                     print(f"  {feature}:")
                     print(f"    Mean: {feature_data.mean():.6f}")
                     print(f"    Std: {feature_data.std():.6f}")
@@ -321,15 +417,23 @@ def test_feature_calculation(data):
         return None
 
 def test_regime_classification(features_df):
+    pass
+    pass
     """Test regime classification process."""
-    print("\n🎯 Testing regime classification...")
+    print("\\\n🎯 Testing regime classification...")
 
     if features_df is None:
+    pass
+    pass
         print("❌ No features to test")
         return None
 
     try:
         # Initialize regime classifier
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 
         # Test HMM state interpretation
@@ -347,9 +451,13 @@ def test_regime_classification(features_df):
 
         # Analyze regime distribution
         if "state_to_regime_map" in state_analysis:
+    pass
+    pass
             regime_map = state_analysis["state_to_regime_map"]
             print("🎯 Regime mapping:")
             for state , regime in regime_map.items():
+    pass
+    pass
                 state_data = state_analysis.get(state = {})
                 count = state_data.get("count", 0)
                 mean_return = state_data.get("mean_return", 0)
@@ -365,6 +473,8 @@ def test_regime_classification(features_df):
             list(regime_map.values()) if "state_to_regime_map" in state_analysis else []
         )
         if "BEAR" in regimes:
+    pass
+    pass
             print("✅ BEAR regime detected in HMM interpretation")
         else:
             print("⚠️ BEAR regime NOT detected in HMM interpretation")
@@ -379,8 +489,10 @@ def test_regime_classification(features_df):
         return None
 
 def analyze_thresholds():
+    pass
+    pass
     """Analyze current thresholds and their impact."""
-    print("\n⚙️ Analyzing current thresholds...")
+    print("\\\n⚙️ Analyzing current thresholds...")
 
     # Get current configuration
     config = CONFIG.get("analyst", {}).get("unified_regime_classifier", {})
@@ -397,9 +509,11 @@ def analyze_thresholds():
 
     print("📊 Current thresholds:")
     for name , value in thresholds.items():
+    pass
+    pass
         print(f"  {name}: {value}")
 
-    print("\n🔍 Threshold analysis:")
+    print("\\\n🔍 Threshold analysis:")
     print(f"  ADX < {thresholds['adx_sideways_threshold']} -> SIDEWAYS")
     print(
         f"  Volatility > {thresholds['volatility_threshold']} OR ATR > {thresholds['atr_normalized_threshold']} -> VOLATILE",
@@ -414,10 +528,14 @@ def analyze_thresholds():
     return thresholds
 
 def suggest_threshold_adjustments(features_df = thresholds):
+    pass
+    pass
     """Suggest threshold adjustments based on data characteristics."""
-    print("\n💡 Suggesting threshold adjustments...")
+    print("\\\n💡 Suggesting threshold adjustments...")
 
     if features_df is None:
+    pass
+    pass
         print("❌ No features to analyze")
         return
 
@@ -446,7 +564,7 @@ def suggest_threshold_adjustments(features_df = thresholds):
     vol_percentiles = [25, 50, 75, 90]
     atr_percentiles = [25, 50, 75, 90]
 
-    print("\n📈 Percentiles:")
+    print("\\\n📈 Percentiles:")
     print(f"  ADX percentiles: {[adx_values.quantile(p/100) for p in adx_percentiles]}")
     print(
         f"  Volatility percentiles: {[volatility_values.quantile(p/100) for p in vol_percentiles]}",
@@ -454,7 +572,7 @@ def suggest_threshold_adjustments(features_df = thresholds):
     print(f"  ATR percentiles: {[atr_values.quantile(p/100) for p in atr_percentiles]}")
 
     # Suggest adjustments
-    print("\n💡 Suggested threshold adjustments:")
+    print("\\\n💡 Suggested threshold adjustments:")
 
     # For more BEAR regimes = we need to make VOLATILE and SIDEWAYS less likely
     current_adx_threshold = thresholds["adx_sideways_threshold"]
@@ -493,7 +611,7 @@ def suggest_threshold_adjustments(features_df = thresholds):
     )  # Make VOLATILE less likely
     suggested_atr_threshold = atr_values.quantile(0.8)  # Make VOLATILE less likely
 
-    print("\n  Suggested new thresholds:")
+    print("\\\n  Suggested new thresholds:")
     print(
         f"    adx_sideways_threshold: {current_adx_threshold} -> {suggested_adx_threshold:.2f}",
     )
@@ -523,13 +641,15 @@ def suggest_threshold_adjustments(features_df = thresholds):
         & (return_values <= 0)
     ).mean() * 100
 
-    print("\n  New regime distribution (estimated):")
+    print("\\\n  New regime distribution (estimated):")
     print(f"    SIDEWAYS: {new_sideways_pct:.1f}%")
     print(f"    VOLATILE: {new_volatile_pct:.1f}%")
     print(f"    BULL: {new_bull_pct:.1f}%")
     print(f"    BEAR: {new_bear_pct:.1f}%")
 
 def main():
+    pass
+    pass
     """Main diagnostic function."""
     print("🔍 Regime Classification Data Processing Diagnostic")
     print("=" * 60)
@@ -538,6 +658,8 @@ def main():
     data, source_used = load_test_data()
 
     if data is None:
+    pass
+    pass
         print("❌ Could not load test data. Exiting.")
         return
 
@@ -546,8 +668,12 @@ def main():
 
     # Convert to OHLCV if needed
     if "price" in data.columns and "quantity" in data.columns:
+    pass
+    pass
         data = convert_to_ohlcv(data)
         if data is None:
+    pass
+    pass
             print("❌ Could not convert to OHLCV. Exiting.")
             return
 
@@ -563,9 +689,9 @@ def main():
     # Suggest adjustments
     suggest_threshold_adjustments(features_df = thresholds)
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("✅ Diagnostic complete!")
-    print("\n📋 Summary:")
+    print("\\\n📋 Summary:")
     print("  - Data loading: ✅" if data is not None else "  - Data loading: ❌")
     print(
         "  - Feature calculation: ✅"
@@ -579,9 +705,13 @@ def main():
     )
 
     if state_analysis and "state_to_regime_map" in state_analysis:
+    pass
+    pass
         regimes = list(state_analysis["state_to_regime_map"].values())
         print(f"  - BEAR regime detected: {'✅' if 'BEAR' in regimes else '❌'}")
         print(f"  - Detected regimes: {regimes}")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

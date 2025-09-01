@@ -16,6 +16,7 @@ from src.training.steps.step1.data_gap_detector import DataGapDetector
 from src.training.steps.step1.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -54,6 +55,10 @@ async def fix_specific_files_gaps(
 
     try:
         # Step 1: Detect all gaps
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("📊 STEP 1: DETECTING CURRENT GAPS")
         logger.info("-" * 60)
 
@@ -64,6 +69,8 @@ async def fix_specific_files_gaps(
 
         # Filter gaps for target files if specified
         if target_files:
+    pass
+    pass
             target_gaps = [gap for gap in all_gaps if gap["file"] in target_files]
             logger.info(
                 f"🎯 Filtering to {len(target_gaps)} gaps in target files: {target_files}"
@@ -72,14 +79,20 @@ async def fix_specific_files_gaps(
             target_gaps = all_gaps
 
         if not target_gaps:
+    pass
+    pass
             logger.info("✅ No gaps found in target files")
             return results
 
         # Group gaps by file
         gaps_by_file = {}
         for gap in target_gaps:
+    pass
+    pass
             file_name = gap["file"]
             if file_name not in gaps_by_file:
+    pass
+    pass
                 gaps_by_file[file_name] = []
             gaps_by_file[file_name].append(gap)
 
@@ -88,11 +101,17 @@ async def fix_specific_files_gaps(
         logger.info("-" * 60)
 
         for file_name, file_gaps in gaps_by_file.items():
+    pass
+    pass
             logger.info(f"🔧 Processing {file_name}: {len(file_gaps)} gaps")
             results["files_processed"] += 1
 
             try:
                 # Attempt to fill gaps for this file
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 fill_results = await gap_filler.fill_aggtrades_gaps(
                     symbol, exchange, file_gaps
                 )
@@ -101,6 +120,8 @@ async def fix_specific_files_gaps(
                 results["failed_fixes"] += fill_results["failed_gaps"]
 
                 if fill_results["errors"]:
+    pass
+    pass
                     results["errors"].extend(fill_results["errors"])
 
                 logger.info(
@@ -140,10 +161,14 @@ async def fix_specific_files_gaps(
         )
 
         if results["errors"]:
+    pass
+    pass
             logger.warning(f"⚠️ {len(results['errors'])} errors occurred:")
             for error in results["errors"][:5]:  # Show first 5 errors
                 logger.warning(f"   • {error}")
             if len(results["errors"]) > 5:
+    pass
+    pass
                 logger.warning(f"   • ... and {len(results['errors']) - 5} more errors")
 
         results["improvement_rate"] = improvement_rate
@@ -178,6 +203,8 @@ async def main():
 
     # Success check
     if results["improvement_rate"] > 50:
+    pass
+    pass
         logger.info("🎉 SUCCESS: Significant improvement achieved!")
         return True
     elif results["improvement_rate"] > 0:
@@ -189,6 +216,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = asyncio.run(main())
-    print(f"\nScript completed with {'success' if success else 'limited success'}")
+    print(f"\\\nScript completed with {'success' if success else 'limited success'}")
     sys.exit(0 if success else 1)

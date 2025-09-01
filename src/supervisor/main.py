@@ -16,6 +16,7 @@ from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.state_manager import StateManager
 
+import class Supervisor:
 class Supervisor:
     """
     The central real-time orchestrator of the Ares Trading Bot.
@@ -51,6 +52,8 @@ class Supervisor:
         # Determine the actual trading client (PaperTrader or live exchange_client)
         env_settings = get_environment_settings()
         if env_settings.trading_environment == "PAPER":
+    pass
+    pass
             self.trader = PaperTrader(
                 symbol=self.symbol, exchange_name=self.exchange_name,
                 config=self.config
@@ -83,6 +86,8 @@ class Supervisor:
 
         # Initialize the core real-time components, getting instances from ModelManager
         if self.trader:
+    pass
+    pass
             self.sentinel = Sentinel(
                 self.trader, self.state_manager,
             )  # Sentinel needs the real trader
@@ -100,6 +105,8 @@ class Supervisor:
             # This is a critical point for dependency injection.
             # For the training pipeline, these are mostly placeholders.
             if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
+    pass
+    pass
                 self.analyst.exchange = self.trader
             if (
                 hasattr(self.analyst, "state_manager")
@@ -119,6 +126,8 @@ class Supervisor:
                 self.strategist.state_manager = self.state_manager
 
             if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
+    pass
+    pass
                 self.tactician.exchange = self.trader
             if (
                 hasattr(self.tactician, "state_manager")
@@ -178,6 +187,8 @@ class Supervisor:
                 ],
             )
             if isinstance(self.trader, PaperTrader):
+    pass
+    pass
                 tasks.append(
                     asyncio.create_task(
                         self.trader.run_simulation(),
@@ -193,6 +204,10 @@ class Supervisor:
 
         try:
             await asyncio.gather(*tasks)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except asyncio.CancelledError:
             self.logger.info(
                 "Supervisor tasks cancelled. Beginning graceful shutdown...",
@@ -200,11 +215,17 @@ class Supervisor:
         finally:
             self.running = False
             for task in tasks:
+    pass
+    pass
                 if not task.done():
+    pass
+    pass
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
             if self.trader and hasattr(self.trader, "close"):
+    pass
+    pass
                 await self.trader.close()
             self.state_manager._save_state_to_file()  # Call internal save method
             self.logger.info(
@@ -223,10 +244,16 @@ class Supervisor:
         """
         try:
             # 1. Update account equity and peak equity
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             account_info = await self.trader.get_account_info()  # Use self.trader
             current_equity = float(account_info.get("totalWalletBalance", 0))
 
             if current_equity > 0:
+    pass
+    pass
                 self.state_manager.set_state("account_equity", current_equity)
                 self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
 
@@ -234,6 +261,8 @@ class Supervisor:
                     "global_peak_equity",
                 )  # Use global_peak_equity from state
                 if current_equity > peak_equity:
+    pass
+    pass
                     self.state_manager.set_state("global_peak_equity", current_equity)
                     self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
             else:
@@ -245,6 +274,8 @@ class Supervisor:
             active_position_on_exchange = None
 
             for position in open_positions:
+    pass
+    pass
                 if (
                     position.get("symbol") == symbol
                     and float(position.get("positionAmt", 0)) != 0
@@ -295,6 +326,8 @@ class Supervisor:
 
             # Only update if there's a meaningful change or new position found
             if active_position_on_exchange != current_state_position:
+    pass
+    pass
                 self.logger.info(
                     f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}",
                 )
@@ -315,6 +348,8 @@ class MainSupervisor:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("MainSupervisor")
         self.is_running: bool = False
@@ -336,8 +371,14 @@ class MainSupervisor:
     async def initialize(self) -> bool:
         try:
             self.logger.info("Initializing Main Supervisor...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
+    pass
+    pass
                 self.logger.error("Invalid configuration for main supervisor")
                 return False
             self.logger.info("✅ Main Supervisor initialization completed successfully")
@@ -354,6 +395,10 @@ class MainSupervisor:
     async def _load_supervisor_configuration(self) -> None:
         try:
             self.supervisor_config.setdefault("run_interval", 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.supervisor_config.setdefault("max_history", 100)
             self.run_interval = self.supervisor_config["run_interval"]
             self.max_history = self.supervisor_config["max_history"]
@@ -367,11 +412,21 @@ class MainSupervisor:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         try:
             if self.run_interval <= 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error("Invalid run interval")
                 return False
+    except Exception as e:
+        pass
             if self.max_history <= 0:
+    pass
+    pass
                 self.logger.error("Invalid max history")
                 return False
             self.logger.info("Configuration validation successful")
@@ -390,6 +445,10 @@ class MainSupervisor:
     async def run(self) -> bool:
         try:
             self.is_running = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🚦 Main Supervisor started.")
             while self.is_running:
                 await self._supervise()
@@ -408,9 +467,15 @@ class MainSupervisor:
     async def _supervise(self) -> None:
         try:
             now = datetime.now().isoformat()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": now, "status": "running"}
             self.history.append(self.status.copy())
             if len(self.history) > self.max_history:
+    pass
+    pass
                 self.history.pop(0)
             self.logger.info(f"Main Supervisor tick at {now}")
         except Exception as e:
@@ -425,17 +490,27 @@ class MainSupervisor:
         self.logger.info("🛑 Stopping Main Supervisor...")
         try:
             self.is_running = False
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Main Supervisor stopped successfully")
         except Exception as e:
             self.logger.error(f"Error stopping main supervisor: {e}")
 
     def get_status(self) -> dict[str, Any]:
+    pass
+    pass
         return self.status.copy()
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         history = self.history.copy()
         if limit:
+    pass
+    pass
             history = history[-limit:]
         return history
 
@@ -451,11 +526,19 @@ async def setup_main_supervisor(
 ) -> MainSupervisor | None:
     try:
         global main_supervisor
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {"main_supervisor": {"run_interval": 60, "max_history": 100}}
         main_supervisor = MainSupervisor(config)
         success = await main_supervisor.initialize()
         if success:
+    pass
+    pass
             return main_supervisor
         return None
     except Exception as e:

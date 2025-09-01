@@ -9,6 +9,7 @@ import numpy as np
 from .base_types import ConfidenceLevel, ModelId, Score, Symbol, Timestamp
 
 # Type aliases for ML data structures
+import FeatureArray = np.ndarray
 FeatureArray = np.ndarray
 TargetArray = np.ndarray
 PredictionArray = np.ndarray

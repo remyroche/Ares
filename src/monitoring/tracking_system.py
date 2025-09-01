@@ -11,6 +11,7 @@ from enum import Enum
 from src.utils.logger import system_logger
 
 
+import class TrackingType
 class TrackingType(Enum):
     ENSEMBLE_DECISION , "ensemble_decision"
     REGIME_ANALYSIS = "regime_analysis"
@@ -23,6 +24,8 @@ class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config , config
         self.logger = system_logger.getChild("TrackingSystem")
 

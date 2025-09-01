@@ -6,11 +6,13 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     warning,
@@ -24,6 +26,8 @@ class ImprovedPipelineExecutor:
     """
 
     def __init__(self, pipeline_components: Dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize improved pipeline executor.
 
@@ -64,8 +68,14 @@ class ImprovedPipelineExecutor:
         try:
             self.logger.info("Initializing Improved Pipeline Executor...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate components
             if not self._validate_components():
+    pass
+    pass
                 self.logger.error("Invalid pipeline components")
                 return False
 
@@ -82,16 +92,28 @@ class ImprovedPipelineExecutor:
         context="component validation",
     )
     def _validate_components(self) -> bool:
+    pass
+    pass
         """Validate that all required components are available."""
         try:
             required_components = ["analyst", "strategist", "tactician", "dual_model_system"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             missing_components = []
 
             for component_name in required_components:
+    pass
+    pass
                 if not getattr(self, component_name):
+    pass
+    pass
                     missing_components.append(component_name)
 
             if missing_components:
+    pass
+    pass
                 self.logger.error(f"Missing required components: {missing_components}")
                 return False
 
@@ -124,18 +146,28 @@ class ImprovedPipelineExecutor:
         """
         try:
             if self.exchange_client:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Try to get real market data
                 try:
                     market_data = await self.exchange_client.get_klines(
                         symbol=symbol,
                         interval=timeframe,
                         limit=limit
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     )
                     current_price = float(market_data["close"].iloc[-1]) if not market_data.empty else 100.0
                     self.logger.info(f"Retrieved real market data for {symbol}")
                 except Exception as e:
                     self.logger.warning(f"Error fetching real market data: {e}, using mock data")
                     market_data, current_price = self._generate_mock_market_data(limit)
+    except Exception as e:
+        pass
             else:
                 # Generate mock data
                 market_data, current_price = self._generate_mock_market_data(limit)
@@ -153,6 +185,8 @@ class ImprovedPipelineExecutor:
             return None
 
     def _generate_mock_market_data(self, limit: int) -> tuple[pd.DataFrame, float]:
+    pass
+    pass
         """Generate mock market data for testing."""
         import numpy as np
 
@@ -160,6 +194,8 @@ class ImprovedPipelineExecutor:
         base_price = 100.0
         prices = []
         for i in range(limit):
+    pass
+    pass
             # Add some realistic price movement
             change = np.random.normal(0, 0.5)  # 0.5% standard deviation
             price = base_price * (1 + change / 100)
@@ -200,6 +236,10 @@ class ImprovedPipelineExecutor:
         try:
             self.logger.info("📊 Executing Step 1: Market Analysis")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Prepare analysis input
             analysis_input = {
                 "symbol": market_context["symbol"],
@@ -216,6 +256,8 @@ class ImprovedPipelineExecutor:
             analysis_result = await self.analyst.execute_analysis(analysis_input)
 
             if analysis_result:
+    pass
+    pass
                 self.logger.info("✅ Step 1: Market Analysis completed successfully")
                 return {
                     "step": 1,
@@ -268,6 +310,10 @@ class ImprovedPipelineExecutor:
         try:
             self.logger.info("🧠 Executing Step 2: Strategy Development")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Execute strategy generation with analysis results
             strategy_result = await self.strategist.generate_strategy(
                 market_data=market_context["market_data"],
@@ -276,6 +322,8 @@ class ImprovedPipelineExecutor:
             )
 
             if strategy_result:
+    pass
+    pass
                 self.logger.info("✅ Step 2: Strategy Development completed successfully")
 
                 # Log strategy details
@@ -337,6 +385,10 @@ class ImprovedPipelineExecutor:
         try:
             self.logger.info("🎯 Executing Step 3: Tactical Execution")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Prepare tactical input with context from previous steps
             tactical_input = {
                 "market_data": market_context["market_data"],
@@ -347,12 +399,16 @@ class ImprovedPipelineExecutor:
 
             # Update tactician with strategy context if method exists
             if hasattr(self.tactician, 'update_strategy_context'):
+    pass
+    pass
                 await self.tactician.update_strategy_context(tactical_input)
 
             # Execute tactical decisions
             tactical_result = await self.tactician.run()
 
             if tactical_result:
+    pass
+    pass
                 self.logger.info("✅ Step 3: Tactical Execution completed successfully")
                 return {
                     "step": 3,
@@ -410,6 +466,10 @@ class ImprovedPipelineExecutor:
         try:
             self.logger.info("🤖 Executing Step 4: Dual Model System Decision Making")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Make trading decision with enhanced context
             decision_result = await self.dual_model_system.make_trading_decision(
                 market_data=market_context["market_data"],
@@ -418,6 +478,8 @@ class ImprovedPipelineExecutor:
             )
 
             if decision_result:
+    pass
+    pass
                 self.logger.info("✅ Step 4: Dual Model Decision completed successfully")
 
                 # Integrate with tactician for position sizing and leverage
@@ -437,6 +499,8 @@ class ImprovedPipelineExecutor:
 
                 # Check for model training trigger
                 if self.dual_model_system.should_trigger_training():
+    pass
+    pass
                     self.logger.info("   🔄 Model training conditions met - triggering training...")
                     training_result = await self.dual_model_system.trigger_model_training(
                         market_data=market_context["market_data"],
@@ -444,6 +508,8 @@ class ImprovedPipelineExecutor:
                     )
 
                     if training_result.get("success", False):
+    pass
+    pass
                         self.logger.info("   ✅ Model training completed successfully")
                     else:
                         self.logger.warning(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
@@ -497,8 +563,14 @@ class ImprovedPipelineExecutor:
         """
         try:
             if not self.tactician or not dual_model_decision:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "Tactician or dual model decision not available"}
 
+    except Exception as e:
+        pass
             # Extract confidence scores
             analyst_confidence = dual_model_decision.get("analyst_confidence", 0.5)
             tactician_confidence = dual_model_decision.get("tactician_confidence", 0.5)
@@ -507,6 +579,8 @@ class ImprovedPipelineExecutor:
             # Integrate strategy results if available
             strategy_position_size = 0.0
             if strategy_results:
+    pass
+    pass
                 strategy_position_size = strategy_results.get("position_size", 0.0)
                 strategy_confidence = strategy_results.get("confidence", 0.5)
                 final_confidence = (final_confidence + strategy_confidence) / 2
@@ -536,6 +610,8 @@ class ImprovedPipelineExecutor:
             position_size_result = {"final_position_size": strategy_position_size, "error": "Position sizer not available"}
             position_sizer = getattr(self.tactician, "position_sizer", None)
             if position_sizer:
+    pass
+    pass
                 position_size_result = await position_sizer.calculate_position_size(
                     ml_predictions=ml_predictions,
                     current_price=market_context["current_price"],
@@ -549,6 +625,8 @@ class ImprovedPipelineExecutor:
             leverage_result = {"final_leverage": 1.0, "error": "Leverage sizer not available"}
             leverage_sizer = getattr(self.tactician, "leverage_sizer", None)
             if leverage_sizer:
+    pass
+    pass
                 leverage_result = await leverage_sizer.calculate_leverage(
                     ml_predictions=ml_predictions,
                     current_price=market_context["current_price"],
@@ -606,6 +684,10 @@ class ImprovedPipelineExecutor:
         """
         try:
             self.cycle_count += 1
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             cycle_start = datetime.now()
 
             self.logger.info(f"🔄 Starting complete pipeline execution - Cycle {self.cycle_count}")
@@ -613,6 +695,8 @@ class ImprovedPipelineExecutor:
             # Step 0: Get market data
             market_context = await self._get_market_data(symbol)
             if not market_context:
+    pass
+    pass
                 self.logger.error("Failed to get market data")
                 return None
 
@@ -647,6 +731,8 @@ class ImprovedPipelineExecutor:
             # Store in history
             self.cycle_history.append(cycle_results)
             if len(self.cycle_history) > self.max_history_size:
+    pass
+    pass
                 self.cycle_history = self.cycle_history[-self.max_history_size:]
 
             self.logger.info(f"✅ Complete pipeline execution finished - Cycle {self.cycle_count}")
@@ -657,13 +743,19 @@ class ImprovedPipelineExecutor:
             return None
 
     def _determine_overall_status(self, step_results: List[Optional[Dict[str, Any]]]) -> str:
+    pass
+    pass
         """Determine overall pipeline status based on step results."""
         if not step_results:
+    pass
+    pass
             return "error"
 
         statuses = [result.get("status", "error") if result else "error" for result in step_results]
 
         if all(status == "success" for status in statuses):
+    pass
+    pass
             return "success"
         elif any(status == "error" for status in statuses):
             return "error"
@@ -671,13 +763,19 @@ class ImprovedPipelineExecutor:
             return "warning"
 
     def get_cycle_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Get cycle history."""
         history = self.cycle_history.copy()
         if limit:
+    pass
+    pass
             history = history[-limit:]
         return history
 
     def get_pipeline_status(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get current pipeline status."""
         return {
             "cycle_count": self.cycle_count,

@@ -52,15 +52,23 @@ class RollingMTInference:
         self.feature_names: list[str] = []
 
     def load(self) -> bool:
+    pass
+    pass
         try:
             models, meta, feat = MultiTaskRandomForest.load(
                 self.models_dir, prefix=self.prefix,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.models = models
             self.thresholds = meta.get("thresholds", {})
             self.reliability = meta.get("reliability", {})
             self.feature_names = feat
             if not self.models:
+    pass
+    pass
                 self.logger.warning("No models loaded for rolling inference")
                 return False
             return True
@@ -69,6 +77,8 @@ class RollingMTInference:
             return False
 
     def _rf_pooled_features(self, seq_df: pd.DataFrame) -> dict[str, float]:
+    pass
+    pass
         out: dict[str, float] = {}
         for col in [
             "log_returns",
@@ -85,16 +95,24 @@ class RollingMTInference:
             "volatility_acceleration",
         ]:
             if col in seq_df.columns:
+    pass
+    pass
                 s = pd.to_numeric(seq_df[col], errors="coerce")
                 out[f"mean_{col}"] = float(np.nanmean(s.values))
                 out[f"std_{col}"] = float(np.nanstd(s.values))
         return out
 
     def _build_X_last(self, combined_df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         if combined_df is None or combined_df.empty:
+    pass
+    pass
             return pd.DataFrame(columns=self.feature_names)
         pre = self.cfg.pre_window
         if len(combined_df) < pre + 1:
+    pass
+    pass
             return pd.DataFrame(columns=self.feature_names)
         seq = combined_df.iloc[-pre:]
         rf = self._rf_pooled_features(seq)
@@ -110,8 +128,14 @@ class RollingMTInference:
     ) -> float:
         try:
             if head == "path_class" and cls is not None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 scale = float(self.reliability.get("path_class", {}).get(cls, 1.0))
                 return float(np.clip(value * scale, 0.0, 1.0))
+    except Exception as e:
+        pass
             scale = float(self.reliability.get(head, {}).get("positive_scale", 1.0))
             return float(np.clip(value * scale, 0.0, 1.0))
         except Exception:
@@ -125,14 +149,24 @@ class RollingMTInference:
     ) -> float:
         try:
             if head == "path_class" and cls is not None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return float(self.thresholds.get("path_class", {}).get(cls, default))
+    except Exception as e:
+        pass
             return float(self.thresholds.get(head, default))
         except Exception:
             return float(default)
 
     def predict_latest(self, combined_df: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         X = self._build_X_last(combined_df)
         if X.empty:
+    pass
+    pass
             return {"ready": False}
         out: dict[str, Any] = {"ready": True}
 
@@ -140,10 +174,18 @@ class RollingMTInference:
         pc = self.models.get("path_class")
         p_path: dict[str, float] = {}
         if pc is not None:
+    pass
+    pass
             try:
                 proba = pc.predict_proba(X)[0]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 classes = list(getattr(pc, "classes_", []))
                 for i, c in enumerate(classes):
+    pass
+    pass
                     p_adj = self._apply_reliability(
                         "path_class",
                         float(proba[i]),
@@ -153,6 +195,8 @@ class RollingMTInference:
                 # Optionally normalize
                 s = float(sum(p_path.values()))
                 if s > 0:
+    pass
+    pass
                     p_path = {k: v / s for k, v in p_path.items()}
             except Exception:
                 pass
@@ -160,29 +204,47 @@ class RollingMTInference:
 
         # Heads: onset / end
         for head in ("onset_beginning", "end_trend"):
+    pass
+    pass
             mdl = self.models.get(head)
             if mdl is None:
+    pass
+    pass
                 continue
             try:
                 p = float(mdl.predict_proba(X)[0, 1])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 out[f"p_{head}"] = self._apply_reliability(head, p)
             except Exception:
                 continue
 
         # Direction and returns per first horizon
         if self.cfg.horizons:
+    pass
+    pass
             H = int(self.cfg.horizons[0])
             head = f"direction_up_{H}"
             mdl = self.models.get(head)
             if mdl is not None:
+    pass
+    pass
                 try:
                     p = float(mdl.predict_proba(X)[0, 1])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     out[f"p_direction_up_{H}"] = self._apply_reliability(head, p)
                 except Exception:
                     pass
             reg_head = f"return_{H}"
             rmdl = self.models.get(reg_head)
             if rmdl is not None:
+    pass
+    pass
                 with contextlib.suppress(Exception):
                     out[f"return_{H}"] = float(rmdl.predict(X)[0])
             out["horizon"] = H
@@ -190,11 +252,19 @@ class RollingMTInference:
         # Next regime (multiclass)
         nr = self.models.get("next_regime")
         if nr is not None:
+    pass
+    pass
             try:
                 proba = nr.predict_proba(X)[0]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 classes = list(getattr(nr, "classes_", []))
                 p_nr = {}
                 for i, c in enumerate(classes):
+    pass
+    pass
                     p_adj = self._apply_reliability(
                         "next_regime",
                         float(proba[i]),
@@ -203,6 +273,8 @@ class RollingMTInference:
                     p_nr[str(c)] = p_adj
                 s = float(sum(p_nr.values()))
                 if s > 0:
+    pass
+    pass
                     p_nr = {k: v / s for k, v in p_nr.items()}
                 out["p_next_regime"] = p_nr
             except Exception:
@@ -215,17 +287,25 @@ class RollingMTInference:
         fav = 0.0
         fav_thr = 0.6
         for cls in ["beginning_of_trend", "continuation"]:
+    pass
+    pass
             p = float(p_path.get(cls, 0.0))
             thr = self._get_threshold("path_class", cls, default=0.6)
             if p >= thr and p > fav:
+    pass
+    pass
                 allow = True
                 trigger = cls
                 fav = p
                 fav_thr = thr
         if not allow and "p_onset_beginning" in out:
+    pass
+    pass
             p_onset = float(out.get("p_onset_beginning", 0.0))
             thr_onset = self._get_threshold("onset_beginning", default=0.6)
             if p_onset >= thr_onset:
+    pass
+    pass
                 allow = True
                 trigger = "onset_beginning"
                 fav = p_onset
@@ -238,11 +318,15 @@ class RollingMTInference:
         mult = 1.0
         H = out.get("horizon")
         if H is not None:
+    pass
+    pass
             p_up = float(out.get(f"p_direction_up_{H}", 0.0))
             thr_up = self._get_threshold(f"direction_up_{H}", default=0.6)
             side = "long" if p_up >= thr_up else "short"
             # reinforcement: scale between 0.5 and 2.0 based on how far above threshold fav is
             if allow and fav_thr < 1.0:
+    pass
+    pass
                 mult = float(
                     np.clip(
                         0.5 + 1.5 * (fav - fav_thr) / max(1e-6, (1.0 - fav_thr)),

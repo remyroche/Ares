@@ -15,6 +15,7 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 
 
+import class CorrelationStatus
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
 
@@ -45,6 +46,8 @@ class CorrelationManager:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("CorrelationManager")
 
@@ -101,6 +104,8 @@ class CorrelationManager:
 
         # Enforce history limit
         if len(self.correlation_requests) > self.max_correlation_history:
+    pass
+    pass
             oldest_key = next(iter(self.correlation_requests))
             self.correlation_requests.pop(oldest_key, None)
 
@@ -113,6 +118,8 @@ class CorrelationManager:
     ) -> None:
         req = self.correlation_requests.get(correlation_id)
         if not req:
+    pass
+    pass
             return
         req.response_timestamp = datetime.now()
         req.response_data = dict(response_data or {})
@@ -120,7 +127,11 @@ class CorrelationManager:
         req.status = CorrelationStatus.FAILED if error_info else CorrelationStatus.COMPLETED
 
     def get_request(self, correlation_id: str) -> Optional[CorrelationRequest]:
+    pass
+    pass
         return self.correlation_requests.get(correlation_id)
 
     def list_requests(self) -> List[CorrelationRequest]:
+    pass
+    pass
         return list(self.correlation_requests.values())

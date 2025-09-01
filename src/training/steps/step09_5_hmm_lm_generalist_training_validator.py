@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import (
+import validate_file_operation,
     validate_file_operation,
     validate_dataframe_operation,
     validate_step2_operation,
@@ -20,6 +21,8 @@ class Step9_5HMMLMGeneralistTrainingValidator:
     """Validator for Step 9.5: HMM LM Generalist Training."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, logger
 
@@ -43,7 +46,13 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         try:
         # Check if HMM LM generalist models directory exists
             hmm_lm_models_dir, Path(data_dir) / "training" / "hmm_lm_generalist_models"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not hmm_lm_models_dir.exists():
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ HMM LM generalist models directory not found: {hmm_lm_models_dir}"
                 )
@@ -52,22 +61,32 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Validate model files
             model_files, list(hmm_lm_models_dir.glob("*.joblib"))
         if not model_files:
+    pass
+    pass
         self.logger.warning("⚠️ No HMM LM generalist model files found")
         return False
 
         # Validate each model file
         for model_file in model_files:
+    pass
+    pass
         if not self._validate_model_file(model_file):
+    pass
+    pass
         return False
 
         # Check for training metadata file
             metadata_file, hmm_lm_models_dir / f"{exchange}_{symbol}_1m_hmm_lm_training_metadata.json"
         if not metadata_file.exists():
+    pass
+    pass
         self.logger.warning(f"⚠️ HMM LM training metadata file not found: {metadata_file}")
         return False
 
         # Validate metadata file
         if not self._validate_metadata_file(metadata_file):
+    pass
+    pass
         return False
 
         self.logger.info("✅ Step 9.5: HMM LM Generalist Training validation passed")
@@ -79,10 +98,16 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
     @validate_file_operation
     def _validate_model_file(self, model_file: Path) -> bool:
+    pass
+    pass
         """Validate an HMM LM generalist model file."""
         try:
         self.logger.info(f"📁 Validating HMM LM model: {model_file.name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check file size (should be reasonable for a model)
             file_size, model_file.stat().st_size
         if file_size < 1000:  # Less than 1KB is suspicious
@@ -92,8 +117,14 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Try to load the model to ensure it's valid
         try:
                 import joblib
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 model, joblib.load(model_file)
         if model is None:
+    pass
+    pass
         self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
         return False
 
@@ -109,16 +140,24 @@ class Step9_5HMMLMGeneralistTrainingValidator:
 
     @validate_file_operation
     def _validate_metadata_file(self, metadata_file: Path) -> bool:
+    pass
+    pass
         """Validate an HMM LM training metadata file."""
         try:
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Load and validate the metadata file
         with open(metadata_file, "r") as f:
                 metadata, json.load(f)
 
         # Check if metadata is a dictionary
         if not isinstance(metadata, dict):
+    pass
+    pass
         self.logger.warning(f"⚠️ Metadata file is not a valid JSON object: {metadata_file.name}")
         return False
 
@@ -126,6 +165,8 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             required_fields = ["training_date", "model_count", "training_metrics"]
             missing_fields = [field for field in required_fields if field not in metadata]
         if missing_fields:
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
                 )
@@ -134,6 +175,8 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Validate model count
             model_count, metadata.get("model_count", 0)
         if model_count < 1:
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Invalid model count in {metadata_file.name}: {model_count}"
                 )
@@ -142,6 +185,8 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Validate training metrics
             training_metrics, metadata.get("training_metrics", {})
         if not isinstance(training_metrics, dict):
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Invalid training metrics format in {metadata_file.name}"
                 )
@@ -150,9 +195,15 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         # Check for basic metrics
             basic_metrics = ["accuracy", "loss", "training_time"]
         for metric in basic_metrics:
+    pass
+    pass
         if metric in training_metrics:
+    pass
+    pass
                     value, training_metrics[metric]
         if isinstance(value, (int, float)) and value < 0:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Invalid {metric} value in {metadata_file.name}: {value}"
                         )
@@ -184,11 +235,17 @@ def step09_5_hmm_lm_generalist_training_validator(
 
     try:
         validator, Step9_5HMMLMGeneralistTrainingValidator(config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         result, validator.validate_step9_5_hmm_lm_generalist_training(
             symbol, exchange, data_dir, training_input
         )
 
         if result:
+    pass
+    pass
             logger.info("✅ Step 9.5: HMM LM Generalist Training validation passed")
         return True
         else:

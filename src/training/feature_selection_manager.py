@@ -13,12 +13,15 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
+import class FeatureSelectionManager:
 class FeatureSelectionManager:
     """Feature Selection Manager for Step 2 - Reduces features from ~220 to 100
     with intelligent selection based on multiple criteria.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("FeatureSelectionManager")
 
@@ -65,8 +68,14 @@ class FeatureSelectionManager:
         try:
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Stage 0: Add autoencoder features if enabled
             if use_autoencoder_features:
+    pass
+    pass
                 features_df, stage0_metadata = self._stage0_autoencoder_features(features_df, target)
             else:
                 stage0_metadata = {"autoencoder_features_added": 0}
@@ -88,6 +97,8 @@ class FeatureSelectionManager:
 
             # Stage 6: Regularization-aware selection (if enabled)
             if use_regularization:
+    pass
+    pass
                 features_df, stage6_metadata = self._stage6_regularization_aware_selection(features_df, target)
             else:
                 stage6_metadata = {"regularization_applied": False}
@@ -127,6 +138,8 @@ class FeatureSelectionManager:
             raise
 
     def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 1: Remove features with poor data quality."""
         original_count = len(features_df.columns)
 
@@ -138,7 +151,11 @@ class FeatureSelectionManager:
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
+    pass
+    pass
             if np.isinf(features_df[col]).any():
+    pass
+    pass
                 inf_features.append(col)
         features_df = features_df.drop(columns=inf_features)
 
@@ -155,6 +172,8 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _stage2_variance_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 2: Remove low-variance features."""
         len(features_df.columns)
 
@@ -175,6 +194,8 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _stage3_correlation_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 3: Remove highly correlated features."""
         len(features_df.columns)
 
@@ -186,17 +207,25 @@ class FeatureSelectionManager:
         high_corr_pairs = []
 
         for col in upper_tri.columns:
+    pass
+    pass
             high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold].index.tolist()
             for feature in high_corr_features:
+    pass
+    pass
                 high_corr_pairs.append((col, feature))
 
         # Remove one feature from each highly correlated pair
         features_to_remove = set()
         for feat1, feat2 in high_corr_pairs:
+    pass
+    pass
             # Keep the feature with higher variance
             var1 = features_df[feat1].var()
             var2 = features_df[feat2].var()
             if var1 < var2:
+    pass
+    pass
                 features_to_remove.add(feat1)
             else:
                 features_to_remove.add(feat2)
@@ -214,6 +243,8 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _stage4_mutual_info_ranking(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 4: Rank features by mutual information."""
         # Calculate mutual information scores
         mi_scores = mutual_info_classif(features_df, target, random_state=42)
@@ -232,6 +263,8 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _stage5_domain_specific_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 5: Domain-specific feature selection for financial data."""
         # Define feature categories and their importance weights
         # Note: Removed non-semantic categories (regime, lagged, normalized)
@@ -290,19 +323,27 @@ class FeatureSelectionManager:
         # Calculate category importance scores
         category_scores = {}
         for category, keywords in feature_categories.items():
+    pass
+    pass
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in keywords)]
             if category_features:
+    pass
+    pass
                 mi_scores = self.feature_importance_cache["mutual_info"][category_features]
                 category_scores[category] = mi_scores.mean()
 
         # Prioritize features from important categories
         prioritized_features = []
         for category, _score in sorted(category_scores.items(), key=lambda x: x[1], reverse=True):
+    pass
+    pass
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in feature_categories[category])]
             prioritized_features.extend(category_features)
 
         # Ensure we don't exceed target features
         if len(prioritized_features) > self.target_features:
+    pass
+    pass
             prioritized_features = prioritized_features[:self.target_features]
 
         features_df = features_df[prioritized_features]
@@ -317,8 +358,12 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _stage6_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 6: Final feature selection using multiple methods (original method)."""
         if len(features_df.columns) <= self.target_features:
+    pass
+    pass
             # Already at or below target, return as is
             return features_df, {"final_selection": "no_change", "features_after_stage": len(features_df.columns)}
 
@@ -343,6 +388,8 @@ class FeatureSelectionManager:
         return features_df, metadata
 
     def _categorize_features(self, feature_names: list[str]) -> dict[str, list[str]]:
+    pass
+    pass
         """Categorize features by type."""
         categories = {
             "momentum": [],
@@ -359,6 +406,8 @@ class FeatureSelectionManager:
         }
 
         for feature in feature_names:
+    pass
+    pass
             feature_lower = feature.lower()
             categorized = False
 
@@ -420,14 +469,22 @@ class FeatureSelectionManager:
                 categorized = True
 
             if not categorized:
+    pass
+    pass
                 categories["other"].append(feature)
 
         return categories
 
     def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
+    pass
+    pass
         """Save feature selection metadata."""
         try:
             metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
@@ -435,14 +492,21 @@ class FeatureSelectionManager:
             self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
     def _stage0_autoencoder_features(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 0: Add autoencoder features from the autoencoder feature generator."""
         try:
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Import autoencoder feature generator
             from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 
             # Create autoencoder generator
+import autoencoder_generator = AutoencoderFeatureGenerator
             autoencoder_generator = AutoencoderFeatureGenerator()
 
             # Generate autoencoder features
@@ -455,6 +519,8 @@ class FeatureSelectionManager:
 
             # If autoencoder features were generated, add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
+    pass
+    pass
                 # Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
                 features_df = pd.concat([features_df, autoencoder_features], axis=1)
@@ -476,17 +542,26 @@ class FeatureSelectionManager:
         return features_df, stage_metadata
 
     def _stage6_regularization_aware_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 6: Regularization-aware feature selection using pipeline regularization."""
         try:
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load regularization configuration from pipeline
             from src.training.regularization import RegularizationManager
+import reg_manager = RegularizationManager
             reg_manager = RegularizationManager()
             regularization_config = reg_manager.regularization_config
 
             # Apply regularization-aware feature selection
             if regularization_config:
+    pass
+    pass
                 # Get regularization parameters
                 l1_alpha = regularization_config.get('l1_alpha', 0.01)
                 l2_alpha = regularization_config.get('l2_alpha', 0.001)
@@ -496,6 +571,8 @@ class FeatureSelectionManager:
 
                 # Apply regularization penalty to feature importance
                 if "mutual_info" in self.feature_importance_cache:
+    pass
+    pass
                     mi_scores = self.feature_importance_cache["mutual_info"]
 
                     # Apply regularization penalty
@@ -525,21 +602,37 @@ class FeatureSelectionManager:
         return features_df, stage_metadata
 
     def _stage7_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    pass
+    pass
         """Stage 7: Final ranking and selection (renamed from stage6)."""
         # Use existing RFE-LightGBM selection logic
         return self._stage6_final_selection(features_df, target)
 
     def _calculate_feature_stability(self, features_df: pd.DataFrame, target: pd.Series) -> dict[str, float]:
+    pass
+    pass
         """Calculate feature stability scores using cross-validation."""
         stability_scores = {}
 
         try:
             from sklearn.model_selection import cross_val_score
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             from sklearn.linear_model import LogisticRegression
 
+import for feature in features_df.columns:
             for feature in features_df.columns:
+    pass
+    pass
                 try:
                     # Use single feature for prediction
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     X_single = features_df[[feature]]
 
                     # Calculate cross-validation score

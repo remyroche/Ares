@@ -12,6 +12,7 @@ from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
+import @handle_errors
 @handle_errors(
     exceptions=(Exception,),
     default_return = False,
@@ -33,7 +34,13 @@ async def download_all_data_with_consolidation(
     lookback_years: int, 2
     try:
         if isinstance(CONFIG, dict):
+    pass
+    except Exception as e:
+        pass
+    pass
             model_training_cfg: dict[str, Any] | None, CONFIG.get("MODEL_TRAINING")  # type: ignore[assignment]
+    except Exception as e:
+        pass
         if model_training_cfg and isinstance(
                 model_training_cfg.get("lookback_years"),
                 int,
@@ -46,9 +53,16 @@ async def download_all_data_with_consolidation(
     # Preferred path: optimized downloader
     try:
         from backtesting.ares_data_downloader_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import DownloadConfig as OptimizedDownloadConfig,
             DownloadConfig as OptimizedDownloadConfig,
         )
         from backtesting.ares_data_downloader_optimized import (
+import OptimizedDataDownloader,
             OptimizedDataDownloader,
         )
 
@@ -69,9 +83,16 @@ async def download_all_data_with_consolidation(
     # Fallback: clean downloader
     try:
         from backtesting.ares_data_downloader_clean import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import CleanDataDownloader,
             CleanDataDownloader,
         )
         from backtesting.ares_data_downloader_clean import (
+import DownloadConfig as CleanDownloadConfig,
             DownloadConfig as CleanDownloadConfig,
         )
 

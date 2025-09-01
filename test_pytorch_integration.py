@@ -15,9 +15,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 # Add the src directory to the path so we can import the existing modules
+import sys.path.insert
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_basic_pytorch():
+    pass
+    pass
     """Test basic PyTorch functionality."""
     print("=== Basic PyTorch Test ===")
     print(f"PyTorch version: {torch.__version__}")
@@ -27,21 +30,27 @@ def test_basic_pytorch():
     # Create a simple tensor
     x = torch.randn(3, 4)
     print(f"Random tensor shape: {x.shape}")
-    print(f"Tensor:\n{x}")
+    print(f"Tensor:\\\n{x}")
 
     # Basic operations
     y = x * 2 + 1
-    print(f"After operations:\n{y}")
+    print(f"After operations:\\\n{y}")
 
     return True
 
 def test_existing_models():
+    pass
+    pass
     """Test the existing PyTorch models from the codebase."""
-    print("\n=== Testing Existing Models ===")
+    print("\\\n=== Testing Existing Models ===")
 
     try:
         # Import the existing models
             CNNModel, TCNModel, TransformerModel, TemporalBlock
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         # Test CNN Model
@@ -57,7 +66,7 @@ def test_existing_models():
         print(f"CNN output shape: {output.shape}")
 
         # Test TCN Model
-        print("\nTesting TCN Model...")
+        print("\\\nTesting TCN Model...")
         input_size = 10
         num_channels = [64, 128, 256]
         kernel_size = 3
@@ -70,7 +79,7 @@ def test_existing_models():
         print(f"TCN output shape: {output.shape}")
 
         # Test Transformer Model
-        print("\nTesting Transformer Model...")
+        print("\\\nTesting Transformer Model...")
         input_size = 10
         d_model = 128
         nhead = 4
@@ -95,11 +104,15 @@ def test_existing_models():
         return False
 
 def create_simple_trading_model():
+    pass
+    pass
     """Create a simple PyTorch model for trading prediction."""
-    print("\n=== Creating Simple Trading Model ===")
+    print("\\\n=== Creating Simple Trading Model ===")
 
     class SimpleTradingModel(nn.Module):
         def __init__(self, input_size, hidden_size, num_classes):
+    pass
+    pass
             super(SimpleTradingModel, self).__init__()
             self.fc1 = nn.Linear(input_size, hidden_size)
             self.relu = nn.ReLU()
@@ -108,6 +121,8 @@ def create_simple_trading_model():
             self.fc3 = nn.Linear(hidden_size // 2, num_classes)
 
         def forward(self, x):
+    pass
+    pass
             x = self.relu(self.fc1(x))
             x = self.dropout(x)
             x = self.relu(self.fc2(x))
@@ -133,8 +148,10 @@ def create_simple_trading_model():
     return model
 
 def train_simple_model():
+    pass
+    pass
     """Train a simple PyTorch model with synthetic data."""
-    print("\n=== Training Simple Model ===")
+    print("\\\n=== Training Simple Model ===")
 
     # Generate synthetic trading data
     np.random.seed(42)
@@ -169,11 +186,15 @@ def train_simple_model():
     # Training loop
     model.train()
     for epoch in range(10):
+    pass
+    pass
         total_loss = 0
         correct = 0
         total = 0
 
         for batch_X, batch_y in dataloader:
+    pass
+    pass
             optimizer.zero_grad()
 
             # Forward pass
@@ -197,8 +218,10 @@ def train_simple_model():
     return model
 
 def test_model_inference():
+    pass
+    pass
     """Test model inference with new data."""
-    print("\n=== Testing Model Inference ===")
+    print("\\\n=== Testing Model Inference ===")
 
     # Train a model
     model = train_simple_model()
@@ -216,6 +239,8 @@ def test_model_inference():
 
     print("Test predictions:")
     for i in range(len(test_X)):
+    pass
+    pass
         action = ["Hold", "Buy", "Sell"][predictions[i].item()]
         prob = probabilities[i].max().item()
         print(f"Sample {i+1}: {action} (confidence: {prob:.3f})")
@@ -223,10 +248,14 @@ def test_model_inference():
     return model
 
 def demonstrate_gpu_usage():
+    pass
+    pass
     """Demonstrate GPU usage if available."""
-    print("\n=== GPU Usage Demonstration ===")
+    print("\\\n=== GPU Usage Demonstration ===")
 
     if torch.cuda.is_available():
+    pass
+    pass
         print("CUDA is available! Using GPU.")
         device = torch.device('cuda')
 
@@ -266,11 +295,15 @@ def demonstrate_gpu_usage():
         print(f"Result shape: {z.shape}")
 
 def create_advanced_trading_model():
+    pass
+    pass
     """Create a more advanced trading model with LSTM."""
-    print("\n=== Creating Advanced LSTM Trading Model ===")
+    print("\\\n=== Creating Advanced LSTM Trading Model ===")
 
     class LSTMTradingModel(nn.Module):
         def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout=0.2):
+    pass
+    pass
             super(LSTMTradingModel, self).__init__()
             self.hidden_size = hidden_size
             self.num_layers = num_layers
@@ -281,6 +314,8 @@ def create_advanced_trading_model():
             self.fc = nn.Linear(hidden_size, num_classes)
 
         def forward(self, x):
+    pass
+    pass
             # x shape: (batch_size, sequence_length, input_size)
             lstm_out, _ = self.lstm(x)
 
@@ -311,6 +346,8 @@ def create_advanced_trading_model():
     return model
 
 def main():
+    pass
+    pass
     """Main function to run all tests."""
     print("PyTorch Integration Test for Ares Trading Bot")
     print("=" * 50)
@@ -328,21 +365,29 @@ def main():
 
     results = []
     for test in tests:
+    pass
+    pass
         try:
             result = test()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results.append((test.__name__, "PASSED" if result else "FAILED"))
         except Exception as e:
             print(f"Error in {test.__name__}: {e}")
             results.append((test.__name__, "ERROR"))
 
     # Print summary
-    print("\n" + "=" * 50)
+    print("\\\n" + "=" * 50)
     print("TEST SUMMARY")
     print("=" * 50)
     for test_name, status in results:
+    pass
+    pass
         print(f"{test_name}: {status}")
 
-    print("\nPyTorch is now ready to use with your Ares trading bot!")
+    print("\\\nPyTorch is now ready to use with your Ares trading bot!")
     print("You can:")
     print("1. Use the existing CNN, TCN, and Transformer models")
     print("2. Create custom PyTorch models for trading")
@@ -350,4 +395,6 @@ def main():
     print("4. Use GPU acceleration if available")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

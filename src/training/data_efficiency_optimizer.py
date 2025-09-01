@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     validation_error,
@@ -75,6 +76,8 @@ class DataEfficiencyOptimizer:
         context="database initialization",
     )
     def _init_database(self) -> None:
+    pass
+    pass
         """Initialize SQLite database with optimized tables for large datasets."""
         with self.engine.connect() as conn:
             # Raw data table with partitioning by date
@@ -186,6 +189,8 @@ class DataEfficiencyOptimizer:
         context="memory usage calculation",
     )
     def get_memory_usage(self) -> Number:
+    pass
+    pass
         """Get current memory usage as a percentage."""
         process = psutil.Process()
         memory_percent = process.memory_percent()
@@ -198,6 +203,8 @@ class DataEfficiencyOptimizer:
         context="memory cleanup check",
     )
     def should_cleanup_memory(self) -> bool:
+    pass
+    pass
         """Check if memory cleanup is needed."""
         return self.get_memory_usage() > (self.memory_threshold * 100)
 
@@ -207,6 +214,8 @@ class DataEfficiencyOptimizer:
         context="memory cleanup",
     )
     def cleanup_memory(self) -> None:
+    pass
+    pass
         """Force garbage collection and memory cleanup."""
         self.logger.info("Performing memory cleanup...")
         gc.collect()
@@ -238,25 +247,43 @@ class DataEfficiencyOptimizer:
 
         # Check if cache exists and is valid
         if not force_reload and cache_dir.exists():
+    pass
+    pass
             # Check if any Parquet files exist in cache directory
             parquet_files = list(cache_dir.glob("*.parquet"))
             if parquet_files:
+    pass
+    pass
                 # Use the oldest file's modification time as cache age
                 cache_age = time.time() - min(f.stat().st_mtime for f in parquet_files)
                 max_cache_age = 24 * 60 * 60  # 24 hours
 
                 if cache_age < max_cache_age:
+    pass
+    pass
                     self.logger.info(f"Loading data from Parquet cache: {cache_dir}")
                     try:
                         data = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         # Load each data type from its Parquet file
                         for data_type in ["klines", "agg_trades", "futures"]:
+    pass
+    pass
                             parquet_file = cache_dir / f"{data_type}.parquet"
                             if parquet_file.exists():
+    pass
+    pass
                                 try:
                                     data[data_type] = pq.read_table(
                                         parquet_file,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                     ).to_pandas()
                                     self.logger.info(
                                         f"Loaded {len(data[data_type])} {data_type} from cache",
@@ -271,6 +298,8 @@ class DataEfficiencyOptimizer:
 
                         # Validate cache data
                         if self._validate_cached_data(data, lookback_days):
+    pass
+    pass
                             self.logger.info("Cache validation successful")
                             return data
                         self.print(failed("Cache validation failed, reloading data"))
@@ -297,21 +326,35 @@ class DataEfficiencyOptimizer:
         """Validate cached data integrity and completeness."""
         try:
             # Check if all required data types are present
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_types = ["klines", "agg_trades", "futures"]
             if not all(dtype in data for dtype in required_types):
+    pass
+    pass
                 return False
 
             # Check data completeness
             cutoff_date = datetime.now() - timedelta(days=lookback_days)
 
             for df in data.values():
+    pass
+    pass
                 if not isinstance(df, pd.DataFrame) or df.empty:
+    pass
+    pass
                     return False
 
                 # Check if data covers the required time period
                 if "timestamp" in df.columns:
+    pass
+    pass
                     min_date = pd.to_datetime(df["timestamp"].min())
                     if min_date > cutoff_date:
+    pass
+    pass
                         return False
 
                 # Check for reasonable data size
@@ -345,8 +388,14 @@ class DataEfficiencyOptimizer:
 
         try:
             # First, try to load from Parquet files (modern format)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             parquet_dir = Path("data/parquet")
             if parquet_dir.exists():
+    pass
+    pass
                 self.logger.info("Attempting to load from Parquet files...")
 
                 # Try to load klines data
@@ -354,8 +403,14 @@ class DataEfficiencyOptimizer:
                     parquet_dir / f"{self.exchange}_{self.symbol}_klines.parquet"
                 )
                 if klines_file.exists():
+    pass
+    pass
                     try:
                         data["klines"] = pq.read_table(klines_file).to_pandas()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         self.logger.info(
                             f"Loaded {len(data['klines'])} klines from Parquet",
                         )
@@ -367,8 +422,14 @@ class DataEfficiencyOptimizer:
                     parquet_dir / f"{self.exchange}_{self.symbol}_agg_trades.parquet"
                 )
                 if trades_file.exists():
+    pass
+    pass
                     try:
                         data["agg_trades"] = pq.read_table(trades_file).to_pandas()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         self.logger.info(
                             f"Loaded {len(data['agg_trades'])} aggregated trades from Parquet",
                         )
@@ -382,8 +443,14 @@ class DataEfficiencyOptimizer:
                     parquet_dir / f"{self.exchange}_{self.symbol}_futures.parquet"
                 )
                 if futures_file.exists():
+    pass
+    pass
                     try:
                         data["futures"] = pq.read_table(futures_file).to_pandas()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         self.logger.info(
                             f"Loaded {len(data['futures'])} futures records from Parquet",
                         )
@@ -392,9 +459,15 @@ class DataEfficiencyOptimizer:
 
             # If Parquet files don't exist or are empty, try database query
             if all(df.empty for df in data.values()) and self.db_manager:
+    pass
+    pass
                 self.logger.info("Attempting to load from database...")
                 try:
                     # Query the database for klines data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     klines_query = f"""
                     SELECT * FROM klines
                     WHERE symbol = '{self.symbol}'
@@ -406,8 +479,12 @@ class DataEfficiencyOptimizer:
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(klines_query))
                         if result:
+    pass
+    pass
                             data["klines"] = pd.DataFrame(result.fetchall())
                             if not data["klines"].empty:
+    pass
+    pass
                                 self.logger.info(
                                     f"Loaded {len(data['klines'])} klines from database",
                                 )
@@ -424,8 +501,12 @@ class DataEfficiencyOptimizer:
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(trades_query))
                         if result:
+    pass
+    pass
                             data["agg_trades"] = pd.DataFrame(result.fetchall())
                             if not data["agg_trades"].empty:
+    pass
+    pass
                                 self.logger.info(
                                     f"Loaded {len(data['agg_trades'])} aggregated trades from database",
                                 )
@@ -435,14 +516,22 @@ class DataEfficiencyOptimizer:
 
             # Final fallback: try legacy pickle file
             if all(df.empty for df in data.values()):
+    pass
+    pass
                 data_file = f"data/{self.exchange}_{self.symbol}_historical_data.pkl"
                 if os.path.exists(data_file):
+    pass
+    pass
                     self.logger.info(
                         f"Loading data from legacy pickle file: {data_file}",
                     )
                     try:
                         import pickle
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         with open(data_file, "rb") as f:
                             legacy_data = pickle.load(f)
 
@@ -466,7 +555,11 @@ class DataEfficiencyOptimizer:
 
             # Filter data by date range if we have data
             for data_type, df in data.items():
+    pass
+    pass
                 if not df.empty and "timestamp" in df.columns:
+    pass
+    pass
                     df["timestamp"] = pd.to_datetime(df["timestamp"])
                     mask = (df["timestamp"] >= start_date) & (
                         df["timestamp"] <= end_date
@@ -485,10 +578,16 @@ class DataEfficiencyOptimizer:
         return data
 
     def _cache_data(self, data: dict[str, pd.DataFrame], cache_file: Path) -> None:
+    pass
+    pass
         """Cache data to disk using Parquet format for high performance."""
         try:
             self.logger.info(f"Caching data to {cache_file}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create cache directory if it doesn't exist
             cache_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -497,9 +596,15 @@ class DataEfficiencyOptimizer:
             cache_dir = cache_file.parent / cache_base
 
             for data_type, df in data.items():
+    pass
+    pass
                 if not df.empty:
+    pass
+    pass
                     # Create wide format: each row is a timestamp, each column is a feature
                     if "timestamp" in df.columns:
+    pass
+    pass
                         df_wide = df.set_index("timestamp")
                     else:
                         # If no timestamp column, use the index
@@ -537,10 +642,14 @@ class DataEfficiencyOptimizer:
 
         """
         if data.empty:
+    pass
+    pass
             return []
 
         # Ensure timestamp index
         if "timestamp" in data.columns:
+    pass
+    pass
             data = data.set_index("timestamp")
 
         # Sort by timestamp
@@ -559,6 +668,8 @@ class DataEfficiencyOptimizer:
             segment_data = data[segment_mask].copy()
 
             if not segment_data.empty:
+    pass
+    pass
                 segments.append((current_start, current_end, segment_data))
 
             current_start = current_end + timedelta(seconds=1)
@@ -582,9 +693,13 @@ class DataEfficiencyOptimizer:
 
         """
         if chunk_size is None:
+    pass
+    pass
             chunk_size = self.chunk_size
 
         if len(data) <= chunk_size:
+    pass
+    pass
             return self._process_chunk(data)
 
         processed_chunks = []
@@ -593,16 +708,22 @@ class DataEfficiencyOptimizer:
         self.logger.info(f"Processing {len(data)} rows in {total_chunks} chunks")
 
         for i in range(0, len(data), chunk_size):
+    pass
+    pass
             chunk = data.iloc[i : i + chunk_size]
             processed_chunk = self._process_chunk(chunk)
             processed_chunks.append(processed_chunk)
 
             # Memory management
             if self.should_cleanup_memory():
+    pass
+    pass
                 self.cleanup_memory()
 
             # Progress logging
             if (i // chunk_size + 1) % 10 == 0:
+    pass
+    pass
                 self.logger.info(
                     f"Processed {i // chunk_size + 1}/{total_chunks} chunks",
                 )
@@ -614,8 +735,12 @@ class DataEfficiencyOptimizer:
         return result
 
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Process a single chunk of data with data validation and repair."""
         if chunk.empty:
+    pass
+    pass
             return chunk
 
         # Create a copy to avoid modifying the original
@@ -628,11 +753,17 @@ class DataEfficiencyOptimizer:
         ):
             # If open_time is all NaN, try to reconstruct from the index
             if processed_chunk.index.name == "timestamp":
+    pass
+    pass
                 processed_chunk["open_time"] = processed_chunk.index
             else:
                 # Try to convert timestamp index to open_time
                 try:
                     processed_chunk["open_time"] = pd.to_datetime(processed_chunk.index)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except:
                     self.print(warning("Could not reconstruct open_time column"))
 
@@ -657,7 +788,11 @@ class DataEfficiencyOptimizer:
             "taker_buy_quote_asset_volume",
         ]
         for col in numeric_columns:
+    pass
+    pass
             if col in processed_chunk.columns and processed_chunk[col].isna().all():
+    pass
+    pass
                 # Set to 0 for missing numeric values
                 processed_chunk[col] = 0
 
@@ -683,10 +818,14 @@ class DataEfficiencyOptimizer:
 
         """
         if features.empty:
+    pass
+    pass
             return
 
         # Ensure timestamp index
         if "timestamp" in features.columns:
+    pass
+    pass
             features = features.set_index("timestamp")
 
         self.logger.info(f"Storing {len(features.columns)} features in database")
@@ -694,6 +833,8 @@ class DataEfficiencyOptimizer:
         with self.Session() as session:
             # Store features in wide format: each row is a timestamp, each column is a feature
             for timestamp, row in features.iterrows():
+    pass
+    pass
                 # Convert timestamp to string for SQLite compatibility
                 timestamp_str = (
                     timestamp.isoformat()
@@ -709,6 +850,8 @@ class DataEfficiencyOptimizer:
 
                 # Add each feature as a column
                 for feature_name, value in row.items():
+    pass
+    pass
                     if pd.notna(value):  # Skip NaN values
                         record[f"feature_{feature_name}"] = float(value)
 
@@ -765,15 +908,23 @@ class DataEfficiencyOptimizer:
             rows = result.fetchall()
 
             if rows:
+    pass
+    pass
                 # Process wide format data
                 features_list = []
                 for row in rows:
+    pass
+    pass
                     timestamp = pd.to_datetime(row[0])
                     feature_data_str = row[2]
 
                     # Parse the feature data (stored as string representation)
                     try:
                         # Simple parsing - in production you might want to use JSON
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         import ast
 
                         feature_dict = ast.literal_eval(feature_data_str)
@@ -787,6 +938,8 @@ class DataEfficiencyOptimizer:
                         }
 
                         if features:
+    pass
+    pass
                             features["timestamp"] = timestamp
                             features_list.append(features)
                     except Exception:
@@ -794,11 +947,15 @@ class DataEfficiencyOptimizer:
                         continue
 
                 if features_list:
+    pass
+    pass
                     features_df = pd.DataFrame(features_list)
                     features_df = features_df.set_index("timestamp")
 
                     # Filter by requested feature names if specified
                     if feature_names:
+    pass
+    pass
                         available_features = [
                             col
                             for col in features_df.columns
@@ -825,6 +982,8 @@ class DataEfficiencyOptimizer:
             """)
 
             if feature_names:
+    pass
+    pass
                 query = text("""
                     SELECT timestamp, feature_name, feature_value
                     FROM feature_cache
@@ -837,6 +996,8 @@ class DataEfficiencyOptimizer:
             rows = result.fetchall()
 
         if not rows:
+    pass
+    pass
             return pd.DataFrame()
 
         # Convert to DataFrame
@@ -878,6 +1039,8 @@ class DataEfficiencyOptimizer:
         self.logger.info(f"Created checkpoint: {checkpoint_name}")
 
     def get_latest_checkpoint(self, checkpoint_name: str) -> dict[str, Any] | None:
+    pass
+    pass
         """Get the latest checkpoint for resume capability."""
         with self.Session() as session:
             result = session.execute(
@@ -893,11 +1056,15 @@ class DataEfficiencyOptimizer:
 
             row = result.fetchone()
             if row:
+    pass
+    pass
                 return {"timestamp": row[0], "metadata": eval(row[1]) if row[1] else {}}
 
         return None
 
     def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize DataFrame memory usage by downcasting numeric types.
 
         Args:
@@ -909,6 +1076,8 @@ class DataEfficiencyOptimizer:
         """
         # Check if input is actually a DataFrame
         if not isinstance(df, pd.DataFrame):
+    pass
+    pass
             self.logger.warning(
                 f"Expected DataFrame but got {type(df).__name__}, returning as-is",
             )
@@ -916,21 +1085,33 @@ class DataEfficiencyOptimizer:
 
         # Check if DataFrame is empty
         if df.empty:
+    pass
+    pass
             self.logger.info("DataFrame is empty, skipping memory optimization")
             return df
 
         try:
             initial_memory = df.memory_usage(deep=True).sum()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Downcast numeric columns
             for col in df.select_dtypes(include=["int64"]).columns:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], downcast="integer")
 
             for col in df.select_dtypes(include=["float64"]).columns:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], downcast="float")
 
             # Optimize object columns
             for col in df.select_dtypes(include=["object"]).columns:
+    pass
+    pass
                 if df[col].nunique() / len(df) < 0.5:  # Low cardinality
                     df[col] = df[col].astype("category")
 
@@ -950,6 +1131,8 @@ class DataEfficiencyOptimizer:
             return df
 
     def get_database_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get statistics about the efficiency database."""
         with self.Session() as session:
             # Raw data stats
@@ -1000,6 +1183,8 @@ class DataEfficiencyOptimizer:
         }
 
     def migrate_pickle_to_parquet(self, pickle_file_path: str) -> bool:
+    pass
+    pass
         """Migrate existing pickle data to Parquet format.
 
         Args:
@@ -1012,6 +1197,10 @@ class DataEfficiencyOptimizer:
         try:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load pickle data
             import pickle
 
@@ -1019,6 +1208,8 @@ class DataEfficiencyOptimizer:
                 data = pickle.load(f)
 
             if not isinstance(data, dict):
+    pass
+    pass
                 self.print(error("Pickle file does not contain a dictionary"))
                 return False
 
@@ -1028,9 +1219,15 @@ class DataEfficiencyOptimizer:
 
             # Convert each DataFrame to Parquet
             for data_type, df in data.items():
+    pass
+    pass
                 if isinstance(df, pd.DataFrame) and not df.empty:
+    pass
+    pass
                     # Create wide format: each row is a timestamp, each column is a feature
                     if "timestamp" in df.columns:
+    pass
+    pass
                         df_wide = df.set_index("timestamp")
                     else:
                         df_wide = df.copy()
@@ -1057,6 +1254,8 @@ class DataEfficiencyOptimizer:
             return False
 
     def cleanup_old_data(self, days_to_keep: int = 365) -> None:
+    pass
+    pass
         """Clean up old data to manage storage."""
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
 

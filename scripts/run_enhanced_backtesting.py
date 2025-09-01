@@ -24,8 +24,11 @@ from src.utils.warning_symbols import failed
 from src.utils.error_handler import handle_errors
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(project_root))
 
 
@@ -56,6 +59,8 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730) -> boo
     training_success = await training_manager.execute_enhanced_training(training_input)
 
     if not training_success:
+    pass
+    pass
         print(failed("❌ Enhanced training failed"))
         return False
 
@@ -67,6 +72,8 @@ async def run_enhanced_backtesting(symbol: str, lookback_days: int = 730) -> boo
     paper_success = await run_paper_trading_simulation(symbol, training_manager)
 
     if not paper_success:
+    pass
+    pass
         print(failed("❌ Paper trading simulation failed"))
         return False
 
@@ -154,6 +161,8 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730) -> bool:
     training_success = await training_manager.execute_enhanced_training(training_input)
 
     if training_success:
+    pass
+    pass
         logger.info("✅ Backtesting completed successfully!")
         return True
     print(failed("❌ Backtesting failed!"))
@@ -161,6 +170,8 @@ async def run_backtesting_only(symbol: str, lookback_days: int = 730) -> bool:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function with command line interface."""
     parser = argparse.ArgumentParser(
         description="Enhanced Backtesting with Paper Trading",
@@ -199,6 +210,8 @@ Examples:
 
     # Run appropriate function
     if args.backtesting_only:
+    pass
+    pass
         success = asyncio.run(run_backtesting_only(args.symbol, args.lookback))
     else:
         success = asyncio.run(run_enhanced_backtesting(args.symbol, args.lookback))
@@ -207,4 +220,6 @@ Examples:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

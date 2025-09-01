@@ -4,7 +4,8 @@
 S/R Data Integration Module
 
 This module integrates S/R backtesting validation with proper data access patterns
-from ares_launcher, including lookback period management and data loading.
+from ares_launcher, including lookback period management and data loading. import *
+import It ensures the S/R system uses the same data sources and configurations as the
 It ensures the S/R system uses the same data sources and configurations as the
 main trading system.
 """
@@ -23,6 +24,12 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.config.constants import DEFAULT_LOOKBACK_DAYS
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import TRAINING_MODES,
         TRAINING_MODES,
         FULL_TRAINING_LOOKBACK_DAYS,
         BLANK_TRAINING_LOOKBACK_DAYS,
@@ -30,6 +37,7 @@ try:
         LIGHT_TRAINING_LOOKBACK_DAYS,
     )
     from src.utils.logger import system_logger
+import except ImportError as e:
 except ImportError as e:
     print(f"Warning: Could not import config modules: {e}")
     # Fallback imports
@@ -39,6 +47,12 @@ except ImportError as e:
 # Try to import training modules separately to handle import errors gracefully
 try:
     from src.training.steps.unified_data_loader import UnifiedDataLoader
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import UNIFIED_LOADER_AVAILABLE = True
     UNIFIED_LOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: UnifiedDataLoader not available: {e}")
@@ -47,6 +61,12 @@ except ImportError as e:
 
 try:
     from src.training.steps.data_downloader import download_all_data_with_consolidation
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import DATA_DOWNLOADER_AVAILABLE = True
     DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Data downloader not available: {e}")
@@ -66,6 +86,8 @@ class SRDataIntegration:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         """Initialize the S/R data integration system.
 
         Args:
@@ -86,6 +108,8 @@ class SRDataIntegration:
 
         # Initialize data loader
         if UNIFIED_LOADER_AVAILABLE and UnifiedDataLoader:
+    pass
+    pass
             self.data_loader = UnifiedDataLoader(config)
         else:
             self.data_loader = None
@@ -106,6 +130,10 @@ class SRDataIntegration:
         """
         try:
             if self.logger:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info(f"🔧 Initializing S/R Data Integration")
                 self.logger.info(f"   - Symbol: {self.symbol}")
                 self.logger.info(f"   - Exchange: {self.exchange}")
@@ -113,18 +141,26 @@ class SRDataIntegration:
                 self.logger.info(f"   - Lookback days: {self.lookback_days}")
                 self.logger.info(f"   - Training mode: {self.training_mode}")
 
+    except Exception as e:
+        pass
             # Validate configuration
             if not await self._validate_configuration():
+    pass
+    pass
                 return False
 
             # Ensure data is available
             if not await self._ensure_data_availability():
+    pass
+    pass
                 return False
 
             return True
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Failed to initialize S/R data integration: {e}")
             return False
 
@@ -136,28 +172,48 @@ class SRDataIntegration:
         """
         try:
             # Validate symbol
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self.symbol or not isinstance(self.symbol, str):
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.error("❌ Invalid symbol configuration")
                 return False
 
             # Validate exchange
             if not self.exchange or not isinstance(self.exchange, str):
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.error("❌ Invalid exchange configuration")
                 return False
 
             # Validate timeframes
             valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
             for tf in self.timeframes:
+    pass
+    pass
                 if tf not in valid_timeframes:
+    pass
+    pass
                     if self.logger:
+    pass
+    pass
                         self.logger.error(f"❌ Invalid timeframe: {tf}")
                     return False
 
             # Validate lookback period
             if self.lookback_days <= 0 or self.lookback_days > 1095:  # Max 3 years
                 if self.logger:
+    pass
+    pass
                     self.logger.error(f"❌ Invalid lookback days: {self.lookback_days}")
                 return False
 
@@ -165,6 +221,8 @@ class SRDataIntegration:
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
 
@@ -176,27 +234,47 @@ class SRDataIntegration:
         """
         try:
             if self.logger:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info("📊 Checking data availability...")
 
+    except Exception as e:
+        pass
             # Check if data exists for each timeframe
             for timeframe in self.timeframes:
+    pass
+    pass
                 if not await self._check_timeframe_data_availability(timeframe):
+    pass
+    pass
                     if self.logger:
+    pass
+    pass
                         self.logger.warning(f"⚠️ Data not available for {timeframe}, attempting download...")
 
                     # Try to download data
                     if not await self._download_timeframe_data(timeframe):
+    pass
+    pass
                         if self.logger:
+    pass
+    pass
                             self.logger.error(f"❌ Failed to obtain data for {timeframe}")
                         return False
 
             if self.logger:
+    pass
+    pass
                 self.logger.info("✅ Data availability confirmed")
 
             return True
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Data availability check failed: {e}")
             return False
 
@@ -211,11 +289,17 @@ class SRDataIntegration:
         """
         try:
             # Try to load a small sample to check availability
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             sample_data = await self._load_timeframe_data(timeframe, max_periods=100)
             return sample_data is not None and len(sample_data) > 0
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.debug(f"Data availability check failed for {timeframe}: {e}")
             return False
 
@@ -230,10 +314,18 @@ class SRDataIntegration:
         """
         try:
             if self.logger:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info(f"📥 Downloading data for {timeframe}...")
 
+    except Exception as e:
+        pass
             # Use the unified data downloader if available
             if DATA_DOWNLOADER_AVAILABLE and download_all_data_with_consolidation:
+    pass
+    pass
                 success = await download_all_data_with_consolidation(
                     symbol=self.symbol,
                     exchange_name=self.exchange,
@@ -241,16 +333,22 @@ class SRDataIntegration:
                 )
 
                 if success and self.logger:
+    pass
+    pass
                     self.logger.info(f"✅ Data download successful for {timeframe}")
 
                 return success
             else:
                 if self.logger:
+    pass
+    pass
                     self.logger.warning(f"⚠️ Data downloader not available for {timeframe}")
                 return False
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Data download failed for {timeframe}: {e}")
             return False
 
@@ -272,14 +370,22 @@ class SRDataIntegration:
         """
         try:
             # Use provided lookback_days or default
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             actual_lookback_days = lookback_days or self.lookback_days
 
             # Check cache first
             cache_key = f"{timeframe}_{actual_lookback_days}"
             if not force_reload and cache_key in self._data_cache:
+    pass
+    pass
                 last_load = self._last_load_time.get(cache_key)
                 if last_load and (datetime.now() - last_load).total_seconds() < 3600:  # 1 hour cache
                     if self.logger:
+    pass
+    pass
                         self.logger.debug(f"📊 Using cached data for {timeframe}")
                     return self._data_cache[cache_key]
 
@@ -287,21 +393,29 @@ class SRDataIntegration:
             data = await self._load_timeframe_data(timeframe, actual_lookback_days)
 
             if data is not None and len(data) > 0:
+    pass
+    pass
                 # Cache the data
                 self._data_cache[cache_key] = data
                 self._last_load_time[cache_key] = datetime.now()
 
                 if self.logger:
+    pass
+    pass
                     self.logger.info(f"📊 Loaded {len(data)} data points for {timeframe} ({actual_lookback_days} days lookback)")
 
                 return data
             else:
                 if self.logger:
+    pass
+    pass
                     self.logger.error(f"❌ No data available for {timeframe}")
                 return None
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Failed to get market data for {timeframe}: {e}")
             return None
 
@@ -317,6 +431,10 @@ class SRDataIntegration:
         """
         try:
             # Calculate the start date
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             end_date = datetime.now()
             start_date = end_date - timedelta(days=lookback_days)
 
@@ -324,6 +442,8 @@ class SRDataIntegration:
             data = await self._load_from_unified_loader(timeframe, start_date, end_date)
 
             if data is not None and len(data) > 0:
+    pass
+    pass
                 return data
 
             # Fallback to direct file loading
@@ -333,6 +453,8 @@ class SRDataIntegration:
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Failed to load timeframe data: {e}")
             return None
 
@@ -354,7 +476,13 @@ class SRDataIntegration:
         """
         try:
             # Use the unified data loader if available
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.data_loader and hasattr(self.data_loader, 'load_timeframe_data'):
+    pass
+    pass
                 data = await self.data_loader.load_timeframe_data(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -366,11 +494,15 @@ class SRDataIntegration:
                 return data
             else:
                 if self.logger:
+    pass
+    pass
                     self.logger.debug(f"Unified loader not available for {timeframe}")
                 return None
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.debug(f"Unified loader failed for {timeframe}: {e}")
             return None
 
@@ -392,16 +524,28 @@ class SRDataIntegration:
         """
         try:
             # Construct file path
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             data_dir = Path("data") / self.exchange / self.symbol / timeframe
             if not data_dir.exists():
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.debug(f"Data directory not found: {data_dir}")
                 return None
 
             # Find the most recent data file
             data_files = list(data_dir.glob("*.parquet"))
             if not data_files:
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.debug(f"No data files found in {data_dir}")
                 return None
 
@@ -413,6 +557,8 @@ class SRDataIntegration:
 
             # Filter by date range
             if 'timestamp' in data.columns:
+    pass
+    pass
                 data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms')
                 data = data[
                     (data['timestamp'] >= start_date) &
@@ -422,7 +568,11 @@ class SRDataIntegration:
             # Ensure required columns
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             if not all(col in data.columns for col in required_columns):
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.warning(f"Missing required columns in {latest_file}")
                 return None
 
@@ -430,6 +580,8 @@ class SRDataIntegration:
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.debug(f"File system loading failed for {timeframe}: {e}")
             return None
 
@@ -449,32 +601,50 @@ class SRDataIntegration:
         """
         try:
             timeframes = timeframes or self.timeframes
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             lookback_days = lookback_days or self.lookback_days
 
             if self.logger:
+    pass
+    pass
                 self.logger.info(f"📊 Loading multi-timeframe data for {len(timeframes)} timeframes")
 
             # Load data for each timeframe
             multi_tf_data = {}
             for timeframe in timeframes:
+    pass
+    pass
                 data = await self.get_market_data(timeframe, lookback_days)
                 if data is not None:
+    pass
+    pass
                     multi_tf_data[timeframe] = data
                 else:
                     if self.logger:
+    pass
+    pass
                         self.logger.warning(f"⚠️ Failed to load data for {timeframe}")
 
             if self.logger:
+    pass
+    pass
                 self.logger.info(f"✅ Loaded data for {len(multi_tf_data)} timeframes")
 
             return multi_tf_data
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Failed to get multi-timeframe data: {e}")
             return {}
 
     def get_lookback_period_for_timeframe(self, timeframe: str) -> int:
+    pass
+    pass
         """Get the appropriate lookback period for a specific timeframe.
 
         Args:
@@ -485,6 +655,10 @@ class SRDataIntegration:
         """
         try:
             # Timeframe-specific lookback periods
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             timeframe_lookback_map = {
                 "1m": min(self.lookback_days, 30),      # Max 30 days for 1m
                 "5m": min(self.lookback_days, 60),      # Max 60 days for 5m
@@ -499,6 +673,8 @@ class SRDataIntegration:
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Failed to get lookback period for {timeframe}: {e}")
             return self.lookback_days
 
@@ -514,14 +690,26 @@ class SRDataIntegration:
         """
         try:
             if data is None or len(data) == 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.error(f"❌ No data provided for validation")
                 return False
 
+    except Exception as e:
+        pass
             # Check minimum data points
             min_points = self._get_min_data_points_for_timeframe(timeframe)
             if len(data) < min_points:
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.error(f"❌ Insufficient data points: {len(data)} < {min_points}")
                 return False
 
@@ -529,12 +717,18 @@ class SRDataIntegration:
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.error(f"❌ Missing required columns: {missing_columns}")
                 return False
 
             # Check for data gaps
             if 'timestamp' in data.columns:
+    pass
+    pass
                 data_sorted = data.sort_values('timestamp')
                 time_diffs = data_sorted['timestamp'].diff().dropna()
 
@@ -545,26 +739,38 @@ class SRDataIntegration:
                 large_gaps = time_diffs > (expected_diff * max_gap_multiplier)
                 if large_gaps.sum() > len(data) * 0.1:  # More than 10% gaps
                     if self.logger:
+    pass
+    pass
                         self.logger.warning(f"⚠️ Large data gaps detected in {timeframe}")
 
             # Check for price anomalies
             price_columns = ['open', 'high', 'low', 'close']
             for col in price_columns:
+    pass
+    pass
                 if data[col].isnull().sum() > len(data) * 0.05:  # More than 5% nulls
                     if self.logger:
+    pass
+    pass
                         self.logger.warning(f"⚠️ High null count in {col}: {timeframe}")
 
             if self.logger:
+    pass
+    pass
                 self.logger.info(f"✅ Data quality validation passed for {timeframe}")
 
             return True
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Data quality validation failed: {e}")
             return False
 
     def _get_min_data_points_for_timeframe(self, timeframe: str) -> int:
+    pass
+    pass
         """Get minimum required data points for a timeframe.
 
         Args:
@@ -587,6 +793,8 @@ class SRDataIntegration:
         return min_points_map.get(timeframe, 100)
 
     def _get_expected_time_diff(self, timeframe: str) -> pd.Timedelta:
+    pass
+    pass
         """Get expected time difference between data points.
 
         Args:
@@ -611,27 +819,45 @@ class SRDataIntegration:
         """Clean up the data cache to free memory."""
         try:
             if self.logger:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info("🧹 Cleaning up data cache...")
 
+    except Exception as e:
+        pass
             # Clear old cache entries
             current_time = datetime.now()
             keys_to_remove = []
 
             for key, last_load in self._last_load_time.items():
+    pass
+    pass
                 if (current_time - last_load).total_seconds() > 7200:  # 2 hours
                     keys_to_remove.append(key)
 
             for key in keys_to_remove:
+    pass
+    pass
                 if key in self._data_cache:
+    pass
+    pass
                     del self._data_cache[key]
                 if key in self._last_load_time:
+    pass
+    pass
                     del self._last_load_time[key]
 
             if self.logger:
+    pass
+    pass
                 self.logger.info(f"✅ Cache cleanup completed, removed {len(keys_to_remove)} entries")
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Cache cleanup failed: {e}")
 
 
@@ -657,14 +883,28 @@ async def create_sr_data_integration(
     """
     try:
         # Set default timeframes if not provided
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if timeframes is None:
+    pass
+    pass
             timeframes = ["1m", "5m", "15m", "30m"]
 
         # Get lookback days from training mode if not provided
         if lookback_days is None:
+    pass
+    pass
             try:
                 mode_config = TRAINING_MODES.get(training_mode)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if mode_config:
+    pass
+    pass
                     lookback_days = mode_config.lookback_days
                 else:
                     lookback_days = DEFAULT_LOOKBACK_DAYS
@@ -688,6 +928,8 @@ async def create_sr_data_integration(
         # Create and initialize integration
         integration = SRDataIntegration(config)
         if await integration.initialize():
+    pass
+    pass
             return integration
         else:
             raise RuntimeError("Failed to initialize S/R data integration")

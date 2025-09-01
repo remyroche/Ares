@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.utils.logger import system_logger
 
 
+import class MetricType
 class MetricType(Enum):
     """Metric types for categorization."""
 
@@ -43,6 +44,8 @@ class MetricsDashboard:
     """Real-time metrics dashboard."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("MetricsDashboard")
 

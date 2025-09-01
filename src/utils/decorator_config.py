@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 from enum import Enum
 
+import class ValidationMode
 class ValidationMode(Enum):
     STRICT , "strict"
     WARNING = "warning"
@@ -43,10 +44,14 @@ class DecoratorConfig:
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'DecoratorConfig':
+    pass
+    pass
         """Create config from dictionary."""
         return cls(**config_dict)
 
     def to_dict(self) -> Dict[str, Any]:
+    pass
+    pass
         """Convert config to dictionary."""
         return {
             'validation_mode': self.validation_mode.value,

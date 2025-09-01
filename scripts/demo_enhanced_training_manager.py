@@ -18,18 +18,22 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Import the enhanced training manager
+import EnhancedTrainingManagerWithReporting,
     EnhancedTrainingManagerWithReporting,
     create_enhanced_training_manager_with_reporting
 )
 from src.utils.logger import system_logger
 
 
+import async def load_config
 async def load_config() -> Dict[str, Any]:
     """Load configuration for the enhanced training manager."""
 
     # Try to load from config file first
     config_path = Path("config/enhanced_reporting_config.yaml")
     if config_path.exists():
+    pass
+    pass
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         system_logger.info(f"📋 Loaded configuration from {config_path}")
@@ -69,6 +73,10 @@ async def demonstrate_enhanced_training_manager():
 
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = await load_config()
 
         # Create enhanced training manager
@@ -106,12 +114,16 @@ async def demonstrate_enhanced_training_manager():
         success = await manager.execute_enhanced_training(training_input)
 
         if success:
+    pass
+    pass
             system_logger.info("✅ Enhanced Training Pipeline completed successfully!")
             system_logger.info("📊 Reports have been generated and stored.")
 
             # Show report locations
             reports_dir = Path("reports/enhanced_training_pipeline")
             if reports_dir.exists():
+    pass
+    pass
                 report_files = list(reports_dir.glob("*.json"))
                 summary_files = list(reports_dir.glob("*_summary.txt"))
 
@@ -122,6 +134,8 @@ async def demonstrate_enhanced_training_manager():
 
                 # Show latest report
                 if report_files:
+    pass
+    pass
                     latest_report = max(report_files, key=lambda x: x.stat().st_mtime)
                     system_logger.info(f"   📄 Latest Report: {latest_report.name}")
 
@@ -130,6 +144,10 @@ async def demonstrate_enhanced_training_manager():
                         with open(latest_report, 'r', encoding='utf-8') as f:
                             report_data = json.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         system_logger.info("📊 Report Summary:")
                         system_logger.info(f"   Pipeline Success: {report_data.get('overall_success', 'N/A')}")
                         system_logger.info(f"   Start Time: {report_data.get('pipeline_start_time', 'N/A')}")
@@ -162,6 +180,10 @@ async def demonstrate_individual_steps():
 
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = await load_config()
 
         # Create enhanced training manager
@@ -175,10 +197,16 @@ async def demonstrate_individual_steps():
         ]
 
         for step_method_name, step_description in steps_to_demo:
+    pass
+    pass
             system_logger.info(f"🔄 Demonstrating {step_description}...")
 
             try:
                 # Get the step method
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 step_method = getattr(manager, f"_execute_{step_method_name}_enhanced")
 
                 # Execute with decorators
@@ -193,6 +221,8 @@ async def demonstrate_individual_steps():
                 )
 
                 if result:
+    pass
+    pass
                     system_logger.info(f"✅ {step_description} completed successfully")
                 else:
                     system_logger.warning(f"⚠️ {step_description} completed with warnings")
@@ -266,7 +296,7 @@ async def main():
     await show_decorator_capabilities()
 
     # Ask user what to demonstrate
-    print("\nWhat would you like to demonstrate?")
+    print("\\\nWhat would you like to demonstrate?")
     print("1. Full pipeline execution with decorators")
     print("2. Individual step execution with decorators")
     print("3. Both")
@@ -275,13 +305,19 @@ async def main():
     try:
         choice = input("Enter your choice (1-4): ").strip()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if choice == "1":
+    pass
+    pass
             await demonstrate_enhanced_training_manager()
         elif choice == "2":
             await demonstrate_individual_steps()
         elif choice == "3":
             await demonstrate_enhanced_training_manager()
-            print("\n" + "="*80 + "\n")
+            print("\\\n" + "="*80 + "\\\n")
             await demonstrate_individual_steps()
         elif choice == "4":
             system_logger.info("👋 Goodbye!")
@@ -291,7 +327,7 @@ async def main():
             await demonstrate_enhanced_training_manager()
 
     except KeyboardInterrupt:
-        system_logger.info("\n👋 Demonstration interrupted by user")
+        system_logger.info("\\\n👋 Demonstration interrupted by user")
     except Exception as e:
         system_logger.error(f"💥 Demonstration failed: {e}")
         system_logger.exception("Full error details:")
@@ -303,5 +339,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the demonstration
     asyncio.run(main())

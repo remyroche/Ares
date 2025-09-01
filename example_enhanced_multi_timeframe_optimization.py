@@ -15,6 +15,7 @@ from pathlib import Path
 
 # Import the enhanced multi-timeframe optimizer
 from src.training.enhanced_multi_timeframe_optimizer import (
+import EnhancedMultiTimeframeOptimizer,
     EnhancedMultiTimeframeOptimizer,
     OptimizedTimeframeConfig
 )
@@ -24,6 +25,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
+    pass
+    pass
     """Create sample OHLCV data for demonstration."""
     logger.info(f"📊 Creating sample data with {n_samples} samples...")
 
@@ -63,6 +66,8 @@ def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
     return data
 
 def create_sample_matrix_optimization_results() -> dict:
+    pass
+    pass
     """Create sample matrix optimization results for demonstration."""
     logger.info("🔧 Creating sample matrix optimization results...")
 
@@ -162,6 +167,8 @@ def create_sample_matrix_optimization_results() -> dict:
     return matrix_results
 
 def create_sample_regime_labels(n_samples: int) -> pd.Series:
+    pass
+    pass
     """Create sample regime labels for demonstration."""
     logger.info("🏛️ Creating sample regime labels...")
 
@@ -171,6 +178,8 @@ def create_sample_regime_labels(n_samples: int) -> pd.Series:
     current_regime = 0
 
     for i in range(n_samples):
+    pass
+    pass
         # Regime persistence with occasional switches
         if np.random.random() < 0.98:  # 98% chance to stay in same regime
             regimes.append(current_regime)
@@ -228,19 +237,31 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     # Count features by type
     feature_types = {}
     for feature_name in optimized_features.keys():
+    pass
+    pass
         if '_' in feature_name:
+    pass
+    pass
             parts = feature_name.split('_')
             if len(parts) >= 3:
+    pass
+    pass
                 indicator = parts[0]
                 timeframe = parts[-1] if parts[-1] in ['1m', '5m', '15m', '30m', '1h'] else 'cross'
 
                 if indicator not in feature_types:
+    pass
+    pass
                     feature_types[indicator] = {'timeframes': {}, 'cross': 0}
 
                 if timeframe == 'cross':
+    pass
+    pass
                     feature_types[indicator]['cross'] += 1
                 else:
                     if timeframe not in feature_types[indicator]['timeframes']:
+    pass
+    pass
                         feature_types[indicator]['timeframes'][timeframe] = 0
                     feature_types[indicator]['timeframes'][timeframe] += 1
 
@@ -253,18 +274,26 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     logger.info(f"Regime-specific features: {len([f for f in optimized_features.keys() if f.startswith('regime_')])}")
     logger.info(f"Cross-timeframe features: {len([f for f in optimized_features.keys() if 'diff_' in f or 'ratio_' in f])}")
 
-    logger.info("\n📊 Feature Distribution by Indicator:")
+    logger.info("\\\n📊 Feature Distribution by Indicator:")
     for indicator, info in feature_types.items():
+    pass
+    pass
         logger.info(f"  {indicator}:")
         for timeframe, count in info['timeframes'].items():
+    pass
+    pass
             logger.info(f"    {timeframe}: {count} features")
         if info['cross'] > 0:
+    pass
+    pass
             logger.info(f"    Cross-timeframe: {info['cross']} features")
 
     # 10. Show sample features
-    logger.info("\n🔍 Sample Optimized Features:")
+    logger.info("\\\n🔍 Sample Optimized Features:")
     sample_features = list(optimized_features.keys())[:10]
     for feature in sample_features:
+    pass
+    pass
         logger.info(f"  - {feature}")
 
     # 11. Save results
@@ -273,7 +302,7 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     optimizer.save_optimization_results(str(output_path))
 
     # 12. Compare with traditional approach
-    logger.info("\n🔄 COMPARISON WITH TRADITIONAL APPROACH")
+    logger.info("\\\n🔄 COMPARISON WITH TRADITIONAL APPROACH")
     logger.info("=" * 60)
 
     # Traditional approach would use fixed periods
@@ -285,18 +314,26 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     logger.info(f"Improvement: {len(optimized_features) / traditional_features:.1f}x more features")
 
     # 13. Quality metrics
-    logger.info("\n🎯 QUALITY METRICS")
+    logger.info("\\\n🎯 QUALITY METRICS")
     logger.info("=" * 60)
 
     # Calculate average correlation with target
     correlations = []
     for feature_name, feature_series in optimized_features.items():
+    pass
+    pass
         if isinstance(feature_series, pd.Series):
+    pass
+    pass
             corr = abs(feature_series.corr(target))
             if not pd.isna(corr):
+    pass
+    pass
                 correlations.append(corr)
 
     if correlations:
+    pass
+    pass
         avg_correlation = np.mean(correlations)
         max_correlation = np.max(correlations)
         min_correlation = np.min(correlations)
@@ -306,7 +343,7 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
         logger.info(f"Minimum correlation with target: {min_correlation:.3f}")
 
     # 14. Key benefits summary
-    logger.info("\n✨ KEY BENEFITS OF ENHANCED MULTI-TIMEFRAME OPTIMIZATION")
+    logger.info("\\\n✨ KEY BENEFITS OF ENHANCED MULTI-TIMEFRAME OPTIMIZATION")
     logger.info("=" * 60)
 
     benefits = [
@@ -322,10 +359,14 @@ async def demonstrate_enhanced_multi_timeframe_optimization():
     ]
 
     for benefit in benefits:
+    pass
+    pass
         logger.info(benefit)
 
-    logger.info("\n🎉 Enhanced Multi-Timeframe Optimization Demonstration Complete!")
+    logger.info("\\\n🎉 Enhanced Multi-Timeframe Optimization Demonstration Complete!")
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the demonstration
     asyncio.run(demonstrate_enhanced_multi_timeframe_optimization())

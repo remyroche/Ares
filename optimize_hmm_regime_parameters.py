@@ -31,6 +31,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -42,6 +43,8 @@ class HMMRegimeOptimizer:
     """Optimize HMM regime discovery parameters for distinct market condition capture."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+    pass
+    pass
         self.config = config or {}
         self.best_params = None
         self.best_score = -np.inf
@@ -54,6 +57,8 @@ class HMMRegimeOptimizer:
         """Create the objective function for Optuna optimization."""
 
         def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
             """Objective function to maximize regime differentiation and coherence."""
 
             # Suggest HMM parameters
@@ -67,6 +72,10 @@ class HMMRegimeOptimizer:
 
             try:
                 # Generate initial clusters with suggested parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 initial_cluster_data = self._generate_initial_clusters_with_params(
                     data, feature_columns, market_condition_columns,
                     params, clustering_params
@@ -102,6 +111,8 @@ class HMMRegimeOptimizer:
         return objective
 
     def _suggest_hmm_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+    pass
+    pass
         """Suggest HMM-specific parameters."""
         return {
             'n_components': trial.suggest_int('n_components', 2, 8),
@@ -114,6 +125,8 @@ class HMMRegimeOptimizer:
         }
 
     def _suggest_clustering_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+    pass
+    pass
         """Suggest clustering algorithm parameters."""
         clustering_method = trial.suggest_categorical('clustering_method',
                                                      ['kmeans', 'gaussian_mixture', 'hierarchical'])
@@ -121,6 +134,8 @@ class HMMRegimeOptimizer:
         params = {'clustering_method': clustering_method}
 
         if clustering_method == 'kmeans':
+    pass
+    pass
             params.update({
                 'n_clusters': trial.suggest_int('n_clusters', 3, 12),
                 'init': trial.suggest_categorical('kmeans_init', ['k-means++', 'random']),
@@ -139,6 +154,8 @@ class HMMRegimeOptimizer:
         return params
 
     def _suggest_regime_merging_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+    pass
+    pass
         """Suggest regime merging/clustering parameters to achieve 15-20 final regimes."""
         return {
             'initial_clusters': trial.suggest_int('initial_clusters', 25, 50),
@@ -177,7 +194,11 @@ class HMMRegimeOptimizer:
 
         # Add market condition columns
         for col in market_condition_columns:
+    pass
+    pass
             if col in data.columns:
+    pass
+    pass
                 result_data[f'market_{col}'] = data[col]
 
         return result_data
@@ -196,6 +217,8 @@ class HMMRegimeOptimizer:
         )
 
         if merging_method == 'hierarchical':
+    pass
+    pass
             final_regime_labels = self._hierarchical_regime_merging(
                 initial_cluster_data, regime_characteristics, merging_params
             )
@@ -250,10 +273,13 @@ class HMMRegimeOptimizer:
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
+import char_cols = [col for col in regime_characteristics.columns
         char_cols = [col for col in regime_characteristics.columns
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
+    pass
+    pass
             return cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
@@ -283,10 +309,13 @@ class HMMRegimeOptimizer:
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
+import char_cols = [col for col in regime_characteristics.columns
         char_cols = [col for col in regime_characteristics.columns
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
+    pass
+    pass
             return cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
@@ -313,10 +342,13 @@ class HMMRegimeOptimizer:
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
+import char_cols = [col for col in regime_characteristics.columns
         char_cols = [col for col in regime_characteristics.columns
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
+    pass
+    pass
             return cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
@@ -334,6 +366,8 @@ class HMMRegimeOptimizer:
         target_regimes = merging_params.get('target_regimes', 18)
 
         if n_clusters != target_regimes:
+    pass
+    pass
             # Fall back to K-means for exact target
             return self._kmeans_regime_merging(cluster_data, regime_characteristics, merging_params)
 
@@ -352,10 +386,13 @@ class HMMRegimeOptimizer:
         from sklearn.preprocessing import StandardScaler
 
         # Prepare characteristics for clustering
+import char_cols = [col for col in regime_characteristics.columns
         char_cols = [col for col in regime_characteristics.columns
                     if col not in ['regime_id', 'size']]
 
         if len(char_cols) == 0:
+    pass
+    pass
             return cluster_data['composite_cluster_id'].values
 
         # Scale characteristics
@@ -383,10 +420,13 @@ class HMMRegimeOptimizer:
         method = feature_params.get('feature_selection_method', 'all')
 
         if method == 'all':
+    pass
+    pass
             return features
 
         elif method == 'variance':
             from sklearn.feature_selection import VarianceThreshold
+import threshold = feature_params.get
             threshold = feature_params.get('variance_threshold', 0.01)
             selector = VarianceThreshold(threshold=threshold)
             selected_features = selector.fit_transform(features)
@@ -408,12 +448,16 @@ class HMMRegimeOptimizer:
         method = feature_params.get('scaling_method', 'standard')
 
         if method == 'standard':
+    pass
+    pass
             scaler = StandardScaler()
         elif method == 'robust':
             from sklearn.preprocessing import RobustScaler
+import scaler = RobustScaler
             scaler = RobustScaler()
         elif method == 'minmax':
             from sklearn.preprocessing import MinMaxScaler
+import scaler = MinMaxScaler
             scaler = MinMaxScaler()
         else:
             return features.values
@@ -435,6 +479,8 @@ class HMMRegimeOptimizer:
         method = clustering_params.get('clustering_method', 'kmeans')
 
         if method == 'kmeans':
+    pass
+    pass
             kmeans = KMeans(
                 n_clusters=clustering_params.get('n_clusters', 5),
                 init=clustering_params.get('init', 'k-means++'),
@@ -465,6 +511,8 @@ class HMMRegimeOptimizer:
         """Evaluate regime quality focusing on differentiation and coherence."""
 
         if 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return -np.inf
 
         scores = []
@@ -502,17 +550,23 @@ class HMMRegimeOptimizer:
         """Calculate how well regimes are differentiated from each other using vectorized operations."""
 
         if not market_condition_columns:
+    pass
+    pass
             return 0.0
 
         # Filter valid market condition columns
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
+    pass
+    pass
             return 0.0
 
         # Vectorized calculation of regime means for all market conditions at once
         regime_means_matrix = cluster_data.groupby('composite_cluster_id')[valid_columns].mean()
 
         if len(regime_means_matrix) < 2:
+    pass
+    pass
             return 0.0
 
         # Calculate pairwise differences using matrix operations
@@ -520,6 +574,8 @@ class HMMRegimeOptimizer:
         differentiation_scores = []
 
         for col in valid_columns:
+    pass
+    pass
             # Get regime means for this column
             regime_means = regime_means_matrix[col].values
 
@@ -536,9 +592,13 @@ class HMMRegimeOptimizer:
             valid_differences = differences[mask]
 
             if len(valid_differences) > 0:
+    pass
+    pass
                 # Normalize by the overall range of the market condition
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
+    pass
+    pass
                     avg_difference = np.mean(valid_differences) / overall_range
                     differentiation_scores.append(avg_difference)
 
@@ -549,16 +609,22 @@ class HMMRegimeOptimizer:
         """Calculate how internally coherent each regime is using vectorized operations."""
 
         if not market_condition_columns:
+    pass
+    pass
             return 0.0
 
         # Filter valid market condition columns
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
+    pass
+    pass
             return 0.0
 
         coherence_scores = []
 
         for col in valid_columns:
+    pass
+    pass
             # Vectorized calculation of coefficient of variation for all regimes at once
             regime_stats = cluster_data.groupby('composite_cluster_id')[col].agg(['mean', 'std', 'count'])
 
@@ -566,6 +632,8 @@ class HMMRegimeOptimizer:
             valid_regimes = regime_stats[regime_stats['count'] > 1]
 
             if len(valid_regimes) > 0:
+    pass
+    pass
                 # Calculate coefficient of variation using vectorized operations
                 means = valid_regimes['mean'].values
                 stds = valid_regimes['std'].values
@@ -573,9 +641,13 @@ class HMMRegimeOptimizer:
                 # Avoid division by zero
                 non_zero_means = means != 0
                 if np.any(non_zero_means):
+    pass
+    pass
                     cvs = stds[non_zero_means] / np.abs(means[non_zero_means])
 
                     if len(cvs) > 0:
+    pass
+    pass
                         # Lower CV means more coherent, so invert
                         avg_cv = np.mean(cvs)
                         coherence = 1.0 / (1.0 + avg_cv)
@@ -584,12 +656,16 @@ class HMMRegimeOptimizer:
         return np.mean(coherence_scores) if coherence_scores else 0.0
 
     def _calculate_regime_balance_score(self, cluster_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate how balanced the regime sizes are using vectorized operations."""
 
         # Vectorized calculation of regime sizes
         regime_sizes = cluster_data['composite_cluster_id'].value_counts().values
 
         if len(regime_sizes) < 2:
+    pass
+    pass
             return 0.0
 
         # Calculate coefficient of variation using vectorized operations
@@ -597,6 +673,8 @@ class HMMRegimeOptimizer:
         std_size = np.std(regime_sizes)
 
         if mean_size == 0:
+    pass
+    pass
             return 0.0
 
         cv = std_size / mean_size
@@ -618,6 +696,8 @@ class HMMRegimeOptimizer:
 
         # Additional penalty for being outside the 15-20 range
         if actual_regimes < 15 or actual_regimes > 20:
+    pass
+    pass
             penalty *= 0.5
 
         return max(0.0, penalty)
@@ -627,37 +707,57 @@ class HMMRegimeOptimizer:
         """Calculate how well clusters differentiate market conditions."""
 
         if not market_condition_columns:
+    pass
+    pass
             return 0.0
 
         differentiation_scores = []
 
         for col in market_condition_columns:
+    pass
+    pass
             if col not in cluster_data.columns:
+    pass
+    pass
                 continue
 
             # Calculate average market condition value for each cluster
             cluster_means = cluster_data.groupby('composite_cluster_id')[col].mean()
 
             if len(cluster_means) < 2:
+    pass
+    pass
                 continue
 
             # Calculate how different clusters are from each other
             differences = []
             for i, mean1 in cluster_means.items():
+    pass
+    pass
                 for j, mean2 in cluster_means.items():
+    pass
+    pass
                     if i != j:
+    pass
+    pass
                         differences.append(abs(mean1 - mean2))
 
             if differences:
+    pass
+    pass
                 # Normalize by the overall range of the market condition
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
+    pass
+    pass
                     avg_difference = np.mean(differences) / overall_range
                     differentiation_scores.append(avg_difference)
 
         return np.mean(differentiation_scores) if differentiation_scores else 0.0
 
     def _calculate_cluster_quality_score(self, cluster_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate traditional cluster quality metrics."""
 
         # Prepare features for quality metrics
@@ -665,6 +765,8 @@ class HMMRegimeOptimizer:
                           if col not in ['composite_cluster_id', 'timestamp', 'close', 'high', 'low', 'open', 'volume']]
 
         if len(feature_columns) < 2:
+    pass
+    pass
             return 0.0
 
         features = cluster_data[feature_columns[:min(10, len(feature_columns))]].fillna(0)
@@ -672,6 +774,10 @@ class HMMRegimeOptimizer:
 
         try:
             # Silhouette score
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             silhouette = silhouette_score(features, cluster_labels)
 
             # Calinski-Harabasz score
@@ -694,26 +800,40 @@ class HMMRegimeOptimizer:
         """Calculate how consistent market conditions are within clusters."""
 
         if not market_condition_columns:
+    pass
+    pass
             return 0.0
 
         consistency_scores = []
 
         for col in market_condition_columns:
+    pass
+    pass
             if col not in cluster_data.columns:
+    pass
+    pass
                 continue
 
             # Calculate coefficient of variation within each cluster
             cluster_cvs = []
             for cluster_id in cluster_data['composite_cluster_id'].unique():
+    pass
+    pass
                 cluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
                 if len(cluster_data_subset) > 1:
+    pass
+    pass
                     mean_val = cluster_data_subset[col].mean()
                     std_val = cluster_data_subset[col].std()
                     if mean_val != 0:
+    pass
+    pass
                         cv = std_val / abs(mean_val)
                         cluster_cvs.append(cv)
 
             if cluster_cvs:
+    pass
+    pass
                 # Lower CV means more consistency, so invert
                 avg_cv = np.mean(cluster_cvs)
                 consistency = 1.0 / (1.0 + avg_cv)
@@ -722,11 +842,15 @@ class HMMRegimeOptimizer:
         return np.mean(consistency_scores) if consistency_scores else 0.0
 
     def _calculate_cluster_balance_score(self, cluster_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate how balanced the cluster sizes are."""
 
         cluster_sizes = cluster_data['composite_cluster_id'].value_counts()
 
         if len(cluster_sizes) < 2:
+    pass
+    pass
             return 0.0
 
         # Calculate coefficient of variation of cluster sizes
@@ -734,6 +858,8 @@ class HMMRegimeOptimizer:
         std_size = cluster_sizes.std()
 
         if mean_size == 0:
+    pass
+    pass
             return 0.0
 
         cv = std_size / mean_size
@@ -748,12 +874,18 @@ class HMMRegimeOptimizer:
         """Calculate how well clusters separate different market conditions."""
 
         if not market_condition_columns:
+    pass
+    pass
             return 0.0
 
         separation_scores = []
 
         for col in market_condition_columns:
+    pass
+    pass
             if col not in cluster_data.columns:
+    pass
+    pass
                 continue
 
             # Calculate between-cluster variance vs within-cluster variance
@@ -764,6 +896,8 @@ class HMMRegimeOptimizer:
             within_ss = 0
 
             for cluster_id in cluster_data['composite_cluster_id'].unique():
+    pass
+    pass
                 cluster_data_subset = cluster_data[cluster_data['composite_cluster_id'] == cluster_id]
                 cluster_mean = cluster_data_subset[col].mean()
                 cluster_size = len(cluster_data_subset)
@@ -772,6 +906,8 @@ class HMMRegimeOptimizer:
                 within_ss += ((cluster_data_subset[col] - cluster_mean) ** 2).sum()
 
             if within_ss > 0:
+    pass
+    pass
                 f_ratio = between_ss / within_ss
                 # Normalize to 0-1 scale
                 separation = f_ratio / (1 + f_ratio)
@@ -816,7 +952,7 @@ class HMMRegimeOptimizer:
         self.best_params = self.study.best_params
         self.best_score = self.study.best_value
 
-        print(f"\n✅ Optimization completed!")
+        print(f"\\\n✅ Optimization completed!")
         print(f"🏆 Best score: {self.best_score:.4f}")
         print(f"🔧 Best parameters: {self.best_params}")
 
@@ -848,8 +984,12 @@ class HMMRegimeOptimizer:
 
         # Pre-calculate ranges for normalization
         for col in valid_features:
+    pass
+    pass
             col_data = data[col].dropna()
             if len(col_data) > 0:
+    pass
+    pass
                 processed_data['feature_ranges'][col] = {
                     'min': col_data.min(),
                     'max': col_data.max(),
@@ -857,8 +997,12 @@ class HMMRegimeOptimizer:
                 }
 
         for col in valid_market_conditions:
+    pass
+    pass
             col_data = data[col].dropna()
             if len(col_data) > 0:
+    pass
+    pass
                 processed_data['market_condition_ranges'][col] = {
                     'min': col_data.min(),
                     'max': col_data.max(),
@@ -876,6 +1020,8 @@ class HMMRegimeOptimizer:
         feature_matrix = processed_data['feature_matrix']
 
         if feature_matrix.size == 0:
+    pass
+    pass
             # Fallback to original method
             return self._generate_initial_clusters_with_params(
                 processed_data['data'],
@@ -904,9 +1050,13 @@ class HMMRegimeOptimizer:
         return result_data
 
     def generate_optimization_report(self, output_path: Optional[str] = None) -> str:
+    pass
+    pass
         """Generate a comprehensive optimization report."""
 
         if not self.study:
+    pass
+    pass
             return "No optimization study available."
 
         report = []
@@ -936,26 +1086,38 @@ class HMMRegimeOptimizer:
 
         report.append("### HMM Parameters")
         for param, value in hmm_params.items():
+    pass
+    pass
             report.append(f"- **{param}**: {value}")
         report.append("")
 
         report.append("### Clustering Parameters")
         for param, value in clustering_params.items():
+    pass
+    pass
             report.append(f"- **{param}**: {value}")
         report.append("")
 
         report.append("### Regime Merging Parameters")
         for param, value in merging_params.items():
+    pass
+    pass
             report.append(f"- **{param}**: {value}")
         report.append("")
 
         # Parameter Importance Analysis
         try:
             importance = optuna.importance.get_param_importances(self.study)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             report.append("## Parameter Importance Analysis")
             report.append("")
             report.append("### Top 10 Most Important Parameters")
             for i, (param, imp) in enumerate(sorted(importance.items(), key=lambda x: x[1], reverse=True)[:10], 1):
+    pass
+    pass
                 report.append(f"{i}. **{param}**: {imp:.4f}")
             report.append("")
 
@@ -965,20 +1127,32 @@ class HMMRegimeOptimizer:
             merging_importance = {k: v for k, v in importance.items() if k in ['initial_clusters', 'target_regimes', 'merging_method', 'similarity_threshold', 'min_regime_size', 'max_regime_size', 'coherence_threshold', 'differentiation_threshold']}
 
             if hmm_importance:
+    pass
+    pass
                 report.append("### HMM Parameter Importance")
                 for param, imp in sorted(hmm_importance.items(), key=lambda x: x[1], reverse=True):
+    pass
+    pass
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
             if clustering_importance:
+    pass
+    pass
                 report.append("### Clustering Parameter Importance")
                 for param, imp in sorted(clustering_importance.items(), key=lambda x: x[1], reverse=True):
+    pass
+    pass
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
             if merging_importance:
+    pass
+    pass
                 report.append("### Regime Merging Parameter Importance")
                 for param, imp in sorted(merging_importance.items(), key=lambda x: x[1], reverse=True):
+    pass
+    pass
                     report.append(f"- **{param}**: {imp:.4f}")
                 report.append("")
 
@@ -996,6 +1170,8 @@ class HMMRegimeOptimizer:
         scores = [t.value for t in completed_trials if t.value is not None]
 
         if scores:
+    pass
+    pass
             report.append(f"- **Score Range**: {min(scores):.4f} - {max(scores):.4f}")
             report.append(f"- **Mean Score**: {np.mean(scores):.4f}")
             report.append(f"- **Score Std**: {np.std(scores):.4f}")
@@ -1005,6 +1181,8 @@ class HMMRegimeOptimizer:
         # Regime count analysis
         regime_counts = [trial_info.get('final_regimes', 0) for trial_info in self.optimization_history if 'final_regimes' in trial_info]
         if regime_counts:
+    pass
+    pass
             report.append("### Regime Count Analysis")
             report.append(f"- **Target Range**: 15-20 regimes")
             report.append(f"- **Achieved Range**: {min(regime_counts)} - {max(regime_counts)} regimes")
@@ -1020,10 +1198,12 @@ class HMMRegimeOptimizer:
         report.append("|-------|-------|------------------|---------------|----------------|")
 
         for trial_info in self.optimization_history[-15:]:
+    pass
+    pass
             params = trial_info['params']
             initial_clusters = trial_info.get('initial_clusters', 'N/A')
             final_regimes = trial_info.get('final_regimes', 'N/A')
-            key_params = f"n_components={params.get('n_components', 'N/A')}, " \
+            key_params = f"n_components={params.get('n_components', 'N/A')}, " \\\
                         f"merging_method={params.get('merging_method', 'N/A')}"
             report.append(f"| {trial_info['trial_number']} | {trial_info['score']:.4f} | {initial_clusters} | {final_regimes} | {key_params} |")
         report.append("")
@@ -1037,11 +1217,15 @@ class HMMRegimeOptimizer:
 
         report.append("### Parameter Recommendations")
         if best_params.get('target_regimes', 0) >= 15 and best_params.get('target_regimes', 0) <= 20:
+    pass
+    pass
             report.append("✅ **Target Regime Count**: Optimal range achieved")
         else:
             report.append("⚠️ **Target Regime Count**: Consider adjusting to 15-20 range")
 
         if best_params.get('merging_method') == 'hierarchical':
+    pass
+    pass
             report.append("✅ **Merging Method**: Hierarchical clustering provides good interpretability")
         elif best_params.get('merging_method') == 'kmeans':
             report.append("✅ **Merging Method**: K-means provides balanced regime sizes")
@@ -1049,11 +1233,15 @@ class HMMRegimeOptimizer:
             report.append("✅ **Merging Method**: Alternative method may provide unique advantages")
 
         if best_params.get('coherence_threshold', 0) >= 0.7:
+    pass
+    pass
             report.append("✅ **Coherence Threshold**: High internal coherence achieved")
         else:
             report.append("⚠️ **Coherence Threshold**: Consider increasing for better internal coherence")
 
         if best_params.get('differentiation_threshold', 0) >= 0.6:
+    pass
+    pass
             report.append("✅ **Differentiation Threshold**: Good regime differentiation achieved")
         else:
             report.append("⚠️ **Differentiation Threshold**: Consider increasing for better regime separation")
@@ -1068,14 +1256,20 @@ class HMMRegimeOptimizer:
         report.append("step3_config = {")
         report.append("    'hmm_parameters': {")
         for param, value in hmm_params.items():
+    pass
+    pass
             report.append(f"        '{param}': {value},")
         report.append("    },")
         report.append("    'clustering_parameters': {")
         for param, value in clustering_params.items():
+    pass
+    pass
             report.append(f"        '{param}': {value},")
         report.append("    },")
         report.append("    'regime_merging_parameters': {")
         for param, value in merging_params.items():
+    pass
+    pass
             report.append(f"        '{param}': {value},")
         report.append("    }")
         report.append("}")
@@ -1112,9 +1306,11 @@ class HMMRegimeOptimizer:
         report.append(f"- **Final Regimes**: {best_trial.get('final_regimes', 'N/A')}")
         report.append("")
 
-        report_text = "\n".join(report)
+        report_text = "\\\n".join(report)
 
         if output_path:
+    pass
+    pass
             with open(output_path, 'w') as f:
                 f.write(report_text)
             print(f"📄 Comprehensive report saved to: {output_path}")
@@ -1122,8 +1318,12 @@ class HMMRegimeOptimizer:
         return report_text
 
     def _calculate_optimization_time(self) -> float:
+    pass
+    pass
         """Calculate total optimization time in minutes."""
         if not self.optimization_history:
+    pass
+    pass
             return 0.0
 
         start_time = min(trial_info['timestamp'] for trial_info in self.optimization_history)
@@ -1132,13 +1332,19 @@ class HMMRegimeOptimizer:
         return (end_time - start_time) / 60.0
 
     def create_optimization_visualizations(self, output_dir: Optional[str] = None) -> None:
+    pass
+    pass
         """Create visualizations for the optimization process."""
 
         if not self.study:
+    pass
+    pass
             print("No optimization study available for visualization.")
             return
 
         if output_dir:
+    pass
+    pass
             output_path = Path(output_dir)
             output_path.mkdir(exist_ok=True)
 
@@ -1164,6 +1370,10 @@ class HMMRegimeOptimizer:
         # 2. Parameter importance
         try:
             importance = optuna.importance.get_param_importances(self.study)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             params = list(importance.keys())
             values = list(importance.values())
 
@@ -1173,14 +1383,18 @@ class HMMRegimeOptimizer:
 
             # Color bars based on importance
             for bar, value in zip(bars, values):
+    pass
+    pass
                 if value > 0.1:
+    pass
+    pass
                     bar.set_color('green')
                 elif value > 0.05:
                     bar.set_color('orange')
                 else:
                     bar.set_color('red')
         except Exception:
-            axes[0, 1].text(0.5, 0.5, 'Parameter importance\nnot available',
+            axes[0, 1].text(0.5, 0.5, 'Parameter importance\\\nnot available',
                            ha='center', va='center', transform=axes[0, 1].transAxes)
             axes[0, 1].set_title('Parameter Importance')
 
@@ -1197,12 +1411,20 @@ class HMMRegimeOptimizer:
         # 4. Key parameter relationships
         try:
             # Extract key parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             n_components_values = []
             clustering_methods = []
             scores_for_plot = []
 
             for trial in completed_trials:
+    pass
+    pass
                 if trial.value is not None:
+    pass
+    pass
                     n_components_values.append(trial.params.get('n_components', 0))
                     clustering_methods.append(trial.params.get('clustering_method', 'unknown'))
                     scores_for_plot.append(trial.value)
@@ -1220,13 +1442,15 @@ class HMMRegimeOptimizer:
             plt.colorbar(scatter, ax=axes[1, 1], label='Trial Order')
 
         except Exception:
-            axes[1, 1].text(0.5, 0.5, 'Parameter relationship\nplot not available',
+            axes[1, 1].text(0.5, 0.5, 'Parameter relationship\\\nplot not available',
                            ha='center', va='center', transform=axes[1, 1].transAxes)
             axes[1, 1].set_title('Parameter Relationships')
 
         plt.tight_layout()
 
         if output_dir:
+    pass
+    pass
             plt.savefig(output_path / 'optimization_results.png', dpi=300, bbox_inches='tight')
             print(f"📊 Visualizations saved to: {output_path / 'optimization_results.png'}")
         else:
@@ -1235,6 +1459,8 @@ class HMMRegimeOptimizer:
         plt.close()
 
     def save_optimization_results(self, output_path: str) -> None:
+    pass
+    pass
         """Save optimization results to file."""
 
         results = {
@@ -1251,6 +1477,8 @@ class HMMRegimeOptimizer:
 
 
 def identify_market_condition_columns(data: pd.DataFrame) -> List[str]:
+    pass
+    pass
     """Identify columns that represent market conditions."""
 
     market_condition_keywords = [
@@ -1262,10 +1490,14 @@ def identify_market_condition_columns(data: pd.DataFrame) -> List[str]:
     market_columns = []
 
     for col in data.columns:
+    pass
+    pass
         col_lower = col.lower()
 
         # Check if column name contains market condition keywords
         if any(keyword in col_lower for keyword in market_condition_keywords):
+    pass
+    pass
             market_columns.append(col)
 
         # Check if column represents price-based metrics
@@ -1280,6 +1512,8 @@ def identify_market_condition_columns(data: pd.DataFrame) -> List[str]:
 
 
 def main():
+    pass
+    pass
     """Main function to run HMM parameter optimization."""
     parser = argparse.ArgumentParser(description="Optimize HMM regime discovery parameters")
     parser.add_argument("--data_path", type=str, required=True, help="Path to feature data parquet file")
@@ -1298,6 +1532,8 @@ def main():
     # Load configuration
     config = {}
     if args.config_path:
+    pass
+    pass
         with open(args.config_path, 'r') as f:
             config = json.load(f)
 
@@ -1329,20 +1565,20 @@ def main():
     )
 
     # Generate comprehensive report
-    print("\n📄 Generating comprehensive optimization report...")
+    print("\\\n📄 Generating comprehensive optimization report...")
     report = optimizer.generate_optimization_report(
         output_path=output_path / "optimization_report.md"
     )
 
     # Create visualizations
-    print("\n📊 Creating visualizations...")
+    print("\\\n📊 Creating visualizations...")
     optimizer.create_optimization_visualizations(output_path)
 
     # Save results
     optimizer.save_optimization_results(output_path / "optimization_results.json")
 
     # Print comprehensive summary
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("🎯 HMM REGIME OPTIMIZATION COMPLETED")
     print("="*80)
     print(f"🏆 Best Score: {results['best_score']:.4f}")
@@ -1372,4 +1608,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

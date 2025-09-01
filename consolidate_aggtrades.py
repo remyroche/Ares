@@ -7,6 +7,8 @@ import pandas as pd
 
 
 def consolidate_aggtrades():
+    pass
+    pass
     """Consolidate all aggtrades files into a single parquet file."""
     print("🔄 Consolidating aggtrades files...")
 
@@ -15,6 +17,8 @@ def consolidate_aggtrades():
     files = glob.glob(pattern)
 
     if not files:
+    pass
+    pass
         print("❌ No aggtrades files found")
         return False
 
@@ -23,8 +27,14 @@ def consolidate_aggtrades():
     # Read and concatenate all files
     dfs = []
     for file in sorted(files):
+    pass
+    pass
         try:
             print(f"📖 Reading {file}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             df = pd.read_parquet(file)
             dfs.append(df)
         except Exception as e:
@@ -32,6 +42,8 @@ def consolidate_aggtrades():
             continue
 
     if not dfs:
+    pass
+    pass
         print("❌ No valid aggtrades files found")
         return False
 
@@ -41,6 +53,8 @@ def consolidate_aggtrades():
 
     # Sort by timestamp if it exists
     if 'timestamp' in consolidated_df.columns:
+    pass
+    pass
         consolidated_df = consolidated_df.sort_values('timestamp')
 
     # Remove duplicates if any
@@ -56,4 +70,6 @@ def consolidate_aggtrades():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     consolidate_aggtrades()

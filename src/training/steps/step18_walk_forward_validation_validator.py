@@ -9,6 +9,7 @@ from typing import Any, Tuple
 import numpy as np
 
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     validation_error,
@@ -16,17 +17,23 @@ from src.utils.warning_symbols import (
 from src.utils.error_handler import handle_errors
 
 # Add the project root to the Python path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
+    pass
+    pass
     sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
+import class Step13WalkForwardValidationValidator
 class Step13WalkForwardValidationValidator(BaseValidator):
     """Validator for Step 13: Walk Forward Validation."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step13_walk_forward_validation", config)
 
     @handle_errors(exceptions=(Exception,), default_return = False, context="Step13.validate")
@@ -58,6 +65,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
+    pass
+    pass
         self.print(validation_error("❌ Walk forward validation step had errors"))
         return False
 
@@ -69,6 +78,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         )
         self.validation_results["walk_forward_files"] = files_metrics
         if not validation_files_passed:
+    pass
+    pass
         self.print(failed("❌ Walk forward validation files validation failed"))
         return False
 
@@ -80,6 +91,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         )
         self.validation_results["walk_forward_performance"] = performance_metrics
         if not performance_passed:
+    pass
+    pass
         self.print(failed("❌ Walk forward performance validation failed"))
         return False
 
@@ -91,6 +104,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         )
         self.validation_results["walk_forward_stability"] = stability_metrics
         if not stability_passed:
+    pass
+    pass
         self.print(failed("❌ Walk forward stability validation failed"))
         return False
 
@@ -102,6 +117,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         )
         self.validation_results["walk_forward_consistency"] = consistency_metrics
         if not consistency_passed:
+    pass
+    pass
         self.print(failed("❌ Walk forward consistency validation failed"))
         return False
 
@@ -112,6 +129,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
+    pass
         self.print(
                 validation_error("⚠️ Walk forward validation outcome is not favorable"),
             )
@@ -145,15 +164,21 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         missing_files: list[str] = []
         file_details: list[dict[str, Any]] = []
         for file_path in expected_files:
+    pass
+    pass
             file_passed, file_metrics, self.validate_file_exists(
                 file_path,
                 "walk_forward_file",
             )
             file_details.append(file_metrics)
         if not file_passed:
+    pass
+    pass
                 missing_files.append(file_path)
 
         if missing_files:
+    pass
+    pass
         self.logger.error(
                 f"❌ Missing walk forward validation files: {missing_files}",
             )
@@ -186,11 +211,15 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(performance_file):
+    pass
+    pass
         with open(performance_file, "r", encoding="utf - 8") as f:
                 performance, json.load(f)
 
         # Check overall performance metrics
         if "overall_accuracy" in performance:
+    pass
+    pass
                 overall_acc, float(performance["overall_accuracy"])  # normalize type
                 acc_passed, acc_metrics, self.validate_model_performance(
                     overall_acc,
@@ -200,6 +229,8 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.validation_results["walk_forward_accuracy"] = acc_metrics
 
         if not acc_passed:
+    pass
+    pass
         self.logger.error(
                         f"❌ Walk forward accuracy too low: {overall_acc:.3f}",
                     )
@@ -208,15 +239,21 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         # Check performance stability
         if "performance_stability" in performance:
+    pass
+    pass
                 stability, float(performance["performance_stability"])
                 metrics["performance_stability"] = stability
         if stability < 0.7:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Low walk forward performance stability: {stability:.3f}",
                     )
 
         # Check performance trend
         if "performance_trend" in performance:
+    pass
+    pass
                 trend, float(performance["performance_trend"])
                 metrics["performance_trend"] = trend
         if trend < -0.05:  # Declining performance
@@ -226,14 +263,20 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         # Check individual fold performance
         if "fold_performance" in performance:
+    pass
+    pass
                 fold_perf, performance["fold_performance"]
 
         # Check for consistent performance across folds
                 accuracies = [float(fold.get("accuracy", 0)) for fold in fold_perf]
         if accuracies:
+    pass
+    pass
                     acc_std, float(np.std(accuracies))
                     metrics["fold_accuracy_std"] = acc_std
         if acc_std > 0.1:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ High walk forward performance variance: {acc_std:.3f}",
                         )
@@ -274,23 +317,33 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(metadata_file):
+    pass
+    pass
         with open(metadata_file, "r", encoding="utf - 8") as f:
                 metadata, json.load(f)
 
         # Check number of folds
         if "fold_count" in metadata:
+    pass
+    pass
                 fold_count, int(metadata["fold_count"])
                 metrics["fold_count"] = fold_count
         if fold_count < 3:
+    pass
+    pass
         self.print(error(f"⚠️ Few walk forward folds: {fold_count}"))
                 elif fold_count > 20:
         self.print(error(f"⚠️ Many walk forward folds: {fold_count}"))
 
         # Check fold size
         if "fold_size" in metadata:
+    pass
+    pass
                 fold_size, int(metadata["fold_size"])
                 metrics["fold_size"] = fold_size
         if fold_size < 100:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Small walk forward fold size: {fold_size}",
                     )
@@ -301,9 +354,13 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         # Check overlap ratio
         if "overlap_ratio" in metadata:
+    pass
+    pass
                 overlap, float(metadata["overlap_ratio"])
                 metrics["overlap_ratio"] = overlap
         if overlap > 0.8:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ High walk forward overlap ratio: {overlap:.3f}",
                     )
@@ -314,9 +371,13 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         # Check temporal consistency
         if "temporal_consistency" in metadata:
+    pass
+    pass
                 consistency, float(metadata["temporal_consistency"])
                 metrics["temporal_consistency"] = consistency
         if consistency < 0.6:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Low walk forward temporal consistency: {consistency:.3f}",
                     )
@@ -349,45 +410,65 @@ class Step13WalkForwardValidationValidator(BaseValidator):
 
         metrics: dict[str, Any] = {}
         if os.path.exists(results_file):
+    pass
+    pass
         with open(results_file, "r", encoding="utf - 8") as f:
                 results, json.load(f)
 
         # Check for consistent model performance
         if "model_performance" in results:
+    pass
+    pass
                 model_perf, results["model_performance"]
 
         # Check accuracy consistency
         if "accuracy_consistency" in model_perf:
+    pass
+    pass
                     acc_consistency, float(model_perf["accuracy_consistency"])
                     metrics["accuracy_consistency"] = acc_consistency
         if acc_consistency < 0.7:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low accuracy consistency: {acc_consistency:.3f}",
                         )
 
         # Check loss consistency
         if "loss_consistency" in model_perf:
+    pass
+    pass
                     loss_consistency, float(model_perf["loss_consistency"])
                     metrics["loss_consistency"] = loss_consistency
         if loss_consistency < 0.7:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low loss consistency: {loss_consistency:.3f}",
                         )
 
         # Check parameter consistency
         if "parameter_consistency" in results:
+    pass
+    pass
                 param_consistency, float(results["parameter_consistency"])
                 metrics["parameter_consistency"] = param_consistency
         if param_consistency < 0.6:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Low parameter consistency: {param_consistency:.3f}",
                     )
 
         # Check prediction consistency
         if "prediction_consistency" in results:
+    pass
+    pass
                 pred_consistency, float(results["prediction_consistency"])
                 metrics["prediction_consistency"] = pred_consistency
         if pred_consistency < 0.7:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Low prediction consistency: {pred_consistency:.3f}",
                     )
@@ -423,6 +504,8 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio as _asyncio
 
     # Example usage

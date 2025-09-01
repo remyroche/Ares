@@ -26,13 +26,23 @@ sys.path.insert(0, str(project_root))
 # Import existing utilities with fallbacks
 try:
     from src.utils.logger import system_logger
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except ImportError:
 except ImportError:
     system_logger = logging.getLogger("EnhancedStep1_5")
 
 try:
 except ImportError:
     def handle_errors(*args, **kwargs):
+    pass
+    pass
         def decorator(func):
+    pass
+    pass
             return func
         return decorator
 
@@ -82,18 +92,30 @@ class Step1_5Config:
     max_rows_per_file: int = 5_000_000
 
     def validate(self) -> List[str]:
+    pass
+    pass
         """Validate configuration and return any issues."""
         issues = []
 
         if self.chunk_size <= 0:
+    pass
+    pass
             issues.append("chunk_size must be positive")
         if self.max_memory_mb <= 0:
+    pass
+    pass
             issues.append("max_memory_mb must be positive")
         if self.max_retries < 0:
+    pass
+    pass
             issues.append("max_retries must be non-negative")
         if self.max_nan_ratio < 0 or self.max_nan_ratio > 1:
+    pass
+    pass
             issues.append("max_nan_ratio must be between 0 and 1")
         if self.min_rows_per_group >= self.max_rows_per_file:
+    pass
+    pass
             issues.append("min_rows_per_group must be less than max_rows_per_file")
 
         return issues
@@ -112,18 +134,30 @@ class NonRetryableError(Exception):
     pass
 
 def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
+    pass
+    pass
     """Decorator for retrying operations with exponential backoff."""
     def decorator(func):
+    pass
+    pass
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             last_exception = None
 
             for attempt in range(max_retries + 1):
+    pass
+    pass
                 try:
                     return await func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except RetryableError as e:
                     last_exception = e
                     if attempt < max_retries:
+    pass
+    pass
                         wait_time = backoff_factor ** attempt
                         logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
@@ -136,6 +170,8 @@ def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
                 except Exception as e:
                     last_exception = e
                     if attempt < max_retries:
+    pass
+    pass
                         wait_time = backoff_factor ** attempt
                         logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
@@ -156,13 +192,21 @@ class MemoryMonitor:
     """Monitor memory usage during processing."""
 
     def __init__(self):
+    pass
+    pass
         self.peak_usage = 0
         self.usage_history = []
 
     def get_usage_mb(self) -> float:
+    pass
+    pass
         """Get current memory usage in MB."""
         try:
             import psutil
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             process = psutil.Process()
             usage_mb = process.memory_info().rss / 1024 / 1024
             self.peak_usage = max(self.peak_usage, usage_mb)
@@ -172,17 +216,25 @@ class MemoryMonitor:
             return 0.0
 
     def get_peak_usage_mb(self) -> float:
+    pass
+    pass
         """Get peak memory usage in MB."""
         return self.peak_usage
 
     def is_memory_pressure(self, threshold_mb: float) -> bool:
+    pass
+    pass
         """Check if memory usage is above threshold."""
         return self.get_usage_mb() > threshold_mb
 
 
 def memory_efficient(max_memory_mb: int = 1024):
+    pass
+    pass
     """Decorator for memory-efficient processing."""
     def decorator(func):
+    pass
+    pass
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             monitor = MemoryMonitor()
@@ -194,6 +246,10 @@ def memory_efficient(max_memory_mb: int = 1024):
             try:
                 result = await func(*args, **kwargs)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Check memory after processing
                 final_memory = monitor.get_usage_mb()
                 peak_memory = monitor.get_peak_usage_mb()
@@ -201,6 +257,8 @@ def memory_efficient(max_memory_mb: int = 1024):
                 logging.info(f"Memory after {func.__name__}: {final_memory:.1f}MB (peak: {peak_memory:.1f}MB)")
 
                 if peak_memory > max_memory_mb:
+    pass
+    pass
                     logging.warning(f"Peak memory usage ({peak_memory:.1f}MB) exceeded limit ({max_memory_mb}MB)")
 
                 return result
@@ -223,11 +281,15 @@ class QualityResult:
     metrics: Dict[str, Any] = field(default_factory=dict)
 
     def add_issue(self, issue_type: str, description: str):
+    pass
+    pass
         """Add a quality issue."""
         self.issues.append(f"{issue_type}: {description}")
         self.passed = False
 
     def add_metric(self, name: str, value: Any):
+    pass
+    pass
         """Add a quality metric."""
         self.metrics[name] = value
 
@@ -236,6 +298,8 @@ class EnhancedDataQualityValidator:
     """Enhanced data quality validation with real-time monitoring."""
 
     def __init__(self, config: Step1_5Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataQualityValidator")
 
@@ -244,6 +308,8 @@ class EnhancedDataQualityValidator:
         result = QualityResult()
 
         if df is None or df.empty:
+    pass
+    pass
             result.add_issue("empty_data", "DataFrame is None or empty")
             return result
 
@@ -261,13 +327,19 @@ class EnhancedDataQualityValidator:
         result.add_metric("nan_ratio", nan_ratio)
 
         if nan_ratio > self.config.max_nan_ratio:
+    pass
+    pass
             result.add_issue("nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.config.max_nan_ratio}")
 
         # Check for infinite values
         infinite_counts = {}
         for col in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
             infinite_count = np.isinf(df[col]).sum()
             if infinite_count > 0:
+    pass
+    pass
                 infinite_counts[col] = infinite_count
 
         total_infinites = sum(infinite_counts.values())
@@ -275,37 +347,55 @@ class EnhancedDataQualityValidator:
         result.add_metric("infinite_columns", infinite_counts)
 
         if total_infinites > self.config.max_infinite_count:
+    pass
+    pass
             result.add_issue("infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}")
 
         # Check for constant features
         constant_features = []
         for col in df.columns:
+    pass
+    pass
             unique_count = df[col].nunique()
             if unique_count < self.config.min_unique_values:
+    pass
+    pass
                 constant_features.append(col)
 
         result.add_metric("constant_features", constant_features)
         if constant_features:
+    pass
+    pass
             result.add_issue("constant_features", f"Found {len(constant_features)} constant features: {constant_features}")
 
         # Check for unified data structure
         unified_issues = self._validate_unified_structure(df)
         result.add_metric("unified_structure_issues", unified_issues)
         if unified_issues:
+    pass
+    pass
             result.add_issue("unified_structure", f"Found {len(unified_issues)} unified structure issues")
 
         # Check for timestamp consistency
         if 'timestamp' in df.columns:
+    pass
+    pass
             timestamp_issues = self._validate_timestamp_consistency(df)
             result.add_metric("timestamp_issues", timestamp_issues)
             if timestamp_issues:
+    pass
+    pass
                 result.add_issue("timestamp_issues", f"Found {len(timestamp_issues)} timestamp issues")
 
         # Check for data consistency across exchanges/symbols
         if 'exchange' in df.columns and 'symbol' in df.columns:
+    pass
+    pass
             consistency_issues = self._validate_data_consistency(df)
             result.add_metric("consistency_issues", consistency_issues)
             if consistency_issues:
+    pass
+    pass
                 result.add_issue("data_consistency", f"Found {len(consistency_issues)} consistency issues")
 
         self.logger.info(f"Quality validation for {context}: {'PASSED' if result.passed else 'FAILED'} "
@@ -314,6 +404,8 @@ class EnhancedDataQualityValidator:
         return result
 
     def _validate_unified_structure(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Validate unified data structure."""
         issues = []
 
@@ -322,6 +414,8 @@ class EnhancedDataQualityValidator:
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
+    pass
+    pass
             issues.append({
                 "type": "missing_columns",
                 "columns": missing_columns
@@ -329,6 +423,8 @@ class EnhancedDataQualityValidator:
 
         # Check data types
         if 'timestamp' in df.columns and not pd.api.types.is_integer_dtype(df['timestamp']):
+    pass
+    pass
             issues.append({
                 "type": "timestamp_dtype",
                 "expected": "int64",
@@ -337,9 +433,13 @@ class EnhancedDataQualityValidator:
 
         # Check for date columns if auto_add_date_columns is enabled
         if self.config.auto_add_date_columns:
+    pass
+    pass
             date_columns = ['year', 'month', 'day']
             missing_date_columns = [col for col in date_columns if col not in df.columns]
             if missing_date_columns:
+    pass
+    pass
                 issues.append({
                     "type": "missing_date_columns",
                     "columns": missing_date_columns
@@ -348,6 +448,8 @@ class EnhancedDataQualityValidator:
         return issues
 
     def _validate_timestamp_consistency(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Validate timestamp consistency."""
         issues = []
 
@@ -360,6 +462,8 @@ class EnhancedDataQualityValidator:
 
         large_gaps = time_diffs[time_diffs > expected_interval * 2]
         if not large_gaps.empty:
+    pass
+    pass
             issues.append({
                 "type": "large_gaps",
                 "count": len(large_gaps),
@@ -369,6 +473,8 @@ class EnhancedDataQualityValidator:
         # Check for duplicates
         duplicates = timestamps.duplicated()
         if duplicates.any():
+    pass
+    pass
             issues.append({
                 "type": "duplicate_timestamps",
                 "count": duplicates.sum()
@@ -377,12 +483,16 @@ class EnhancedDataQualityValidator:
         return issues
 
     def _validate_data_consistency(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Validate data consistency across exchanges/symbols."""
         issues = []
 
         # Check for consistent data across exchanges
         exchange_counts = df['exchange'].value_counts()
         if len(exchange_counts) > 1:
+    pass
+    pass
             # Check if all exchanges have similar data volumes
             mean_count = exchange_counts.mean()
             std_count = exchange_counts.std()
@@ -398,11 +508,15 @@ class EnhancedDataQualityValidator:
         # Check for consistent data across symbols
         symbol_counts = df['symbol'].value_counts()
         if len(symbol_counts) > 1:
+    pass
+    pass
             mean_count = symbol_counts.mean()
             std_count = symbol_counts.std()
             cv = std_count / mean_count if mean_count > 0 else 0
 
             if cv > 0.5:
+    pass
+    pass
                 issues.append({
                     "type": "uneven_symbol_distribution",
                     "symbol_counts": symbol_counts.to_dict(),
@@ -420,6 +534,8 @@ class OptimizedUnifiedDataProcessor:
     """Optimized unified data processing with streaming and parallelization."""
 
     def __init__(self, config: Step1_5Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("UnifiedDataProcessor")
         self.quality_validator = EnhancedDataQualityValidator(config)
@@ -434,7 +550,11 @@ class OptimizedUnifiedDataProcessor:
         processed_chunks = []
 
         for source_name, file_path in data_sources.items():
+    pass
+    pass
             if not os.path.exists(file_path):
+    pass
+    pass
                 self.logger.warning(f"Source file not found: {file_path}")
                 continue
 
@@ -442,6 +562,10 @@ class OptimizedUnifiedDataProcessor:
 
             try:
                 # Read and process source data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 source_chunks = await self._process_source_streaming(source_name, file_path)
                 processed_chunks.extend(source_chunks)
 
@@ -451,6 +575,8 @@ class OptimizedUnifiedDataProcessor:
 
         # Combine all processed chunks
         if processed_chunks:
+    pass
+    pass
             unified_data = pd.concat(processed_chunks, ignore_index=True)
             self.logger.info(f"Combined {len(processed_chunks)} chunks into unified data: {unified_data.shape}")
             return unified_data
@@ -465,6 +591,10 @@ class OptimizedUnifiedDataProcessor:
 
         try:
             for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
+    pass
+    except Exception as e:
+        pass
+    pass
                 chunk_count += 1
                 self.logger.debug(f"Processing {source_name} chunk {chunk_count}")
 
@@ -474,19 +604,27 @@ class OptimizedUnifiedDataProcessor:
                 )
 
                 if not quality_result.passed:
+    pass
+    pass
                     self.logger.warning(f"Quality issues in {source_name} chunk {chunk_count}: {quality_result.issues}")
 
                 # Transform chunk to unified format
                 unified_chunk = await self._transform_to_unified_format(chunk, source_name)
 
                 if not unified_chunk.empty:
+    pass
+    pass
                     chunks.append(unified_chunk)
 
                 # Check memory pressure
                 if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
+    pass
+    pass
                     self.logger.warning("Memory pressure detected, processing existing chunks")
                     break
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error processing {source_name}: {e}")
             raise
@@ -496,6 +634,8 @@ class OptimizedUnifiedDataProcessor:
     async def _transform_to_unified_format(self, chunk: pd.DataFrame, source_name: str) -> pd.DataFrame:
         """Transform data chunk to unified format."""
         if chunk.empty:
+    pass
+    pass
             return chunk
 
         # Create unified DataFrame
@@ -503,18 +643,28 @@ class OptimizedUnifiedDataProcessor:
 
         # Add common columns
         if 'timestamp' in chunk.columns:
+    pass
+    pass
             unified_chunk['timestamp'] = chunk['timestamp']
 
         # Add OHLCV columns based on source type
         if source_name == 'klines':
+    pass
+    pass
             ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
             for col in ohlcv_columns:
+    pass
+    pass
                 if col in chunk.columns:
+    pass
+    pass
                     unified_chunk[col] = chunk[col]
 
         elif source_name == 'aggtrades':
             # Transform aggtrades to OHLCV
             if 'price' in chunk.columns and 'quantity' in chunk.columns:
+    pass
+    pass
                 # Simple aggregation - in practice, you'd want more sophisticated aggregation
                 unified_chunk['open'] = chunk['price']
                 unified_chunk['high'] = chunk['price']
@@ -529,6 +679,8 @@ class OptimizedUnifiedDataProcessor:
 
         # Add date columns if enabled
         if self.config.auto_add_date_columns and 'timestamp' in unified_chunk.columns:
+    pass
+    pass
             timestamps = pd.to_datetime(unified_chunk['timestamp'], unit='ms', utc=True)
             unified_chunk['year'] = timestamps.dt.year.astype('int16')
             unified_chunk['month'] = timestamps.dt.month.astype('int8')
@@ -537,15 +689,23 @@ class OptimizedUnifiedDataProcessor:
         return unified_chunk
 
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize DataFrame data types for memory efficiency."""
         for col in df.columns:
+    pass
+    pass
             if df[col].dtype == 'float64':
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], downcast='float')
             elif df[col].dtype == 'int64':
                 df[col] = pd.to_numeric(df[col], downcast='integer')
             elif df[col].dtype == 'object':
                 # Try to convert to category if it has few unique values
                 if df[col].nunique() / len(df[col]) < 0.5:
+    pass
+    pass
                     df[col] = df[col].astype('category')
         return df
 
@@ -563,6 +723,8 @@ class EnhancedStep1_5DataConverter:
     """
 
     def __init__(self, config: Step1_5Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("EnhancedStep1_5")
         self.processor = OptimizedUnifiedDataProcessor(config)
@@ -572,12 +734,16 @@ class EnhancedStep1_5DataConverter:
         # Validate configuration
         config_issues = config.validate()
         if config_issues:
+    pass
+    pass
             raise ValueError(f"Configuration validation failed: {config_issues}")
 
         # Initialize directories
         self._initialize_directories()
 
     def _initialize_directories(self):
+    pass
+    pass
         """Initialize required directories."""
         directories = [
             self.config.data_dir,
@@ -587,6 +753,8 @@ class EnhancedStep1_5DataConverter:
         ]
 
         for directory in directories:
+    pass
+    pass
             os.makedirs(directory, exist_ok=True)
             self.logger.debug(f"Initialized directory: {directory}")
 
@@ -606,6 +774,10 @@ class EnhancedStep1_5DataConverter:
 
         try:
             # Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             symbol = training_input.get("symbol", self.config.symbol)
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
@@ -617,10 +789,16 @@ class EnhancedStep1_5DataConverter:
             unified_exists = await self._check_unified_data_exists(symbol, exchange, timeframe)
 
             if unified_exists and not self.config.force_rerun:
+    pass
+    pass
                 if self.config.enable_incremental:
+    pass
+    pass
                     self.logger.info("✅ Unified data exists, checking for incremental updates...")
                     incremental_success = await self._process_incremental_updates(symbol, exchange, timeframe)
                     if incremental_success:
+    pass
+    pass
                         self.logger.info("✅ Incremental processing completed")
                         pipeline_state["data_conversion_completed"] = True
                         pipeline_state["quality_check_passed"] = True
@@ -633,6 +811,8 @@ class EnhancedStep1_5DataConverter:
             conversion_success = await self._perform_full_conversion(symbol, exchange, timeframe, data_dir)
 
             if conversion_success:
+    pass
+    pass
                 self.logger.info("✅ Enhanced data conversion completed successfully")
                 pipeline_state["data_conversion_completed"] = True
                 pipeline_state["quality_check_passed"] = True
@@ -658,12 +838,22 @@ class EnhancedStep1_5DataConverter:
         """Check if unified data already exists."""
         try:
             unified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if os.path.exists(unified_base):
+    pass
+    pass
                 parquet_files = []
                 for root, dirs, files in os.walk(unified_base):
+    pass
+    pass
                     parquet_files.extend([f for f in files if f.endswith('.parquet')])
 
                 if parquet_files:
+    pass
+    pass
                     self.logger.info(f"✅ Found existing unified data: {len(parquet_files)} files")
                     return True
 
@@ -676,9 +866,15 @@ class EnhancedStep1_5DataConverter:
         """Backup existing unified data."""
         try:
             unified_base = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             backup_path = os.path.join(self.config.backup_dir, f"{exchange}_{symbol}_{timeframe}_{int(time.time())}")
 
             if os.path.exists(unified_base):
+    pass
+    pass
                 import shutil
                 shutil.move(unified_base, backup_path)
                 self.logger.info(f"📦 Backed up existing data to: {backup_path}")
@@ -689,6 +885,10 @@ class EnhancedStep1_5DataConverter:
         """Process incremental updates to existing unified data."""
         try:
             self.logger.info("🔍 Processing incremental updates...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Implement incremental processing logic here
             # This would compare source data timestamps with unified data timestamps
             # and only process new data
@@ -703,9 +903,15 @@ class EnhancedStep1_5DataConverter:
         """Perform full data conversion."""
         try:
             # Identify data sources
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             data_sources = await self._identify_data_sources(symbol, exchange, timeframe, data_dir)
 
             if not data_sources:
+    pass
+    pass
                 self.logger.warning("No data sources found for conversion")
                 return False
 
@@ -715,6 +921,8 @@ class EnhancedStep1_5DataConverter:
             unified_data = await self.processor.process_unified_data_streaming(data_sources)
 
             if unified_data.empty:
+    pass
+    pass
                 self.logger.warning("No unified data generated")
                 return False
 
@@ -724,6 +932,8 @@ class EnhancedStep1_5DataConverter:
             )
 
             if not quality_result.passed:
+    pass
+    pass
                 self.logger.warning(f"⚠️ Quality issues in unified data: {quality_result.issues}")
                 # Continue with warning instead of failing
                 self.logger.warning("⚠️ Continuing with quality issues - review logs for details")
@@ -732,6 +942,8 @@ class EnhancedStep1_5DataConverter:
             save_success = await self._save_unified_data(unified_data, symbol, exchange, timeframe)
 
             if not save_success:
+    pass
+    pass
                 self.logger.error("Failed to save unified data")
                 return False
 
@@ -751,16 +963,22 @@ class EnhancedStep1_5DataConverter:
         # Check for klines data
         klines_file = os.path.join(data_dir, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet")
         if os.path.exists(klines_file):
+    pass
+    pass
             data_sources['klines'] = klines_file
 
         # Check for aggtrades data
         aggtrades_file = os.path.join(data_dir, f"aggtrades_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(aggtrades_file):
+    pass
+    pass
             data_sources['aggtrades'] = aggtrades_file
 
         # Check for futures data
         futures_file = os.path.join(data_dir, f"futures_{exchange}_{symbol}_consolidated.parquet")
         if os.path.exists(futures_file):
+    pass
+    pass
             data_sources['futures'] = futures_file
 
         return data_sources
@@ -769,6 +987,10 @@ class EnhancedStep1_5DataConverter:
         """Save unified data to partitioned parquet format."""
         try:
             # Create output directory
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             output_dir = os.path.join(self.config.unified_dir, exchange.lower(), symbol, timeframe)
             os.makedirs(output_dir, exist_ok=True)
 
@@ -785,12 +1007,18 @@ class EnhancedStep1_5DataConverter:
             # Use pyarrow for efficient writing
             try:
                 import pyarrow as pa
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 import pyarrow.parquet as pq
 
                 table = pa.Table.from_pandas(unified_data, preserve_index=False)
 
                 # Write with partitioning
                 if partition_cols:
+    pass
+    pass
                     pq.write_to_dataset(
                         table,
                         output_dir,
@@ -867,6 +1095,10 @@ async def main():
     try:
         result = await step1_5.execute(training_input, pipeline_state)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print("=" * 60)
         print("ENHANCED STEP1_5 EXECUTION RESULTS")
         print("=" * 60)
@@ -879,6 +1111,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,

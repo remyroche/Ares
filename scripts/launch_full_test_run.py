@@ -11,11 +11,14 @@ import sys
 from scripts.gui_launcher import GUILauncher
 
 # Add the project root to the Python path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
 def main():
+    pass
+    pass
     """Launch full test run with GUI."""
     parser, argparse.ArgumentParser(description="Launch full test run with GUI")
     parser.add_argument("symbol", help="Trading symbol (e.g., BTCUSDT)")
@@ -46,4 +49,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

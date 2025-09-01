@@ -31,6 +31,7 @@ from scipy import stats
 
 from src.utils.logger import setup_logging
 from src.config.config_optuna import (
+import SROptimizationParameters,
     SROptimizationParameters,
     HyperparameterOptimizationConfig,
     get_parameter_search_space
@@ -210,17 +211,25 @@ class RegimeSpecificTripleBarrierOptimizer:
         self.studies: Dict[str, optuna.Study] = {}
 
     def _load_optimization_config(self) -> None:
+    pass
+    pass
         """Load optimization configuration from config."""
         opt_config, self.config.get("regime_specific_optimization", {})
 
         # Update configuration with provided values
         for key, value in opt_config.items():
+    pass
+    pass
         if hasattr(self.optimization_config, key):
+    pass
+    pass
                 setattr(self.optimization_config, key, value)
 
         # Load regime constraints if provided
         regime_constraints, opt_config.get("regime_constraints")
         if regime_constraints:
+    pass
+    pass
         self.optimization_config.regime_constraints.update(regime_constraints)
 
     async def initialize(self) -> bool:
@@ -228,8 +237,14 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         self.logger.info("🚀 Initializing Regime - Specific Triple Barrier Optimizer...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Validate configuration
         if not self._validate_configuration():
+    pass
+    pass
         self.logger.error("❌ Configuration validation failed")
         return False
 
@@ -244,21 +259,33 @@ class RegimeSpecificTripleBarrierOptimizer:
         return False
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate the optimization configuration."""
         try:
         # Check objectives
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not self.optimization_config.objectives:
+    pass
+    pass
         self.logger.error("❌ No objectives specified")
         return False
 
         # Check objective weights
             weight_sum, sum(self.optimization_config.objective_weights.values())
         if abs(weight_sum - 1.0) > 0.01:
+    pass
+    pass
         self.logger.error(f"❌ Objective weights must sum to 1.0, got {weight_sum}")
         return False
 
         # Check regime constraints
         if not self.optimization_config.regime_constraints:
+    pass
+    pass
         self.logger.error("❌ No regime constraints specified")
         return False
 
@@ -277,6 +304,10 @@ class RegimeSpecificTripleBarrierOptimizer:
                 storage = self.storage_url,
                 load_if_exists = True
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info(f"✅ Storage initialized: {self.storage_url}")
 
         except Exception as e:
@@ -285,6 +316,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         self.storage_url, None
 
     def _get_regime_names(self, data: pd.DataFrame) -> List[str]:
+    pass
+    pass
         """Extract regime names from data."""
         regime_column, None
 
@@ -295,11 +328,17 @@ class RegimeSpecificTripleBarrierOptimizer:
         ]
 
         for col in possible_regime_columns:
+    pass
+    pass
         if col in data.columns:
+    pass
+    pass
                 regime_column, col
                 break
 
         if regime_column is None:
+    pass
+    pass
         self.logger.warning("⚠️ No regime column found, using default regimes")
         return list(self.optimization_config.regime_constraints.keys())
 
@@ -308,7 +347,11 @@ class RegimeSpecificTripleBarrierOptimizer:
         regime_names = []
 
         for regime in unique_regimes:
+    pass
+    pass
         if isinstance(regime, (int, np.integer)):
+    pass
+    pass
         # Map numeric regime to name
                 regime_name, f"REGIME_{regime}"
             else:
@@ -327,12 +370,18 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Create objective function for a specific regime."""
 
         def objective(trial: optuna.Trial) -> float:
+    pass
+    pass
             """Objective function for regime - specific optimization."""
 
         try:
         # Suggest triple barrier parameters
                 tb_params, self._suggest_triple_barrier_params(trial, regime_constraints)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Suggest TPSL parameters
                 tpsl_params, self._suggest_tpsl_params(trial, regime_constraints)
 
@@ -444,6 +493,12 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         # Import the optimized triple barrier labeling
             from src.training.steps.step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import OptimizedTripleBarrierLabeling
                 OptimizedTripleBarrierLabeling
             )
 
@@ -483,6 +538,8 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         # Calculate ATR if not present
         if 'atr' not in data.columns:
+    pass
+    pass
             data['atr'] = self._calculate_atr(data, period = 14)
 
         # Add TPSL levels
@@ -495,9 +552,15 @@ class RegimeSpecificTripleBarrierOptimizer:
         return data
 
     def _calculate_atr(self, data: pd.DataFrame, period: int, 14) -> pd.Series:
+    pass
+    pass
         """Calculate Average True Range."""
         try:
             high, data['high']
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             low, data['low']
             close, data['close']
 
@@ -525,7 +588,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         # Filter valid labels
             valid_data, labeled_data[labeled_data['label'] != 0].copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(valid_data) < self.optimization_config.min_sample_size:
+    pass
+    pass
         return self._get_default_metrics()
 
         # Calculate returns
@@ -567,6 +636,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         return self._get_default_metrics()
 
     def _get_default_metrics(self) -> Dict[str, float]:
+    pass
+    pass
         """Get default metrics for failed evaluations."""
         return {
             'total_return': 0.0,
@@ -583,13 +654,19 @@ class RegimeSpecificTripleBarrierOptimizer:
         }
 
     def _calculate_composite_score(self, metrics: Dict[str, float]) -> float:
+    pass
+    pass
         """Calculate composite optimization score."""
 
         score, 0.0
         weights, self.optimization_config.objective_weights
 
         for objective, weight in weights.items():
+    pass
+    pass
         if objective in metrics:
+    pass
+    pass
         # Normalize metrics to 0 - 1 range
                 normalized_value, self._normalize_metric(objective, metrics[objective])
                 score += weight * normalized_value
@@ -597,6 +674,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         return score
 
     def _normalize_metric(self, metric_name: str, value: float) -> float:
+    pass
+    pass
         """Normalize metric to 0 - 1 range."""
 
         # Define normalization ranges for different metrics
@@ -612,6 +691,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         }
 
         if metric_name in normalization_ranges:
+    pass
+    pass
             min_val, max_val, normalization_ranges[metric_name]
             normalized = (value - min_val) / (max_val - min_val)
         return np.clip(normalized, 0.0, 1.0)
@@ -621,18 +702,26 @@ class RegimeSpecificTripleBarrierOptimizer:
 
     # Performance calculation methods
     def _calculate_profit_factor(self, returns: pd.Series) -> float:
+    pass
+    pass
         """Calculate profit factor."""
         gains, returns[returns > 0].sum()
         losses, abs(returns[returns < 0].sum())
         return gains / losses if losses > 0 else 1.0
 
     def _calculate_sharpe_ratio(self, returns: pd.Series) -> float:
+    pass
+    pass
         """Calculate Sharpe ratio."""
         if len(returns) < 2:
+    pass
+    pass
         return 0.0
         return returns.mean() / returns.std() if returns.std() > 0 else 0.0
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
+    pass
+    pass
         """Calculate maximum drawdown."""
         cumulative = (1 + returns).cumprod()
         running_max, cumulative.expanding().max()
@@ -640,38 +729,58 @@ class RegimeSpecificTripleBarrierOptimizer:
         return drawdown.min()
 
     def _calculate_sortino_ratio(self, returns: pd.Series) -> float:
+    pass
+    pass
         """Calculate Sortino ratio."""
         if len(returns) < 2:
+    pass
+    pass
         return 0.0
         negative_returns, returns[returns < 0]
         downside_std, negative_returns.std() if len(negative_returns) > 0 else 0.0
         return returns.mean() / downside_std if downside_std > 0 else 0.0
 
     def _calculate_calmar_ratio(self, total_return: float, max_drawdown: float) -> float:
+    pass
+    pass
         """Calculate Calmar ratio."""
         return total_return / abs(max_drawdown) if max_drawdown < 0 else 0.0
 
     def _calculate_regime_accuracy(self, data: pd.DataFrame, regime_name: str) -> float:
+    pass
+    pass
         """Calculate regime - specific accuracy."""
         if 'regime' not in data.columns:
+    pass
+    pass
         return 0.5
         return (data['regime'] == regime_name).mean()
 
     def _calculate_regime_precision(self, data: pd.DataFrame, regime_name: str) -> float:
+    pass
+    pass
         """Calculate regime - specific precision."""
         if 'regime' not in data.columns:
+    pass
+    pass
         return 0.5
         regime_predictions, data['regime'] == regime_name
         return precision_score(regime_predictions, data['label'] > 0, zero_division = 0)
 
     def _calculate_regime_recall(self, data: pd.DataFrame, regime_name: str) -> float:
+    pass
+    pass
         """Calculate regime - specific recall."""
         if 'regime' not in data.columns:
+    pass
+    pass
         return 0.5
         regime_predictions, data['regime'] == regime_name
         return recall_score(regime_predictions, data['label'] > 0, zero_division = 0)
 
     def _calculate_regime_f1(self, precision: float, recall: float) -> float:
+    pass
+    pass
         """Calculate regime - specific F1 score."""
         return 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
@@ -694,12 +803,18 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         self.logger.info("🚀 Starting regime - specific triple barrier optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get regime names
             regime_names, self._get_regime_names(data)
         self.logger.info(f"📊 Found {len(regime_names)} regimes: {regime_names}")
 
         # Optimize each regime
         for regime_name in regime_names:
+    pass
+    pass
         await self._optimize_single_regime(data, regime_name, regime_column)
 
         # Generate comprehensive report
@@ -723,19 +838,31 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         self.logger.info(f"🎯 Optimizing parameters for regime: {regime_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Filter data for this regime
         if regime_name in data[regime_column].values:
+    pass
+    pass
                 regime_data, data[data[regime_column] == regime_name].copy()
             else:
         # Try to map numeric regime
         try:
                     regime_id, int(regime_name.split('_')[-1])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     regime_data, data[data[regime_column] == regime_id].copy()
         except:
         self.logger.warning(f"⚠️ Could not find data for regime {regime_name}")
                     return
 
         if len(regime_data) < self.optimization_config.min_sample_size:
+    pass
+    pass
         self.logger.warning(f"⚠️ Insufficient data for regime {regime_name}: {len(regime_data)} samples")
                 return
 
@@ -827,6 +954,10 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
         self.logger.info("📊 Generating optimization report...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create summary
             summary = {
                 "total_regimes": len(self.regime_results),
@@ -863,6 +994,10 @@ class RegimeSpecificTripleBarrierOptimizer:
             output_dir, Path("optimization_results")
             output_dir.mkdir(exist_ok = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Performance comparison across regimes
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle("Regime - Specific Triple Barrier Optimization Results", fontsize = 16)
@@ -904,8 +1039,14 @@ class RegimeSpecificTripleBarrierOptimizer:
 
         # Create parameter importance plots for each regime
         for regime_name, study in self.studies.items():
+    pass
+    pass
         try:
                     fig, plot_param_importances(study)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     fig.update_layout(title = f"Parameter Importance - {regime_name}")
                     fig.write_html(output_dir / f"param_importance_{regime_name}.html")
 
@@ -922,11 +1063,15 @@ class RegimeSpecificTripleBarrierOptimizer:
         self.logger.exception(f"❌ Error creating visualizations: {e}")
 
     def get_optimized_parameters(self) -> Dict[str, Any]:
+    pass
+    pass
         """Get optimized parameters for all regimes."""
 
         optimized_params = {}
 
         for regime_name, result in self.regime_results.items():
+    pass
+    pass
             optimized_params[regime_name] = {
                 "triple_barrier_params": result.triple_barrier_params.__dict__,
                 "tpsl_params": result.tpsl_params,
@@ -942,9 +1087,13 @@ class RegimeSpecificTripleBarrierOptimizer:
         return optimized_params
 
     def get_regime_specific_params(self, regime_name: str) -> Optional[Dict[str, Any]]:
+    pass
+    pass
         """Get optimized parameters for a specific regime."""
 
         if regime_name not in self.regime_results:
+    pass
+    pass
         return None
 
         result, self.regime_results[regime_name]
@@ -968,6 +1117,8 @@ async def setup_regime_specific_optimizer(config: Dict[str, Any]) -> RegimeSpeci
     optimizer, RegimeSpecificTripleBarrierOptimizer(config)
 
     if not await optimizer.initialize():
+    pass
+    pass
         raise RuntimeError("Failed to initialize regime - specific optimizer")
 
     return optimizer
@@ -1008,6 +1159,8 @@ def get_regime_optimized_triple_barrier_params(
     """
 
     if regime_name not in optimization_results:
+    pass
+    pass
         return None
 
     return optimization_results[regime_name].triple_barrier_params
@@ -1028,6 +1181,8 @@ def get_regime_optimized_tpsl_params(
     """
 
     if regime_name not in optimization_results:
+    pass
+    pass
         return None
 
     return optimization_results[regime_name].tpsl_params

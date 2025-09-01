@@ -19,15 +19,20 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 
+import class SmallFileAnalyzer:
 class SmallFileAnalyzer:
     """Analyzer for identifying small files in partitioned datasets."""
 
     def __init__(self, data_cache_path: str = "data_cache"):
+    pass
+    pass
         self.data_cache_path = Path(data_cache_path)
         self.small_file_threshold_mb = 1.0  # Files smaller than 1MB are considered small
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
     def analyze_small_files(self) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze all partitioned datasets to identify small files."""
         results: Dict[str, Any] = {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -44,9 +49,13 @@ class SmallFileAnalyzer:
         partitioned_dirs = self._find_partitioned_datasets()
 
         for dataset_path in partitioned_dirs:
+    pass
+    pass
             # Extract dataset info from path
             dataset_info = self._parse_dataset_path(dataset_path)
             if not dataset_info:
+    pass
+    pass
                 continue
 
             # Analyze the dataset for small files
@@ -69,6 +78,8 @@ class SmallFileAnalyzer:
 
         # Calculate percentage
         if results["summary"]["total_files"] > 0:
+    pass
+    pass
             results["summary"]["small_file_percentage"] = (
                 results["summary"]["small_files"]
                 / results["summary"]["total_files"]
@@ -78,32 +89,54 @@ class SmallFileAnalyzer:
         return results
 
     def _find_partitioned_datasets(self) -> List[Path]:
+    pass
+    pass
         """Find all partitioned dataset directories."""
         partitioned_dirs: List[Path] = []
 
         # Look for unified directory structure
         unified_path = self.data_cache_path / "unified"
         if unified_path.exists():
+    pass
+    pass
             for exchange_dir in unified_path.iterdir():
+    pass
+    pass
                 if not exchange_dir.is_dir():
+    pass
+    pass
                     continue
                 for symbol_dir in exchange_dir.iterdir():
+    pass
+    pass
                     if not symbol_dir.is_dir():
+    pass
+    pass
                         continue
                     for timeframe_dir in symbol_dir.iterdir():
+    pass
+    pass
                         if not timeframe_dir.is_dir():
+    pass
+    pass
                             continue
                         # Check if this is a partitioned structure
                         if (timeframe_dir / "exchange=BINANCE").exists():
+    pass
+    pass
                             partitioned_dirs.append(timeframe_dir)
 
         return partitioned_dirs
 
     def _parse_dataset_path(self, dataset_path: Path) -> Dict[str, str] | None:
+    pass
+    pass
         """Parse dataset path to extract exchange, symbol, and timeframe."""
         # Expected structure: data_cache/unified/{exchange}/{symbol}/{timeframe}
         parts = dataset_path.parts
         if len(parts) >= 4 and parts[-4] == "unified":
+    pass
+    pass
             return {
                 "exchange": parts[-3],
                 "symbol": parts[-2],
@@ -112,6 +145,8 @@ class SmallFileAnalyzer:
         return None
 
     def _analyze_dataset_small_files(self, dataset_path: Path) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze the given dataset directory for small files."""
         total_files = 0
         small_files = 0
@@ -119,15 +154,25 @@ class SmallFileAnalyzer:
         small_files_size_bytes = 0
 
         for root, _dirs, files in os.walk(dataset_path):
+    pass
+    pass
             for fname in files:
+    pass
+    pass
                 fpath = Path(root) / fname
                 try:
                     size = fpath.stat().st_size
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except FileNotFoundError:
                     continue
                 total_files += 1
                 total_size_bytes += size
                 if size < self.small_file_threshold_mb * 1024 * 1024:
+    pass
+    pass
                     small_files += 1
                     small_files_size_bytes += size
 
@@ -140,6 +185,8 @@ class SmallFileAnalyzer:
 
 
 def main() -> None:
+    pass
+    pass
     parser = argparse.ArgumentParser(description="Analyze small files in datasets")
     parser.add_argument(
         "--data_cache_path",
@@ -153,8 +200,12 @@ def main() -> None:
 
     print("=== Summary ===")
     for key, value in results["summary"].items():
+    pass
+    pass
         print(f"{key}: {value}")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

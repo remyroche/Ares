@@ -19,6 +19,7 @@ from typing import Any, Dict
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager
 # Add project root to path)
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -26,6 +27,7 @@ from src.training.steps.multi_timeframe_training.multi_timeframe_training_manage
 from src.utils.error_handler import handle_errors
 
 
+import @handle_errors
 @handle_errors(exceptions=(Exception,), default_return=None, context="run_multi_timeframe_training")
 async def run_multi_timeframe_training(
     symbol: str,
@@ -54,6 +56,8 @@ async def run_multi_timeframe_training(
 
     # Update configuration for parallel training
     if not parallel:
+    pass
+    pass
         mtf_manager.multi_timeframe_config["enable_parallel_training"] = False
 
     # Prepare input for execution based on available manager API
@@ -86,14 +90,20 @@ async def run_multi_timeframe_training(
     # Display timeframe results
     timeframe_results = results.get("timeframe_results", {})
     for timeframe, result in timeframe_results.items():
+    pass
+    pass
         status = result.get("status", "unknown")
         logger.info(f"  {timeframe}: {status}")
         if status == "success":
+    pass
+    pass
             logger.info(f"    Session ID: {result.get('session_id', 'N/A')}")
 
     # Display ensemble results
     ensemble_results = results.get("ensemble_results", {})
     if ensemble_results.get("status") == "success":
+    pass
+    pass
         logger.info("✅ Ensemble model created successfully")
         logger.info(f"  Timeframes used: {ensemble_results.get('timeframes_used', [])}")
     else:
@@ -102,6 +112,8 @@ async def run_multi_timeframe_training(
     # Display validation results
     validation_results = results.get("validation_results", {})
     if validation_results.get("status") == "success":
+    pass
+    pass
         logger.info("✅ Cross-timeframe validation completed")
     else:
         logger.info("❌ Cross-timeframe validation failed")
@@ -109,8 +121,12 @@ async def run_multi_timeframe_training(
     # Display recommendations
     recommendations = results.get("recommendations", [])
     if recommendations:
+    pass
+    pass
         logger.info("💡 Recommendations:")
         for rec in recommendations:
+    pass
+    pass
             logger.info(f"  - {rec}")
 
     return results
@@ -160,6 +176,8 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
     # Simulate successful timeframe results (in real scenario, these would be loaded)
     timeframe_results: Dict[str, Any] = {}
     for timeframe in timeframes:
+    pass
+    pass
         timeframe_results[timeframe] = {
             "status": "success",
             "session_id": f"simulated_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -170,6 +188,8 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
     # The following internal methods may exist; guard calls if present
     ensemble_results = {}
     if hasattr(mtf_manager, "_create_ensemble_models"):
+    pass
+    pass
         ensemble_results = await getattr(mtf_manager, "_create_ensemble_models")(
             symbol=symbol,
             timeframe_results=timeframe_results,
@@ -177,6 +197,8 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
 
     validation_results = {}
     if hasattr(mtf_manager, "_cross_timeframe_validation"):
+    pass
+    pass
         validation_results = await getattr(mtf_manager, "_cross_timeframe_validation")(
             symbol=symbol,
             timeframe_results=timeframe_results,
@@ -185,6 +207,8 @@ async def run_ensemble_only(symbol: str, timeframes: list[str]):
 
     final_results: Dict[str, Any] = {}
     if hasattr(mtf_manager, "_generate_multi_timeframe_report"):
+    pass
+    pass
         final_results = await getattr(mtf_manager, "_generate_multi_timeframe_report")(
             symbol=symbol,
             timeframe_results=timeframe_results,
@@ -214,6 +238,8 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
     # Simulate successful timeframe results
     successful_timeframes: Dict[str, Any] = {}
     for timeframe in timeframes:
+    pass
+    pass
         successful_timeframes[timeframe] = {
             "status": "success",
             "session_id": f"analysis_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -223,6 +249,8 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
 
     analysis_results: Dict[str, Any] = {}
     if hasattr(mtf_manager, "_analyze_cross_timeframe_performance"):
+    pass
+    pass
         analysis_results = await getattr(
             mtf_manager, "_analyze_cross_timeframe_performance"
         )(
@@ -245,6 +273,8 @@ async def analyze_timeframe_correlations(symbol: str, timeframes: list[str]):
 
 
 def list_available_timeframes() -> None:
+    pass
+    pass
     """List all available timeframes and their purposes."""
     print("📊 Available Timeframes and Their Purposes")
     print("=" * 60)
@@ -254,28 +284,32 @@ def list_available_timeframes() -> None:
     timeframe_sets = CONFIG.get("TIMEFRAME_SETS", {})
     default_set = CONFIG.get("DEFAULT_TIMEFRAME_SET", "swing")
 
-    print("\n🎯 Individual Timeframes:")
+    print("\\\n🎯 Individual Timeframes:")
     print("-" * 40)
 
     for tf, info in timeframes.items():
-        print(f"\n{tf}:")
+    pass
+    pass
+        print(f"\\\n{tf}:")
         print(f"  Purpose: {info.get('purpose', 'Unknown')}")
         print(f"  Trading Style: {info.get('trading_style', 'Unknown')}")
         print(f"  Lookback Days: {info.get('lookback_days', 'Unknown')}")
         print(f"  Ensemble Weight: {info.get('ensemble_weight', 'Unknown')}")
         print(f"  Description: {info.get('description', 'No description')}")
 
-    print("\n📋 Predefined Timeframe Sets:")
+    print("\\\n📋 Predefined Timeframe Sets:")
     print("-" * 40)
 
     for set_name, set_info in timeframe_sets.items():
+    pass
+    pass
         is_default = " (DEFAULT)" if set_name == default_set else ""
-        print(f"\n{set_name}{is_default}:")
+        print(f"\\\n{set_name}{is_default}:")
         print(f"  Timeframes: {', '.join(set_info.get('timeframes', []))}")
         print(f"  Description: {set_info.get('description', 'No description')}")
         print(f"  Use Case: {set_info.get('use_case', 'No use case specified')}")
 
-    print("\n🔧 Configuration:")
+    print("\\\n🔧 Configuration:")
     print("-" * 40)
     print(f"Default timeframe set: {default_set}")
     print(f"Total timeframes defined: {len(timeframes)}")
@@ -283,6 +317,8 @@ def list_available_timeframes() -> None:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function with command line interface."""
     parser = argparse.ArgumentParser(
         description="Multi-Timeframe Training with Ensemble Creation",
@@ -355,6 +391,8 @@ Examples:
 
     # Parse timeframes
     if args.timeframes:
+    pass
+    pass
         timeframes = [tf.strip() for tf in args.timeframes.split(",")]
     else:
         # Get default timeframe set
@@ -371,10 +409,14 @@ Examples:
 
     # Use centralized lookback_days
     if args.lookback is None:
+    pass
+    pass
         args.lookback = CONFIG.get("DATA_CONFIG", {}).get("default_lookback_days", 730)
 
     # Run appropriate function
     if args.list_timeframes:
+    pass
+    pass
         list_available_timeframes()
         success = True
     elif args.quick_test:
@@ -402,4 +444,6 @@ Examples:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

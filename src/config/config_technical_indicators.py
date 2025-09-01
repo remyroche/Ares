@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class TechnicalIndicatorsConfig:
     """Optimizable technical indicator parameters."""
@@ -103,11 +104,15 @@ class TechnicalIndicatorsConfig:
 
 
 def get_technical_indicators_config() -> TechnicalIndicatorsConfig:
+    pass
+    pass
     """Get technical indicators configuration."""
     return TechnicalIndicatorsConfig()
 
 
 def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for technical indicators optimization."""
     return {
         # RSI parameters

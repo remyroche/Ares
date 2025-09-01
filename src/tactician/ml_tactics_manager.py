@@ -16,6 +16,8 @@ class MLTacticsManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize ML tactics manager.
 
@@ -122,8 +124,14 @@ class MLTacticsManager:
         try:
             self.logger.info("Initializing ML Tactics Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.logger.error(invalid("Invalid configuration for ML tactics manager"))
                 return False
 
@@ -147,6 +155,8 @@ class MLTacticsManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate ML tactics manager configuration.
 
@@ -155,35 +165,59 @@ class MLTacticsManager:
         """
         try:
             if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(invalid("Invalid confidence_threshold configuration"))
                 return False
 
+    except Exception as e:
+        pass
             if self.regime_threshold <= 0 or self.regime_threshold > 1:
+    pass
+    pass
                 self.logger.error(invalid("Invalid regime_threshold configuration"))
                 return False
 
             if self.ml_weight <= 0 or self.ml_weight > 1:
+    pass
+    pass
                 self.logger.error(invalid("Invalid ml_weight configuration"))
                 return False
 
             if self.regime_weight <= 0 or self.regime_weight > 1:
+    pass
+    pass
                 self.logger.error(invalid("Invalid regime_weight configuration"))
                 return False
 
             # Validate barrier configuration
             for barrier_type, config in self.barrier_config.items():
+    pass
+    pass
                 if config["profit_target_multiplier"] <= 0 or config["stop_loss_multiplier"] <= 0:
+    pass
+    pass
                     self.logger.error(invalid(f"Invalid barrier configuration for {barrier_type}"))
                     return False
 
             # Validate thresholds
             for threshold_type, threshold in self.green_light_thresholds.items():
+    pass
+    pass
                 if threshold <= 0 or threshold > 1:
+    pass
+    pass
                     self.logger.error(invalid(f"Invalid green light threshold for {threshold_type}"))
                     return False
 
             for threshold_type, threshold in self.exit_thresholds.items():
+    pass
+    pass
                 if threshold <= 0 or threshold > 1:
+    pass
+    pass
                     self.logger.error(invalid(f"Invalid exit threshold for {threshold_type}"))
                     return False
 
@@ -194,7 +228,11 @@ class MLTacticsManager:
                 return False
 
             for weight_name, weight in self.confidence_weights.items():
+    pass
+    pass
                 if weight < 0 or weight > 1:
+    pass
+    pass
                     self.logger.error(invalid(f"Invalid confidence weight for {weight_name}: {weight}"))
                     return False
 
@@ -205,6 +243,8 @@ class MLTacticsManager:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -214,6 +254,10 @@ class MLTacticsManager:
         """
         try:
             if "ml_tactics" in step17_results:
+    pass
+    except Exception as e:
+        pass
+    pass
                 ml_tactics_optimization = step17_results["ml_tactics"]
 
                 # Update ML tactics parameters
@@ -270,6 +314,8 @@ class MLTacticsManager:
 
                 self.logger.info("✅ ML tactics manager configuration refreshed from step17 results")
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -277,6 +323,12 @@ class MLTacticsManager:
         """Initialize scenario-based predictor."""
         try:
             from .scenario_based_predictor import ScenarioBasedPredictor
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.scenario_predictor = ScenarioBasedPredictor
             self.scenario_predictor = ScenarioBasedPredictor(self.config)
             await self.scenario_predictor.initialize()
             self.logger.info("✅ Scenario-based predictor initialized")
@@ -299,8 +351,14 @@ class MLTacticsManager:
         try:
             self.logger.info("Initializing multi-output prediction models...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize models for each barrier type
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
+    pass
+    pass
                 self.multi_output_models[barrier_type] = {
                     "model": None,
                     "calibrator": None,
@@ -314,6 +372,8 @@ class MLTacticsManager:
 
             # If no pre-trained models, use fallback models
             if not self.is_trained:
+    pass
+    pass
                 self.logger.warning("No pre-trained models found, using fallback models")
                 await self._initialize_fallback_models()
 
@@ -338,6 +398,10 @@ class MLTacticsManager:
         """
         try:
             # This would load actual trained models from disk
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, we'll use fallback models
             self.logger.info("Loading pre-trained models (fallback mode)")
             return False
@@ -361,8 +425,14 @@ class MLTacticsManager:
         try:
             self.logger.info("Initializing fallback models...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create simple fallback models for each barrier type
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
+    pass
+    pass
                 self.multi_output_models[barrier_type]["is_trained"] = True
                 self.multi_output_models[barrier_type]["model"] = "fallback"
 
@@ -398,14 +468,22 @@ class MLTacticsManager:
         try:
             self.logger.info("🤖 Executing ML tactics...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate tactics input
             if not self._validate_tactics_input(tactics_input):
+    pass
+    pass
                 return {}
 
             # Get ML predictions
             ml_predictions = self._get_ml_predictions()
 
             if not ml_predictions:
+    pass
+    pass
                 self.logger.warning(warning("⚠️ No ML predictions available"))
                 return {}
 
@@ -472,6 +550,8 @@ class MLTacticsManager:
         context="ML tactics input validation",
     )
     def _validate_tactics_input(self, tactics_input: dict[str, Any]) -> bool:
+    pass
+    pass
         """
         Validate ML tactics input parameters.
 
@@ -484,8 +564,16 @@ class MLTacticsManager:
         try:
             required_fields = ["symbol", "exchange", "timeframe", "current_price"]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for field in required_fields:
+    pass
+    pass
                 if field not in tactics_input:
+    pass
+    pass
                     self.logger.error(
                         f"Missing required ML tactics input field: {field}",
                     )
@@ -493,6 +581,8 @@ class MLTacticsManager:
 
             # Validate specific field values
             if tactics_input.get("current_price", 0) <= 0:
+    pass
+    pass
                 self.logger.error(invalid("Invalid current_price value"))
                 return False
 
@@ -508,6 +598,8 @@ class MLTacticsManager:
         context="ML predictions retrieval",
     )
     def _get_ml_predictions(self) -> dict[str, Any] | None:
+    pass
+    pass
         """
         Get ML predictions.
 
@@ -516,6 +608,10 @@ class MLTacticsManager:
         """
         try:
             # This would typically retrieve ML predictions from the analyst or other sources
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return mock predictions
             return {
                 "regime_prediction": {
@@ -578,6 +674,10 @@ class MLTacticsManager:
         """
         try:
             regime_prediction = regime_info.get("regime_prediction", {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             location_prediction = regime_info.get("location_prediction", {})
 
             # Determine dominant regime
@@ -636,13 +736,21 @@ class MLTacticsManager:
         try:
             entry_prediction = ml_predictions.get("entry_prediction", {})
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = entry_prediction.get("confidence", 0)
             direction = entry_prediction.get("direction", "NEUTRAL")
             strength = entry_prediction.get("strength", 0)
 
             # Determine entry decision based on confidence and direction
             if confidence >= self.confidence_threshold:
+    pass
+    pass
                 if direction == "LONG" and strength > 0.6:
+    pass
+    pass
                     decision = "ENTER_LONG"
                 elif direction == "SHORT" and strength > 0.6:
                     decision = "ENTER_SHORT"
@@ -683,13 +791,21 @@ class MLTacticsManager:
         try:
             sizing_prediction = ml_predictions.get("sizing_prediction", {})
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = sizing_prediction.get("confidence", 0)
             size_multiplier = sizing_prediction.get("size_multiplier", 1.0)
             risk_level = sizing_prediction.get("risk_level", "MEDIUM")
 
             # Determine sizing decision based on confidence and risk
             if confidence >= self.confidence_threshold:
+    pass
+    pass
                 if risk_level == "LOW":
+    pass
+    pass
                     adjusted_multiplier = size_multiplier * 1.2
                 elif risk_level == "HIGH":
                     adjusted_multiplier = size_multiplier * 0.8
@@ -733,13 +849,21 @@ class MLTacticsManager:
         try:
             leverage_prediction = ml_predictions.get("leverage_prediction", {})
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = leverage_prediction.get("confidence", 0)
             leverage_multiplier = leverage_prediction.get("leverage_multiplier", 1.0)
             risk_level = leverage_prediction.get("risk_level", "MEDIUM")
 
             # Determine leverage decision based on confidence and risk
             if confidence >= self.confidence_threshold:
+    pass
+    pass
                 if risk_level == "LOW":
+    pass
+    pass
                     adjusted_leverage = leverage_multiplier * 1.3
                 elif risk_level == "HIGH":
                     adjusted_leverage = leverage_multiplier * 0.7
@@ -783,13 +907,21 @@ class MLTacticsManager:
         try:
             directional_prediction = ml_predictions.get("directional_prediction", {})
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             confidence = directional_prediction.get("confidence", 0)
             direction = directional_prediction.get("direction", "NEUTRAL")
             strength = directional_prediction.get("strength", 0)
 
             # Determine directional decision based on confidence and direction
             if confidence >= self.confidence_threshold:
+    pass
+    pass
                 if direction == "UP" and strength > 0.6:
+    pass
+    pass
                     decision = "BULLISH"
                 elif direction == "DOWN" and strength > 0.6:
                     decision = "BEARISH"
@@ -831,6 +963,10 @@ class MLTacticsManager:
             liquidation_prediction = ml_predictions.get(
                 "liquidation_risk_prediction",
                 {},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             confidence = liquidation_prediction.get("confidence", 0)
@@ -839,7 +975,11 @@ class MLTacticsManager:
 
             # Determine liquidation risk decision based on confidence and risk
             if confidence >= self.confidence_threshold:
+    pass
+    pass
                 if risk_level == "HIGH":
+    pass
+    pass
                     decision = "REDUCE_POSITION"
                 elif risk_level == "MEDIUM":
                     decision = "MONITOR_CLOSELY"
@@ -882,6 +1022,10 @@ class MLTacticsManager:
         try:
             sizing_decisions = self._make_ml_sizing_decisions(ml_predictions)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_position_size = 0.05  # 5% base position size
             size_multiplier = sizing_decisions.get("size_multiplier", 1.0)
 
@@ -924,6 +1068,10 @@ class MLTacticsManager:
         try:
             leverage_decisions = self._make_ml_leverage_decisions(ml_predictions)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_leverage = 1.0  # 1x base leverage
             leverage_multiplier = leverage_decisions.get("leverage_multiplier", 1.0)
 
@@ -949,6 +1097,8 @@ class MLTacticsManager:
     # Helper methods for regime and location tactics
 
     def _get_regime_tactics(self, regime: str, confidence: float) -> dict[str, Any]:
+    pass
+    pass
         """Get tactics for a specific regime."""
         tactics = {
             "BULL_TREND": {"position_multiplier": 1.2, "risk_tolerance": "HIGH"},
@@ -960,6 +1110,8 @@ class MLTacticsManager:
         )
 
     def _get_location_tactics(self, location: str, confidence: float) -> dict[str, Any]:
+    pass
+    pass
         """Get tactics for a specific location."""
         tactics = {
             "NEAR_SUPPORT": {"entry_aggression": "HIGH", "stop_distance": "TIGHT"},
@@ -984,6 +1136,8 @@ class MLTacticsManager:
         }
 
     def get_ml_decisions(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get the latest ML decisions.
 
@@ -1001,6 +1155,10 @@ class MLTacticsManager:
         """Stop the ML tactics manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping ML Tactics Manager...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_initialized = False
             self.logger.info("✅ ML Tactics Manager stopped successfully")
 
@@ -1016,6 +1174,10 @@ class MLTacticsManager:
         """Cleanup ML tactics manager resources."""
         try:
             self.logger.info("Cleaning up ML Tactics Manager...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self.stop()
             self.ml_decisions.clear()
             self.logger.info("✅ ML Tactics Manager cleanup completed")
@@ -1049,9 +1211,15 @@ class MLTacticsManager:
         """
         try:
             if not self.is_trained:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Models not trained, using fallback predictions")
                 return self._generate_fallback_predictions()
 
+    except Exception as e:
+        pass
             # Calculate Tactician barriers (50% and 25% of Analyst barriers)
             tactician_barriers = self._calculate_tactician_barriers(analyst_barriers)
 
@@ -1059,6 +1227,8 @@ class MLTacticsManager:
             predictions = {}
 
             for barrier_type in ["fifty_percent", "twenty_five_percent", "fifty_percent_5m", "twenty_five_percent_5m"]:
+    pass
+    pass
                 barrier_prediction = await self._generate_barrier_prediction(
                     barrier_type=barrier_type,
                     market_data=market_data,
@@ -1068,6 +1238,8 @@ class MLTacticsManager:
                 )
 
                 if barrier_prediction:
+    pass
+    pass
                     predictions[barrier_type] = barrier_prediction
 
             # Calculate combined confidence and green light signal
@@ -1123,6 +1295,10 @@ class MLTacticsManager:
         """
         try:
             # Generate existing multi-output predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             multi_output_predictions = await self.generate_multi_output_predictions(
                 market_data, analyst_barriers, symbol, timeframe, analyst_confidence
             )
@@ -1130,6 +1306,8 @@ class MLTacticsManager:
             # Generate scenario-based predictions
             scenario_predictions = None
             if self.scenario_predictor:
+    pass
+    pass
                 # Extract features for scenario prediction
                 scenario_features = self.scenario_predictor.extract_features(market_data)
                 scenario_features = scenario_features.reshape(1, -1)  # Reshape for single prediction
@@ -1195,6 +1373,10 @@ class MLTacticsManager:
         """
         try:
             # Base decision from multi-output system
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_green_light = multi_output_predictions.get("green_light_signal", {}).get("signal", "RED")
             base_confidence = multi_output_predictions.get("combined_confidence", 0.0)
 
@@ -1205,6 +1387,8 @@ class MLTacticsManager:
 
             # Multi-output system requirements
             if base_green_light == "GREEN":
+    pass
+    pass
                 reasoning.append("Multi-output system: GREEN")
             else:
                 reasoning.append(f"Multi-output system: {base_green_light}")
@@ -1217,6 +1401,8 @@ class MLTacticsManager:
 
             # Scenario analysis enhancement
             if scenario_predictions:
+    pass
+    pass
                 scenario_analysis = scenario_predictions.get("scenario_analysis", {})
                 profit_zone_prob = scenario_analysis.get("profit_zone_probability", 0.0)
                 risk_zone_prob = scenario_analysis.get("risk_zone_probability", 0.0)
@@ -1224,6 +1410,8 @@ class MLTacticsManager:
 
                 # Get thresholds from scenario predictor
                 if self.scenario_predictor:
+    pass
+    pass
                     thresholds = self.scenario_predictor.decision_thresholds
                     profit_threshold = thresholds.get("profit_zone_combined", 0.6)
                     risk_threshold = thresholds.get("risk_zone_combined", 0.2)
@@ -1241,6 +1429,8 @@ class MLTacticsManager:
                 )
 
                 if scenario_conditions_met:
+    pass
+    pass
                     reasoning.append(f"Scenario analysis: FAVORABLE (Profit: {profit_zone_prob:.2f}, Risk: {risk_zone_prob:.2f})")
                     enhanced_entry_signal = True
                     # Boost confidence with scenario analysis
@@ -1303,6 +1493,10 @@ class MLTacticsManager:
         """
         try:
             # Extract Analyst barriers
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             analyst_upper = analyst_barriers.get("upper_barrier", 0.02)
             analyst_lower = analyst_barriers.get("lower_barrier", -0.01)
 
@@ -1370,10 +1564,16 @@ class MLTacticsManager:
         """
         try:
             # Extract features from market data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             features = self._extract_features(market_data)
 
             # Generate prediction using model
             if self.multi_output_models[barrier_type]["model"] == "fallback":
+    pass
+    pass
                 # Use fallback prediction
                 confidence = self._generate_fallback_confidence(barrier_type, features)
                 direction = self._determine_direction(features)
@@ -1384,6 +1584,8 @@ class MLTacticsManager:
 
             # Apply calibration if available
             if self.multi_output_models[barrier_type]["calibrator"]:
+    pass
+    pass
                 confidence = self._calibrate_prediction(barrier_type, confidence)
 
             # Validate confidence
@@ -1403,6 +1605,8 @@ class MLTacticsManager:
             return None
 
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
+    pass
+    pass
         """
         Extract features from market data for prediction.
 
@@ -1415,7 +1619,13 @@ class MLTacticsManager:
         try:
             features = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if len(market_data) < 20:
+    pass
+    pass
                 # Not enough data, return default features
                 return np.array([0.5] * 10)
 
@@ -1473,6 +1683,8 @@ class MLTacticsManager:
             return np.array([0.5] * 10)
 
     def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:
+    pass
+    pass
         """
         Generate fallback confidence score.
 
@@ -1485,10 +1697,16 @@ class MLTacticsManager:
         """
         try:
             # Simple heuristic-based confidence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_confidence = 0.5
 
             # Adjust based on price momentum
             if len(features) > 0:
+    pass
+    pass
                 momentum = features[0]
                 if abs(momentum) > 0.01:  # Strong momentum
                     base_confidence += 0.2
@@ -1497,6 +1715,8 @@ class MLTacticsManager:
 
             # Adjust based on volatility
             if len(features) > 1:
+    pass
+    pass
                 volatility = features[1]
                 if volatility < 0.01:  # Low volatility
                     base_confidence += 0.1
@@ -1505,6 +1725,8 @@ class MLTacticsManager:
 
             # Adjust based on RSI
             if len(features) > 5:
+    pass
+    pass
                 rsi = features[5]
                 if 0.3 < rsi < 0.7:  # Neutral RSI
                     base_confidence += 0.1
@@ -1513,6 +1735,8 @@ class MLTacticsManager:
 
             # Adjust for barrier type (25% barriers need higher confidence)
             if barrier_type == "twenty_five_percent":
+    pass
+    pass
                 base_confidence *= 0.9  # Slightly lower for smaller barriers
 
             return np.clip(base_confidence, 0.0, 1.0)
@@ -1522,6 +1746,8 @@ class MLTacticsManager:
             return 0.5
 
     def _determine_direction(self, features: np.ndarray) -> str:
+    pass
+    pass
         """
         Determine price direction based on features.
 
@@ -1533,11 +1759,19 @@ class MLTacticsManager:
         """
         try:
             if len(features) > 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 momentum = features[0]
                 if momentum > 0:
+    pass
+    pass
                     return "UP"
                 else:
                     return "DOWN"
+    except Exception as e:
+        pass
             else:
                 return "UP"  # Default direction
 
@@ -1546,6 +1780,8 @@ class MLTacticsManager:
             return "UP"
 
     def _predict_with_model(self, barrier_type: str, features: np.ndarray) -> float:
+    pass
+    pass
         """
         Predict confidence using actual model.
 
@@ -1558,6 +1794,10 @@ class MLTacticsManager:
         """
         try:
             # This would use the actual trained model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return fallback confidence
             return self._generate_fallback_confidence(barrier_type, features)
 
@@ -1566,6 +1806,8 @@ class MLTacticsManager:
             return 0.5
 
     def _calibrate_prediction(self, barrier_type: str, confidence: float) -> float:
+    pass
+    pass
         """
         Calibrate prediction using calibrator.
 
@@ -1578,6 +1820,10 @@ class MLTacticsManager:
         """
         try:
             # This would use the actual calibrator
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return original confidence
             return confidence
 
@@ -1602,15 +1848,25 @@ class MLTacticsManager:
         """
         try:
             # Start with Analyst confidence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             combined_confidence = analyst_confidence * self.confidence_weights["analyst_weight"]
 
             # Add Tactician confidences with their respective weights
             for barrier_type, prediction in predictions.items():
+    pass
+    pass
                 if prediction and "confidence" in prediction:
+    pass
+    pass
                     confidence = prediction["confidence"]
 
                     # Get weight for this barrier type
                     if barrier_type == "fifty_percent":
+    pass
+    pass
                         weight = self.confidence_weights["fifty_percent_1m_weight"]
                     elif barrier_type == "twenty_five_percent":
                         weight = self.confidence_weights["twenty_five_percent_1m_weight"]
@@ -1646,27 +1902,43 @@ class MLTacticsManager:
         """
         try:
             # Check individual barrier thresholds (MTF unified)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             fifty_percent_ok = False
             twenty_five_percent_ok = False
 
             # Check 50% barriers (both 1m and 5m)
             fifty_percent_confidences = []
             if "fifty_percent" in predictions and predictions["fifty_percent"]:
+    pass
+    pass
                 fifty_percent_confidences.append(predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in predictions and predictions["fifty_percent_5m"]:
+    pass
+    pass
                 fifty_percent_confidences.append(predictions["fifty_percent_5m"]["confidence"])
 
             if fifty_percent_confidences:
+    pass
+    pass
                 fifty_percent_ok = max(fifty_percent_confidences) >= self.green_light_thresholds["fifty_percent"]
 
             # Check 25% barriers (both 1m and 5m)
             twenty_five_percent_confidences = []
             if "twenty_five_percent" in predictions and predictions["twenty_five_percent"]:
+    pass
+    pass
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in predictions and predictions["twenty_five_percent_5m"]:
+    pass
+    pass
                 twenty_five_percent_confidences.append(predictions["twenty_five_percent_5m"]["confidence"])
 
             if twenty_five_percent_confidences:
+    pass
+    pass
                 twenty_five_percent_ok = max(twenty_five_percent_confidences) >= self.green_light_thresholds["twenty_five_percent"]
 
             # Check combined threshold
@@ -1674,6 +1946,8 @@ class MLTacticsManager:
 
             # Determine signal
             if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
+    pass
+    pass
                 signal = "GREEN_LIGHT"
                 reason = "All thresholds met"
             elif combined_ok:
@@ -1706,6 +1980,8 @@ class MLTacticsManager:
             }
 
     def _generate_fallback_predictions(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Generate fallback predictions when models are not available.
 
@@ -1784,6 +2060,10 @@ class MLTacticsManager:
         try:
             combined_confidence = current_predictions.get("combined_confidence", 0.5)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check exit thresholds (MTF unified)
             fifty_percent_exit = False
             twenty_five_percent_exit = False
@@ -1791,27 +2071,41 @@ class MLTacticsManager:
             # Check 50% barriers (both 1m and 5m)
             fifty_percent_confidences = []
             if "fifty_percent" in current_predictions and current_predictions["fifty_percent"]:
+    pass
+    pass
                 fifty_percent_confidences.append(current_predictions["fifty_percent"]["confidence"])
             if "fifty_percent_5m" in current_predictions and current_predictions["fifty_percent_5m"]:
+    pass
+    pass
                 fifty_percent_confidences.append(current_predictions["fifty_percent_5m"]["confidence"])
 
             if fifty_percent_confidences:
+    pass
+    pass
                 fifty_percent_exit = min(fifty_percent_confidences) <= self.exit_thresholds["fifty_percent"]
 
             # Check 25% barriers (both 1m and 5m)
             twenty_five_percent_confidences = []
             if "twenty_five_percent" in current_predictions and current_predictions["twenty_five_percent"]:
+    pass
+    pass
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent"]["confidence"])
             if "twenty_five_percent_5m" in current_predictions and current_predictions["twenty_five_percent_5m"]:
+    pass
+    pass
                 twenty_five_percent_confidences.append(current_predictions["twenty_five_percent_5m"]["confidence"])
 
             if twenty_five_percent_confidences:
+    pass
+    pass
                 twenty_five_percent_exit = min(twenty_five_percent_confidences) <= self.exit_thresholds["twenty_five_percent"]
 
             combined_exit = combined_confidence <= self.exit_thresholds["combined_exit_threshold"]
 
             # Determine exit signal
             if combined_exit or (fifty_percent_exit and twenty_five_percent_exit):
+    pass
+    pass
                 exit_signal = "EXIT"
                 reason = "Confidence below exit thresholds"
             elif fifty_percent_exit or twenty_five_percent_exit:
@@ -1862,7 +2156,13 @@ async def setup_ml_tactics_manager(
     """
     try:
         manager = MLTacticsManager(config or {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if await manager.initialize():
+    pass
+    pass
             return manager
         return None
     except Exception as e:

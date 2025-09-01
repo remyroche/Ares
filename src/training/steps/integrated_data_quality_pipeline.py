@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     quality_gate,
@@ -22,12 +24,15 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
+import logger, system_logger.getChild
 logger, system_logger.getChild("IntegratedDataQualityPipeline")
 
 class IntegratedDataQualityPipeline:
     """Comprehensive data quality pipeline that integrates all components."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
 
@@ -36,9 +41,17 @@ class IntegratedDataQualityPipeline:
         self._initialize_components()
 
     def _initialize_components(self) -> None:
+    pass
+    pass
         """Initialize all pipeline components."""
         try:
             from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import self.enhanced_quality_manager, EnhancedDataQualityManager
         self.enhanced_quality_manager, EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized")
         except ImportError as e:
@@ -102,7 +115,13 @@ class IntegratedDataQualityPipeline:
             logger.info("🔍 Step 0: Initial comprehensive quality check...")
             initial_quality, await self._run_initial_quality_check(symbol, exchange, timeframe)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if initial_quality.get("success", False):
+    pass
+    pass
                 logger.info("✅ Initial quality check passed")
                 results["quality_metrics"]["initial_check"] = initial_quality
             else:
@@ -112,10 +131,14 @@ class IntegratedDataQualityPipeline:
 
         # Step 1: Data Collection (if requested)
         if run_step1:
+    pass
+    pass
                 logger.info("📊 Step 1: Data Collection...")
                 step01_result, await self._run_step1_data_collection(symbol, exchange, timeframe, force_rerun)
 
         if step01_result.get("success", False):
+    pass
+    pass
                     logger.info("✅ Step 1: Data Collection completed successfully")
                     results["steps_completed"].append("step01_data_collection")
                 else:
@@ -125,10 +148,14 @@ class IntegratedDataQualityPipeline:
 
         # Step 1.5: Data Conversion (if requested)
         if run_step1_5:
+    pass
+    pass
                 logger.info("🔄 Step 1.5: Data Conversion...")
                 step01_5_result, await self._run_step1_5_data_conversion(symbol, exchange, timeframe, force_rerun)
 
         if step01_5_result.get("success", False):
+    pass
+    pass
                     logger.info("✅ Step 1.5: Data Conversion completed successfully")
                     results["steps_completed"].append("step01_5_data_conversion")
                 else:
@@ -138,10 +165,14 @@ class IntegratedDataQualityPipeline:
 
         # Step 3: HMM Regime Discovery (if requested)
         if run_step3:
+    pass
+    pass
                 logger.info("🔍 Step 3: HMM Regime Discovery...")
                 step03_result, await self._run_step3_hmm_discovery(symbol, exchange, timeframe, force_rerun)
 
         if step03_result.get("success", False):
+    pass
+    pass
                     logger.info("✅ Step 3: HMM Regime Discovery completed successfully")
                     results["steps_completed"].append("step03_hmm_discovery")
                     results["quality_metrics"]["hmm_results"] = step03_result.get("metrics", {})
@@ -152,10 +183,14 @@ class IntegratedDataQualityPipeline:
 
         # Step 4: Processing Labeling (if requested)
         if run_step4:
+    pass
+    pass
                 logger.info("🏷️ Step 4: Processing Labeling...")
                 step04_result, await self._run_step4_labeling(symbol, exchange, timeframe, force_rerun)
 
         if step04_result.get("success", False):
+    pass
+    pass
                     logger.info("✅ Step 4: Processing Labeling completed successfully")
                     results["steps_completed"].append("step04_labeling")
                 else:
@@ -169,6 +204,8 @@ class IntegratedDataQualityPipeline:
             results["quality_metrics"]["final_check"] = final_quality
 
         if results["success"]:
+    pass
+    pass
                 logger.info("🎉 Integrated Data Quality Pipeline completed successfully!")
                 logger.info(f"✅ Steps completed: {len(results['steps_completed'])}")
                 logger.info(f"❌ Steps failed: {len(results['steps_failed'])}")
@@ -188,6 +225,8 @@ class IntegratedDataQualityPipeline:
     async def _run_initial_quality_check(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Run initial comprehensive quality check."""
         if not self.enhanced_quality_manager:
+    pass
+    pass
         return {"success": True, "message": "Quality manager not available"}
 
         try:
@@ -199,6 +238,10 @@ class IntegratedDataQualityPipeline:
                 fill_gaps = True,
                 validate_format = True
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.exception(f"❌ Error in initial quality check: {e}")
         return {"success": False, "error": str(e)}
@@ -209,6 +252,12 @@ class IntegratedDataQualityPipeline:
         try:
             from .step01_data_collection import run_step as run_step1
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import success, await run_step1
             success, await run_step1(
                 symbol = symbol,
                 exchange = exchange,
@@ -234,6 +283,12 @@ class IntegratedDataQualityPipeline:
         try:
             from .step01_5_data_converter import run_step as run_step1_5
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import success, await run_step1_5
             success, await run_step1_5(
                 symbol = symbol,
                 exchange = exchange,
@@ -259,6 +314,12 @@ class IntegratedDataQualityPipeline:
         try:
             from .step03_hmm_regime_discovery import run_step as run_step3
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import success, await run_step3
             success, await run_step3(
                 symbol = symbol,
                 exchange = exchange,
@@ -283,7 +344,13 @@ class IntegratedDataQualityPipeline:
         """Run step4 processing labeling."""
         try:
         # First ensure data quality for step4
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if self.enhanced_quality_manager:
+    pass
+    pass
                 data_ready, await self.enhanced_quality_manager.get_data_for_step3_step4(
                     symbol = symbol,
                     exchange = exchange,
@@ -291,6 +358,8 @@ class IntegratedDataQualityPipeline:
                 )
 
         if not data_ready.get("success", False):
+    pass
+    pass
                     logger.warning("⚠️ Data not ready for step4, attempting to fix...")
         # The step4 module will handle data quality internally
 
@@ -314,6 +383,8 @@ class IntegratedDataQualityPipeline:
     async def _run_final_quality_check(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Run final comprehensive quality check."""
         if not self.enhanced_quality_manager:
+    pass
+    pass
         return {"success": True, "message": "Quality manager not available"}
 
         try:
@@ -325,12 +396,18 @@ class IntegratedDataQualityPipeline:
                 fill_gaps = False,  # Don't fill gaps in final check
                 validate_format = True
             )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
             logger.exception(f"❌ Error in final quality check: {e}")
         return {"success": False, "error": str(e)}
 
     @with_tracing_span("generate_quality_report")
     def generate_quality_report(self, results: Dict[str, Any]) -> str:
+    pass
+    pass
         """Generate a comprehensive quality report."""
         report = []
         report.append("=" * 80)
@@ -348,8 +425,12 @@ class IntegratedDataQualityPipeline:
         failed_steps, results.get("steps_failed", [])
 
         for step in completed_steps:
+    pass
+    pass
             report.append(f"   ✅ {step}")
         for step in failed_steps:
+    pass
+    pass
             report.append(f"   ❌ {step}")
 
         report.append("")
@@ -359,31 +440,45 @@ class IntegratedDataQualityPipeline:
         quality_metrics, results.get("quality_metrics", {})
 
         if "initial_check" in quality_metrics:
+    pass
+    pass
             initial, quality_metrics["initial_check"]
             report.append(f"   🔍 Initial Check: {'✅ Passed' if initial.get('success') else '❌ Failed'}")
         if initial.get("gaps_detected"):
+    pass
+    pass
                 report.append(f"      📊 Gaps detected: {len(initial['gaps_detected'])}")
         if initial.get("gaps_filled"):
+    pass
+    pass
                 report.append(f"      🔧 Gaps filled: {len(initial['gaps_filled'])}")
 
         if "final_check" in quality_metrics:
+    pass
+    pass
             final, quality_metrics["final_check"]
             report.append(f"   🔍 Final Check: {'✅ Passed' if final.get('success') else '❌ Failed'}")
 
         if "hmm_results" in quality_metrics:
+    pass
+    pass
             hmm, quality_metrics["hmm_results"]
             report.append(f"   🔍 HMM Results: {hmm.get('unique_regimes', 0)} regimes discovered")
 
         # Recommendations
         recommendations, results.get("recommendations", [])
         if recommendations:
+    pass
+    pass
             report.append("")
             report.append("💡 RECOMMENDATIONS:")
         for rec in recommendations:
+    pass
+    pass
                 report.append(f"   • {rec}")
 
         report.append("=" * 80)
-        return "\n".join(report)
+        return "\\\n".join(report)
 
 @handle_errors(
     exceptions=(Exception,),
@@ -414,6 +509,10 @@ async def run_integrated_pipeline(
     try:
         logger.info("🚀 Starting Integrated Data Quality Pipeline")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         pipeline, IntegratedDataQualityPipeline(data_cache_path)
 
         results, await pipeline.run_comprehensive_quality_pipeline(
@@ -429,7 +528,7 @@ async def run_integrated_pipeline(
 
         # Generate and log report
         report, pipeline.generate_quality_report(results)
-        logger.info("\n" + report)
+        logger.info("\\\n" + report)
 
         return results.get("success", False)
 
@@ -438,12 +537,16 @@ async def run_integrated_pipeline(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Parse command line arguments
     import asyncio
 
     async def main() -> None:
         # Get command line arguments
         if len(sys.argv) >= 4:
+    pass
+    pass
             symbol, sys.argv[1]
             exchange, sys.argv[2]
             timeframe, sys.argv[3]
@@ -464,6 +567,8 @@ if __name__ == "__main__":
         )
 
         if success:
+    pass
+    pass
             print("🎉 Integrated Data Quality Pipeline completed successfully!")
         else:
             print("💥 Integrated Data Quality Pipeline failed!")
@@ -475,8 +580,12 @@ if __name__ == "__main__":
     # Use a more robust approach to prevent segmentation fault
     try:
         asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+        print("\\\n🛑 Interrupted by user")
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:

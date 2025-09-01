@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Add src to path
+import sys.path.append
 sys.path.append(str(Path(__file__).parent / "src"))
 
 import pandas as pd
@@ -21,7 +22,10 @@ from src.tactician.sr_breakout_predictor import SRBreakoutPredictor, ensure_opti
 from src.tactician.sr_detection_optimization import SRDetectionOptimizer
 
 
+import def generate_test_market_data
 def generate_test_market_data(days: int = 100) -> pd.DataFrame:
+    pass
+    pass
     """Generate realistic market data for testing."""
     np.random.seed(42)
 
@@ -31,12 +35,16 @@ def generate_test_market_data(days: int = 100) -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
     # Generate OHLCV data
     data = []
     for i, close in enumerate(prices):
+    pass
+    pass
         # Generate realistic OHLC from close
         high = close * (1 + abs(np.random.normal(0, 0.01)))
         low = close * (1 - abs(np.random.normal(0, 0.01)))
@@ -58,6 +66,8 @@ def generate_test_market_data(days: int = 100) -> pd.DataFrame:
 
 
 def create_test_config() -> Dict[str, Any]:
+    pass
+    pass
     """Create test configuration with all S/R parameters."""
     return {
         "exchange": "binance",
@@ -129,7 +139,7 @@ def create_test_config() -> Dict[str, Any]:
 
 async def test_optimized_parameters_structure():
     """Test that all optimized parameters from optimization are properly structured."""
-    print("\n🔍 Testing Optimized Parameters Structure...")
+    print("\\\n🔍 Testing Optimized Parameters Structure...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -190,7 +200,7 @@ async def test_optimized_parameters_structure():
 
 async def test_parameter_application():
     """Test that optimized parameters are properly applied to SRBreakoutPredictor."""
-    print("\n🔍 Testing Parameter Application...")
+    print("\\\n🔍 Testing Parameter Application...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -272,7 +282,7 @@ async def test_parameter_application():
 
 async def test_fibonacci_sensitivity_usage():
     """Test that Fibonacci sensitivity parameter is properly used."""
-    print("\n🔍 Testing Fibonacci Sensitivity Usage...")
+    print("\\\n🔍 Testing Fibonacci Sensitivity Usage...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -282,6 +292,8 @@ async def test_fibonacci_sensitivity_usage():
     results = {}
 
     for sensitivity in sensitivity_values:
+    pass
+    pass
         optimized_config = ensure_optimized_sr_config(config)
         sr_predictor = SRBreakoutPredictor(optimized_config)
         await sr_predictor.initialize()
@@ -312,7 +324,7 @@ async def test_fibonacci_sensitivity_usage():
 
 async def test_elliott_confidence_threshold_usage():
     """Test that Elliott confidence threshold parameter is properly used."""
-    print("\n🔍 Testing Elliott Confidence Threshold Usage...")
+    print("\\\n🔍 Testing Elliott Confidence Threshold Usage...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -342,7 +354,7 @@ async def test_elliott_confidence_threshold_usage():
 
 async def test_order_flow_hvn_threshold_usage():
     """Test that Order Flow HVN threshold parameter is properly used."""
-    print("\n🔍 Testing Order Flow HVN Threshold Usage...")
+    print("\\\n🔍 Testing Order Flow HVN Threshold Usage...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -352,6 +364,8 @@ async def test_order_flow_hvn_threshold_usage():
     results = {}
 
     for threshold in threshold_values:
+    pass
+    pass
         optimized_config = ensure_optimized_sr_config(config)
         sr_predictor = SRBreakoutPredictor(optimized_config)
         await sr_predictor.initialize()
@@ -382,13 +396,15 @@ async def test_order_flow_hvn_threshold_usage():
 
 async def test_timeframe_weights_usage():
     """Test that timeframe weights parameter is properly used."""
-    print("\n🔍 Testing Timeframe Weights Usage...")
+    print("\\\n🔍 Testing Timeframe Weights Usage...")
 
     config = create_test_config()
 
     # Create multi-timeframe data
     multi_timeframe_data = {}
     for tf in ["1m", "5m", "15m", "1h", "4h", "1d"]:
+    pass
+    pass
         multi_timeframe_data[tf] = generate_test_market_data(50)
 
     optimized_config = ensure_optimized_sr_config(config)
@@ -423,7 +439,7 @@ async def test_timeframe_weights_usage():
 
 async def test_comprehensive_parameter_usage():
     """Test comprehensive usage of all optimized parameters."""
-    print("\n🔍 Testing Comprehensive Parameter Usage...")
+    print("\\\n🔍 Testing Comprehensive Parameter Usage...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -500,6 +516,10 @@ async def main():
 
     try:
         # Test parameter structure
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await test_optimized_parameters_structure()
 
         # Test parameter application
@@ -514,7 +534,7 @@ async def main():
         # Test comprehensive usage
         await test_comprehensive_parameter_usage()
 
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("🎉 ALL TESTS PASSED! All optimized parameters are properly used.")
         print("✅ Method weights are applied correctly")
         print("✅ Strength weights are applied correctly")
@@ -524,7 +544,7 @@ async def main():
         print("✅ All parameters from sr_detection_optimization.py are used by sr_breakout_predictor.py")
 
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\\\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -533,6 +553,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the tests
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

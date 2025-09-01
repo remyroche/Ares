@@ -14,16 +14,25 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict
 
+import class MockDataFrame:
 class MockDataFrame:
     """Mock DataFrame for testing."""
     def __init__(self, data: Dict[str, list]):
+    pass
+    pass
         self.data = data
 
     def __getitem__(self, key):
+    pass
+    pass
         return MockSeries(self.data.get(key, [0.0]))
 
     def iloc(self, index):
+    pass
+    pass
         if isinstance(index, int):
+    pass
+    pass
             return MockDataFrame({k: [v[index]] for k, v in self.data.items()})
         elif isinstance(index, slice):
             return MockDataFrame({k: v[index] for k, v in self.data.items()})
@@ -33,13 +42,21 @@ class MockDataFrame:
 class MockSeries:
     """Mock Series for testing."""
     def __init__(self, data: list):
+    pass
+    pass
         self.data = data
 
     def __getitem__(self, index):
+    pass
+    pass
         return self.data[index]
 
     def iloc(self, index):
+    pass
+    pass
         if isinstance(index, int):
+    pass
+    pass
             return self.data[index]
         elif isinstance(index, slice):
             return MockSeries(self.data[index])
@@ -47,15 +64,21 @@ class MockSeries:
             return self.data[index]
 
     def pct_change(self):
+    pass
+    pass
         return MockSeries([0.01, 0.02, -0.01, 0.03, 0.01])
 
     def std(self):
+    pass
+    pass
         return 0.02
 
 class MockEnhancedPredictionService:
     """Mock Enhanced Prediction Service for testing."""
 
     def __init__(self):
+    pass
+    pass
         self.is_initialized = True
         self.entry_threshold = 0.6
         self.max_confidence_threshold = 0.7
@@ -104,27 +127,47 @@ class MockEnhancedPredictionService:
             calibrated_scores = {
                 "analyst_models": {},
                 "tactician_models": {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Get Analyst calibrated confidence scores
             for model_type, models in self.analyst_ml_models.items():
+    pass
+    pass
                 for model_name, model_data in models.items():
+    pass
+    pass
                     calibrated_confidence = model_data.get("calibrated_confidence")
                     if calibrated_confidence is not None:
+    pass
+    pass
                         calibrated_scores["analyst_models"][f"{model_type}_{model_name}"] = calibrated_confidence
 
             # Get Tactician calibrated confidence scores
             for model_type, models in self.tactician_ml_models.items():
+    pass
+    pass
                 for model_name, model_data in models.items():
+    pass
+    pass
                     calibrated_confidence = model_data.get("calibrated_confidence")
                     if calibrated_confidence is not None:
+    pass
+    pass
                         calibrated_scores["tactician_models"][f"{model_type}_{model_name}"] = calibrated_confidence
 
             # Fail if no calibrated confidence exists
             if not calibrated_scores["analyst_models"]:
+    pass
+    pass
                 raise ValueError(f"No calibrated Analyst confidence scores available for {symbol} on {exchange}")
 
             if not calibrated_scores["tactician_models"]:
+    pass
+    pass
                 raise ValueError(f"No calibrated Tactician confidence scores available for {symbol} on {exchange}")
 
             return calibrated_scores
@@ -137,6 +180,8 @@ class MockSupervisor:
     """Mock Supervisor for testing."""
 
     def __init__(self):
+    pass
+    pass
         self.enhanced_prediction_service = MockEnhancedPredictionService()
         self.is_initialized = True
         self.entry_threshold = 0.6
@@ -153,6 +198,10 @@ class MockSupervisor:
         """Get Analyst predictions using calibrated confidence scores from ML models."""
         try:
             # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
@@ -190,6 +239,10 @@ class MockSupervisor:
         """Get Tactician predictions using calibrated confidence scores from ML models."""
         try:
             # Step 1: Get calibrated confidence scores from Enhanced Prediction Service
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
@@ -226,7 +279,13 @@ class MockSupervisor:
         """Analyst decides if we enter a position and determines trade direction."""
         try:
             # Calculate aggregate Analyst confidence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not analyst_confidence_scores:
+    pass
+    pass
                 return {
                     "should_enter_position": False,
                     "trade_direction": "neutral",
@@ -277,6 +336,10 @@ class MockSupervisor:
         """Determine trade direction based on Analyst model confidences."""
         try:
             # Logic to determine if models suggest long, short, or neutral
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             bullish_confidence = sum(
                 conf for name, conf in confidence_scores.items()
                 if "bullish" in name.lower() or "long" in name.lower()
@@ -288,6 +351,8 @@ class MockSupervisor:
 
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+    pass
+    pass
                 return "long"
             elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
                 return "short"
@@ -308,8 +373,14 @@ class MockSupervisor:
         """Tactician decides when, how much, and what leverage based on Tactician ML models."""
         try:
             # Check if Analyst wants to enter
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             analyst_decision = analyst_signals.get("analyst_decision", {})
             if not analyst_decision.get("should_enter_position", False):
+    pass
+    pass
                 return {
                     "should_execute": False,
                     "reason": "analyst_no_entry"
@@ -320,6 +391,8 @@ class MockSupervisor:
             analyst_direction = analyst_decision.get("trade_direction", "neutral")
 
             if not self._directions_agree(analyst_direction, tactician_direction):
+    pass
+    pass
                 return {
                     "should_execute": False,
                     "reason": "direction_mismatch",
@@ -329,6 +402,8 @@ class MockSupervisor:
 
             # Calculate execution parameters based on Tactician confidence
             if not tactician_confidence_scores:
+    pass
+    pass
                 return {
                     "should_execute": False,
                     "reason": "no_tactician_confidence"
@@ -366,6 +441,10 @@ class MockSupervisor:
         """Determine trade direction based on Tactician model confidences."""
         try:
             # Logic to determine if Tactician models suggest long, short, or neutral
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             bullish_confidence = sum(
                 conf for name, conf in confidence_scores.items()
                 if "bullish" in name.lower() or "long" in name.lower()
@@ -377,6 +456,8 @@ class MockSupervisor:
 
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
+    pass
+    pass
                 return "long"
             elif bearish_confidence > bullish_confidence and bearish_confidence > 0.6:
                 return "short"
@@ -387,14 +468,22 @@ class MockSupervisor:
             return "neutral"
 
     def _directions_agree(self, analyst_direction: str, tactician_direction: str) -> bool:
+    pass
+    pass
         """Check if Analyst and Tactician agree on trade direction."""
         if analyst_direction == "neutral" or tactician_direction == "neutral":
+    pass
+    pass
             return False
         return analyst_direction == tactician_direction
 
     def _tactician_calculate_leverage(self, confidence: float) -> float:
+    pass
+    pass
         """Calculate leverage based on confidence score."""
         if confidence > 0.9:
+    pass
+    pass
             return 3.0  # High leverage for very high confidence
         elif confidence > 0.8:
             return 2.5
@@ -406,14 +495,20 @@ class MockSupervisor:
             return 1.0  # No leverage for low confidence
 
     def _tactician_calculate_position_size(self, confidence: float, leverage: float) -> float:
+    pass
+    pass
         """Calculate position size based on confidence and leverage."""
         base_size = confidence * 100  # Base size as percentage
         adjusted_size = base_size * leverage
         return min(adjusted_size, 100.0)  # Cap at 100%
 
     def _tactician_calculate_entry_timing(self, market_data: MockDataFrame, confidence: float) -> str:
+    pass
+    pass
         """Calculate optimal entry timing."""
         if confidence > 0.8:
+    pass
+    pass
             return "immediate"
         elif confidence > 0.7:
             return "within_5_minutes"
@@ -453,9 +548,13 @@ async def test_enhanced_prediction_service():
 
     # Test that confidence scores are valid
     for model_name, confidence in analyst_scores.items():
+    pass
+    pass
         assert 0.0 <= confidence <= 1.0, f"Analyst confidence should be between 0 and 1 for {model_name}"
 
     for model_name, confidence in tactician_scores.items():
+    pass
+    pass
         assert 0.0 <= confidence <= 1.0, f"Tactician confidence should be between 0 and 1 for {model_name}"
 
     print(f"✅ Enhanced Prediction Service test passed!")
@@ -538,6 +637,8 @@ async def test_tactician_decision():
     assert isinstance(should_execute, bool), "should_execute should be boolean"
 
     if should_execute:
+    pass
+    pass
         # Test execution parameters
         assert "leverage" in tactician_decision, "Should have leverage"
         assert "position_size" in tactician_decision, "Should have position_size"
@@ -668,6 +769,10 @@ async def main():
 
     try:
         await test_enhanced_prediction_service()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await test_analyst_decision()
         await test_tactician_decision()
         await test_direction_agreement()
@@ -675,14 +780,14 @@ async def main():
 
         print("=" * 70)
         print("🎉 All tests passed! Complete ML Profit Integration System is working correctly.")
-        print("\n📋 Summary:")
+        print("\\\n📋 Summary:")
         print("✅ Enhanced Prediction Service provides calibrated confidence scores")
         print("✅ Analyst decides position entry based on Analyst ML models")
         print("✅ Tactician decides execution parameters based on Tactician ML models")
         print("✅ Both components must agree on trade direction")
         print("✅ System fails gracefully when calibrated confidence doesn't exist")
         print("✅ Proper separation of concerns and responsibility assignment")
-        print("\n🎯 Architecture Verified:")
+        print("\\\n🎯 Architecture Verified:")
         print("   • Enhanced Prediction Service: ONLY provides calibrated confidence")
         print("   • Analyst: Decides IF to enter position (higher timeframe)")
         print("   • Tactician: Decides WHEN, HOW MUCH, WHAT LEVERAGE (lower timeframe)")
@@ -694,4 +799,6 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

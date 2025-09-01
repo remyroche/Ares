@@ -23,11 +23,17 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 
 def test_sr_level_fix() -> bool:
+    pass
+    pass
     """Test that S/R level counts are now dynamic."""
     logger = system_logger.getChild("TestSRLeverFix")
 
     try:
         # Create sample price data with wider range to test S/R levels
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         rng = np.random.default_rng(42)
         n_samples = 1000
 
@@ -74,9 +80,13 @@ def test_sr_level_fix() -> bool:
         ) -> pd.Series:
             """Calculate dynamic level counts based on price position."""
             if not levels:
+    pass
+    pass
                 # Fallback: create dynamic counts based on price percentiles
                 percentile_rank = price_series.rank(pct=True)
                 if level_type == "support":
+    pass
+    pass
                     return (1 - percentile_rank) * 3
                 # resistance
                 return percentile_rank * 3
@@ -87,7 +97,11 @@ def test_sr_level_fix() -> bool:
             )
 
             for level in levels:
+    pass
+    pass
                 if isinstance(level, dict):
+    pass
+    pass
                     level_price = float(level.get("price", 0))
                     level_strength = float(level.get("strength", 1.0))
                 else:
@@ -99,6 +113,8 @@ def test_sr_level_fix() -> bool:
 
                 # Check if price is within activation range
                 if level_type == "support":
+    pass
+    pass
                     is_active = (price_series >= (level_price - activation_range)) & (
                         price_series <= (level_price + activation_range * 2)
                     )
@@ -161,7 +177,7 @@ def test_sr_level_fix() -> bool:
         print("S/R LEVEL COUNT FIX TEST RESULTS")
         print("=" * 60)
 
-        print("\n📊 WITH S/R LEVELS:")
+        print("\\\n📊 WITH S/R LEVELS:")
         print(
             f"   Support counts: {results['with_sr_levels']['support_unique']} "
             "unique values",
@@ -177,7 +193,7 @@ def test_sr_level_fix() -> bool:
             f"   Resistance mean: {results['with_sr_levels']['resistance_mean']:.3f}",
         )
 
-        print("\n📊 WITHOUT S/R LEVELS (FALLBACK):")
+        print("\\\n📊 WITHOUT S/R LEVELS (FALLBACK):")
         print(
             f"   Support counts: {results['without_sr_levels']['support_unique']} "
             "unique values",
@@ -206,8 +222,10 @@ def test_sr_level_fix() -> bool:
             or results["without_sr_levels"]["resistance_unique"] > 1
         )
 
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         if support_fixed and resistance_fixed:
+    pass
+    pass
             print("✅ FIX SUCCESSFUL!")
             print("   - Support level counts are now dynamic")
             print("   - Resistance level counts are now dynamic")
@@ -226,5 +244,7 @@ def test_sr_level_fix() -> bool:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = test_sr_level_fix()
     sys.exit(0 if success else 1)

@@ -17,6 +17,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 
+import logger = system_logger.getChild
 logger = system_logger.getChild("SRTradingIntelligence")
 
 
@@ -32,6 +33,8 @@ class SRTradingIntelligence:
     """
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         """Initialize SR Trading Intelligence."""
         self.config = config
         self.logger = system_logger.getChild("SRTradingIntelligence")
@@ -60,9 +63,15 @@ class SRTradingIntelligence:
         try:
             self.logger.info("🔧 Initializing SR Trading Intelligence...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize SR Levels Manager
             self.sr_manager = await self._create_sr_manager()
             if not self.sr_manager:
+    pass
+    pass
                 self.logger.error("❌ Failed to initialize SR Levels Manager")
                 return False
 
@@ -71,6 +80,8 @@ class SRTradingIntelligence:
 
             # Start real-time updates if enabled
             if self.enable_real_time_updates:
+    pass
+    pass
                 await self._start_real_time_updates()
 
             self.logger.info("✅ SR Trading Intelligence initialized successfully")
@@ -84,6 +95,12 @@ class SRTradingIntelligence:
         """Create and initialize SR Levels Manager."""
         try:
             from src.tactician.sr_levels_manager import create_sr_levels_manager
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import return await create_sr_levels_manager
             return await create_sr_levels_manager(self.config)
         except Exception as e:
             self.logger.error(f"❌ Error creating SR Levels Manager: {e}")
@@ -92,6 +109,8 @@ class SRTradingIntelligence:
     async def _start_real_time_updates(self):
         """Start real-time SR level updates."""
         if self._update_task and not self._update_task.done():
+    pass
+    pass
             return
 
         self._is_running = True
@@ -107,8 +126,14 @@ class SRTradingIntelligence:
                 # Get current market data (this would come from your exchange integration)
                 current_data = await self._get_current_market_data()
                 if current_data:
+    pass
+    except Exception as e:
+        pass
+    pass
                     await self._update_sr_levels_with_market_data(current_data)
 
+    except Exception as e:
+        pass
         except asyncio.CancelledError:
             self.logger.info("🛑 Real-time updates cancelled")
         except Exception as e:
@@ -124,13 +149,21 @@ class SRTradingIntelligence:
         """Update SR levels with current market data."""
         try:
             if not self.sr_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             current_price = market_data.get("price", 0)
             current_volume = market_data.get("volume", 0)
             current_time = market_data.get("timestamp", datetime.now())
 
             if current_price > 0:
+    pass
+    pass
                 await self.sr_manager.update_levels_with_live_data(
                     current_price, current_volume, current_time
                 )
@@ -155,8 +188,14 @@ class SRTradingIntelligence:
         """
         try:
             if not self.sr_manager:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {"error": "SR Manager not initialized"}
 
+    except Exception as e:
+        pass
             # Get basic SR levels
             sr_levels = self.sr_manager.get_sr_levels_for_trading(
                 current_price, include_metadata
@@ -197,6 +236,10 @@ class SRTradingIntelligence:
                 "entry_opportunities": [],
                 "exit_signals": [],
                 "risk_level": "medium"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Analyze nearest levels
@@ -204,6 +247,8 @@ class SRTradingIntelligence:
             nearest_resistance = sr_levels.get("nearest_resistance")
 
             if nearest_support and nearest_resistance:
+    pass
+    pass
                 # Determine market position
                 support_distance = abs(current_price - nearest_support["price"]) / current_price
                 resistance_distance = abs(current_price - nearest_resistance["price"]) / current_price
@@ -227,6 +272,8 @@ class SRTradingIntelligence:
 
                 # Determine trend direction
                 if nearest_support["price"] > nearest_resistance["price"]:
+    pass
+    pass
                     intelligence["trend_direction"] = "downtrend"
                 elif nearest_resistance["price"] > nearest_support["price"]:
                     intelligence["trend_direction"] = "uptrend"
@@ -234,6 +281,8 @@ class SRTradingIntelligence:
                 # Assess volatility
                 level_distance = abs(nearest_resistance["price"] - nearest_support["price"]) / current_price
                 if level_distance < 0.02:
+    pass
+    pass
                     intelligence["volatility_assessment"] = "low"
                 elif level_distance > 0.05:
                     intelligence["volatility_assessment"] = "high"
@@ -244,6 +293,8 @@ class SRTradingIntelligence:
                 avg_strength = (support_strength + resistance_strength) / 2
 
                 if avg_strength < 0.4:
+    pass
+    pass
                     intelligence["risk_level"] = "high"
                 elif avg_strength > 0.7:
                     intelligence["risk_level"] = "low"
@@ -267,6 +318,10 @@ class SRTradingIntelligence:
                 "market_risk": "medium",
                 "risk_factors": [],
                 "risk_score": 0.5
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Calculate risk score based on various factors
@@ -277,6 +332,8 @@ class SRTradingIntelligence:
             nearest_resistance = sr_levels.get("nearest_resistance")
 
             if nearest_support and nearest_resistance:
+    pass
+    pass
                 support_distance = abs(current_price - nearest_support["price"]) / current_price
                 resistance_distance = abs(current_price - nearest_resistance["price"]) / current_price
 
@@ -291,6 +348,8 @@ class SRTradingIntelligence:
                 avg_strength = (support_strength + resistance_strength) / 2
 
                 if avg_strength < 0.4:
+    pass
+    pass
                     risk_score += 0.2
                     risk_assessment["risk_factors"].append("Weak SR levels")
                 elif avg_strength > 0.7:
@@ -308,8 +367,12 @@ class SRTradingIntelligence:
 
                 # Factor 4: Current position
                 if self.current_position:
+    pass
+    pass
                     position_size = abs(self.current_position.get("size", 0))
                     if position_size > self.max_position_size * 0.8:
+    pass
+    pass
                         risk_score += 0.2
                         risk_assessment["risk_factors"].append("Large position size")
 
@@ -319,6 +382,8 @@ class SRTradingIntelligence:
 
             # Categorize overall risk
             if risk_score < 0.3:
+    pass
+    pass
                 risk_assessment["overall_risk"] = "low"
             elif risk_score > 0.7:
                 risk_assessment["overall_risk"] = "high"
@@ -338,10 +403,16 @@ class SRTradingIntelligence:
         try:
             recommendations = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             nearest_support = sr_levels.get("nearest_support")
             nearest_resistance = sr_levels.get("nearest_resistance")
 
             if not nearest_support or not nearest_resistance:
+    pass
+    pass
                 return recommendations
 
             # Long entry recommendation
@@ -372,10 +443,14 @@ class SRTradingIntelligence:
 
             # Exit recommendations for existing positions
             if self.current_position:
+    pass
+    pass
                 position_type = self.current_position.get("type", "long")
                 entry_price = self.current_position.get("entry_price", 0)
 
                 if position_type == "long" and nearest_resistance["proximity"] < 0.01:
+    pass
+    pass
                     recommendations.append({
                         "action": "exit_long",
                         "exit_price": nearest_resistance["price"],
@@ -414,6 +489,10 @@ class SRTradingIntelligence:
                 "size": size,
                 "entry_time": timestamp,
                 "last_update": timestamp
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Add to trading history
@@ -434,15 +513,23 @@ class SRTradingIntelligence:
         """Close current position and record trade."""
         try:
             if not self.current_position:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("⚠️ No position to close")
                 return
 
+    except Exception as e:
+        pass
             # Calculate P&L
             entry_price = self.current_position["entry_price"]
             size = self.current_position["size"]
             position_type = self.current_position["type"]
 
             if position_type == "long":
+    pass
+    pass
                 pnl = (exit_price - entry_price) * size
             else:  # short
                 pnl = (entry_price - exit_price) * size
@@ -479,13 +566,21 @@ class SRTradingIntelligence:
         """Update performance metrics based on trading history."""
         try:
             if not self.trading_history:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             # Calculate basic metrics
             total_trades = len([t for t in self.trading_history if t.get("action") == "position_close"])
             winning_trades = len([t for t in self.trading_history if t.get("pnl", 0) > 0])
 
             if total_trades > 0:
+    pass
+    pass
                 win_rate = winning_trades / total_trades
             else:
                 win_rate = 0.0
@@ -494,6 +589,8 @@ class SRTradingIntelligence:
             pnl_values = [t.get("pnl", 0) for t in self.trading_history if t.get("action") == "position_close"]
 
             if pnl_values:
+    pass
+    pass
                 total_pnl = sum(pnl_values)
                 avg_pnl = np.mean(pnl_values)
                 max_profit = max(pnl_values) if pnl_values else 0
@@ -519,7 +616,13 @@ class SRTradingIntelligence:
         """Load trading history from storage."""
         try:
             history_file = Path("data/trading_history.json")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if history_file.exists():
+    pass
+    pass
                 with open(history_file, 'r') as f:
                     data = json.load(f)
 
@@ -540,6 +643,10 @@ class SRTradingIntelligence:
                 "trades": self.trading_history,
                 "performance": self.performance_metrics,
                 "last_save": datetime.now().isoformat()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             history_file = Path("data/trading_history.json")
@@ -556,10 +663,20 @@ class SRTradingIntelligence:
         try:
             self._is_running = False
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self._update_task and not self._update_task.done():
+    pass
+    pass
                 self._update_task.cancel()
                 try:
                     await self._update_task
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except asyncio.CancelledError:
                     pass
 
@@ -576,5 +693,7 @@ async def create_sr_trading_intelligence(config: Dict[str, Any]) -> SRTradingInt
     """Factory function to create and initialize SR Trading Intelligence."""
     intelligence = SRTradingIntelligence(config)
     if await intelligence.initialize():
+    pass
+    pass
         return intelligence
     return None

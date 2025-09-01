@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
 from src.utils.vif_validation_decorators import (
+import comprehensive_vif_validation,
     comprehensive_vif_validation,
     validate_vif_inputs,
     safe_vif_calculation,
@@ -20,6 +21,8 @@ from src.utils.vif_validation_decorators import (
 )
 
 def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
+    pass
+    pass
     """
     Simple VIF calculation using correlation matrix.
 
@@ -31,6 +34,8 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         Series with VIF values for each feature
     """
     if features is None:
+    pass
+    pass
         # Fallback implementation for features
         # Fallback implementation for features
         # Fallback implementation for features
@@ -39,7 +44,11 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
     vif_scores = {}
 
     for feature in features:
+    pass
+    pass
         if feature not in data.columns:
+    pass
+    pass
             continue
 
         # Prepare data for regression
@@ -52,18 +61,28 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
         y_clean, y[mask]
 
         if len(X_clean) < 2 or X_clean.empty:
+    pass
+    pass
             vif_scores[feature] = np.nan
             continue
 
         try:
         # Calculate R - squared
             from sklearn.linear_model import LinearRegression
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import model, LinearRegression
             model, LinearRegression()
             model.fit(X_clean, y_clean)
             r_squared, model.score(X_clean, y_clean)
 
         # Calculate VIF
         if r_squared < 1.0:
+    pass
+    pass
                 vif, 1.0 / (1.0 - r_squared)
             else:
                 vif, np.inf
@@ -81,6 +100,8 @@ def calculate_vif_simple(data: pd.DataFrame, features: Optional[List[str]] = Non
     fallback_strategy="ones"
 )
 def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = None) -> pd.Series:
+    pass
+    pass
     """
     Robust VIF calculation with comprehensive error handling.
 
@@ -94,6 +115,8 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     logger, system_logger.getChild("VIFCalculator")
 
     if features is None:
+    pass
+    pass
         # Fallback implementation for features
         # Fallback implementation for features
         # Fallback implementation for features
@@ -103,6 +126,8 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     features = [f for f in features if f in data.columns and data[f].dtype in ['int64', 'float64']]
 
     if not features:
+    pass
+    pass
         logger.warning("⚠️ VIF Calculator: No valid numeric features found")
         return pd.Series()
 
@@ -110,24 +135,36 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
     variances, data[features].var()
     zero_var_features, variances[variances == 0].index.tolist()
     if zero_var_features:
+    pass
+    pass
         logger.warning(f"⚠️ VIF Calculator: Removing {len(zero_var_features)} zero variance features: {zero_var_features}")
         features = [f for f in features if f not in zero_var_features]
 
     if len(features) < 2:
+    pass
+    pass
         logger.warning("⚠️ VIF Calculator: Not enough features for VIF calculation")
         return pd.Series([1.0] * len(features), index = features)
 
     try:
         # Use Ledoit - Wolf shrinkage for robust covariance estimation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         X, data[features].copy()
 
         # Handle missing values
         if X.isna().any().any():
+    pass
+    pass
             logger.info("🔍 VIF Calculator: Handling missing values with forward fill")
             X, X.fillna(method='ffill').fillna(method='bfill').fillna(0)
 
         # Handle infinite values
         if np.isinf(X).any().any():
+    pass
+    pass
             logger.info("🔍 VIF Calculator: Handling infinite values")
             X, X.replace([np.inf, -np.inf], np.nan)
             X, X.fillna(X.median())
@@ -143,6 +180,10 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
         # Calculate correlation matrix using Ledoit - Wolf shrinkage
         try:
             lw, LedoitWolf().fit(X_scaled.values)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             cov_matrix, lw.covariance_
 
         # Convert to correlation matrix
@@ -160,6 +201,10 @@ def calculate_vif_robust(data: pd.DataFrame, features: Optional[List[str]] = Non
             corr_inv, np.linalg.pinv(corr_matrix)
             vif_values, np.diag(corr_inv)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Create result series
             vif_series, pd.Series(vif_values, index = features)
 
@@ -203,6 +248,8 @@ def calculate_vif_iterative(
     logger, system_logger.getChild("VIFCalculator")
 
     if features is None:
+    pass
+    pass
         # Fallback implementation for features
         # Fallback implementation for features
         # Fallback implementation for features
@@ -212,7 +259,11 @@ def calculate_vif_iterative(
     current_features, features.copy()
 
     for iteration in range(max_iterations):
+    pass
+    pass
         if len(current_features) < 2:
+    pass
+    pass
             logger.warning("⚠️ VIF Calculator: Not enough features for iterative VIF calculation")
             break
 
@@ -223,6 +274,8 @@ def calculate_vif_iterative(
         high_vif_features, vif_values[vif_values > max_vif].index.tolist()
 
         if not high_vif_features:
+    pass
+    pass
             logger.info(f"✅ VIF Calculator: All features have VIF <= {max_vif} after {iteration + 1} iterations")
             break
 
@@ -241,6 +294,8 @@ def calculate_vif_iterative(
     return final_vif, removed_features
 
 def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
+    pass
+    pass
     """
     Analyze VIF values for potential issues.
 
@@ -268,22 +323,32 @@ def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
 
     # Check for issues
     if analysis['nan_count'] > 0:
+    pass
+    pass
         analysis['issues'].append(f"Found {analysis['nan_count']} features with NaN VIF values")
         logger.warning(f"⚠️ VIF Analysis: {analysis['nan_count']} NaN VIF values detected")
 
     if analysis['infinite_count'] > 0:
+    pass
+    pass
         analysis['issues'].append(f"Found {analysis['infinite_count']} features with infinite VIF values")
         logger.error(f"❌ VIF Analysis: {analysis['infinite_count']} infinite VIF values detected")
 
     if analysis['zero_count'] > 0:
+    pass
+    pass
         analysis['issues'].append(f"Found {analysis['zero_count']} features with zero VIF values")
         logger.warning(f"⚠️ VIF Analysis: {analysis['zero_count']} zero VIF values detected")
 
     if analysis['high_vif_count'] > 0:
+    pass
+    pass
         analysis['issues'].append(f"Found {analysis['high_vif_count']} features with VIF > 10")
         logger.warning(f"⚠️ VIF Analysis: {analysis['high_vif_count']} high VIF values detected")
 
     if analysis['extreme_vif_count'] > 0:
+    pass
+    pass
         analysis['issues'].append(f"Found {analysis['extreme_vif_count']} features with VIF > 100")
         logger.error(f"❌ VIF Analysis: {analysis['extreme_vif_count']} extreme VIF values detected")
 
@@ -297,6 +362,8 @@ def analyze_vif_issues(vif_values: pd.Series) -> Dict[str, any]:
     return analysis
 
 def get_vif_recommendations(vif_values: pd.Series, threshold: float, 10.0) -> List[str]:
+    pass
+    pass
     """
     Get recommendations for handling VIF issues.
 
@@ -313,30 +380,42 @@ def get_vif_recommendations(vif_values: pd.Series, threshold: float, 10.0) -> Li
     analysis, analyze_vif_issues(vif_values)
 
     if analysis['infinite_count'] > 0:
+    pass
+    pass
         recommendations.append("Remove features with infinite VIF values (perfect multicollinearity)")
         recommendations.append("Check for duplicate or highly correlated features")
         recommendations.append("Consider feature engineering to reduce redundancy")
 
     if analysis['extreme_vif_count'] > 0:
+    pass
+    pass
         recommendations.append("Remove features with VIF > 100 (severe multicollinearity)")
         recommendations.append("Use iterative VIF removal with lower threshold")
         recommendations.append("Consider principal component analysis (PCA)")
 
     if analysis['high_vif_count'] > 0:
+    pass
+    pass
         recommendations.append(f"Consider removing features with VIF > {threshold}")
         recommendations.append("Use regularization techniques (Ridge, Lasso)")
         recommendations.append("Feature selection based on domain knowledge")
 
     if analysis['nan_count'] > 0:
+    pass
+    pass
         recommendations.append("Investigate features with NaN VIF values")
         recommendations.append("Check for insufficient data or computational issues")
         recommendations.append("Consider using robust VIF calculation methods")
 
     if analysis['zero_count'] > 0:
+    pass
+    pass
         recommendations.append("Investigate features with zero VIF values")
         recommendations.append("Check for constant features or data issues")
 
     if not recommendations:
+    pass
+    pass
         recommendations.append("VIF values look good - no immediate action required")
 
     return recommendations

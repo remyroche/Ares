@@ -3,19 +3,38 @@
 import os
 from typing import Any, Literal
 
+import try:
 try:
     from dotenv import load_dotenv
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except Exception:  # soft-fallback for smoke tests without dotenv
 except Exception:  # soft-fallback for smoke tests without dotenv
     def load_dotenv(*args, **kwargs):
+    pass
+    pass
         return False
 
 try:
     from pydantic import Field
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
     from pydantic_settings import BaseSettings
+import except Exception:  # minimal fallback types for smoke test
 except Exception:  # minimal fallback types for smoke test
     class BaseSettings:  # type: ignore
         def __init__(self, **kwargs):
+    pass
+    pass
             for k, v in kwargs.items():
+    pass
+    pass
                 setattr(self, k, v)
     def Field(default=None, env: str | None = None):  # type: ignore
         return default
@@ -23,8 +42,11 @@ except Exception:  # minimal fallback types for smoke test
 from src.utils.logger import system_logger
 
 # --- Environment Loading ---
+import dotenv_path = os.path.join
 dotenv_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
 if os.path.exists(dotenv_path):
+    pass
+    pass
     load_dotenv(dotenv_path)
 else:
     pass
@@ -118,20 +140,28 @@ class EnvironmentSettings(BaseSettings):
     # --- Derived Properties ---
     @property
     def is_live_mode(self) -> bool:
+    pass
+    pass
         """Check if running in live mode."""
         return self.trading_environment == "LIVE"
 
     @property
     def is_testnet_mode(self) -> bool:
+    pass
+    pass
         """Check if running in testnet mode."""
         return self.trading_environment == "TESTNET"
 
     @property
     def is_paper_mode(self) -> bool:
+    pass
+    pass
         """Check if running in paper mode."""
         return self.trading_environment == "PAPER"
 
     def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]:
+    pass
+    pass
         """Get credentials for a specific exchange.
 
         Args:
@@ -144,21 +174,29 @@ class EnvironmentSettings(BaseSettings):
         exchange_name_lower = exchange_name.lower()
 
         if exchange_name_lower == "binance":
+    pass
+    pass
             return {
                 "api_key": self.binance_api_key,
                 "api_secret": self.binance_api_secret,
             }
         if exchange_name_lower == "gateio":
+    pass
+    pass
             return {
                 "api_key": self.gateio_api_key,
                 "api_secret": self.gateio_api_secret,
             }
         if exchange_name_lower == "mexc":
+    pass
+    pass
             return {
                 "api_key": self.mexc_api_key,
                 "api_secret": self.mexc_api_secret,
             }
         if exchange_name_lower == "okx":
+    pass
+    pass
             return {
                 "api_key": self.okx_api_key,
                 "api_secret": self.okx_api_secret,
@@ -167,6 +205,8 @@ class EnvironmentSettings(BaseSettings):
         return {"api_key": None, "api_secret": None}
 
     def validate_credentials(self, exchange_name: str) -> bool:
+    pass
+    pass
         """Validate that credentials are available for the specified exchange.
 
         Args:
@@ -182,6 +222,8 @@ class EnvironmentSettings(BaseSettings):
         )
 
     def get_database_config(self, database_type: str) -> dict[str, Any]:
+    pass
+    pass
         """Get database configuration for a specific database type.
 
         Args:
@@ -192,11 +234,15 @@ class EnvironmentSettings(BaseSettings):
 
         """
         if database_type.lower() == "firestore":
+    pass
+    pass
             return {
                 "project_id": self.firestore_project_id,
                 "credentials_path": self.google_application_credentials,
             }
         if database_type.lower() == "influxdb":
+    pass
+    pass
             return {
                 "url": self.influxdb_url,
                 "token": self.influxdb_token,
@@ -206,6 +252,8 @@ class EnvironmentSettings(BaseSettings):
         return {}
 
     def get_email_config(self) -> dict[str, str | None]:
+    pass
+    pass
         """Get email configuration.
 
         Returns:
@@ -219,6 +267,8 @@ class EnvironmentSettings(BaseSettings):
         }
 
     def get_mlflow_config(self) -> dict[str, str | None]:
+    pass
+    pass
         """Get MLflow configuration.
 
         Returns:
@@ -240,6 +290,8 @@ class EnvironmentSettings(BaseSettings):
 
 
 def get_environment_settings() -> EnvironmentSettings:
+    pass
+    pass
     """Get environment settings instance.
 
     Returns:
@@ -248,6 +300,10 @@ def get_environment_settings() -> EnvironmentSettings:
     """
     try:
         return EnvironmentSettings()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except Exception as e:
         system_logger.error(f"Error loading environment settings: {e}")
         # Return default settings

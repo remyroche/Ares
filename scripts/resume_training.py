@@ -26,6 +26,7 @@ from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.warning_symbols import error, failed
 
 # Add the project root to the Python path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -36,6 +37,8 @@ async def main() -> None:
     logger = system_logger.getChild("ResumeTraining")
 
     if len(sys.argv) < 2:
+    pass
+    pass
         print(error("A symbol argument is required."))
         print(__doc__)
         sys.exit(1)
@@ -61,6 +64,8 @@ async def main() -> None:
     )
 
     if not step_success:
+    pass
+    pass
         print(failed("Data consolidation step failed. Cannot resume training."))
         sys.exit(1)
 
@@ -71,6 +76,10 @@ async def main() -> None:
     db_manager: SQLiteManager | None = None
     try:
         db_manager = SQLiteManager(CONFIG)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await db_manager.initialize()
 
         training_manager = EnhancedTrainingManager(db_manager)
@@ -79,6 +88,8 @@ async def main() -> None:
         run_id = await training_manager.resume_training_pipeline(symbol, exchange)
 
         if run_id:
+    pass
+    pass
             logger.info(
                 f"Resumed training pipeline completed successfully for {symbol}. MLflow Run ID: {run_id}",
             )
@@ -87,8 +98,12 @@ async def main() -> None:
             sys.exit(1)
     finally:
         if db_manager:
+    pass
+    pass
             await db_manager.close()
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

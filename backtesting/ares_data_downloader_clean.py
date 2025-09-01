@@ -33,8 +33,13 @@ logger = logging.getLogger("OptimizedDataDownloader")
 # Import dependencies
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     from src.config import CONFIG
     from src.utils.logger import get_logger
+import connection_error,
         connection_error,
         critical,
         error,
@@ -61,39 +66,63 @@ except ImportError as e:
 
     # Create fallback functions
     def error(msg):
+    pass
+    pass
         return f"❌ ERROR: {msg}"
 
     def warning(msg):
+    pass
+    pass
         return f"⚠️ WARNING: {msg}"
 
     def critical(msg):
+    pass
+    pass
         return f"🚨 CRITICAL: {msg}"
 
     def problem(msg):
+    pass
+    pass
         return f"🔧 PROBLEM: {msg}"
 
     def failed(msg):
+    pass
+    pass
         return f"💥 FAILED: {msg}"
 
     def invalid(msg):
+    pass
+    pass
         return f"❌ INVALID: {msg}"
 
     def missing(msg):
+    pass
+    pass
         return f"📭 MISSING: {msg}"
 
     def timeout(msg):
+    pass
+    pass
         return f"⏰ TIMEOUT: {msg}"
 
     def connection_error(msg):
+    pass
+    pass
         return f"🔌 CONNECTION ERROR: {msg}"
 
     def validation_error(msg):
+    pass
+    pass
         return f"✅ VALIDATION ERROR: {msg}"
 
     def initialization_error(msg):
+    pass
+    pass
         return f"🚀 INITIALIZATION ERROR: {msg}"
 
     def execution_error(msg):
+    pass
+    pass
         return f"⚡ EXECUTION ERROR: {msg}"
 
 
@@ -120,12 +149,16 @@ class CleanDataDownloader:
     """Clean, full-featured data downloader with parallel processing and incremental downloads."""
 
     def __init__(self, config: DownloadConfig):
+    pass
+    pass
         self.config = config
         self.session = None
         self.semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         self.download_semaphore = asyncio.Semaphore(config.max_concurrent_downloads)
         # Create structured cache directory: data_cache/exchange/asset/
         if config.data_dir is None:
+    pass
+    pass
             self.cache_dir = os.path.join("data_cache", config.exchange.lower(), config.symbol.lower())
         else:
             self.cache_dir = config.data_dir
@@ -150,6 +183,10 @@ class CleanDataDownloader:
 
         try:
             # Create CCXT exchange instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange_class = getattr(ccxt, self.config.exchange.lower())
             self.exchange = exchange_class(
                 {
@@ -174,21 +211,35 @@ class CleanDataDownloader:
         """Clean up resources."""
         try:
             if self.exchange:
+    pass
+    except Exception as e:
+        pass
+    pass
                 await self.exchange.close()
                 print("✅ CCXT exchange closed")
                 logger.info("✅ CCXT exchange closed")
+    except Exception as e:
+        pass
         except Exception as e:
             print(f"⚠️ Error during cleanup: {e}")
             logger.warning(f"⚠️ Error during cleanup: {e}")
 
     def _find_latest_aggtrades_timestamp(self) -> datetime | None:
+    pass
+    pass
         """Find the latest timestamp in existing aggtrades files by reading actual trade timestamps."""
         try:
             # Find all aggtrades files for this symbol and exchange
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
 
             if not files:
+    pass
+    pass
                 print("🔍 DEBUG: No existing aggtrades files found")
                 return None
 
@@ -196,8 +247,14 @@ class CleanDataDownloader:
             latest_file = None
 
             for file_path in files:
+    pass
+    pass
                 try:
                     # Read only the last few lines to find the latest trade timestamp efficiently
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     result = subprocess.run(
                         ["tail", "-100", file_path],
                         check=False,
@@ -205,11 +262,13 @@ class CleanDataDownloader:
                         text=True,
                     )
                     if result.returncode != 0:
+    pass
+    pass
                         print(f"🔍 DEBUG: Cannot read {file_path}")
                         continue
 
                     # Parse the CSV data from the tail output
-                    lines = result.stdout.strip().split("\n")
+                    lines = result.stdout.strip().split("\\\n")
                     if len(lines) < 2:  # Need at least header + 1 data line
                         continue
 
@@ -219,10 +278,18 @@ class CleanDataDownloader:
                     # Extract timestamps from the data lines
                     timestamps = []
                     for line in data_lines:
+    pass
+    pass
                         if "," in line:
+    pass
+    pass
                             timestamp_str = line.split(",")[0]
                             try:
                                 # Try to parse as datetime string (most common format)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                 timestamp = datetime.strptime(
                                     timestamp_str, "%Y-%m-%d %H:%M:%S.%f"
                                 )
@@ -230,6 +297,10 @@ class CleanDataDownloader:
                             except ValueError:
                                 try:
                                     # Try without microseconds
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                     timestamp = datetime.strptime(
                                         timestamp_str, "%Y-%m-%d %H:%M:%S"
                                     )
@@ -237,6 +308,10 @@ class CleanDataDownloader:
                                 except ValueError:
                                     try:
                                         # Try as millisecond timestamp
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                         timestamp = datetime.fromtimestamp(
                                             int(timestamp_str) / 1000
                                         )
@@ -245,8 +320,12 @@ class CleanDataDownloader:
                                         continue
 
                     if timestamps:
+    pass
+    pass
                         file_latest = max(timestamps)
                         if latest_timestamp is None or file_latest > latest_timestamp:
+    pass
+    pass
                             latest_timestamp = file_latest
                             latest_file = file_path
 
@@ -255,6 +334,8 @@ class CleanDataDownloader:
                     continue
 
             if latest_timestamp:
+    pass
+    pass
                 print(
                     f"🔍 DEBUG: Latest timestamp found: {latest_timestamp} from {latest_file}"
                 )
@@ -268,14 +349,20 @@ class CleanDataDownloader:
             return None
 
     def get_time_periods(self, data_type: str) -> list[tuple[datetime, datetime]]:
+    pass
+    pass
         """Get time periods for downloading data, excluding already downloaded periods."""
         print(f"📅 STEP 2: Calculating time periods for {data_type}...")
         logger.info(f"📅 STEP 2: Calculating time periods for {data_type}...")
 
         # For aggtrades, find the latest timestamp in existing files
         if data_type == "aggtrades":
+    pass
+    pass
             latest_timestamp = self._find_latest_aggtrades_timestamp()
             if latest_timestamp:
+    pass
+    pass
                 print(f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}")
                 start_date = latest_timestamp
                 end_date = datetime.now()
@@ -300,6 +387,8 @@ class CleanDataDownloader:
         logger.info(f"📊 Total days: {(end_date - start_date).days}")
 
         if data_type == "klines":
+    pass
+    pass
             print("📈 Processing klines (monthly periods)...")
             logger.info("📈 Processing klines (monthly periods)...")
             # Monthly periods for klines
@@ -345,6 +434,8 @@ class CleanDataDownloader:
             return periods
 
         if data_type == "aggtrades":
+    pass
+    pass
             print("📊 Processing aggtrades (daily periods)...")
             logger.info("📊 Processing aggtrades (daily periods)...")
             # Daily periods for aggtrades
@@ -355,6 +446,8 @@ class CleanDataDownloader:
             # Find the latest timestamp in existing files
             latest_timestamp = self._find_latest_aggtrades_timestamp()
             if latest_timestamp:
+    pass
+    pass
                 print(f"🔍 DEBUG: Found latest timestamp: {latest_timestamp}")
                 # Start from the exact timestamp of the latest trade
                 start_date = latest_timestamp
@@ -386,6 +479,8 @@ class CleanDataDownloader:
 
                 # Only download if file doesn't exist
                 if not os.path.exists(filepath):
+    pass
+    pass
                     periods.append((current, period_end))
                     day_count += 1
                     print(f"📥 Will download: {filename}")
@@ -402,6 +497,8 @@ class CleanDataDownloader:
             return periods
 
         if data_type == "futures":
+    pass
+    pass
             print("📈 Processing futures (monthly periods)...")
             logger.info("📈 Processing futures (monthly periods)...")
             # Monthly periods for futures
@@ -457,12 +554,16 @@ class CleanDataDownloader:
 
         periods = self.get_time_periods("klines")
         if not periods:
+    pass
+    pass
             print("📁 No klines periods to download")
             logger.info("📁 No klines periods to download")
             return True
 
         print(f"📊 Found {len(periods)} periods to download")
         for start, end in periods:
+    pass
+    pass
             print(
                 f"📅 Period: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
             )
@@ -475,7 +576,11 @@ class CleanDataDownloader:
         success_count = 0
         error_count = 0
         for i, result in enumerate(results):
+    pass
+    pass
             if isinstance(result, Exception):
+    pass
+    pass
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"❌ Task {i+1} failed: {result}")
@@ -505,12 +610,16 @@ class CleanDataDownloader:
 
         periods = self.get_time_periods("aggtrades")
         if not periods:
+    pass
+    pass
             print("📁 No aggtrades periods to download")
             logger.info("📁 No aggtrades periods to download")
             return True
 
         print(f"📊 Found {len(periods)} periods to download")
         for start, end in periods:
+    pass
+    pass
             print(
                 f"📅 Period: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
             )
@@ -523,7 +632,11 @@ class CleanDataDownloader:
         success_count = 0
         error_count = 0
         for i, result in enumerate(results):
+    pass
+    pass
             if isinstance(result, Exception):
+    pass
+    pass
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"❌ Task {i+1} failed: {result}")
@@ -553,12 +666,16 @@ class CleanDataDownloader:
 
         periods = self.get_time_periods("futures")
         if not periods:
+    pass
+    pass
             print("📁 No futures periods to download")
             logger.info("📁 No futures periods to download")
             return True
 
         print(f"📊 Found {len(periods)} periods to download")
         for start, end in periods:
+    pass
+    pass
             print(
                 f"📅 Period: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
             )
@@ -571,7 +688,11 @@ class CleanDataDownloader:
         success_count = 0
         error_count = 0
         for i, result in enumerate(results):
+    pass
+    pass
             if isinstance(result, Exception):
+    pass
+    pass
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"❌ Task {i+1} failed: {result}")
@@ -601,6 +722,10 @@ class CleanDataDownloader:
         async with self.download_semaphore:
             try:
                 # Generate filename for this day
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
 
@@ -634,18 +759,24 @@ class CleanDataDownloader:
                     )
 
                     if not klines:
+    pass
+    pass
                         break
 
                     all_klines.extend(klines)
 
                     # Update since to the timestamp of the last kline
                     if klines:
+    pass
+    pass
                         since = klines[-1][0] + 1  # Next timestamp after the last one
 
                     # Small delay to respect rate limits (CCXT handles this automatically)
                     await asyncio.sleep(0.1)
 
                 if not all_klines:
+    pass
+    pass
                     print(f"⚠️ No klines data found for {start_dt.strftime('%Y-%m-%d')}")
                     logger.warning(
                         f"⚠️ No klines data found for {start_dt.strftime('%Y-%m-%d')}"
@@ -676,6 +807,10 @@ class CleanDataDownloader:
         async with self.download_semaphore:
             try:
                 # Generate filename for this day
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
 
@@ -710,6 +845,8 @@ class CleanDataDownloader:
                     )
 
                     if not trades:
+    pass
+    pass
                         break
 
                     # Filter trades within our time range
@@ -718,6 +855,8 @@ class CleanDataDownloader:
 
                     # Update since to the timestamp of the last trade
                     if trades:
+    pass
+    pass
                         since = (
                             trades[-1]["timestamp"] + 1
                         )  # Next timestamp after the last one
@@ -726,6 +865,8 @@ class CleanDataDownloader:
                     await asyncio.sleep(0.1)
 
                 if not all_trades:
+    pass
+    pass
                     print(
                         f"⚠️ No aggtrades data found for {start_dt.strftime('%Y-%m-%d')}"
                     )
@@ -758,6 +899,10 @@ class CleanDataDownloader:
         async with self.download_semaphore:
             try:
                 # Generate filename for this month
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
 
@@ -787,17 +932,31 @@ class CleanDataDownloader:
                 try:
                     print("📊 Downloading funding rates...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     # Method 1: Try fetch_funding_rate_history if available
                     if hasattr(self.exchange, "fetch_funding_rate_history"):
+    pass
+    pass
                         try:
                             funding_rates = (
                                 await self.exchange.fetch_funding_rate_history(
                                     self.config.symbol, since=start_ms, limit=1000
                                 )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             )
 
                             for rate in funding_rates:
+    pass
+    pass
                                 if start_ms <= rate["timestamp"] <= end_ms:
+    pass
+    pass
                                     all_futures_data.append(
                                         {
                                             "timestamp": rate["timestamp"],
@@ -827,6 +986,10 @@ class CleanDataDownloader:
                         try:
                             funding_rate = await self.exchange.fetch_funding_rate(
                                 self.config.symbol
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             )
 
                             if (
@@ -863,6 +1026,10 @@ class CleanDataDownloader:
                     ):
                         try:
                             # Direct API call to Binance futures funding rate endpoint
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             params = {
                                 "symbol": self.config.symbol.upper(),
                                 "startTime": start_ms,
@@ -875,6 +1042,8 @@ class CleanDataDownloader:
                             )
 
                             for rate in funding_rates:
+    pass
+    pass
                                 all_futures_data.append(
                                     {
                                         "timestamp": int(rate["fundingTime"]),
@@ -900,6 +1069,8 @@ class CleanDataDownloader:
                     logger.warning(f"⚠️ Warning: Could not download funding rates: {e}")
 
                 if not all_futures_data:
+    pass
+    pass
                     print(
                         f"⚠️ No funding rate data found for {start_dt.strftime('%Y-%m')}"
                     )
@@ -926,13 +1097,19 @@ class CleanDataDownloader:
                 return False
 
     def _process_klines_data(self, klines: list[list]) -> pd.DataFrame:
+    pass
+    pass
         """Process klines data from CCXT into a DataFrame."""
         if not klines:
+    pass
+    pass
             return pd.DataFrame()
 
         # CCXT format: [timestamp, open, high, low, close, volume, ...]
         data = []
         for kline in klines:
+    pass
+    pass
             try:
                 data.append(
                     {
@@ -943,6 +1120,10 @@ class CleanDataDownloader:
                         "close": float(kline[4]),
                         "volume": float(kline[5]),
                     }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
             except (IndexError, ValueError, TypeError) as e:
                 print(f"⚠️ Error processing kline: {e}, kline: {kline}")
@@ -951,12 +1132,18 @@ class CleanDataDownloader:
         return pd.DataFrame(data)
 
     def _process_aggtrades_data(self, trades: list[dict]) -> pd.DataFrame:
+    pass
+    pass
         """Process trades data from CCXT into a DataFrame."""
         if not trades:
+    pass
+    pass
             return pd.DataFrame()
 
         data = []
         for trade in trades:
+    pass
+    pass
             try:
                 data.append(
                     {
@@ -966,6 +1153,10 @@ class CleanDataDownloader:
                         "is_buyer_maker": trade.get("side", "unknown") == "sell",
                         "agg_trade_id": str(trade.get("id", "")),
                     }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
             except (KeyError, ValueError, TypeError) as e:
                 print(f"⚠️ Error processing trade: {e}, trade: {trade}")
@@ -974,15 +1165,25 @@ class CleanDataDownloader:
         return pd.DataFrame(data)
 
     def _process_futures_data(self, futures_data: list[dict]) -> pd.DataFrame:
+    pass
+    pass
         """Process futures data (funding rates) from CCXT into a DataFrame."""
         if not futures_data:
+    pass
+    pass
             return pd.DataFrame()
 
         # Funding rate data structure - the data is already in the correct format
         data = []
         for item in futures_data:
+    pass
+    pass
             try:
                 # The funding rate data is already properly structured
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 data.append(
                     {
                         "timestamp": datetime.fromtimestamp(item["timestamp"] / 1000),
@@ -1004,6 +1205,10 @@ class CleanDataDownloader:
 
         try:
             print("=" * 80)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print("🚀 CLEAN DATA DOWNLOAD PROCESS STARTED")
             print("=" * 80)
             logger.info("🚀 CLEAN DATA DOWNLOAD PROCESS STARTED")
@@ -1013,6 +1218,8 @@ class CleanDataDownloader:
             logger.info("🔧 STEP 1: Initializing...")
 
             if not await self.initialize():
+    pass
+    pass
                 print(failed("INITIALIZATION FAILED - Aborting download process"))
                 print(failed("❌ INITIALIZATION FAILED - Aborting download process"))
                 return False
@@ -1055,8 +1262,12 @@ class CleanDataDownloader:
             success_count = 0
             error_count = 0
             for i, result in enumerate(results):
+    pass
+    pass
                 data_types = ["Klines", "Aggtrades", "Futures"]
                 if isinstance(result, Exception):
+    pass
+    pass
                     error_count += 1
                     print(f"❌ {data_types[i]} download failed: {result}")
                     print(failed(f"❌ {data_types[i]} download failed: {result}"))
@@ -1173,6 +1384,8 @@ async def main():
     success = await downloader.run_clean_download()
 
     if success:
+    pass
+    pass
         logger.info("✅ Clean download completed successfully")
         sys.exit(0)
     else:
@@ -1181,4 +1394,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

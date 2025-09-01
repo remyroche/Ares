@@ -17,18 +17,28 @@ class BaseProbabilityCalculator:
     """Base class for probability calculations across different model types."""
 
     def __init__(self):
+    pass
+    pass
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def validate_probability(self, prob: float, name: str) -> float:
+    pass
+    pass
         """Validate that probability is between 0.0 and 1.0."""
         if not 0.0 <= prob <= 1.0:
+    pass
+    pass
             self.logger.warning(f"{name} probability {prob} out of range [0,1], clamping")
             return np.clip(prob, 0.0, 1.0)
         return prob
 
     def calculate_confidence_from_proba(self, y_pred_proba: np.ndarray) -> float:
+    pass
+    pass
         """Calculate confidence from prediction probabilities."""
         if y_pred_proba.ndim == 1:
+    pass
+    pass
             # Binary classification
             return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
         else:
@@ -64,11 +74,17 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get model predictions and probabilities
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
 
             # Calculate market volatility
             if 'close' in market_data.columns:
+    pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 volatility = returns.rolling(window=volatility_window).std().mean()
             else:
@@ -110,6 +126,10 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred = model.predict(X_test)
             y_pred_proba = model.predict_proba(X_test)
 
@@ -148,11 +168,17 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get prediction probabilities
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
 
             # Calculate market volatility for magnitude context
             if 'close' in market_data.columns:
+    pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 avg_magnitude = returns.abs().mean()
                 volatility = returns.std()
@@ -189,11 +215,17 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get prediction probabilities
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
 
             # Calculate market risk metrics
             if 'close' in market_data.columns:
+    pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 adverse_prob = (returns.abs() > adverse_threshold).mean()
                 volatility = returns.std()
@@ -239,10 +271,16 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred = model.predict(X_test)
 
             # Calculate prediction confidence based on variance
             if hasattr(model, 'predict_proba'):
+    pass
+    pass
                 # Some regression models support predict_proba
                 y_pred_proba = model.predict_proba(X_test)
                 confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -253,6 +291,8 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
 
             # Calculate market volatility
             if 'close' in market_data.columns:
+    pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 volatility = returns.std()
             else:
@@ -289,6 +329,10 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred = model.predict(X_test)
 
             # Calculate direction accuracy
@@ -328,11 +372,17 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred = model.predict(X_test)
             predicted_magnitude = np.abs(y_pred)
 
             # Calculate actual magnitude from market data
             if 'close' in market_data.columns:
+    pass
+    pass
                 actual_magnitude = np.abs(market_data['close'].pct_change().dropna())
                 avg_actual_magnitude = actual_magnitude.mean()
             else:
@@ -374,6 +424,10 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
         """
         try:
             # Get predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             y_pred = model.predict(X_test)
 
             # Calculate prediction confidence
@@ -382,6 +436,8 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
 
             # Calculate market risk
             if 'close' in market_data.columns:
+    pass
+    pass
                 returns = market_data['close'].pct_change().dropna()
                 adverse_prob = (returns.abs() > adverse_threshold).mean()
                 volatility = returns.std()
@@ -402,6 +458,8 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
 
 
 def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
+    pass
+    pass
     """
     Factory function to get appropriate probability calculator.
 
@@ -412,6 +470,8 @@ def get_probability_calculator(model_type: str) -> Union[ClassificationProbabili
         Appropriate probability calculator instance
     """
     if model_type.lower() in ['classification', 'classifier', 'clf']:
+    pass
+    pass
         return ClassificationProbabilityCalculator()
     elif model_type.lower() in ['regression', 'regressor', 'reg']:
         return RegressionProbabilityCalculator()

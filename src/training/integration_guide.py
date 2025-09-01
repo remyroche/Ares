@@ -10,16 +10,19 @@ from pathlib import Path
 from typing import Any
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
+import EnhancedTrainingManagerOptimized,
     EnhancedTrainingManagerOptimized,
 )
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import failed,
     failed,
 )
 
@@ -30,6 +33,8 @@ class OptimizedTrainingIntegration:
     """
 
     def __init__(self, base_config: dict[str, Any]) -> None:
+    pass
+    pass
         self.base_config = base_config
         self.logger = system_logger.getChild("OptimizedTrainingIntegration")
 
@@ -54,6 +59,8 @@ class OptimizedTrainingIntegration:
 
         # Initialize (same interface as original)
         if not await optimized_manager.initialize():
+    pass
+    pass
             msg = "Failed to initialize optimized training manager"
             raise RuntimeError(msg)
 
@@ -81,6 +88,10 @@ class OptimizedTrainingIntegration:
 
         try:
             # Execute optimized training (maintains same interface)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results = await training_manager.execute_optimized_training(
                 symbol=symbol,
                 exchange=exchange,
@@ -103,6 +114,8 @@ class OptimizedTrainingIntegration:
             memory_profiler.stop_continuous_monitoring()
 
     def get_compatibility_info(self) -> dict[str, Any]:
+    pass
+    pass
         """Get information about compatibility with existing system."""
         return {
             "interface_compatibility": {
@@ -129,6 +142,8 @@ class OptimizedTrainingIntegration:
 
 
 def demonstrate_integration():
+    pass
+    pass
     """Demonstrate how to integrate optimized training with existing system."""
     logger = system_logger.getChild("IntegrationDemo")
 
@@ -161,8 +176,12 @@ def demonstrate_integration():
     logger.info("🔗 Integration Compatibility Report:")
 
     for category, items in compatibility_info.items():
-        logger.info(f"\n{category.replace('_', ' ').title()}:")
+    pass
+    pass
+        logger.info(f"\\\n{category.replace('_', ' ').title()}:")
         for item, status in items.items():
+    pass
+    pass
             logger.info(f"  {item}: {status}")
 
     return integration
@@ -183,18 +202,28 @@ async def run_integration_example() -> None:
     try:
         results = await integration.execute_optimized_regime_training(symbol, exchange)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("📊 Training Results Summary:")
         logger.info(f"Status: {results.get('status', 'unknown')}")
 
         if "optimization_stats" in results:
+    pass
+    pass
             stats = results["optimization_stats"]
             logger.info(f"Optimizations enabled: {list(stats.keys())}")
 
         if "memory_profile" in results:
+    pass
+    pass
             profile = results["memory_profile"]
             logger.info(f"Final memory usage: {profile.get('percentage', 0):.1f}%")
 
         if "execution_stats" in results:
+    pass
+    pass
             exec_stats = results["execution_stats"]
             logger.info(
                 f"Total execution time: {exec_stats.get('total_time_seconds', 0):.2f}s",
@@ -208,6 +237,8 @@ async def run_integration_example() -> None:
 
 
 def show_migration_steps() -> None:
+    pass
+    pass
     """Show step-by-step migration from existing to optimized system."""
     logger = system_logger.getChild("MigrationGuide")
 
@@ -255,13 +286,19 @@ def show_migration_steps() -> None:
     ]
 
     for step in steps:
+    pass
+    pass
         if step.startswith(("OLD:", "NEW:")):
+    pass
+    pass
             logger.info(f"     {step}")
         else:
             logger.info(step)
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Show migration steps
     show_migration_steps()
 

@@ -8,6 +8,7 @@ from .performance_reporter import PerformanceReporter
 from .risk_allocator import RiskAllocator
 
 # Define __all__ to explicitly export these modules/classes
+import __all__ = [
 __all__ = [
     "ABTester",
     "Supervisor",

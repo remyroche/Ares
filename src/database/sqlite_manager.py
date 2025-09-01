@@ -12,11 +12,13 @@ import sqlite3
 
 from src.config.constants import *
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_file_operations,
     handle_specific_errors,
 )
 from src.utils.warning_symbols import (
+import connection_error,
     connection_error,
     error,
     failed,
@@ -29,6 +31,8 @@ class ConnectionPool:
     """Async connection pool for database operations."""
 
     def __init__(self, max_connections: int = 10, database_path: str = "data/ares.db"):
+    pass
+    pass
         self.max_connections = max_connections
         self.database_path = database_path
         self.connection_pool: asyncio.Queue | None = None
@@ -46,8 +50,12 @@ class ConnectionPool:
 
         # Pre-populate pool with connections
         for _ in range(self.max_connections):
+    pass
+    pass
             connection = await self._create_connection()
             if connection:
+    pass
+    pass
                 await self.connection_pool.put(connection)
                 self.total_connections_created += 1
 
@@ -75,18 +83,28 @@ class ConnectionPool:
     async def get_connection(self) -> sqlite3.Connection | None:
         """Get a connection from the pool."""
         if not self.connection_pool:
+    pass
+    pass
             return None
 
         # Try to get connection from pool
         try:
             connection = self.connection_pool.get_nowait()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.active_connections += 1
             return connection
         except asyncio.QueueEmpty:
             # Create new connection if pool is empty and under limit
             if self.active_connections < self.max_connections:
+    pass
+    pass
                 connection = await self._create_connection()
                 if connection:
+    pass
+    pass
                     self.active_connections += 1
                     self.total_connections_created += 1
                 return connection
@@ -102,12 +120,18 @@ class ConnectionPool:
     async def return_connection(self, connection: sqlite3.Connection) -> None:
         """Return a connection to the pool."""
         if connection and self.connection_pool:
+    pass
+    pass
             # Reset connection state
             connection.rollback()
 
             # Return to pool
             try:
                 self.connection_pool.put_nowait(connection)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except asyncio.QueueFull:
                 # Close connection if pool is full
                 connection.close()
@@ -115,6 +139,8 @@ class ConnectionPool:
             self.active_connections -= 1
 
     def get_pool_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get connection pool statistics."""
         return {
             "max_connections": self.max_connections, "active_connections": self.active_connections,
@@ -132,6 +158,8 @@ class SQLiteManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize SQLite manager with enhanced type safety.
 
@@ -192,11 +220,17 @@ class SQLiteManager:
         try:
             self.logger.info("Initializing SQLite Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load database configuration
             await self._load_database_configuration()
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(invalid("Invalid configuration for SQLite manager"))
                 return False
 
@@ -208,6 +242,8 @@ class SQLiteManager:
 
             # Start automatic backup task
             if self.auto_backup:
+    pass
+    pass
                 asyncio.create_task(self._auto_backup_task())
 
             self.logger.info("✅ SQLite Manager initialization completed successfully")
@@ -244,6 +280,10 @@ class SQLiteManager:
         """Load database configuration."""
         try:
             # Import constants
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             DEFAULT_BACKUP_INTERVAL = DEFAULT_DATABASE_PATH
             DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_RECOVERY_ATTEMPTS
             DEFAULT_RECOVERY_COOLDOWN = DEFAULT_MAX_RECOVERY_ATTEMPTS
@@ -286,6 +326,8 @@ class SQLiteManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate database configuration.
 
@@ -294,26 +336,40 @@ class SQLiteManager:
         """
         try:
             # Validate database path
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self.db_path:
+    pass
+    pass
                 self.print(invalid("Invalid database path"))
                 return False
 
             # Validate backup interval
             if self.backup_interval <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid backup interval"))
                 return False
 
             # Validate max connections
             if self.max_connections <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max connections"))
                 return False
 
             # Validate recovery settings
             if self.max_recovery_attempts <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max recovery attempts"))
                 return False
 
             if self.recovery_cooldown <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid recovery cooldown"))
                 return False
 
@@ -337,6 +393,10 @@ class SQLiteManager:
         try:
             self.connection_pool = ConnectionPool(
                 max_connections=self.max_connections, database_path=self.db_path,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             await self.connection_pool.initialize()
 
@@ -370,18 +430,30 @@ class SQLiteManager:
         """
         try:
             # Ensure database directory exists
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             db_dir = os.path.dirname(self.db_path)
             if db_dir and not os.path.exists(db_dir):
+    pass
+    pass
                 os.makedirs(db_dir)
 
             # Get connection from pool
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection from pool"))
                 return False
 
             try:
                 # Enable foreign keys
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 connection.execute("PRAGMA foreign_keys = ON")
 
                 # Set journal mode to WAL for better concurrency
@@ -434,6 +506,10 @@ class SQLiteManager:
         """Create database tables with enhanced error handling."""
         try:
             # Create trades table
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -522,20 +598,34 @@ class SQLiteManager:
         """
         try:
             # Validate trade data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_fields = ["symbol", "side", "size", "price"]
             for field in required_fields:
+    pass
+    pass
                 if field not in trade_data:
+    pass
+    pass
                     self.print(missing("Missing required trade field: {field}"))
                     return False
 
             # Get connection from pool
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for trade insertion"))
                 return False
 
             try:
                 # Insert trade
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 connection.execute(
                     """
                     INSERT INTO trades (symbol, side, size, price, pnl, status, timestamp)
@@ -592,20 +682,34 @@ class SQLiteManager:
         """
         try:
             # Validate position data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_fields = ["symbol", "size", "entry_price", "current_price"]
             for field in required_fields:
+    pass
+    pass
                 if field not in position_data:
+    pass
+    pass
                     self.print(missing("Missing required position field: {field}"))
                     return False
 
             # Get connection from pool
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for position update"))
                 return False
 
             try:
                 # Calculate PnL
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 pnl = (
                     position_data["current_price"] - position_data["entry_price"]
                 ) * position_data["size"]
@@ -668,23 +772,37 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for trades retrieval"))
                 return []
 
             try:
                 # Build query
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 query = "SELECT * FROM trades"
                 params = []
 
                 if symbol:
+    pass
+    pass
                     query += " WHERE symbol = ?"
                     params.append(symbol)
 
                 query += " ORDER BY timestamp DESC"
 
                 if limit:
+    pass
+    pass
                     query += f" LIMIT {limit}"
 
                 # Execute query
@@ -722,13 +840,23 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for positions retrieval"))
                 return []
 
             try:
                 # Execute query
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 cursor = connection.execute(
                     "SELECT * FROM positions WHERE status = 'open'",
                 )
@@ -768,17 +896,29 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for performance retrieval"))
                 return []
 
             try:
                 # Build query
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 query = "SELECT * FROM performance"
                 params = []
 
                 if days:
+    pass
+    pass
                     query += f" WHERE timestamp >= datetime('now', '-{days} days')"
 
                 query += " ORDER BY timestamp DESC"
@@ -825,20 +965,34 @@ class SQLiteManager:
         """
         try:
             # Validate performance data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_fields = ["total_pnl", "win_rate", "sharpe_ratio", "max_drawdown"]
             for field in required_fields:
+    pass
+    pass
                 if field not in performance_data:
+    pass
+    pass
                     self.print(missing("Missing required performance field: {field}"))
                     return False
 
             # Get connection from pool
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for performance insertion"))
                 return False
 
             try:
                 # Insert performance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 connection.execute(
                     """
                     INSERT INTO performance (total_pnl, win_rate, sharpe_ratio, max_drawdown, timestamp)
@@ -889,13 +1043,23 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for setting retrieval"))
                 return None
 
             try:
                 # Execute query
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 cursor = connection.execute(
                     "SELECT value FROM settings WHERE key = ?",
                     (key,),
@@ -937,13 +1101,23 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for setting update"))
                 return False
 
             try:
                 # Insert or update setting
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 connection.execute(
                     """
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
@@ -993,13 +1167,23 @@ class SQLiteManager:
         """
         try:
             # Get connection from pool
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for document update"))
                 return False
 
             try:
                 # Convert data to JSON
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 data_json = json.dumps(data)
 
                 # Insert or update document
@@ -1041,6 +1225,10 @@ class SQLiteManager:
         try:
             current_time = time.time()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check if we can attempt recovery
             if (
                 current_time - self.last_recovery_attempt < self.recovery_cooldown
@@ -1052,6 +1240,8 @@ class SQLiteManager:
 
             # Attempt to reinitialize connection pool
             if self.connection_pool:
+    pass
+    pass
                 await self.connection_pool.initialize()
 
             self.recovery_attempts += 1
@@ -1069,6 +1259,10 @@ class SQLiteManager:
         while True:
             try:
                 await asyncio.sleep(self.backup_interval)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 await self.create_backup()
             except Exception:
                 self.print(error("Error in auto backup task: {e}"))
@@ -1083,16 +1277,26 @@ class SQLiteManager:
         """Close database connections."""
         try:
             if self.connection_pool:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Close all connections in pool
                 while not self.connection_pool.connection_pool.empty():
                     try:
                         connection = self.connection_pool.connection_pool.get_nowait()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         connection.close()
                     except asyncio.QueueEmpty:
                         break
 
                 self.connection_pool = None
 
+    except Exception as e:
+        pass
             self.is_connected = False
             self.logger.info("Database connections closed successfully")
 
@@ -1115,17 +1319,29 @@ class SQLiteManager:
         """
         try:
             if not backup_path:
+    pass
+    except Exception as e:
+        pass
+    pass
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_path = f"{self.db_path}.backup_{timestamp}"
 
+    except Exception as e:
+        pass
             # Get connection from pool
             connection = await self.connection_pool.get_connection()
             if not connection:
+    pass
+    pass
                 self.print(failed("Failed to get connection for backup"))
                 return False
 
             try:
                 # Create backup
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 backup_connection = sqlite3.connect(backup_path)
                 connection.backup(backup_connection)
                 backup_connection.close()
@@ -1142,6 +1358,8 @@ class SQLiteManager:
             return False
 
     def get_database_status(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get comprehensive database status.
 
@@ -1156,10 +1374,16 @@ class SQLiteManager:
                 "max_recovery_attempts": self.max_recovery_attempts, "uptime": time.time() - self.start_time,
                 "operation_stats": dict(self.operation_stats),
                 "error_stats": dict(self.error_stats),
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             # Add connection pool stats if available
             if self.connection_pool:
+    pass
+    pass
                 status["connection_pool_stats"] = self.connection_pool.get_pool_stats()
 
             return status
@@ -1179,6 +1403,10 @@ class SQLiteManager:
 
         try:
             # Close database connections
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self.close()
 
             # Clear operation stats
@@ -1213,7 +1441,13 @@ async def setup_sqlite_manager(
     try:
         global sqlite_manager
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {
                 "sqlite_manager": {
                     "database_path": "data/ares.db",
@@ -1231,6 +1465,8 @@ async def setup_sqlite_manager(
         # Initialize SQLite manager
         success = await sqlite_manager.initialize()
         if success:
+    pass
+    pass
             return sqlite_manager
         return None
 

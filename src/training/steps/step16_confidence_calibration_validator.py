@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     missing,
@@ -19,10 +20,13 @@ sys.path.insert(0, str(project_root))
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
+import class Step11ConfidenceCalibrationValidator
 class Step11ConfidenceCalibrationValidator(BaseValidator):
     """Validator for Step 11: Confidence Calibration."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step11_confidence_calibration", config)
 
     async def validate(
@@ -55,6 +59,8 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
+    pass
+    pass
         self.logger.error("❌ Confidence calibration step had errors")
         return False
 
@@ -65,18 +71,24 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
             data_dir,
         )
         if not calibration_files_passed:
+    pass
+    pass
         self.logger.error("❌ Calibration files validation failed")
         return False
 
         # 3. Validate calibration quality
         quality_passed, self._validate_calibration_quality(symbol, exchange, data_dir)
         if not quality_passed:
+    pass
+    pass
         self.logger.error("❌ Calibration quality validation failed")
         return False
 
         # 4. Validate calibration metrics
         metrics_passed, self._validate_calibration_metrics(symbol, exchange, data_dir)
         if not metrics_passed:
+    pass
+    pass
         self.logger.error("❌ Calibration metrics validation failed")
         return False
 
@@ -87,6 +99,8 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
+    pass
         self.logger.error("⚠️ Confidence calibration outcome is not favorable")
         return False
 
@@ -117,7 +131,13 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
             missing_files = [f for f in expected_files if not os.path.exists(f)]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if missing_files:
+    pass
+    pass
         self.logger.error(missing(f"Missing calibration files: {missing_files}"))
         return False
 

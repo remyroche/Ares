@@ -16,6 +16,7 @@ from src.analyst.di_analyst import DIAnalyst
 from src.config import CONFIG
 from src.training.di_training_manager import DITrainingManager
 from src.interfaces.base_interfaces import (
+import IAnalyst,
     IAnalyst,
     IEventBus,
     IStrategist,
@@ -31,6 +32,8 @@ class DIIntegration:
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
+    pass
+    pass
         self.config = config or CONFIG
         self.logger = system_logger.getChild("DIIntegration")
 
@@ -54,6 +57,10 @@ class DIIntegration:
         try:
             self.logger.info("Demonstrating full dependency injection integration")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Step 1: Register all services
             await self._register_all_services()
 
@@ -159,10 +166,20 @@ class DIIntegration:
         self.logger.info("Initializing all components")
 
         for name, component in components.items():
+    pass
+    pass
             if hasattr(component, "initialize"):
+    pass
+    pass
                 try:
                     success = await component.initialize()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     if success:
+    pass
+    pass
                         self.logger.info(f"Initialized component: {name}")
                     else:
                         self.logger.error(f"Failed to initialize component: {name}")
@@ -172,6 +189,8 @@ class DIIntegration:
         self.logger.info("Component initialization completed")
 
     def get_integration_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get integration status."""
         return {
             "is_initialized": self.is_initialized,
@@ -184,9 +203,17 @@ class DIIntegration:
         self.logger.info("Shutting down DI integration")
 
         for name, component in self.system_components.items():
+    pass
+    pass
             if hasattr(component, "shutdown"):
+    pass
+    pass
                 try:
                     await component.shutdown()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     self.logger.info(f"Shutdown component: {name}")
                 except Exception as e:
                     self.logger.exception(f"Error shutting down {name}: {e}")

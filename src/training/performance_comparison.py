@@ -21,6 +21,7 @@ import pandas as pd
 
 from src.utils.comprehensive_logger import get_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     initialization_error,
 )
@@ -52,6 +53,8 @@ class PerformanceComparison:
     """Comprehensive performance comparison system."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = get_logger("PerformanceComparison")
         self.comparison_results = {}
@@ -68,6 +71,10 @@ class PerformanceComparison:
         try:
             self.logger.info("🚀 Initializing Performance Comparison System")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create reports directory
             reports_dir = Path("reports")
             reports_dir.mkdir(exist_ok=True)
@@ -105,6 +112,10 @@ class PerformanceComparison:
         try:
             self.logger.info(f"🔍 Comparing performance of {len(models)} models")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             comparison_results = {
                 "models": {},
                 "rankings": {},
@@ -115,6 +126,8 @@ class PerformanceComparison:
 
             # Calculate baseline if provided
             if baseline_model and baseline_model in models:
+    pass
+    pass
                 baseline_metrics = await self._calculate_model_metrics(
                     models[baseline_model],
                     test_data,
@@ -124,11 +137,15 @@ class PerformanceComparison:
 
             # Compare all models
             for model_name, model in models.items():
+    pass
+    pass
                 model_metrics = await self._calculate_model_metrics(model, test_data)
                 comparison_results["models"][model_name] = model_metrics
 
                 # Calculate improvements over baseline
                 if baseline_model and baseline_model in models:
+    pass
+    pass
                     improvements = await self._calculate_improvements(
                         model_metrics,
                         self.baseline_metrics,
@@ -172,6 +189,10 @@ class PerformanceComparison:
         try:
             self.logger.info(f"🔍 Comparing {len(ensembles)} ensemble methods")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ensemble_comparison = {
                 "ensembles": {},
                 "diversity_metrics": {},
@@ -181,6 +202,8 @@ class PerformanceComparison:
             }
 
             for ensemble_name, ensemble in ensembles.items():
+    pass
+    pass
                 # Calculate ensemble-specific metrics
                 ensemble_metrics = await self._calculate_ensemble_metrics(
                     ensemble,
@@ -226,6 +249,10 @@ class PerformanceComparison:
         try:
             self.logger.info("🔍 Comparing optimization strategies")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             optimization_comparison = {
                 "strategies": {},
                 "convergence_metrics": {},
@@ -235,6 +262,8 @@ class PerformanceComparison:
             }
 
             for strategy_name, results in optimization_results.items():
+    pass
+    pass
                 # Calculate optimization-specific metrics
                 strategy_metrics = await self._calculate_optimization_metrics(results)
                 optimization_comparison["strategies"][strategy_name] = strategy_metrics
@@ -286,6 +315,10 @@ class PerformanceComparison:
         try:
             self.logger.info("📈 Measuring trading performance improvements")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             improvements = {
                 "overall_improvements": {},
                 "regime_specific_improvements": {},
@@ -347,6 +380,10 @@ class PerformanceComparison:
         """Calculate comprehensive model metrics."""
         try:
             # Simulate model predictions (in real implementation, use actual model)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             predictions = np.random.choice([0, 1], size=len(test_data), p=[0.4, 0.6])
             np.random.uniform(0.3, 0.9, size=len(test_data))
 
@@ -424,10 +461,14 @@ class PerformanceComparison:
 
         # Calculate percentage improvements
         for field in current_metrics.__dataclass_fields__:
+    pass
+    pass
             current_value = getattr(current_metrics, field)
             baseline_value = getattr(baseline_metrics, field)
 
             if baseline_value != 0:
+    pass
+    pass
                 improvement = ((current_value - baseline_value) / baseline_value) * 100
                 improvements[f"{field}_improvement"] = improvement
 
@@ -467,6 +508,8 @@ class PerformanceComparison:
         # Composite ranking (weighted average)
         composite_scores = {}
         for model_name, metrics in model_metrics.items():
+    pass
+    pass
             composite_score = (
                 metrics.accuracy * 0.2
                 + metrics.f1_score * 0.2
@@ -497,6 +540,8 @@ class PerformanceComparison:
 
         # Simulate statistical significance testing
         for metric in ["accuracy", "f1_score", "sharpe_ratio"]:
+    pass
+    pass
             values = [getattr(metrics, metric) for metrics in model_metrics.values()]
             mean_value = np.mean(values)
             std_value = np.std(values)
@@ -523,20 +568,30 @@ class PerformanceComparison:
 
         # Find best performing model
         if "rankings" in comparison_results:
+    pass
+    pass
             best_model = comparison_results["rankings"]["composite_ranking"][0]
             recommendations.append(f"Best overall model: {best_model}")
 
         # Check for significant improvements
         if "improvements" in comparison_results:
+    pass
+    pass
             significant_improvements = []
             for model, improvements in comparison_results["improvements"].items():
+    pass
+    pass
                 for metric, improvement in improvements.items():
+    pass
+    pass
                     if improvement > 10:  # 10% improvement threshold
                         significant_improvements.append(
                             f"{model}: {metric} = {improvement:.1f}%",
                         )
 
             if significant_improvements:
+    pass
+    pass
                 recommendations.append("Significant improvements detected:")
                 recommendations.extend(significant_improvements)
 
@@ -556,6 +611,10 @@ class PerformanceComparison:
         try:
             self.logger.info("📊 Generating comprehensive performance report")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             report = {
                 "summary": {
                     "total_models_evaluated": len(self.model_performances),
@@ -734,12 +793,20 @@ async def setup_performance_comparison(
 
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         performance_comparison = PerformanceComparison(config)
         success = await performance_comparison.initialize()
 
         if success:
+    pass
+    pass
             return performance_comparison
         return None
 

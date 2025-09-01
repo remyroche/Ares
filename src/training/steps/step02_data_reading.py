@@ -20,6 +20,7 @@ sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
+import REQUIRED_MODULES = [
 REQUIRED_MODULES = [
     "pandas",
     "numpy",
@@ -42,20 +43,30 @@ pandas, PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    pass
+    pass
     import logging
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
 # Initialize fallbacks
 if system_logger is None:
+    pass
+    pass
     system_logger, create_fallback_logger()
 
 if centralized_decorators is None:
+    pass
+    pass
     comprehensive_data_validation, create_fallback_decorator()
     handle_errors, create_fallback_decorator()
     memory_efficient, create_fallback_decorator()
@@ -77,6 +88,8 @@ else:
     monitor_feature_engineering, centralized_decorators.monitor_feature_engineering
 
 if enhanced_mlflow is None:
+    pass
+    pass
     with_enhanced_mlflow_logging, create_fallback_decorator()
     log_step_report, lambda * args, **kwargs: "fallback_report"
     create_detailed_step_report, lambda * args, **kwargs: {}
@@ -97,6 +110,8 @@ class DataReadingStep:
     """Step 2: Data Reading and Validation with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger.getChild("DataReadingStep")
         self.standards, pipeline_standards
@@ -107,11 +122,15 @@ class DataReadingStep:
         self._validate_environment()
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
+    pass
+    pass
         self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
@@ -129,6 +148,8 @@ class DataReadingStep:
         self.logger.info("✅ Data Reading Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
+    pass
+    pass
         """Log timing information for a step."""
         elapsed, time.time() - start_time
         self.step_timings[step_name] = elapsed
@@ -151,7 +172,13 @@ class DataReadingStep:
         # Use standardized path construction
             unified_data_path, Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not unified_data_path.exists():
+    pass
+    pass
         self.logger.error(f"❌ Unified data path does not exist: {unified_data_path}")
         return None
 
@@ -159,6 +186,8 @@ class DataReadingStep:
             parquet_files, list(unified_data_path.glob("**/*.parquet"))
 
         if not parquet_files:
+    pass
+    pass
         self.logger.error(f"❌ No parquet files found in {unified_data_path}")
         return None
 
@@ -167,6 +196,8 @@ class DataReadingStep:
         # Read and concatenate all parquet files
             dataframes = []
         for file_path in sorted(parquet_files):
+    pass
+    pass
         self.logger.info(f"📖 Reading {file_path.name}")
                 df, pd.read_parquet(file_path)
 
@@ -178,16 +209,22 @@ class DataReadingStep:
 
         # Concatenate all dataframes
         if dataframes:
+    pass
+    pass
                 unified_data, pd.concat(dataframes, ignore_index = True)
                 unified_data, unified_data.sort_values('timestamp').reset_index(drop = True)
 
         # Validate unified data quality
                 validation_result, self.standards.validate_data_quality(unified_data, "unified")
         if validation_result.passed:
+    pass
+    pass
         self.logger.info(f"✅ Successfully read unified data: {len(unified_data)} rows (quality score: {validation_result.quality_score:.2f})")
                 else:
         self.logger.warning(f"⚠️ Read unified data: {len(unified_data)} rows but validation found issues")
         for issue in validation_result.issues[:3]:
+    pass
+    pass
         self.logger.warning(f"   - {issue.message}")
 
         self._log_step_timing("read_unified_data", step_start)
@@ -212,6 +249,10 @@ class DataReadingStep:
         # Use standardized validation
             validation_result, self.standards.validate_data_quality(data, "unified")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Convert to legacy format for compatibility
             validation_results = {
                 "passed": validation_result.passed,
@@ -258,9 +299,14 @@ class DataReadingStep:
 
         try:
             import json
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from datetime import datetime
 
         # Create reports directory
+import reports_dir, Path
             reports_dir, Path(data_dir) / "reports" / "data_quality"
             reports_dir.mkdir(parents = True, exist_ok = True)
 
@@ -304,7 +350,13 @@ class DataReadingStep:
         # Read unified data
             unified_data, await self.read_unified_data(symbol, exchange, timeframe, data_dir)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if unified_data is None:
+    pass
+    pass
         self.logger.error("❌ Failed to read unified data")
         return {"success": False, "error": "Failed to read unified data"}
 
@@ -316,6 +368,8 @@ class DataReadingStep:
 
         # Check if validation passed
         if not validation_results["passed"]:
+    pass
+    pass
         self.logger.error("❌ Data quality validation failed")
         self.logger.error(f"   Issues: {validation_results['issues']}")
         return {
@@ -379,6 +433,10 @@ class DataReadingStep:
                 "processing_efficiency": 1.0 if validation_results.get("passed", False) else 0.5,
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Collect artifacts generated
             artifacts_generated = [
                 str(output_path),
@@ -403,7 +461,7 @@ class DataReadingStep:
                 "data_dir": data_dir,
                 "asset": symbol,  # Use symbol as asset
                 "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
+                "project_version": self.config.get("project_version", "1.00"),  # Default version
             }
 
         # Create step data for report
@@ -436,13 +494,15 @@ class DataReadingStep:
                     "timeframe": timeframe,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
         self.logger.info(f"✅ Logged data reading report: {report_name}")
 
         # Log validated data DataFrame
         if unified_data is not None:
+    pass
+    pass
                 artifact_name, log_step_dataframe_with_standardized_name(
                     config = self.config,
                     step_name="step02_data_reading",
@@ -455,7 +515,7 @@ class DataReadingStep:
                         "timeframe": timeframe,
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
-                        "project_version": self.config.get("project_version", "1.0.0"),
+                        "project_version": self.config.get("project_version", "1.00"),
                     }
                 )
         self.logger.info(f"✅ Logged validated data: {artifact_name}")
@@ -471,7 +531,7 @@ class DataReadingStep:
                     "quality_score": validation_results.get("quality_score", 0.0),
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                     "timeframe": timeframe,
                 }
             )
@@ -488,7 +548,7 @@ class DataReadingStep:
                 ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
+                    "project_version": self.config.get("project_version", "1.00"),
                 }
             )
 
@@ -509,6 +569,8 @@ async def run_step_enhanced(
 
     # Use standardized path construction
     if data_dir is None:
+    pass
+    pass
         data_dir, pipeline_standards.build_path("raw_data", exchange, symbol)
 
     logger.info("🚀 Starting Step 2: Data Reading and Validation (Enhanced)")
@@ -530,6 +592,8 @@ async def run_step_enhanced(
     result, await step.execute(symbol, exchange, timeframe, data_dir, **kwargs)
 
     if result["success"]:
+    pass
+    pass
         logger.info("✅ Step 2: Data Reading and Validation completed successfully")
     else:
         logger.error(f"❌ Step 2: Data Reading and Validation failed: {result.get('error', 'Unknown error')}")
@@ -549,6 +613,8 @@ async def run_step(
     return result["success"]
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test():
         # Test with parameters - these should be passed as arguments in real usage

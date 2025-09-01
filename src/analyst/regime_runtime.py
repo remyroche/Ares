@@ -10,18 +10,32 @@ import numpy as np
 import pandas as pd
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
+    pass
+    pass
     try:
         if os.path.exists(path):
+    pass
+    except Exception as e:
+        pass
+    pass
             return pd.read_parquet(path)
+    except Exception as e:
+        pass
         return None
     except Exception as e:
         system_logger.warning(f"Failed to read parquet {path}: {e}")
         return None
 
 def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
+    pass
+    pass
     if df is None or df.empty:
+    pass
+    pass
         return pd.DataFrame()
     if "timestamp" in df.columns:
+    pass
+    pass
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
         df = (
             df.dropna(subset=["timestamp"])
@@ -29,40 +43,60 @@ def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
             .set_index("timestamp")
         )
     if ts is None:
+    pass
+    pass
         return df.tail(1)
     return df.loc[df.index <= ts].tail(1)
 
 def _ewm_prob(ind: pd.Series, span: int = 3) -> pd.Series:
+    pass
+    pass
     return ind.astype(float).ewm(span=span, adjust=False).mean().clip(0.0, 1.0)
 
 def _entropy(arr_df: pd.DataFrame) -> pd.Series:
+    pass
+    pass
     p = arr_df.clip(1e-9, 1.0)
     return -np.sum(p * np.log(p), axis=1)
 
 def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
+    pass
+    pass
     vals = cluster_ids.astype(int)
     K = int(np.max(vals[vals >= 0]) + 1) if np.any(vals >= 0) else 0
     T = np.zeros((K, K), dtype=float)
     for i in range(len(vals) - 1):
+    pass
+    pass
         c, n = vals[i], vals[i + 1]
         if c >= 0 and n >= 0:
+    pass
+    pass
             T[c, n] += 1
     rowsum = T.sum(axis=1, keepdims=True) + 1e-9
     return T / rowsum
 
 def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
+    pass
+    pass
     labels = sorted([int(x) for x in np.unique(cluster_ids.values) if int(x) >= 0])
     p_cols: dict[str, pd.Series] = {}
     for k in labels:
+    pass
+    pass
         ind = (cluster_ids == k).astype(float)
         p_cols[f"p_k_{k}"] = _ewm_prob(ind, span=3)
     p_df = pd.DataFrame(p_cols, index=cluster_ids.index)
     if p_df.empty:
+    pass
+    pass
         return p_df
     s = p_df.sum(axis=1).replace(0, 1.0)
     return p_df.div(s, axis=0)
 
 def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
     cluster_ids = comp_df["composite_cluster_id"].astype(int)
     p_df = _build_p_k_matrix(cluster_ids)
     dp_df = p_df.diff().fillna(0.0).add_prefix("dp_")
@@ -72,24 +106,38 @@ def _mk_features(block_df: pd.DataFrame, comp_df: pd.DataFrame) -> pd.DataFrame:
         p_df if not p_df.empty else pd.DataFrame(index=features.index),
     )
     for blk in ["momentum", "volatility", "liquidity", "microstructure"]:
+    pass
+    pass
         cols = [c for c in block_df.columns if c.startswith(f"{blk}_p_state_")]
         if cols:
+    pass
+    pass
             features[f"{blk}_entropy"] = _entropy(block_df[cols])
     T = _compute_transition_matrix(cluster_ids.values)
     K = T.shape[0]
     if K > 0:
+    pass
+    pass
         cur = cluster_ids.values
         Pnext = np.zeros((len(cur), K), dtype=float)
         for i in range(len(cur)):
+    pass
+    pass
             c = cur[i]
             if 0 <= c < K:
+    pass
+    pass
                 Pnext[i, :] = T[c, :]
         for j in range(K):
+    pass
+    pass
             features[f"p_next_{j}"] = Pnext[:, j]
         features["most_likely_next"] = np.argmax(Pnext, axis=1)
     return features
 
 def _build_keep_cols(X_all: pd.DataFrame, k: int) -> list[str]:
+    pass
+    pass
     return [
         c
         for c in X_all.columns
@@ -128,6 +176,8 @@ def get_current_regime_info(
     int_df = _load_parquet(int_path)
     blk_df = _load_parquet(block_path)
     if comp_df is None or comp_df.empty:
+    pass
+    pass
         return {
             "cluster_id": -1,
             "intensities": {},
@@ -136,6 +186,8 @@ def get_current_regime_info(
     # Align to latest timestamp present in comp_df
     ts = None
     if "timestamp" in comp_df.columns:
+    pass
+    pass
         comp_df["timestamp"] = pd.to_datetime(
             comp_df["timestamp"],
             errors="coerce",
@@ -154,12 +206,24 @@ def get_current_regime_info(
     # Intensities (optional)
     intensities: dict[int, float] = {}
     if int_df is not None and not int_df.empty:
+    pass
+    pass
         row_int = _align_last(int_df, ts)
         if not row_int.empty:
+    pass
+    pass
             for c in row_int.columns:
+    pass
+    pass
                 if c.startswith("intensity_cluster_"):
+    pass
+    pass
                     try:
                         kid = int(c.split("_")[-1])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         intensities[kid] = float(row_int[c].iloc[0])
                     except Exception:
                         pass
@@ -168,9 +232,15 @@ def get_current_regime_info(
     exit_hazard: float | None = None
     try:
         if blk_df is not None and not blk_df.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
             blk_row = _align_last(blk_df, ts)
             comp_row = last_row
             if not blk_row.empty and not comp_row.empty:
+    pass
+    pass
                 X_all = _mk_features(blk_df, comp_df)
                 X_last = X_all.loc[X_all.index <= ts].tail(1)
                 # Per-cluster calibrated emergence
@@ -180,12 +250,20 @@ def get_current_regime_info(
                     exchange, symbol,
                     timeframe)
                 if os.path.isdir(models_dir):
+    pass
+    pass
                     for fname in os.listdir(models_dir):
+    pass
+    pass
                         if fname.startswith("emergence_cluster_") and fname.endswith(
                             "_calibrator.joblib",
                         ):
                             try:
                                 k = int(fname.split("_")[2])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                 cal = joblib.load(os.path.join(models_dir, fname))
                                 keep_cols = _build_keep_cols(X_all, k)
                                 Xi = (
@@ -204,8 +282,14 @@ def get_current_regime_info(
                         models_dir, f"hazard_cluster_{cid}_calibrator.joblib",
                     )
                     if cid >= 0 and os.path.exists(hcal_path):
+    pass
+    pass
                         try:
                             cal_h = joblib.load(hcal_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             keep_cols_h = _build_keep_cols(X_all, cid)
                             Xh = (
                                 X_last[keep_cols_h].fillna(0.0)
@@ -217,6 +301,8 @@ def get_current_regime_info(
                             logger.warning(
                                 f"Hazard inference failed for cluster {cid}: {e}",
                             )
+    except Exception as e:
+        pass
     except Exception as e:
         logger.warning(f"Forecasting inference failed: {e}")
     return {

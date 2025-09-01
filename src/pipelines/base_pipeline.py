@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.utils.centralized_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
     handle_errors,
@@ -19,6 +20,7 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 
+import @dataclass
 @dataclass
 class PipelineConfig:
     name: str
@@ -43,20 +45,36 @@ class PipelineConfig:
     continue_on_failure: bool = False
 
     def validate(self) -> List[str]:
+    pass
+    pass
         errors: List[str] = []
         if not self.name:
+    pass
+    pass
             errors.append("Pipeline name is required")
         if not self.symbol:
+    pass
+    pass
             errors.append("Symbol is required")
         if not self.exchange:
+    pass
+    pass
             errors.append("Exchange is required")
         if self.environment not in ["live", "backtest", "training"]:
+    pass
+    pass
             errors.append("Environment must be 'live', 'backtest', or 'training'")
         if self.loop_interval_seconds <= 0:
+    pass
+    pass
             errors.append("Loop interval must be positive")
         if self.max_retries < 0:
+    pass
+    pass
             errors.append("Max retries must be non-negative")
         if self.timeout_seconds <= 0:
+    pass
+    pass
             errors.append("Timeout must be positive")
         return errors
 
@@ -73,12 +91,18 @@ class PipelineMetrics:
     failed_operations: int = 0
 
     def update_duration(self) -> None:
+    pass
+    pass
         if self.start_time and self.end_time:
+    pass
+    pass
             self.duration_seconds = (self.end_time - self.start_time).total_seconds()
 
 
 class BasePipeline:
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("BasePipeline")
         self.pipeline_config: Dict[str, Any] = self.config.get("base_pipeline", {})

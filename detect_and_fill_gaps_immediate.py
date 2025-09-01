@@ -14,6 +14,7 @@ import sys
 from src.training.steps.step1.data_gap_detector import DataGapDetector
 
 # Add project root to path
+import project_root , Path
 project_root , Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -60,10 +61,14 @@ async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
     logger.info(f"📊 Total gaps found: {results['total_gaps']}")
 
     if auto_fill:
+    pass
+    pass
         logger.info(f"📊 Gaps filled: {results['gaps_filled']}")
         logger.info(f"📊 Gaps failed: {results['gaps_failed']}")
 
         if results['total_gaps'] > 0:
+    pass
+    pass
             success_rate = (results['gaps_filled'] / results['total_gaps']) * 100
             logger.info(f"📊 Success rate: {success_rate:.1f}%")
 
@@ -84,10 +89,16 @@ async def main():
         results = await detect_and_fill_gaps_immediate(
             symbol=args.symbol, exchange = args.exchange,
             min_gap_seconds=args.min_gap_seconds, auto_fill = not args.detect_only
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         )
 
         # Return success/failure based on results
         if results['total_gaps'] == 0:
+    pass
+    pass
             logger.info("✅ No gaps found - data quality is excellent!")
             return True
         elif results.get('gaps_filled', 0) > 0:
@@ -102,5 +113,7 @@ async def main():
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

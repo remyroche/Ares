@@ -16,6 +16,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 # Preference order for selecting analyst ensembles
+import ENSEMBLE_PREFERENCE_ORDER =
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
 # Removing duplicate earlier TacticianLabelingStep definition to avoid conflicts
@@ -34,6 +35,8 @@ class TacticianTripleBarrierLabeler:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config.get("tactician_triple_barrier", {})
         self.logger, system_logger.getChild("TacticianTripleBarrierLabeler")
 
@@ -41,11 +44,14 @@ class TacticianTripleBarrierLabeler:
         self._load_enhanced_config()
 
     def _load_enhanced_config(self) -> None:
+    pass
+    pass
         """Load enhanced configuration for high precision execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
         # Initialize dynamic barrier calculator
+import self.barrier_calculator, DynamicBarrierCalculator
         self.barrier_calculator, DynamicBarrierCalculator(self.config)
 
         # Get all 4 barrier combinations for primary timeframe (1m)
@@ -83,34 +89,56 @@ class TacticianTripleBarrierLabeler:
         self.logger.info(f"   Primary: {self.primary_timeframe}, Secondary: {self.secondary_timeframe}")
         self.logger.info(f"   4 Barrier Combinations:")
         for name, (upper, lower) in self.barrier_combinations.items():
+    pass
+    pass
         self.logger.info(f"     {name}: Upper={upper:.4f} ({upper * 100:.3f}%), Lower={lower:.4f} ({lower * 100:.3f}%)")
         self.logger.info(f"   High Precision Mode: {self.enable_high_precision_mode}")
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 
     def _apply_quality_filters(self, data: pd.DataFrame, entry_idx: int) -> bool:
+    pass
+    pass
         """Apply quality filters for high precision execution."""
         if not self.enable_quality_filters:
+    pass
+    pass
         return True
 
         try:
         # Volume filter
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if "volume" in data.columns:
+    pass
+    pass
                 volume, data.iloc[entry_idx]["volume"]
         if volume < self.min_volume_threshold:
+    pass
+    pass
         return False
 
         # Spread filter (if bid / ask data available)
         if "bid" in data.columns and "ask" in data.columns:
+    pass
+    pass
                 bid, data.iloc[entry_idx]["bid"]
                 ask, data.iloc[entry_idx]["ask"]
                 spread = (ask - bid) / bid
         if spread > self.min_spread_threshold:
+    pass
+    pass
         return False
 
         # Volatility filter
         if self.volatility_filter and len(data) >= 20:
+    pass
+    pass
                 recent_data, data.iloc[max(0, entry_idx - 20):entry_idx + 1]
         if len(recent_data) >= 10:
+    pass
+    pass
                     returns, recent_data["close"].pct_change().dropna()
                     volatility, returns.std()
         # Filter out extremely high volatility periods
@@ -124,6 +152,8 @@ class TacticianTripleBarrierLabeler:
         return True  # Default to allow if filter fails
 
     def _calculate_adaptive_barriers(self, data: pd.DataFrame, entry_idx: int, base_pt: float, base_sl: float) -> tuple[float, float]:
+    pass
+    pass
         """Calculate barriers - no dynamic adaptation, ML model handles market conditions."""
         # No hardcoded volatility adjustment - ML model will calculate optimal barriers
         return base_pt, base_sl
@@ -145,7 +175,13 @@ class TacticianTripleBarrierLabeler:
             price_directions = {}
             price_target_confidences = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+    pass
+    pass
         if signal == 1:  # Long position
         # Calculate deviation to upper barrier
                     price_deviation = (upper_barrier - entry_price) / entry_price
@@ -216,6 +252,8 @@ class TacticianTripleBarrierLabeler:
             strategic_signals[strategic_signals != 0].reindex(data.index).dropna()
         )
         if entry_points.empty:
+    pass
+    pass
         self.logger.warning(
                 "⚠️ No strategic signals found to label. Returning data without labels.",
             )
@@ -247,18 +285,26 @@ class TacticianTripleBarrierLabeler:
 
         # Vectorized barrier check with enhanced precision
         for i, entry_idx in enumerate(entry_indices):
+    pass
+    pass
         if entry_idx >= len(data) - 1:
+    pass
+    pass
                 continue
 
             signal, entry_points.iloc[i]
 
         # Apply quality filters
         if not self._apply_quality_filters(data, entry_idx):
+    pass
+    pass
                 continue
 
         # Calculate barriers for 2 combinations
             barrier_prices = {}
         for barrier_name, (upper_pct, lower_pct) in self.barrier_combinations.items():
+    pass
+    pass
                 base_upper, entry_prices.iloc[i] * (1 + upper_pct * signal)
                 base_lower, entry_prices.iloc[i] * (1 - lower_pct * signal)
 
@@ -277,6 +323,8 @@ class TacticianTripleBarrierLabeler:
             best_barrier_name, None
 
         for barrier_name, (upper, lower) in barrier_prices.items():
+    pass
+    pass
         # Check for hits with enhanced precision (no time barrier)
                 upper_hit_mask = (path["high"] >= upper) if signal == 1 else (path["low"] <= upper)
                 lower_hit_mask = (path["low"] <= lower) if signal == 1 else (path["high"] >= lower)
@@ -319,12 +367,16 @@ class TacticianTripleBarrierLabeler:
 
         # Track the best performing barrier combination
         if precision_score > best_precision_score:
+    pass
+    pass
                     best_precision_score, precision_score
                     best_quality_score, quality_score
                     best_barrier_name, barrier_name
 
         # Use the best performing barrier combination for traditional labeling
         if best_barrier_name:
+    pass
+    pass
                 best_result, barrier_results[best_barrier_name]
                 labels.iloc[entry_idx] = best_result["result"]
                 precision_score, best_result["precision_score"]
@@ -342,6 +394,8 @@ class TacticianTripleBarrierLabeler:
         # Store multi - outcome predictions for 2 barrier combinations
         # Store the best performing barrier combination as the main prediction
         if best_barrier_name:
+    pass
+    pass
                 price_deviation_predictions.iloc[entry_idx] = predictions["price_deviations"][best_barrier_name]
                 price_direction_predictions.iloc[entry_idx] = predictions["price_directions"][best_barrier_name]
                 price_target_confidence.iloc[entry_idx] = predictions["price_target_confidences"][best_barrier_name]
@@ -352,7 +406,11 @@ class TacticianTripleBarrierLabeler:
 
         # Apply high precision mode filtering
         if self.enable_high_precision_mode:
+    pass
+    pass
         if precision_score < self.precision_threshold:
+    pass
+    pass
                     labels.iloc[entry_idx] = 0  # Filter out low precision signals
                     precision_score, 0.0
         # Reset multi - outcome predictions for low precision signals
@@ -392,13 +450,19 @@ class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger
 
@@ -427,6 +491,10 @@ def __init__(self, config: dict[str, Any]) -> None:
             exchange, training_input.get("exchange", "BINANCE")
             data_dir, training_input.get("data_dir", "data / training")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Use data sharing manager to get comprehensive data for tactician labeling
         self.logger.info(
                 "🔄 Loading unified data for tactician labeling via data sharing manager...",
@@ -437,6 +505,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Load unified data with optimizations for ML training
         # Use data sharing manager to avoid redundant loading
             from src.config.constants import (
+import BLANK_TRAINING_LOOKBACK_DAYS,
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
@@ -453,6 +522,8 @@ def __init__(self, config: dict[str, Any]) -> None:
             )
 
         if data_1m is None or data_1m.empty:
+    pass
+    pass
         self.logger.error(
                     f"🚨 No unified data found for {symbol} on {exchange}",
                 )
@@ -464,6 +535,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Log data information
         try:
                 _loader, get_unified_data_loader(self.config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 data_info, _loader.get_data_info(data_1m)
         except Exception as e:  # pragma: no cover - best effort logging
         self.logger.warning(f"⚠️ Could not get data info: {e}")
@@ -490,6 +565,8 @@ def __init__(self, config: dict[str, Any]) -> None:
                 col for col in required_columns if col not in data_1m.columns
             ]
         if missing_columns:
+    pass
+    pass
         self.logger.error(f"🚨 Missing required columns: {missing_columns}")
         return {
                     "status": "FAILED",
@@ -541,31 +618,49 @@ def __init__(self, config: dict[str, Any]) -> None:
         return {"status": "FAILED", "error": str(e)}
 
     def _load_analyst_ensembles(self, data_dir: str) -> dict[str, Any]:
+    pass
+    pass
         """Loads all trained analyst ensemble models."""
         analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
         analyst_ensembles: dict[str, Any] = {}
         if not Path(analyst_ensembles_dir).exists():
+    pass
+    pass
             msg, f"Analyst ensembles directory not found: {analyst_ensembles_dir}"
             raise FileNotFoundError(
                 msg,
             )
 
         for ensemble_file in os.listdir(analyst_ensembles_dir):
+    pass
+    pass
         if ensemble_file.endswith("_ensemble.pkl"):
+    pass
+    pass
                 regime_name, ensemble_file.replace("_ensemble.pkl", "")
                 ensemble_path, Path(analyst_ensembles_dir) / ensemble_file
         with ensemble_path.open("rb") as f:
                     loaded, pickle.load(f)
                 chosen_ensemble: Any, None
         if isinstance(loaded, dict):
+    pass
+    pass
         # Prefer stacking_cv, then dynamic_weighting, then voting
         for key in ENSEMBLE_PREFERENCE_ORDER:
+    pass
+    pass
         if key in loaded and isinstance(loaded[key], dict):
+    pass
+    pass
                             obj, loaded[key].get("ensemble")
         if obj is not None:
+    pass
+    pass
                                 chosen_ensemble, obj
                                 break
         if chosen_ensemble is None:
+    pass
+    pass
         # Fallback if saved dict is a single - ensemble payload
                         chosen_ensemble = (
                             loaded.get("ensemble") if "ensemble" in loaded else None
@@ -592,15 +687,23 @@ def __init__(self, config: dict[str, Any]) -> None:
 
         # Step 3: Predict in a vectorized way for each regime
         for regime_name, ensemble in analyst_ensembles.items():
+    pass
+    pass
         if ensemble is None:
+    pass
+    pass
                 continue
 
             regime_mask, data_with_features["regime"] == regime_name
         if not regime_mask.any():
+    pass
+    pass
                 continue
 
         # Ensure the model's expected features are present
         if hasattr(ensemble, "feature_names_in_"):
+    pass
+    pass
                 features_for_model = [
                     f
         for f in getattr(ensemble, "feature_names_in_", [])
@@ -614,15 +717,19 @@ def __init__(self, config: dict[str, Any]) -> None:
                 )
 
         if not x_regime.empty:
+    pass
+    pass
                 predictions, ensemble.predict(x_regime)
                 all_signals[regime_mask] = predictions
 
         self.logger.info(
-            f"Generated strategic signals. Signal distribution:\n{all_signals.value_counts()}",
+            f"Generated strategic signals. Signal distribution:\\\n{all_signals.value_counts()}",
         )
         return data_with_features, all_signals
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         """Placeholder for your market regime detection logic.
         This should be consistent with the logic from step04_regime_specific_training.
         """
@@ -636,6 +743,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         return regimes.astype(str).fillna("SIDEWAYS")
 
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Calculate all necessary features for both Analyst and Tactician."""
         data, data.copy()
         data["returns"] = data["close"].pct_change()
@@ -648,6 +757,8 @@ def __init__(self, config: dict[str, Any]) -> None:
         return data.fillna(method="ffill").fillna(0)
 
     def _save_results(self, labeled_data: pd.DataFrame, signals: pd.Series, data_dir: str, exchange: str, symbol: str) -> Tuple[str, str]:
+    pass
+    pass
         """Saves the labeled data and signals to disk."""
         labeled_data_dir, f"{data_dir}/tactician_labeled_data"
         Path(labeled_data_dir).mkdir(parents = True, exist_ok = True)
@@ -659,6 +770,16 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
         try:
                 from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                     ParquetDatasetManager,
                 )
 
@@ -673,6 +794,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         except Exception:
                 from src.utils.logger import log_dataframe_overview, log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger,
                     "to_parquet",
@@ -700,8 +822,18 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
         # Save Series as Parquet by converting to DataFrame
             _signals_df, signals.to_frame(name="signal").reset_index()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         try:
                 from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                     ParquetDatasetManager,
                 )
 
@@ -716,6 +848,7 @@ def __init__(self, config: dict[str, Any]) -> None:
         except Exception:
                 from src.utils.logger import log_dataframe_overview, log_io_operation
 
+import with log_io_operation
         with log_io_operation(
         self.logger,
                     "to_parquet",
@@ -740,6 +873,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 from src.utils.centralized_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -845,6 +979,10 @@ async def run_step(
     """
     try:
         # Create step instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, TacticianLabelingStep(config)
         await step.initialize()
@@ -867,6 +1005,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")

@@ -53,6 +53,8 @@ class TrainingCLI:
     """Command-line interface for training operations."""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("TrainingCLI")
         self.logger.info("🔧 Initializing TrainingCLI...")
 
@@ -82,6 +84,10 @@ class TrainingCLI:
 
         try:
             await self.initialize()  # Ensure DB is initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("✅ Database initialization completed")
 
             print(f"🚀 Starting full training for {symbol} on {exchange_name}...")
@@ -103,6 +109,8 @@ class TrainingCLI:
             )
 
             if run_id:
+    pass
+    pass
                 self.logger.info(
                     f"✅ Training completed successfully. MLflow Run ID: {run_id}",
                 )
@@ -186,6 +194,10 @@ class TrainingCLI:
         print("🔄 Retraining is now an alias for the full training pipeline.")
         try:
             return await self.run_full_training(symbol, exchange_name)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:  # noqa: BLE001
             print(failed(f"💥 Model retraining failed: {e}"))
             print(error(f"Error type: {type(e).__name__}"))
@@ -206,13 +218,13 @@ class TrainingCLI:
         self.logger.info(f"Exchange: {exchange_name}")
         self.logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        print("\n========================================================")
+        print("\\\n========================================================")
         print(f"🚀 Initiating FULL TEST RUN for {symbol} on {exchange_name}")
-        print("========================================================\n")
+        print("========================================================\\\n")
 
         # --- Step 1: Run Full Training ---
         self.logger.info("📋 STEP 1/2: Running Full Training Pipeline")
-        print("\n--- STEP 1/2: Running Full Training Pipeline ---")
+        print("\\\n--- STEP 1/2: Running Full Training Pipeline ---")
         training_start_time = time.time()
 
         training_success = await self.run_full_training(symbol, exchange_name)
@@ -223,21 +235,27 @@ class TrainingCLI:
         )
 
         if not training_success:
+    pass
+    pass
             print(failed("💥 Full training failed. Aborting full test run."))
             return
 
         self.logger.info("✅ STEP 1/2 Complete: Training Successful!")
-        print("\n--- STEP 1/2 Complete: Training Successful! ---")
+        print("\\\n--- STEP 1/2 Complete: Training Successful! ---")
 
         # --- Step 2: Run Backtesting with Newly Optimized Parameters ---
         self.logger.info(
             "📋 STEP 2/2: Running Backtesting with Newly Optimized Parameters",
         )
-        print("\n--- STEP 2/2: Running Backtesting with Newly Optimized Parameters ---")
+        print("\\\n--- STEP 2/2: Running Backtesting with Newly Optimized Parameters ---")
         backtest_start_time = time.time()
 
         try:
             # Re-initialize DB connection as it was closed after training_manager.run_full_training
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 "🔧 Re-initializing database connection for backtesting...",
             )
@@ -257,6 +275,8 @@ class TrainingCLI:
 
             self.logger.info("✅ Raw data loaded successfully:")
             if hasattr(klines_df, "shape"):
+    pass
+    pass
                 self.logger.info(f"   Klines shape: {klines_df.shape}")
 
             daily_df = (
@@ -318,13 +338,17 @@ class TrainingCLI:
             report_lines: List[str] = []
             separator = "=" * 80
 
-            report_lines.append("\n" + separator)
+            report_lines.append("\\\n" + separator)
             report_lines.append("BACKTESTING RESULTS WITH NEWLY TRAINED MODEL")
             report_lines.append(separator)
             if hasattr(portfolio, "equity"):
-                report_lines.append(f"\nFinal Equity: ${getattr(portfolio, 'equity'):,.2f}")
+    pass
+    pass
+                report_lines.append(f"\\\nFinal Equity: ${getattr(portfolio, 'equity'):,.2f}")
             if hasattr(portfolio, "trades"):
-                report_lines.append(f"Total Trades: {len(getattr(portfolio, 'trades'))}\n")
+    pass
+    pass
+                report_lines.append(f"Total Trades: {len(getattr(portfolio, 'trades'))}\\\n")
 
             # Calculate detailed metrics for a comprehensive report
             num_days_in_backtest = (
@@ -337,11 +361,13 @@ class TrainingCLI:
 
             report_lines.append("Detailed Metrics:")
             for key, value in detailed_metrics.items():
+    pass
+    pass
                 report_lines.append(f"  {key:<20}: {value:.2f}")
 
-            report_string = "\n".join(report_lines)
+            report_string = "\\\n".join(report_lines)
             print(report_string)
-            self.logger.info(f"📊 Backtesting complete. Results:\n{report_string}")
+            self.logger.info(f"📊 Backtesting complete. Results:\\\n{report_string}")
 
         except Exception as e:  # noqa: BLE001
             backtest_duration = time.time() - backtest_start_time
@@ -364,7 +390,7 @@ class TrainingCLI:
             self.logger.info("✅ Database connection closed")
 
         self.logger.info("✅ STEP 2/2 Complete: Backtesting Successful!")
-        print("\n--- STEP 2/2 Complete: Backtesting Successful! ---")
+        print("\\\n--- STEP 2/2 Complete: Backtesting Successful! ---")
 
         # --- Step 3: Instruct for Paper Trading ---
         total_duration = time.time() - start_time
@@ -377,27 +403,29 @@ class TrainingCLI:
         self.logger.info(f"Training duration: {training_duration:.2f} seconds")
         self.logger.info(f"Backtesting duration: {backtest_duration:.2f} seconds")
 
-        print("\n========================================================")
+        print("\\\n========================================================")
         print(f"🎉 FULL TEST RUN COMPLETE for {symbol} on {exchange_name}!")
-        print("========================================================\n")
+        print("========================================================\\\n")
         print("Your models have been trained, optimized, and backtested.")
         print(
             "The new 'candidate' model is ready for live evaluation in paper trading mode.",
         )
         print(
-            "\nTo start paper trading with the new model, ensure 'TRADING_ENVIRONMENT' in your .env file is set to 'PAPER', then run:",
+            "\\\nTo start paper trading with the new model, ensure 'TRADING_ENVIRONMENT' in your .env file is set to 'PAPER', then run:",
         )
-        print(f"\n    python scripts/paper_trader_launcher.py {symbol} {exchange_name}")
+        print(f"\\\n    python scripts/paper_trader_launcher.py {symbol} {exchange_name}")
         print(
-            "\nMonitor the logs. The Supervisor component will automatically detect and promote the new model for paper trading.",
+            "\\\nMonitor the logs. The Supervisor component will automatically detect and promote the new model for paper trading.",
         )
         print("It may take a few minutes for the Supervisor to pick up the new model.")
-        print("========================================================\n")
+        print("========================================================\\\n")
 
     # Removed show_regularization_config and validate_regularization_policy from here
     # as they are now in src/training/regularization.py
 
     def list_supported_tokens(self) -> None:
+    pass
+    pass
         """List all supported tokens and exchanges."""
         self.logger.info("📋 Listing supported tokens and exchanges...")
         print("🪙 Supported Tokens and Exchanges (100x Leverage):")
@@ -409,17 +437,23 @@ class TrainingCLI:
         )
 
         for exchange_name, tokens in supported_tokens.items():
+    pass
+    pass
             self.logger.info(f"📈 Exchange {exchange_name}: {len(tokens)} tokens")
-            print(f"\n📈 {exchange_name}:")
+            print(f"\\\n📈 {exchange_name}:")
             for token in tokens:
+    pass
+    pass
                 print(f"   • {token}")
 
         self.logger.info("✅ Token listing completed")
-        print("\n💡 Usage: python scripts/training_cli.py train <SYMBOL> <EXCHANGE>")
+        print("\\\n💡 Usage: python scripts/training_cli.py train <SYMBOL> <EXCHANGE>")
         print("   Example: python scripts/training_cli.py train BTCUSDT BINANCE")
         print("   All tokens support 100x leverage for high-frequency trading")
 
     def list_model_types(self) -> None:
+    pass
+    pass
         """List available model types for training."""
         self.logger.info("📋 Listing available model types...")
         print("🤖 Available Model Types:")
@@ -429,6 +463,8 @@ class TrainingCLI:
         self.logger.info(f"📊 Found {len(model_configs)} model types in configuration")
 
         for model_name, config in model_configs.items():
+    pass
+    pass
             enabled = "✅" if config.get("enabled", False) else "❌"
             self.logger.info(
                 f"📊 Model {model_name}: {'enabled' if config.get('enabled', False) else 'disabled'}",
@@ -436,6 +472,8 @@ class TrainingCLI:
             print(f"{enabled} {model_name.upper()}")
 
             if model_name == "lightgbm":
+    pass
+    pass
                 print("   - Gradient boosting with LightGBM")
                 print("   - Fast training and good performance")
             elif model_name == "xgboost":
@@ -453,6 +491,8 @@ class TrainingCLI:
         self.logger.info("✅ Model type listing completed")
 
     def show_training_config(self) -> None:
+    pass
+    pass
         """Show current training configuration."""
         self.logger.info("📋 Showing current training configuration...")
         print("⚙️ Training Configuration:")
@@ -473,13 +513,13 @@ class TrainingCLI:
             f"🔄 A/B test duration: {config.get('ab_test_duration_days', 'N/A')} days",
         )
 
-        print("\n🔧 Regularization:")
+        print("\\\n🔧 Regularization:")
         reg_config: Dict[str, Any] = config.get("regularization", {})
         print(f"   - L1 alpha: {reg_config.get('l1_alpha', 'N/A')}")
         print(f"   - L2 alpha: {reg_config.get('l2_alpha', 'N/A')}")
         print(f"   - Dropout rate: {reg_config.get('dropout_rate', 'N/A')}")
 
-        print("\n🎯 Hyperparameter tuning:")
+        print("\\\n🎯 Hyperparameter tuning:")
         hp_config: Dict[str, Any] = config.get("hyperparameter_tuning", {})
         print(f"   - Enabled: {hp_config.get('enabled', 'N/A')}")
         print(f"   - Max trials: {hp_config.get('max_trials', 'N/A')}")
@@ -491,9 +531,11 @@ class TrainingCLI:
 
 
 def print_usage() -> None:
+    pass
+    pass
     """Print usage information."""
     print(__doc__)
-    print("\nExamples:")
+    print("\\\nExamples:")
     print("  # Full training for BTCUSDT")
     print("  python scripts/training_cli.py train BTCUSDT BINANCE")
     print()
@@ -532,6 +574,8 @@ def print_usage() -> None:
 
 
 def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
+    pass
+    pass
     """
     Determines which symbols and exchanges to process based on command-line arguments.
     If a symbol is provided, it processes that one. Otherwise, it processes all
@@ -550,9 +594,15 @@ def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
     symbols_list: List[Tuple[str, str]] = []
     supported_tokens: Dict[str, List[str]] = CONFIG.get("SUPPORTED_TOKENS", {})
     for exchange, tokens in supported_tokens.items():
+    pass
+    pass
         for token in tokens:
+    pass
+    pass
             symbols_list.append((token, exchange))
     if not symbols_list:
+    pass
+    pass
         print(warning("No supported tokens found in configuration."))
     return symbols_list
 
@@ -574,6 +624,8 @@ async def main() -> None:
     logger.info(f"Working directory: {Path.cwd()}")
 
     if len(sys.argv) < 2:
+    pass
+    pass
         print(warning("❌ No command provided, showing usage"))
         print_usage()
         sys.exit(1)
@@ -585,27 +637,39 @@ async def main() -> None:
 
     try:
         if command in ["train", "retrain", "full-test-run"]:
+    pass
+    except Exception as e:
+        pass
+    pass
             symbols_to_process = get_symbols_to_process(sys.argv)
             if not symbols_to_process:
+    pass
+    pass
                 print(error("No symbols to process. Exiting."))
                 sys.exit(1)
 
             if len(sys.argv) < 3:
+    pass
+    pass
                 print(
                     f"Running '{command}' for all {len(symbols_to_process)} supported tokens...",
                 )
 
             overall_success = True
             for symbol, exchange in symbols_to_process:
+    pass
+    pass
                 logger.info(
                     f"--- Processing {symbol} on {exchange} for command '{command}' ---",
                 )
                 print(
-                    f"\n--- Processing {symbol} on {exchange} for command '{command}' ---",
+                    f"\\\n--- Processing {symbol} on {exchange} for command '{command}' ---",
                 )
 
                 success = False
                 if command == "train":
+    pass
+    pass
                     success = await cli.run_full_training(symbol, exchange)
                 elif command == "retrain":
                     success = await cli.retrain_models(symbol, exchange)
@@ -614,6 +678,8 @@ async def main() -> None:
                     success = True  # Assume success if no exception
 
                 if not success:
+    pass
+    pass
                     overall_success = False
                     logger.error(
                         f"--- Command '{command}' failed for {symbol} on {exchange} ---",
@@ -621,6 +687,8 @@ async def main() -> None:
 
             sys.exit(0 if overall_success else 1)
 
+    except Exception as e:
+        pass
         elif command == "list-tokens":
             logger.info("📋 Listing supported tokens")
             cli.list_supported_tokens()
@@ -657,7 +725,7 @@ async def main() -> None:
         print(error(f"   Duration: {total_duration:.2f} seconds"))
         print(error(f"   Error: {str(e)}"))
 
-        print(f"\n💥 Unexpected error: {e}")
+        print(f"\\\n💥 Unexpected error: {e}")
         sys.exit(1)
     finally:
         total_duration = time.time() - start_time
@@ -671,11 +739,17 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     try:
         asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     except KeyboardInterrupt:
-        print("\n⚠️  Training CLI interrupted by user (Ctrl+C)")
+        print("\\\n⚠️  Training CLI interrupted by user (Ctrl+C)")
         sys.exit(1)
     except Exception as e:  # noqa: BLE001
-        print(f"\n💥 Unexpected error in main execution: {e}")
+        print(f"\\\n💥 Unexpected error in main execution: {e}")
         sys.exit(1)

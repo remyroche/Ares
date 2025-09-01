@@ -11,10 +11,13 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+import OptimizedTripleBarrierLabeling
     OptimizedTripleBarrierLabeling
 )
 
 def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
+    pass
+    pass
     """Create test market data."""
     dates = pd.date_range("2024-01-01", periods=n_samples, freq="1min")
 
@@ -27,6 +30,8 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
 
     # Generate price movements with some trend and volatility
     for i in range(1, n_samples):
+    pass
+    pass
         # Add some trend and random walk
         change = np.random.normal(0, 0.001) + 0.0001  # Small upward trend
         new_price = prices[-1] * (1 + change)
@@ -48,6 +53,8 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
     return data
 
 def test_enhanced_triple_barrier():
+    pass
+    pass
     """Test the enhanced triple barrier method with profit tracking."""
     print("🧪 Testing Enhanced Triple Barrier Method with Profit Tracking")
     print("=" * 60)
@@ -59,7 +66,7 @@ def test_enhanced_triple_barrier():
     print(f"   Price range: ${test_data['close'].min():.2f} - ${test_data['close'].max():.2f}")
 
     # Test optimized triple barrier labeling
-    print("\n🔧 Testing optimized triple barrier labeling...")
+    print("\\\n🔧 Testing optimized triple barrier labeling...")
     optimizer = OptimizedTripleBarrierLabeling(
         profit_take_multiplier=0.002,  # 0.2%
         stop_loss_multiplier=0.001,    # 0.1%
@@ -76,7 +83,7 @@ def test_enhanced_triple_barrier():
     print(f"   - SELL signals: {(labeled_data['label'] == -1).sum()}")
 
     # Analyze profit tracking
-    print("\n💰 Profit Tracking Analysis:")
+    print("\\\n💰 Profit Tracking Analysis:")
     buy_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
     sell_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
 
@@ -95,7 +102,7 @@ def test_enhanced_triple_barrier():
     print(f"     - Max profit: {sell_profits.max():.4f}")
 
     # Test enhanced labeling
-    print("\n🎯 Testing Enhanced Labeling...")
+    print("\\\n🎯 Testing Enhanced Labeling...")
 
     # Create enhanced labels
     enhanced_data = labeled_data.copy()
@@ -122,6 +129,8 @@ def test_enhanced_triple_barrier():
     # Create confidence scores
     max_profit = enhanced_data['potential_profit_pct'].abs().max()
     if max_profit > 0:
+    pass
+    pass
         enhanced_data['signal_confidence'] = enhanced_data['potential_profit_pct'].abs() / max_profit
     else:
         enhanced_data['signal_confidence'] = 0.0
@@ -132,19 +141,19 @@ def test_enhanced_triple_barrier():
     print(f"   - Average signal confidence: {enhanced_data['signal_confidence'].mean():.4f}")
 
     # Show sample results
-    print("\n📋 Sample Results:")
+    print("\\\n📋 Sample Results:")
     sample_cols = ['label', 'potential_profit_pct', 'profit_category', 'direction_profit_label', 'signal_confidence']
     print(enhanced_data[sample_cols].head(10).to_string())
 
     # Verify profit calculations
-    print("\n🔍 Verifying Profit Calculations:")
+    print("\\\n🔍 Verifying Profit Calculations:")
     print("   - All BUY signals should have positive profit percentages")
     print(f"   - BUY signals with positive profits: {(buy_profits > 0).sum()}/{len(buy_profits)}")
     print("   - All SELL signals should have negative profit percentages")
     print(f"   - SELL signals with negative profits: {(sell_profits < 0).sum()}/{len(sell_profits)}")
 
     # Test Numba vs Python performance
-    print("\n⚡ Performance Test:")
+    print("\\\n⚡ Performance Test:")
     import time
 
     # Test Python implementation
@@ -155,7 +164,9 @@ def test_enhanced_triple_barrier():
     print(f"   - Python implementation: {python_time:.4f} seconds")
     print(f"   - Processing speed: {len(test_data)/python_time:.0f} samples/second")
 
-    print("\n✅ Enhanced Triple Barrier Method Test Completed Successfully!")
+    print("\\\n✅ Enhanced Triple Barrier Method Test Completed Successfully!")
 
 if __name__ == "__main__":
+    pass
+    pass
     test_enhanced_triple_barrier()

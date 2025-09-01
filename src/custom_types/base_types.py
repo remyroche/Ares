@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import NewType
 
 # Fundamental trading types
+import Timestamp = NewType
 Timestamp = NewType("Timestamp", datetime)
 Symbol , NewType("Symbol", str)
 Price = NewType("Price", float | Decimal)

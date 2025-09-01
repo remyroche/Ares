@@ -13,6 +13,7 @@ import pandas as pd
 import optuna
 
 from src.config.config_manager import (
+import get_config_manager,
     get_config_manager,
     get_optimizable_parameters,
     get_search_space,
@@ -21,6 +22,7 @@ from src.config.config_manager import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     missing,
@@ -30,6 +32,8 @@ class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger
         self.config_manager, get_config_manager()
@@ -47,6 +51,8 @@ class FinalParametersOptimizationStepNew:
         # Validate configuration
         is_valid, errors, self.config_manager.validate_config()
         if not is_valid:
+    pass
+    pass
         self.logger.error(f"Configuration validation failed: {errors}")
             raise ValueError("Configuration validation failed")
 
@@ -78,6 +84,10 @@ class FinalParametersOptimizationStepNew:
         self.logger.info("🔄 Executing Final Parameters Optimization (New)...")
             start_time, datetime.now()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -86,6 +96,7 @@ class FinalParametersOptimizationStepNew:
         # Load calibration results
             from src.utils.logger import heartbeat
 
+import with heartbeat
         with heartbeat(
         self.logger,
                 name="Step12 load_calibration_results",
@@ -97,6 +108,8 @@ class FinalParametersOptimizationStepNew:
                     data_dir,
                 )
         if not calibration_results:
+    pass
+    pass
                 msg = "Calibration results not found"
                 raise FileNotFoundError(msg)
 
@@ -133,6 +146,8 @@ class FinalParametersOptimizationStepNew:
                     optimization_results,
                 )
         if not validation_passed:
+    pass
+    pass
         self.logger.warning(
                     "⚠️ Optimization results validation failed, using fallback parameters",
                 )
@@ -214,7 +229,13 @@ class FinalParametersOptimizationStepNew:
                 "regime_transitions"
             ]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for category in categories:
+    pass
+    pass
         self.logger.info(f"Optimizing {category} parameters...")
 
                 category_results, await self._optimize_category(
@@ -227,6 +248,8 @@ class FinalParametersOptimizationStepNew:
 
         # Update the configuration with optimized parameters
         if category_results and "best_params" in category_results:
+    pass
+    pass
                     update_optimizable_config(category, category_results["best_params"])
 
         return optimization_results
@@ -251,7 +274,13 @@ class FinalParametersOptimizationStepNew:
         try:
         # Get search space for this category
             search_space, get_search_space(category)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not search_space:
+    pass
+    pass
         self.logger.warning(f"No search space found for category: {category}")
         return {}
 
@@ -266,6 +295,8 @@ class FinalParametersOptimizationStepNew:
 
         # Define objective function for this category
             def objective(trial):
+    pass
+    pass
         return self._objective_function(
                     trial,
                     category,
@@ -309,8 +340,16 @@ class FinalParametersOptimizationStepNew:
         try:
         # Suggest parameters based on search space
             params = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for param_name, param_config in search_space.items():
+    pass
+    pass
         if param_config["type"] == "float":
+    pass
+    pass
                     params[param_name] = trial.suggest_float(
                         param_name,
                         param_config["min"],
@@ -350,11 +389,17 @@ class FinalParametersOptimizationStepNew:
         """
         try:
         # This is a simplified evaluation - in practice, you would run a full backtest
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # For now, we'll use a simple scoring based on parameter ranges and calibration results
 
             base_score, 0.0
 
         if category == "confidence":
+    pass
+    pass
         # Higher confidence thresholds generally lead to better precision
                 base_score, self._evaluate_confidence_params(params, calibration_results)
             elif category == "position_sizing":
@@ -395,13 +440,19 @@ class FinalParametersOptimizationStepNew:
         return 0.0
 
     def _evaluate_confidence_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate confidence threshold parameters."""
         score, 0.0
 
         # Higher base entry threshold is generally better (but not too high)
         if "base_entry_threshold" in params:
+    pass
+    pass
             threshold, params["base_entry_threshold"]
         if 0.6 <= threshold <= 0.8:
+    pass
+    pass
                 score += 0.3
             elif 0.5 <= threshold <= 0.9:
                 score += 0.2
@@ -410,24 +461,36 @@ class FinalParametersOptimizationStepNew:
 
         # Analyst vs tactician threshold balance
         if "analyst_confidence_threshold" in params and "tactician_confidence_threshold" in params:
+    pass
+    pass
             analyst_thresh, params["analyst_confidence_threshold"]
             tactician_thresh, params["tactician_confidence_threshold"]
 
         if tactician_thresh > analyst_thresh:
+    pass
+    pass
                 score += 0.2
         if 0.1 <= (tactician_thresh - analyst_thresh) <= 0.2:
+    pass
+    pass
                 score += 0.1
 
         return score
 
     def _evaluate_position_sizing_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate position sizing parameters."""
         score, 0.0
 
         # Reasonable position size ranges
         if "base_position_size" in params:
+    pass
+    pass
             base_size, params["base_position_size"]
         if 0.02 <= base_size <= 0.1:
+    pass
+    pass
                 score += 0.3
             elif 0.01 <= base_size <= 0.15:
                 score += 0.2
@@ -436,8 +499,12 @@ class FinalParametersOptimizationStepNew:
 
         # Risk management
         if "max_position_size" in params:
+    pass
+    pass
             max_size, params["max_position_size"]
         if 0.15 <= max_size <= 0.3:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -445,13 +512,19 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_leverage_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate leverage parameters."""
         score, 0.0
 
         # Conservative leverage settings
         if "safe_leverage_multiplier" in params:
+    pass
+    pass
             multiplier, params["safe_leverage_multiplier"]
         if 0.7 <= multiplier <= 0.9:
+    pass
+    pass
                 score += 0.3
             elif 0.5 <= multiplier <= 1.0:
                 score += 0.2
@@ -461,14 +534,20 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_tpsl_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate TP / SL parameters."""
         score, 0.0
 
         # Risk - reward ratio
         if "tp_long" in params and "sl_long" in params:
+    pass
+    pass
             tp, params["tp_long"]
             sl, params["sl_long"]
         if tp > sl and tp / sl >= 1.5:
+    pass
+    pass
                 score += 0.3
             elif tp > sl:
                 score += 0.2
@@ -478,13 +557,19 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_ensemble_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate ensemble parameters."""
         score, 0.0
 
         # Weight balance
         if "analyst_weight" in params and "tactician_weight" in params and "strategist_weight" in params:
+    pass
+    pass
             weights = [params["analyst_weight"], params["tactician_weight"], params["strategist_weight"]]
         if abs(sum(weights) - 1.0) < 0.1:
+    pass
+    pass
                 score += 0.3
             else:
                 score += 0.1
@@ -492,6 +577,8 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_sr_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate S / R parameters."""
         score, 0.0
 
@@ -501,6 +588,8 @@ class FinalParametersOptimizationStepNew:
         weights = [params.get(param, 0.0) for param in weight_params]
 
         if abs(sum(weights) - 1.0) < 0.1:
+    pass
+    pass
             score += 0.3
         else:
             score += 0.1
@@ -508,29 +597,43 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_two_tier_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate two - tier system parameters."""
         score, 0.0
 
         # Tier weights should sum to 1.0
         if "tier1_weight" in params and "tier2_weight" in params:
+    pass
+    pass
             tier1_weight, params["tier1_weight"]
             tier2_weight, params["tier2_weight"]
         if abs((tier1_weight + tier2_weight) - 1.0) < 0.1:
+    pass
+    pass
                 score += 0.3
             else:
                 score += 0.1
 
         # Reasonable thresholds
         if "direction_threshold" in params:
+    pass
+    pass
             threshold, params["direction_threshold"]
         if 0.6 <= threshold <= 0.8:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         if "timing_threshold" in params:
+    pass
+    pass
             threshold, params["timing_threshold"]
         if 0.7 <= threshold <= 0.9:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -538,39 +641,57 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate technical indicator parameters."""
         score, 0.0
 
         # RSI parameters
         if "rsi_period" in params:
+    pass
+    pass
             rsi_period, params["rsi_period"]
         if 10 <= rsi_period <= 20:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # MACD parameters
         if "macd_fast_period" in params and "macd_slow_period" in params:
+    pass
+    pass
             fast, params["macd_fast_period"]
             slow, params["macd_slow_period"]
         if fast < slow and 8 <= fast <= 16 and 20 <= slow <= 30:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # ADX parameters
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
+    pass
+    pass
             trend, params["adx_trend_threshold"]
             sideways, params["adx_sideways_threshold"]
         if trend > sideways:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Volatility parameters
         if "volatility_threshold" in params:
+    pass
+    pass
             vol_thresh, params["volatility_threshold"]
         if 0.015 <= vol_thresh <= 0.035:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -578,11 +699,15 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_system_monitoring_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate system monitoring parameters."""
         score, 0.0
 
         # Monitoring intervals should be reasonable
         if "analysis_interval" in params:
+    pass
+    pass
             interval, params["analysis_interval"]
         if 1800 <= interval <= 7200:  # 30 minutes to 2 hours
                 score += 0.2
@@ -591,24 +716,36 @@ class FinalParametersOptimizationStepNew:
 
         # History limits should be reasonable
         if "max_history" in params:
+    pass
+    pass
             max_hist, params["max_history"]
         if 50 <= max_hist <= 200:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # System performance parameters
         if "memory_threshold" in params:
+    pass
+    pass
             mem_thresh, params["memory_threshold"]
         if 0.7 <= mem_thresh <= 0.9:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Learning rate should be reasonable
         if "learning_rate" in params:
+    pass
+    pass
             lr, params["learning_rate"]
         if 0.005 <= lr <= 0.05:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -616,47 +753,69 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_training_optimization_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate training optimization parameters."""
         score, 0.0
 
         # Step 2: Market Regime Classification
         if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
+    pass
+    pass
             trend, params["adx_trend_threshold"]
             sideways, params["adx_sideways_threshold"]
         if trend > sideways and 20.0 <= trend <= 35.0 and 15.0 <= sideways <= 30.0:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Step 4: Processing & Labeling
         if "min_label_balance" in params and "max_label_balance" in params:
+    pass
+    pass
             min_balance, params["min_label_balance"]
             max_balance, params["max_label_balance"]
         if min_balance < max_balance and 0.03 <= min_balance <= 0.1 and 0.9 <= max_balance <= 0.98:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Step 6: Analyst Enhancement
         if "stability_threshold" in params:
+    pass
+    pass
             stability, params["stability_threshold"]
         if 0.6 <= stability <= 0.9:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Model hyperparameters
         if "lgb_learning_rate" in params:
+    pass
+    pass
             lr, params["lgb_learning_rate"]
         if 0.01 <= lr <= 0.2:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Performance thresholds
         if "model_performance_threshold" in params:
+    pass
+    pass
             perf_thresh, params["model_performance_threshold"]
         if 0.6 <= perf_thresh <= 0.85:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -664,27 +823,39 @@ class FinalParametersOptimizationStepNew:
         return score
 
     def _evaluate_regime_transitions_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+    pass
+    pass
         """Evaluate regime transition parameters."""
         score, 0.0
 
         # Transition detection thresholds
         if "transition_intensity_threshold" in params:
+    pass
+    pass
             threshold, params["transition_intensity_threshold"]
         if 0.2 <= threshold <= 0.5:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Transition confidence thresholds
         if "transition_confidence_threshold" in params:
+    pass
+    pass
             confidence_thresh, params["transition_confidence_threshold"]
         if 0.6 <= confidence_thresh <= 0.9:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Model blending during transitions
         if "step09_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
+    pass
+    pass
             step09_5_w, params["step09_5_weight"]
             step10_w, params["step10_weight"]
             regime_w, params["regime_expert_weight"]
@@ -696,16 +867,24 @@ class FinalParametersOptimizationStepNew:
 
         # Transition timing
         if "transition_lookback_periods" in params:
+    pass
+    pass
             lookback, params["transition_lookback_periods"]
         if 3 <= lookback <= 10:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
 
         # Risk management during transitions
         if "transition_risk_multiplier" in params:
+    pass
+    pass
             risk_mult, params["transition_risk_multiplier"]
         if 1.0 <= risk_mult <= 1.5:
+    pass
+    pass
                 score += 0.2
             else:
                 score += 0.1
@@ -717,9 +896,15 @@ class FinalParametersOptimizationStepNew:
         """Load calibration results from previous step."""
         try:
             calibration_dir, f"{data_dir}/calibration_results"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             calibration_file, f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
         if not os.path.exists(calibration_file):
+    pass
+    pass
         self.logger.warning(f"Calibration file not found: {calibration_file}")
         return {}
 
@@ -734,9 +919,15 @@ class FinalParametersOptimizationStepNew:
         """Load previous optimization results for warm start."""
         try:
             optimization_dir, f"{data_dir}/optimization_results"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             previous_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
 
         if os.path.exists(previous_file):
+    pass
+    pass
         with open(previous_file, "rb") as f:
         return pickle.load(f)
         return None
@@ -748,6 +939,12 @@ class FinalParametersOptimizationStepNew:
         """Validate optimization results."""
         try:
         if not optimization_results:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return False
 
         # Check that all categories have results
@@ -765,7 +962,11 @@ class FinalParametersOptimizationStepNew:
                 "regime_transitions"
             ]
         for category in expected_categories:
+    pass
+    pass
         if category not in optimization_results:
+    pass
+    pass
         self.logger.warning(f"Missing optimization results for category: {category}")
         return False
 
@@ -779,6 +980,10 @@ class FinalParametersOptimizationStepNew:
         """Save optimization results."""
         try:
             optimization_dir, f"{data_dir}/optimization_results"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             os.makedirs(optimization_dir, exist_ok = True)
 
             results_file, f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
@@ -803,10 +1008,18 @@ class FinalParametersOptimizationStepNew:
                 "duration_seconds": (datetime.now() - start_time).total_seconds(),
                 "categories_optimized": list(optimization_results.keys()),
                 "summary": {},
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
         for category, results in optimization_results.items():
+    pass
+    pass
         if results and "best_value" in results:
+    pass
+    pass
                     report["summary"][category] = {
                         "best_value": results["best_value"],
                         "n_trials": results.get("n_trials", 0),
@@ -818,11 +1031,17 @@ class FinalParametersOptimizationStepNew:
         return {"error": str(e)}
 
     def _setup_optimization_storage(self) -> None:
+    pass
+    pass
         """Setup optimization storage."""
         try:
         # Ensure optimization directories exist
             os.makedirs("data / optimization_results", exist_ok = True)
             os.makedirs("data / calibration_results", exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as e:
         self.logger.error(f"Error setting up optimization storage: {e}")
 
@@ -843,6 +1062,10 @@ class FinalParametersOptimizationStepNew:
         try:
         self.logger.info("🚀 Delivering step12 results for tactician confidence optimization...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract tactician - specific optimization results
             tactician_results, self._extract_tactician_optimization_results(optimization_results)
 
@@ -930,10 +1153,16 @@ class FinalParametersOptimizationStepNew:
 
             import yaml
         for path in step12_paths:
+    pass
+    pass
         try:
         # Ensure directory exists
                     os.makedirs(os.path.dirname(path), exist_ok = True)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         with open(path, 'w') as f:
                         yaml.dump(step12_results, f, default_flow_style = False, indent = 2)
 
@@ -962,10 +1191,18 @@ class FinalParametersOptimizationStepNew:
         try:
             tactician_results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract confidence optimization results
         if "confidence" in optimization_results:
+    pass
+    pass
                 confidence_results, optimization_results["confidence"]
         if "best_value" in confidence_results:
+    pass
+    pass
         # Extract ML confidence factors
                     tactician_results["ml_confidence_factors"] = {
                         "price_deviation_prediction": confidence_results["best_value"].get("price_deviation_boost", 1.35),
@@ -975,8 +1212,12 @@ class FinalParametersOptimizationStepNew:
 
         # Extract position sizing optimization results
         if "position_sizing" in optimization_results:
+    pass
+    pass
                 position_results, optimization_results["position_sizing"]
         if "best_value" in position_results:
+    pass
+    pass
         # Extract confidence thresholds
                     tactician_results["position_monitor"] = {
                         "high_confidence_threshold": position_results["best_value"].get("high_confidence_threshold", 0.65),
@@ -987,8 +1228,12 @@ class FinalParametersOptimizationStepNew:
 
         # Extract position opening requirements
         if "tpsl" in optimization_results:
+    pass
+    pass
                 tpsl_results, optimization_results["tpsl"]
         if "best_value" in tpsl_results:
+    pass
+    pass
                     tactician_results["position_opening"] = {
                         "require_both_barriers": True,
                         "min_barrier_confidence": tpsl_results["best_value"].get("min_barrier_confidence", 0.72),
@@ -997,8 +1242,12 @@ class FinalParametersOptimizationStepNew:
 
         # Extract performance metrics
         if "ensemble" in optimization_results:
+    pass
+    pass
                 ensemble_results, optimization_results["ensemble"]
         if "best_value" in ensemble_results:
+    pass
+    pass
                     tactician_results.update({
                         "best_sharpe_ratio": ensemble_results["best_value"].get("sharpe_ratio", 2.45),
                         "best_max_drawdown": ensemble_results["best_value"].get("max_drawdown", -0.08),
@@ -1010,6 +1259,8 @@ class FinalParametersOptimizationStepNew:
 
         # Set default values if not found
         if "ml_confidence_factors" not in tactician_results:
+    pass
+    pass
                 tactician_results["ml_confidence_factors"] = {
                     "price_deviation_prediction": 1.35,
                     "price_direction_prediction": 1.28,
@@ -1017,6 +1268,8 @@ class FinalParametersOptimizationStepNew:
                 }
 
         if "position_monitor" not in tactician_results:
+    pass
+    pass
                 tactician_results["position_monitor"] = {
                     "high_confidence_threshold": 0.65,
                     "low_confidence_threshold": 0.35,
@@ -1025,6 +1278,8 @@ class FinalParametersOptimizationStepNew:
                 }
 
         if "position_opening" not in tactician_results:
+    pass
+    pass
                 tactician_results["position_opening"] = {
                     "require_both_barriers": True,
                     "min_barrier_confidence": 0.72,

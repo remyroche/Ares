@@ -10,7 +10,10 @@ import time
 
 from src.utils.warning_symbols import warning
 
+import def launch_bot_with_monitoring
 def launch_bot_with_monitoring():
+    pass
+    pass
     """Launch the bot and start monitoring"""
     print("🚀 Launching ARES Bot with monitoring...")
 
@@ -35,11 +38,17 @@ def launch_bot_with_monitoring():
 
     # Function to handle cleanup
     def cleanup(signum, frame):
-        print("\n🛑 Shutting down...")
+    pass
+    pass
+        print("\\\n🛑 Shutting down...")
         bot_process.terminate()
         monitor_process.terminate()
         try:
             bot_process.wait(timeout=5)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             monitor_process.wait(timeout=5)
         except Exception:
             bot_process.kill()
@@ -51,7 +60,7 @@ def launch_bot_with_monitoring():
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("\n📊 Bot and monitor are running...")
+    print("\\\n📊 Bot and monitor are running...")
     print("   - Bot PID:", bot_process.pid)
     print("   - Monitor PID:", monitor_process.pid)
     print("   - Press Ctrl+C to stop both")
@@ -61,14 +70,20 @@ def launch_bot_with_monitoring():
         time.sleep(1)
 
         if bot_process.poll() is not None:
+    pass
+    pass
             print(warning("Bot process has stopped!"))
             cleanup(None, None)
             return
         if monitor_process.poll() is not None:
+    pass
+    pass
             print(warning("Monitor process has stopped!"))
             cleanup(None, None)
             return
 
 
 if __name__ == "__main__":
+    pass
+    pass
     launch_bot_with_monitoring()

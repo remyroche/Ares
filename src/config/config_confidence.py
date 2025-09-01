@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class ConfidenceThresholdsConfig:
     """Optimizable confidence thresholds for different trading decisions."""
@@ -57,11 +58,15 @@ class ConfidenceThresholdsConfig:
 
 
 def get_confidence_config() -> ConfidenceThresholdsConfig:
+    pass
+    pass
     """Get confidence thresholds configuration."""
     return ConfidenceThresholdsConfig()
 
 
 def get_confidence_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for confidence threshold optimization."""
     return {
         "base_entry_threshold": {"min": 0.5, "max": 0.9, "type": "float"},

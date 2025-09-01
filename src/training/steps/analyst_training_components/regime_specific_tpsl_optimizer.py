@@ -28,6 +28,7 @@ from src.config import CONFIG
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -42,6 +43,8 @@ class RegimeSpecificTPSLOptimizer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize the regime - specific TP / SL optimizer.
 
         Args:
@@ -195,6 +198,8 @@ class RegimeSpecificTPSLOptimizer:
         self.model_dir, os.path.join(CONFIG["CHECKPOINT_DIR"], "regime_tpsl_models")
         # De - duplicate S / R variants
         if "SR_TOUCH" in self.regime_parameters:
+    pass
+    pass
         self.regime_parameters["SR_BOUNCE"] = self.regime_parameters["SR_TOUCH"]
         os.makedirs(self.model_dir, exist_ok = True)
 
@@ -228,8 +233,14 @@ class RegimeSpecificTPSLOptimizer:
                 "Initializing Regime - Specific TP / SL Optimizer (Meta - Label)...",
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Initialize Meta - Labeling system
         if not await self._initialize_meta_label_system():
+    pass
+    pass
         self.print(failed("Failed to initialize Meta - Labeling system"))
         return False
 
@@ -256,7 +267,13 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
             ok, await self.meta_labeling_system.initialize()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if ok:
+    pass
+    pass
         self.logger.info(
                     "✅ Meta - Labeling system initialized for regime identification",
                 )
@@ -273,7 +290,13 @@ class RegimeSpecificTPSLOptimizer:
         """Load existing optimization results from disk."""
         try:
             results_file, os.path.join(self.model_dir, "optimization_results.json")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(results_file):
+    pass
+    pass
                 import json
 
         with open(results_file) as f:
@@ -288,6 +311,10 @@ class RegimeSpecificTPSLOptimizer:
         """Save optimization results to disk."""
         try:
             results_file, os.path.join(self.model_dir, "optimization_results.json")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             import json
 
         with open(results_file, "w") as f:
@@ -313,7 +340,13 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
         # Require meta - labeling to be initialized
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not getattr(self.meta_labeling_system, "is_initialized", False):
+    pass
+    pass
         self.print(
                     warning(
                         "Meta - Labeling system not initialized, using default regime",
@@ -332,6 +365,8 @@ class RegimeSpecificTPSLOptimizer:
             intensities: dict[str, float] = {}
             actives: dict[str, int] = {}
         for label in self.candidate_labels:
+    pass
+    pass
                 intensities[label] = float(labels.get(f"intensity_{label}", 0.0))
                 actives[label] = int(
                     labels.get(f"active_{label}", labels.get(label, 0)),
@@ -396,6 +431,10 @@ class RegimeSpecificTPSLOptimizer:
         try:
         self.logger.info(f"🎯 Optimizing TP / SL for regime: {regime}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Get base parameters for this regime
             base_params, self.regime_parameters.get(
                 regime,
@@ -410,6 +449,8 @@ class RegimeSpecificTPSLOptimizer:
 
         # Define objective function
             def objective(trial):
+    pass
+    pass
         return self._evaluate_tpsl_parameters(
                     trial,
                     regime,
@@ -474,8 +515,14 @@ class RegimeSpecificTPSLOptimizer:
                 base_params["stop_pct"] * 1.5,
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Ensure target > stop
         if target_pct <= stop_pct:
+    pass
+    pass
         return - 1.0
 
         # Run simplified backtest
@@ -487,6 +534,8 @@ class RegimeSpecificTPSLOptimizer:
             )
 
         if len(trades) < self.min_trades:
+    pass
+    pass
         return - 1.0
 
         # Calculate performance metrics
@@ -497,6 +546,8 @@ class RegimeSpecificTPSLOptimizer:
 
         # Combine metrics based on optimization target
         if self.optimization_metric == "sharpe_ratio":
+    pass
+    pass
                 score, sharpe_ratio
             elif self.optimization_metric == "total_return":
                 score, total_return
@@ -531,13 +582,19 @@ class RegimeSpecificTPSLOptimizer:
         entry_time, None
 
         for i in range(1, len(data)):
+    pass
+    pass
             current_price, data.iloc[i]["close"]
             high_price, data.iloc[i]["high"]
             low_price, data.iloc[i]["low"]
 
         if not position_open:
+    pass
+    pass
         # Simple entry condition (can be enhanced)
         if data.iloc[i]["close"] > data.iloc[i - 1]["close"]:
+    pass
+    pass
                     position_open, True
                     entry_price, current_price
                     entry_time, data.index[i]
@@ -594,8 +651,14 @@ class RegimeSpecificTPSLOptimizer:
         # Identify current regime via meta - labels
             regime, confidence, regime_info, await self.identify_current_regime(current_data)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if we have cached results for this regime
         if not force_optimization and regime in self.optimization_results:
+    pass
+    pass
                 cached_params, self.optimization_results[regime]
         self.logger.info(f"Using cached TP / SL parameters for {regime}")
         return {
@@ -630,6 +693,8 @@ class RegimeSpecificTPSLOptimizer:
             }
 
     def get_regime_statistics(self) -> dict[str, Any]:
+    pass
+    pass
         """Get statistics about regime - specific TP / SL optimization.
 
         Returns:

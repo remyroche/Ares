@@ -23,6 +23,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     warning,
@@ -95,6 +96,10 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.info(
                 f"🎯 Starting multi-timeframe ensemble training for {self.model_name} in {self.regime}",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.info(f"📈 Model type: {model_type}")
             self.logger.info(f"⏰ Available timeframes: {list(prepared_data.keys())}")
@@ -108,11 +113,15 @@ class MultiTimeframeEnsemble:
             training_stats = {}
 
             for i, timeframe in enumerate(self.active_timeframes, 1):
+    pass
+    pass
                 self.logger.info(
                     f"🔄 [{i}/{len(self.active_timeframes)}] Training {timeframe} timeframe...",
                 )
 
                 if timeframe not in prepared_data:
+    pass
+    pass
                     self.logger.warning(
                         f"⚠️ No data for timeframe {timeframe}, skipping",
                     )
@@ -128,6 +137,8 @@ class MultiTimeframeEnsemble:
                 tf_training_time = time.time() - tf_start_time
 
                 if success:
+    pass
+    pass
                     self.logger.info(
                         f"✅ {timeframe} training completed in {tf_training_time:.2f}s",
                     )
@@ -162,6 +173,8 @@ class MultiTimeframeEnsemble:
 
             # 2. Train meta-learner to combine timeframe predictions
             if len(timeframe_predictions) > 1:
+    pass
+    pass
                 self.logger.info(
                     f"🧠 Training meta-learner with {len(timeframe_predictions)} timeframes...",
                 )
@@ -176,6 +189,8 @@ class MultiTimeframeEnsemble:
                 meta_training_time = time.time() - meta_start_time
 
                 if success:
+    pass
+    pass
                     self.trained = True
                     total_time = time.time() - start_time
 
@@ -195,7 +210,11 @@ class MultiTimeframeEnsemble:
 
                     # Log detailed statistics
                     for tf, stats in training_stats.items():
+    pass
+    pass
                         if stats.get("success"):
+    pass
+    pass
                             self.logger.info(
                                 f"   - {tf}: {stats['training_time']:.2f}s, "
                                 f"{stats['predictions_count']} predictions, "
@@ -225,6 +244,10 @@ class MultiTimeframeEnsemble:
         """Train a single timeframe model."""
         try:
             self.logger.info(f"🔧 Training {model_type} model for {timeframe}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(f"📊 Data shape: {data.shape}")
             self.logger.info(f"📈 Data columns: {list(data.columns)}")
 
@@ -232,6 +255,8 @@ class MultiTimeframeEnsemble:
             X, y = self._prepare_features_target(data)
 
             if len(X) == 0:
+    pass
+    pass
                 self.print(warning("⚠️ No valid data for {timeframe}"))
                 return False
 
@@ -240,6 +265,8 @@ class MultiTimeframeEnsemble:
 
             # Train model based on type
             if model_type == "xgboost":
+    pass
+    pass
                 model = self._train_xgboost_model(X, y)
             elif model_type == "lstm":
                 model = self._train_lstm_model(X, y)
@@ -250,6 +277,8 @@ class MultiTimeframeEnsemble:
                 return False
 
             if model is not None:
+    pass
+    pass
                 self.timeframe_models[timeframe] = {
                     "model": model,
                     "model_type": model_type,
@@ -271,10 +300,16 @@ class MultiTimeframeEnsemble:
             return False
 
     def _train_xgboost_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
+    pass
+    pass
         """Train XGBoost model."""
         try:
             self.logger.info("🌳 Training XGBoost model...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Use LightGBM as XGBoost alternative
             model = lgb.LGBMClassifier(
                 n_estimators=100,
@@ -289,6 +324,8 @@ class MultiTimeframeEnsemble:
             skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), 1):
+    pass
+    pass
                 self.logger.info(
                     f"📊 Fold {fold}/3: {len(train_idx)} train, {len(val_idx)} validation",
                 )
@@ -313,13 +350,20 @@ class MultiTimeframeEnsemble:
             return None
 
     def _train_lstm_model(self, X: pd.DataFrame, y: pd.Series) -> Any | None:
+    pass
+    pass
         """Train LSTM model (simplified for now)."""
         try:
             self.logger.info("🧠 Training LSTM model (simplified)...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, use a simple neural network as LSTM placeholder
             from sklearn.neural_network import MLPClassifier
 
+import model = MLPClassifier
             model = MLPClassifier(
                 hidden_layer_sizes=(100, 50),
                 max_iter=200,
@@ -343,6 +387,10 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.info("🌲 Training Random Forest model...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             model = RandomForestClassifier(
                 n_estimators=100,
                 max_depth=10,
@@ -365,11 +413,17 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.debug("🔧 Preparing features and target...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # First, explicitly drop any datetime columns
             datetime_columns = data.select_dtypes(
                 include=["datetime64[ns]", "datetime64", "datetime"],
             ).columns.tolist()
             if datetime_columns:
+    pass
+    pass
                 self.logger.info(f"Dropping datetime columns: {datetime_columns}")
                 data = data.drop(columns=datetime_columns)
 
@@ -381,6 +435,8 @@ class MultiTimeframeEnsemble:
                 col for col in object_columns if col not in target_columns
             ]
             if object_columns_to_drop:
+    pass
+    pass
                 self.logger.info(f"Dropping object columns: {object_columns_to_drop}")
                 data = data.drop(columns=object_columns_to_drop)
 
@@ -393,7 +449,11 @@ class MultiTimeframeEnsemble:
 
             # Additional safety check - ensure all columns are numeric
             for col in X.columns:
+    pass
+    pass
                 if not pd.api.types.is_numeric_dtype(X[col]):
+    pass
+    pass
                     self.logger.warning(
                         f"Non-numeric column detected: {col} with dtype {X[col].dtype}",
                     )
@@ -406,16 +466,22 @@ class MultiTimeframeEnsemble:
             X.isnull().sum().sum()
 
             if missing_before > 0:
+    pass
+    pass
                 self.logger.info(f"🔧 Filled {missing_before} missing values")
 
             # Final check - ensure X is purely numeric
             if X.select_dtypes(include=[np.number]).shape[1] != X.shape[1]:
+    pass
+    pass
                 self.print(error("Non-numeric columns still present in feature matrix"))
                 # Force conversion to numeric, dropping any problematic columns
                 X = X.select_dtypes(include=[np.number])
 
             # Get target
             if "target" in data.columns:
+    pass
+    pass
                 y = data["target"]
                 self.logger.info("🎯 Using existing target column")
             else:
@@ -440,15 +506,23 @@ class MultiTimeframeEnsemble:
         """Get predictions and confidences for a timeframe."""
         try:
             if timeframe not in self.timeframe_models:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ No trained model for {timeframe}"))
                 return [], []
 
+    except Exception as e:
+        pass
             model_info = self.timeframe_models[timeframe]
             model = model_info["model"]
 
             X, _ = self._prepare_features_target(data)
 
             if len(X) == 0:
+    pass
+    pass
                 self.print(warning("⚠️ No valid features for {timeframe}"))
                 return [], []
 
@@ -457,6 +531,8 @@ class MultiTimeframeEnsemble:
 
             # Get prediction probabilities for confidence
             if hasattr(model, "predict_proba"):
+    pass
+    pass
                 probas = model.predict_proba(X)
                 confidences = np.max(probas, axis=1).tolist()
                 self.logger.debug(
@@ -484,6 +560,10 @@ class MultiTimeframeEnsemble:
         """Train meta-learner to combine timeframe predictions."""
         try:
             self.logger.info("🧠 Training meta-learner for timeframe combination...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(f"📊 Timeframes: {list(timeframe_predictions.keys())}")
 
             # Prepare meta-learner data
@@ -495,6 +575,8 @@ class MultiTimeframeEnsemble:
             )
 
             if len(meta_data) == 0:
+    pass
+    pass
                 self.print(error("❌ No valid meta-learner data"))
                 return False
 
@@ -552,10 +634,18 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.debug("🔧 Preparing meta-learner data...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Find common timestamps across all timeframes
             all_timestamps = set()
             for timeframe in timeframe_predictions:
+    pass
+    pass
                 if timeframe in prepared_data:
+    pass
+    pass
                     all_timestamps.update(prepared_data[timeframe].index)
 
             self.logger.info(f"📊 Found {len(all_timestamps)} common timestamps")
@@ -564,14 +654,22 @@ class MultiTimeframeEnsemble:
             meta_data = []
 
             for timestamp in sorted(all_timestamps):
+    pass
+    pass
                 row_data = {"timestamp": timestamp}
 
                 # Add predictions and confidences from each timeframe
                 for timeframe in self.active_timeframes:
+    pass
+    pass
                     if timeframe in timeframe_predictions:
+    pass
+    pass
                         # Find prediction for this timestamp
                         pred_idx = 0  # Simplified - in practice, match by timestamp
                         if pred_idx < len(timeframe_predictions[timeframe]):
+    pass
+    pass
                             row_data[f"{timeframe}_prediction"] = timeframe_predictions[
                                 timeframe
                             ][pred_idx]
@@ -615,9 +713,15 @@ class MultiTimeframeEnsemble:
         """
         try:
             if not self.trained:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ Multi-timeframe ensemble not trained"))
                 return {"prediction": "HOLD", "confidence": 0.0}
 
+    except Exception as e:
+        pass
             self.logger.debug(
                 f"🔮 Getting prediction for {self.model_name} in {self.regime}",
             )
@@ -627,7 +731,11 @@ class MultiTimeframeEnsemble:
             timeframe_confidences = {}
 
             for timeframe in self.active_timeframes:
+    pass
+    pass
                 if timeframe in self.timeframe_models:
+    pass
+    pass
                     self.logger.debug(f"📊 Getting prediction for {timeframe}...")
                     pred, conf = self._get_single_prediction(
                         timeframe,
@@ -642,6 +750,8 @@ class MultiTimeframeEnsemble:
 
             # Use meta-learner to combine predictions
             if self.meta_learner and len(timeframe_predictions) > 0:
+    pass
+    pass
                 self.logger.debug("🧠 Combining predictions with meta-learner...")
                 final_prediction, final_confidence = self._combine_with_meta_learner(
                     timeframe_predictions,
@@ -683,9 +793,15 @@ class MultiTimeframeEnsemble:
         """Get prediction from single timeframe model."""
         try:
             if timeframe not in self.timeframe_models:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ No trained model for {timeframe}"))
                 return "HOLD", 0.0
 
+    except Exception as e:
+        pass
             model_info = self.timeframe_models[timeframe]
             model = model_info["model"]
 
@@ -693,6 +809,8 @@ class MultiTimeframeEnsemble:
             X, _ = self._prepare_features_target(features)
 
             if len(X) == 0:
+    pass
+    pass
                 self.print(warning("⚠️ No valid features for {timeframe}"))
                 return "HOLD", 0.0
 
@@ -701,6 +819,8 @@ class MultiTimeframeEnsemble:
 
             # Get confidence
             if hasattr(model, "predict_proba"):
+    pass
+    pass
                 probas = model.predict_proba(X)
                 confidence = np.max(probas[0])
             else:
@@ -722,9 +842,15 @@ class MultiTimeframeEnsemble:
         try:
             self.logger.debug("🧠 Combining predictions with meta-learner...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Prepare meta-features
             meta_features = []
             for timeframe in self.active_timeframes:
+    pass
+    pass
                 pred = timeframe_predictions.get(timeframe, "HOLD")
                 conf = timeframe_confidences.get(timeframe, 0.0)
 
@@ -750,6 +876,8 @@ class MultiTimeframeEnsemble:
 
             # Get confidence
             if hasattr(self.meta_learner, "predict_proba"):
+    pass
+    pass
                 probas = self.meta_learner.predict_proba(meta_features_scaled)
                 confidence = np.max(probas[0])
             else:
@@ -772,9 +900,15 @@ class MultiTimeframeEnsemble:
         """Simple combination of predictions (fallback)."""
         try:
             if not timeframe_predictions:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(warning("⚠️ No timeframe predictions available"))
                 return "HOLD", 0.0
 
+    except Exception as e:
+        pass
             # Count predictions
             pred_counts = {"BUY": 0, "SELL": 0, "HOLD": 0}
             total_confidence = 0.0
@@ -807,19 +941,29 @@ class MultiTimeframeEnsemble:
             return "HOLD", 0.0
 
     def save_model(self, path: str) -> bool:
+    pass
+    pass
         """Save multi-timeframe ensemble model."""
         try:
             self.logger.info(f"💾 Saving multi-timeframe ensemble to {path}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             os.makedirs(path, exist_ok=True)
 
             # Save timeframe models
             for timeframe, model_info in self.timeframe_models.items():
+    pass
+    pass
                 model_path = os.path.join(path, f"{timeframe}_model.joblib")
                 joblib.dump(model_info["model"], model_path)
                 self.logger.debug(f"💾 Saved {timeframe} model")
 
             # Save meta-learner
             if self.meta_learner:
+    pass
+    pass
                 meta_path = os.path.join(path, "meta_learner.joblib")
                 joblib.dump(self.meta_learner, meta_path)
 
@@ -850,13 +994,21 @@ class MultiTimeframeEnsemble:
             return False
 
     def load_model(self, path: str) -> bool:
+    pass
+    pass
         """Load multi-timeframe ensemble model."""
         try:
             self.logger.info(f"📂 Loading multi-timeframe ensemble from {path}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load ensemble info
             info_path = os.path.join(path, "ensemble_info.joblib")
             if os.path.exists(info_path):
+    pass
+    pass
                 ensemble_info = joblib.load(info_path)
                 self.model_name = ensemble_info["model_name"]
                 self.regime = ensemble_info["regime"]
@@ -868,8 +1020,12 @@ class MultiTimeframeEnsemble:
 
             # Load timeframe models
             for timeframe in self.active_timeframes:
+    pass
+    pass
                 model_path = os.path.join(path, f"{timeframe}_model.joblib")
                 if os.path.exists(model_path):
+    pass
+    pass
                     cached_model = joblib.load(model_path)
                     self.timeframe_models[timeframe] = {
                         "model": cached_model,
@@ -884,14 +1040,20 @@ class MultiTimeframeEnsemble:
             # Load meta-learner
             meta_path = os.path.join(path, "meta_learner.joblib")
             if os.path.exists(meta_path):
+    pass
+    pass
                 self.meta_learner = joblib.load(meta_path)
 
                 scaler_path = os.path.join(path, "meta_scaler.joblib")
                 if os.path.exists(scaler_path):
+    pass
+    pass
                     self.meta_scaler = joblib.load(scaler_path)
 
                 encoder_path = os.path.join(path, "meta_encoder.joblib")
                 if os.path.exists(encoder_path):
+    pass
+    pass
                     self.meta_label_encoder = joblib.load(encoder_path)
 
                 self.logger.debug("📂 Loaded meta-learner components")

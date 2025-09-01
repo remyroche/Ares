@@ -8,11 +8,13 @@ import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import critical,
     critical,
     error,
     failed,
@@ -30,6 +32,8 @@ class DataUtils:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize data utils with enhanced type safety.
 
@@ -82,11 +86,17 @@ class DataUtils:
         try:
             self.logger.info("Initializing Data Utils...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Load data utils configuration
             await self._load_data_utils_configuration()
 
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(invalid("Invalid configuration for data utils"))
                 return False
 
@@ -109,6 +119,10 @@ class DataUtils:
         """Load data utils configuration."""
         try:
             # Set default data utils parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data_utils_config.setdefault("processing_interval", 3600)
             self.data_utils_config.setdefault("max_processing_history", 100)
             self.data_utils_config.setdefault("enable_data_cleaning", True)
@@ -137,6 +151,8 @@ class DataUtils:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate data utils configuration.
 
@@ -145,12 +161,20 @@ class DataUtils:
         """
         try:
             # Validate processing interval
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.processing_interval <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid processing interval"))
                 return False
 
             # Validate max processing history
             if self.max_processing_history <= 0:
+    pass
+    pass
                 self.print(invalid("Invalid max processing history"))
                 return False
 
@@ -182,19 +206,31 @@ class DataUtils:
         """Initialize data utils modules."""
         try:
             # Initialize data cleaning module
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if self.enable_data_cleaning:
+    pass
+    pass
                 await self._initialize_data_cleaning()
 
             # Initialize data validation module
             if self.enable_data_validation:
+    pass
+    pass
                 await self._initialize_data_validation()
 
             # Initialize data transformation module
             if self.data_utils_config.get("enable_data_transformation", True):
+    pass
+    pass
                 await self._initialize_data_transformation()
 
             # Initialize data aggregation module
             if self.data_utils_config.get("enable_data_aggregation", True):
+    pass
+    pass
                 await self._initialize_data_aggregation()
 
             self.logger.info("Data utils modules initialized successfully")
@@ -213,6 +249,10 @@ class DataUtils:
         """Initialize data cleaning module."""
         try:
             # Initialize data cleaning components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data_cleaning_components = {
                 "outlier_removal": True,
                 "missing_data_handling": True,
@@ -234,6 +274,10 @@ class DataUtils:
         """Initialize data validation module."""
         try:
             # Initialize data validation components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data_validation_components = {
                 "data_type_validation": True,
                 "range_validation": True,
@@ -255,6 +299,10 @@ class DataUtils:
         """Initialize data transformation module."""
         try:
             # Initialize data transformation components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data_transformation_components = {
                 "feature_scaling": True,
                 "feature_encoding": True,
@@ -278,6 +326,10 @@ class DataUtils:
         """Initialize data aggregation module."""
         try:
             # Initialize data aggregation components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.data_aggregation_components = {
                 "time_aggregation": True,
                 "group_aggregation": True,
@@ -311,18 +363,28 @@ class DataUtils:
         """
         try:
             if not self._validate_processing_inputs(processing_input):
+    pass
+    except Exception as e:
+        pass
+    pass
                 return False
 
+    except Exception as e:
+        pass
             self.is_processing = True
             self.logger.info("🔄 Starting data processing execution...")
 
             # Perform data cleaning
             if self.enable_data_cleaning:
+    pass
+    pass
                 cleaning_results = await self._perform_data_cleaning(processing_input)
                 self.processing_results["data_cleaning"] = cleaning_results
 
             # Perform data validation
             if self.enable_data_validation:
+    pass
+    pass
                 validation_results = await self._perform_data_validation(
                     processing_input,
                 )
@@ -330,6 +392,8 @@ class DataUtils:
 
             # Perform data transformation
             if self.data_utils_config.get("enable_data_transformation", True):
+    pass
+    pass
                 transformation_results = await self._perform_data_transformation(
                     processing_input,
                 )
@@ -337,6 +401,8 @@ class DataUtils:
 
             # Perform data aggregation
             if self.data_utils_config.get("enable_data_aggregation", True):
+    pass
+    pass
                 aggregation_results = await self._perform_data_aggregation(
                     processing_input,
                 )
@@ -360,6 +426,8 @@ class DataUtils:
         context="processing inputs validation",
     )
     def _validate_processing_inputs(self, processing_input: dict[str, Any]) -> bool:
+    pass
+    pass
         """
         Validate processing inputs.
 
@@ -371,9 +439,17 @@ class DataUtils:
         """
         try:
             # Check required processing input fields
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             required_fields = ["processing_type", "data_source", "timestamp"]
             for field in required_fields:
+    pass
+    pass
                 if field not in processing_input:
+    pass
+    pass
                     self.logger.error(
                         f"Missing required processing input field: {field}",
                     )
@@ -381,10 +457,14 @@ class DataUtils:
 
             # Validate data types
             if not isinstance(processing_input["processing_type"], str):
+    pass
+    pass
                 self.print(invalid("Invalid processing type"))
                 return False
 
             if not isinstance(processing_input["data_source"], str):
+    pass
+    pass
                 self.print(invalid("Invalid data source"))
                 return False
 
@@ -415,26 +495,38 @@ class DataUtils:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform outlier removal
             if self.data_cleaning_components.get("outlier_removal", False):
+    pass
+    pass
                 results["outlier_removal"] = self._perform_outlier_removal(
                     processing_input,
                 )
 
             # Perform missing data handling
             if self.data_cleaning_components.get("missing_data_handling", False):
+    pass
+    pass
                 results["missing_data_handling"] = self._perform_missing_data_handling(
                     processing_input,
                 )
 
             # Perform duplicate removal
             if self.data_cleaning_components.get("duplicate_removal", False):
+    pass
+    pass
                 results["duplicate_removal"] = self._perform_duplicate_removal(
                     processing_input,
                 )
 
             # Perform data normalization
             if self.data_cleaning_components.get("data_normalization", False):
+    pass
+    pass
                 results["data_normalization"] = self._perform_data_normalization(
                     processing_input,
                 )
@@ -467,26 +559,38 @@ class DataUtils:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform data type validation
             if self.data_validation_components.get("data_type_validation", False):
+    pass
+    pass
                 results["data_type_validation"] = self._perform_data_type_validation(
                     processing_input,
                 )
 
             # Perform range validation
             if self.data_validation_components.get("range_validation", False):
+    pass
+    pass
                 results["range_validation"] = self._perform_range_validation(
                     processing_input,
                 )
 
             # Perform format validation
             if self.data_validation_components.get("format_validation", False):
+    pass
+    pass
                 results["format_validation"] = self._perform_format_validation(
                     processing_input,
                 )
 
             # Perform consistency validation
             if self.data_validation_components.get("consistency_validation", False):
+    pass
+    pass
                 results["consistency_validation"] = (
                     self._perform_consistency_validation(processing_input)
                 )
@@ -519,20 +623,30 @@ class DataUtils:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform feature scaling
             if self.data_transformation_components.get("feature_scaling", False):
+    pass
+    pass
                 results["feature_scaling"] = self._perform_feature_scaling(
                     processing_input,
                 )
 
             # Perform feature encoding
             if self.data_transformation_components.get("feature_encoding", False):
+    pass
+    pass
                 results["feature_encoding"] = self._perform_feature_encoding(
                     processing_input,
                 )
 
             # Perform feature selection
             if self.data_transformation_components.get("feature_selection", False):
+    pass
+    pass
                 results["feature_selection"] = self._perform_feature_selection(
                     processing_input,
                 )
@@ -574,26 +688,38 @@ class DataUtils:
         try:
             results = {}
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Perform time aggregation
             if self.data_aggregation_components.get("time_aggregation", False):
+    pass
+    pass
                 results["time_aggregation"] = self._perform_time_aggregation(
                     processing_input,
                 )
 
             # Perform group aggregation
             if self.data_aggregation_components.get("group_aggregation", False):
+    pass
+    pass
                 results["group_aggregation"] = self._perform_group_aggregation(
                     processing_input,
                 )
 
             # Perform statistical aggregation
             if self.data_aggregation_components.get("statistical_aggregation", False):
+    pass
+    pass
                 results["statistical_aggregation"] = (
                     self._perform_statistical_aggregation(processing_input)
                 )
 
             # Perform custom aggregation
             if self.data_aggregation_components.get("custom_aggregation", False):
+    pass
+    pass
                 results["custom_aggregation"] = self._perform_custom_aggregation(
                     processing_input,
                 )
@@ -613,6 +739,10 @@ class DataUtils:
         """Perform outlier removal."""
         try:
             # Simulate outlier removal
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "outlier_removal_completed": True,
                 "outliers_removed": 15,
@@ -631,6 +761,10 @@ class DataUtils:
         """Perform missing data handling."""
         try:
             # Simulate missing data handling
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "missing_data_handling_completed": True,
                 "missing_values_filled": 25,
@@ -649,6 +783,10 @@ class DataUtils:
         """Perform duplicate removal."""
         try:
             # Simulate duplicate removal
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "duplicate_removal_completed": True,
                 "duplicates_removed": 8,
@@ -667,6 +805,10 @@ class DataUtils:
         """Perform data normalization."""
         try:
             # Simulate data normalization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "data_normalization_completed": True,
                 "normalized_features": 10,
@@ -686,6 +828,10 @@ class DataUtils:
         """Perform data type validation."""
         try:
             # Simulate data type validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "data_type_validation_completed": True,
                 "validation_score": 0.98,
@@ -704,6 +850,10 @@ class DataUtils:
         """Perform range validation."""
         try:
             # Simulate range validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "range_validation_completed": True,
                 "validation_score": 0.96,
@@ -722,6 +872,10 @@ class DataUtils:
         """Perform format validation."""
         try:
             # Simulate format validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "format_validation_completed": True,
                 "validation_score": 0.94,
@@ -740,6 +894,10 @@ class DataUtils:
         """Perform consistency validation."""
         try:
             # Simulate consistency validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "consistency_validation_completed": True,
                 "validation_score": 0.92,
@@ -759,6 +917,10 @@ class DataUtils:
         """Perform feature scaling."""
         try:
             # Simulate feature scaling
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "feature_scaling_completed": True,
                 "scaled_features": 8,
@@ -777,6 +939,10 @@ class DataUtils:
         """Perform feature encoding."""
         try:
             # Simulate feature encoding
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "feature_encoding_completed": True,
                 "encoded_features": 6,
@@ -795,6 +961,10 @@ class DataUtils:
         """Perform feature selection."""
         try:
             # Simulate feature selection
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "feature_selection_completed": True,
                 "selected_features": 12,
@@ -813,6 +983,10 @@ class DataUtils:
         """Perform dimensionality reduction."""
         try:
             # Simulate dimensionality reduction
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "dimensionality_reduction_completed": True,
                 "reduced_dimensions": 5,
@@ -832,6 +1006,10 @@ class DataUtils:
         """Perform time aggregation."""
         try:
             # Simulate time aggregation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "time_aggregation_completed": True,
                 "aggregated_periods": 24,
@@ -850,6 +1028,10 @@ class DataUtils:
         """Perform group aggregation."""
         try:
             # Simulate group aggregation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "group_aggregation_completed": True,
                 "aggregated_groups": 5,
@@ -868,6 +1050,10 @@ class DataUtils:
         """Perform statistical aggregation."""
         try:
             # Simulate statistical aggregation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "statistical_aggregation_completed": True,
                 "statistical_measures": ["mean", "std", "min", "max"],
@@ -886,6 +1072,10 @@ class DataUtils:
         """Perform custom aggregation."""
         try:
             # Simulate custom aggregation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return {
                 "custom_aggregation_completed": True,
                 "custom_functions": 3,
@@ -906,6 +1096,10 @@ class DataUtils:
         """Store processing results."""
         try:
             # Add timestamp
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.processing_results["timestamp"] = datetime.now().isoformat()
 
             # Add to history
@@ -913,6 +1107,8 @@ class DataUtils:
 
             # Limit history size
             if len(self.processing_history) > self.max_processing_history:
+    pass
+    pass
                 self.processing_history.pop(0)
 
             self.logger.info("Processing results stored successfully")
@@ -940,7 +1136,13 @@ class DataUtils:
         """
         try:
             if processing_type:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.processing_results.get(processing_type, {})
+    except Exception as e:
+        pass
             return self.processing_results.copy()
 
         except Exception:
@@ -953,6 +1155,8 @@ class DataUtils:
         context="processing history getting",
     )
     def get_processing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         """
         Get processing history.
 
@@ -965,7 +1169,13 @@ class DataUtils:
         try:
             history = self.processing_history.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if limit:
+    pass
+    pass
                 history = history[-limit:]
 
             return history
@@ -975,6 +1185,8 @@ class DataUtils:
             return []
 
     def get_processing_status(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get processing status information.
 
@@ -1009,6 +1221,10 @@ class DataUtils:
 
         try:
             # Stop processing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_processing = False
 
             # Clear results
@@ -1045,7 +1261,13 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
     try:
         global data_utils
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {
                 "data_utils": {
                     "processing_interval": 3600,
@@ -1063,6 +1285,8 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
         # Initialize data utils
         success = await data_utils.initialize()
         if success:
+    pass
+    pass
             return data_utils
         return None
 
@@ -1072,33 +1296,49 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
 
 
 def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
+    pass
+    pass
     """Validate klines data quality."""
     if df.empty:
+    pass
+    pass
         return False, "Empty DataFrame"
 
     required_cols = ["open", "high", "low", "close", "volume"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
+    pass
+    pass
         return False, f"Missing required columns: {missing_cols}"
 
     # Check for NaN values
     nan_counts = df[required_cols].isnull().sum()
     if nan_counts.sum() > 0:
+    pass
+    pass
         return False, f"NaN values found: {nan_counts.to_dict()}"
 
     # Check for infinite values
     inf_counts = np.isinf(df[required_cols]).sum()
     if inf_counts.sum() > 0:
+    pass
+    pass
         return False, f"Infinite values found: {inf_counts.to_dict()}"
 
     # Check for negative prices
     price_cols = ["open", "high", "low", "close"]
     for col in price_cols:
+    pass
+    pass
         if (df[col] < 0).any():
+    pass
+    pass
             return False, f"Negative values found in {col}"
 
     # Check for invalid OHLC relationships
     if (df["high"] < df["low"]).any():
+    pass
+    pass
         return False, "High < Low found"
 
     if (
@@ -1111,20 +1351,32 @@ def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
 
     # Check for zero prices
     for col in price_cols:
+    pass
+    pass
         if (df[col] == 0).any():
+    pass
+    pass
             return False, f"Zero values found in {col}"
 
     return True, "Data quality validation passed"
 
 
 def load_klines_data(filename):
+    pass
+    pass
     """Loads k-line data from a CSV file with strict quality validation."""
     if not os.path.exists(filename):
+    pass
+    pass
         print(missing("CRITICAL: K-lines data file not found at {filename}"))
         return pd.DataFrame()
 
     try:
         # Read CSV with more robust timestamp parsing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = pd.read_csv(filename, index_col="open_time", parse_dates=True)
         print(
             f"[DEBUG] load_klines_data: type={type(df)}, shape={df.shape}, columns={df.columns.tolist()}",
@@ -1138,11 +1390,15 @@ def load_klines_data(filename):
         initial_rows = len(df)
         df = df.dropna()
         if len(df) < initial_rows:
+    pass
+    pass
             print(
                 f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
             )
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after timestamp processing"))
             return pd.DataFrame()
 
@@ -1152,7 +1408,11 @@ def load_klines_data(filename):
         # Ensure numeric columns are actually numeric
         numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 # Convert to numeric, but don't fill NaN values
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -1160,6 +1420,8 @@ def load_klines_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_nan} NaN values in klines data: {nan_counts.to_dict()}",
             )
@@ -1170,6 +1432,8 @@ def load_klines_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_inf} infinite values in klines data: {inf_counts.to_dict()}",
             )
@@ -1179,9 +1443,15 @@ def load_klines_data(filename):
         # Check for negative prices - FAIL FAST if found
         price_cols = ["open", "high", "low", "close"]
         for col in price_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 negative_count = (df[col] < 0).sum()
                 if negative_count > 0:
+    pass
+    pass
                     print(
                         f"❌ CRITICAL: Found {negative_count} negative values in {col}",
                     )
@@ -1190,15 +1460,23 @@ def load_klines_data(filename):
 
         # Check for zero prices - FAIL FAST if found
         for col in price_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 zero_count = (df[col] == 0).sum()
                 if zero_count > 0:
+    pass
+    pass
                     print(critical("CRITICAL: Found {zero_count} zero values in {col}"))
                     print("Please fix the data quality issues before proceeding.")
                     return pd.DataFrame()
 
         # Check for invalid OHLC relationships - FAIL FAST if found
         if (df["high"] < df["low"]).any():
+    pass
+    pass
             invalid_count = (df["high"] < df["low"]).sum()
             print(invalid("CRITICAL: Found {invalid_count} rows where high < low"))
             print("Please fix the data quality issues before proceeding.")
@@ -1223,6 +1501,8 @@ def load_klines_data(filename):
             return pd.DataFrame()
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after processing"))
             return pd.DataFrame()
 
@@ -1237,13 +1517,21 @@ def load_klines_data(filename):
 
 
 def load_agg_trades_data(filename):
+    pass
+    pass
     """Loads aggregated trades data from a CSV file with strict quality validation."""
     if not os.path.exists(filename):
+    pass
+    pass
         print(missing("CRITICAL: Agg trades data file not found at {filename}"))
         return pd.DataFrame()
 
     try:
         # Read CSV with more robust timestamp parsing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = pd.read_csv(filename, low_memory=False)
 
         # Convert timestamp with flexible parsing
@@ -1257,11 +1545,15 @@ def load_agg_trades_data(filename):
         initial_rows = len(df)
         df = df.dropna(subset=["timestamp"])
         if len(df) < initial_rows:
+    pass
+    pass
             print(
                 f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
             )
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after timestamp processing"))
             return pd.DataFrame()
 
@@ -1272,7 +1564,11 @@ def load_agg_trades_data(filename):
         # Ensure numeric columns are actually numeric
         numeric_cols = ["price", "quantity"]
         for col in numeric_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 # Convert to numeric, but don't fill NaN values
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -1280,6 +1576,8 @@ def load_agg_trades_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_nan} NaN values in agg_trades data: {nan_counts.to_dict()}",
             )
@@ -1290,6 +1588,8 @@ def load_agg_trades_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_inf} infinite values in agg_trades data: {inf_counts.to_dict()}",
             )
@@ -1298,9 +1598,15 @@ def load_agg_trades_data(filename):
 
         # Check for negative values - FAIL FAST if found
         for col in numeric_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 negative_count = (df[col] < 0).sum()
                 if negative_count > 0:
+    pass
+    pass
                     print(
                         f"❌ CRITICAL: Found {negative_count} negative values in {col}",
                     )
@@ -1308,6 +1614,8 @@ def load_agg_trades_data(filename):
                     return pd.DataFrame()
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after processing"))
             return pd.DataFrame()
 
@@ -1324,13 +1632,21 @@ def load_agg_trades_data(filename):
 
 
 def load_futures_data(filename):
+    pass
+    pass
     """Loads futures data (funding rates) from a CSV file with strict quality validation."""
     if not os.path.exists(filename):
+    pass
+    pass
         print(missing("CRITICAL: Futures data file not found at {filename}"))
         return pd.DataFrame()
 
     try:
         # Read CSV with more robust timestamp parsing
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = pd.read_csv(filename, low_memory=False)
 
         # Convert timestamp with flexible parsing
@@ -1344,11 +1660,15 @@ def load_futures_data(filename):
         initial_rows = len(df)
         df = df.dropna(subset=["timestamp"])
         if len(df) < initial_rows:
+    pass
+    pass
             print(
                 f"⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps",
             )
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after timestamp processing"))
             return pd.DataFrame()
 
@@ -1359,7 +1679,11 @@ def load_futures_data(filename):
         # Ensure numeric columns are actually numeric
         numeric_cols = ["fundingRate"]
         for col in numeric_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 # Convert to numeric, but don't fill NaN values
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -1367,6 +1691,8 @@ def load_futures_data(filename):
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_nan} NaN values in futures data: {nan_counts.to_dict()}",
             )
@@ -1377,6 +1703,8 @@ def load_futures_data(filename):
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
+    pass
+    pass
             print(
                 f"❌ CRITICAL: Found {total_inf} infinite values in futures data: {inf_counts.to_dict()}",
             )
@@ -1384,6 +1712,8 @@ def load_futures_data(filename):
             return pd.DataFrame()
 
         if df.empty:
+    pass
+    pass
             print(critical("CRITICAL: No valid data after processing"))
             return pd.DataFrame()
 
@@ -1398,6 +1728,8 @@ def load_futures_data(filename):
 
 
 def simulate_order_book_data(current_price):
+    pass
+    pass
     """Simulates real-time order book data for demonstration."""
     simulated_bids = [
         [current_price - 0.1, 5],
@@ -1427,6 +1759,8 @@ def simulate_order_book_data(current_price):
 
 
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
+    pass
+    pass
     """Get standardized column names for OHLCV data."""
     close_col = "Close" if "Close" in klines_df.columns else "close"
     high_col = "High" if "High" in klines_df.columns else "high"
@@ -1527,6 +1861,8 @@ def _detect_peaks_with_prominence(
     )
 
     for i in hvn_indices:
+    pass
+    pass
         level = volume_profile.index[i]
         hvn_levels.append(level)
         volume_at_level = volume_profile.iloc[i]
@@ -1564,13 +1900,19 @@ def _detect_peaks_with_percentiles(
     ]
 
     for percentile in percentiles:
+    pass
+    pass
         volume_threshold = volume_profile.quantile(percentile)
         high_volume_levels = volume_profile[
             volume_profile > volume_threshold
         ].index.tolist()
 
         for level in high_volume_levels:
+    pass
+    pass
             if level not in hvn_levels:
+    pass
+    pass
                 hvn_levels.append(level)
                 volume_at_level = volume_profile.loc[level]
                 total_volume = volume_profile.sum()
@@ -1585,6 +1927,8 @@ def _detect_peaks_with_percentiles(
 
 
 def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    pass
+    pass
     """Detect local maxima using multiple window sizes."""
     hvn_levels = []
     hvn_strengths = {}
@@ -1594,9 +1938,15 @@ def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]
     window_sizes = [1, 2, 3, 4, 5]
 
     for window_size in window_sizes:
+    pass
+    pass
         for i in range(window_size, len(volume_profile) - window_size):
+    pass
+    pass
             is_maximum = True
             for j in range(1, window_size + 1):
+    pass
+    pass
                 if (
                     volume_profile.iloc[i] <= volume_profile.iloc[i - j]
                     or volume_profile.iloc[i] <= volume_profile.iloc[i + j]
@@ -1605,14 +1955,20 @@ def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]
                     break
 
             if is_maximum:
+    pass
+    pass
                 local_maxima_indices.append(i)
 
     # Remove duplicates and add levels
     local_maxima_indices = list(set(local_maxima_indices))
 
     for i in local_maxima_indices:
+    pass
+    pass
         level = volume_profile.index[i]
         if level not in hvn_levels:
+    pass
+    pass
             hvn_levels.append(level)
             volume_at_level = volume_profile.iloc[i]
             total_volume = volume_profile.sum()
@@ -1623,6 +1979,8 @@ def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]
 
 
 def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    pass
+    pass
     """Add levels based on volume distribution."""
     hvn_levels = []
     hvn_strengths = {}
@@ -1633,7 +1991,11 @@ def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, 
     ).index.tolist()
 
     for level in top_volume_levels:
+    pass
+    pass
         if level not in hvn_levels:
+    pass
+    pass
             hvn_levels.append(level)
             volume_at_level = volume_profile.loc[level]
             total_volume = volume_profile.sum()
@@ -1644,6 +2006,8 @@ def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, 
 
 
 def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
+    pass
+    pass
     """Add levels at regular intervals across the price range."""
     hvn_levels = []
     hvn_strengths = {}
@@ -1653,9 +2017,13 @@ def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, floa
     interval = price_range / interval_count
 
     for i in range(interval_count):
+    pass
+    pass
         target_price = volume_profile.index.min() + (i + 0.5) * interval
         closest_level = min(volume_profile.index, key=lambda x: abs(x - target_price))
         if closest_level not in hvn_levels:
+    pass
+    pass
             hvn_levels.append(closest_level)
             volume_at_level = volume_profile.loc[closest_level]
             total_volume = volume_profile.sum()
@@ -1674,6 +2042,8 @@ def _ensure_minimum_levels(
     all_levels = existing_levels.copy()
 
     if len(all_levels) < min_levels:
+    pass
+    pass
         # Add remaining levels with lower strength
         existing_prices = {level for level, _ in all_levels}
         remaining_levels = [
@@ -1686,6 +2056,8 @@ def _ensure_minimum_levels(
         remaining_levels.sort(key=lambda x: x[1], reverse=True)
 
         for level, volume_at_level in remaining_levels[: min_levels - len(all_levels)]:
+    pass
+    pass
             total_volume = volume_profile.sum()
             strength = min(volume_at_level / total_volume * 40, 0.6)
             all_levels.append((level, strength))
@@ -1701,12 +2073,18 @@ def _consolidate_hvn_results(
     # Remove duplicates and sort by strength
     unique_levels = {}
     for level, strength in all_levels:
+    pass
+    pass
         if level not in unique_levels or strength > unique_levels[level]:
+    pass
+    pass
             unique_levels[level] = strength
 
     # Create final results
     hvn_results = []
     for level, strength in unique_levels.items():
+    pass
+    pass
         hvn_results.append(
             {
                 "price": level,
@@ -1723,6 +2101,8 @@ def _consolidate_hvn_results(
 
 
 def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
+    pass
+    pass
     """
     Calculates Volume Profile (HVNs, LVNs, POC) for the given price range.
     Uses 'High', 'Low', 'Volume' from klines data.
@@ -1731,6 +2111,8 @@ def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
     :return: dict with 'poc', 'hvn_levels', 'lvn_levels', 'volume_in_bins' (Series with bin midpoints as index)
     """
     if klines_df.empty:
+    pass
+    pass
         return {
             "poc": np.nan,
             "hvn_levels": [],
@@ -1772,6 +2154,8 @@ def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
 
     # Handle flat market case
     if max_price == min_price:
+    pass
+    pass
         return {
             "poc": min_price,
             "hvn_levels": [min_price],
@@ -1816,11 +2200,15 @@ def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
 
 
 def create_dummy_data(filename, data_type, num_records=1000, start_date="2023-01-01"):
+    pass
+    pass
     """
     Creates dummy CSV data for klines, aggregated trades, or futures.
     This function is now centralized in data_utils.
     """
     if os.path.exists(filename):
+    pass
+    pass
         print(f"Dummy data file '{filename}' already exists. Skipping creation.")
         return
 
@@ -1828,6 +2216,8 @@ def create_dummy_data(filename, data_type, num_records=1000, start_date="2023-01
     dates = pd.date_range(start=start_date, periods=num_records, freq="1min")
 
     if data_type == "klines":
+    pass
+    pass
         # Simulate price movement
         price = 1000 + np.cumsum(np.random.randn(num_records))
         df = pd.DataFrame(
@@ -1891,12 +2281,16 @@ def create_dummy_data(filename, data_type, num_records=1000, start_date="2023-01
 
 
 def create_ethusdt_1h_csv():
+    pass
+    pass
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""
 
     # Check if the consolidated klines file exists
     klines_file = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv"
 
     if not os.path.exists(klines_file):
+    pass
+    pass
         print(missing("Klines file not found: {klines_file}"))
         return False
 
@@ -1904,6 +2298,10 @@ def create_ethusdt_1h_csv():
 
     try:
         # Read the consolidated klines data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = pd.read_csv(klines_file)
         print(f"📊 Loaded {len(df)} records")
         print(f"📋 Columns: {list(df.columns)}")
@@ -1913,13 +2311,19 @@ def create_ethusdt_1h_csv():
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
+    pass
+    pass
             print(missing("Missing required columns: {missing_columns}"))
             return False
 
         # Convert timestamp to datetime if it's not already
         if "timestamp" in df.columns:
+    pass
+    pass
             # Check if timestamp is already datetime
             if df["timestamp"].dtype == "object":
+    pass
+    pass
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
             else:
                 # Assume it's milliseconds

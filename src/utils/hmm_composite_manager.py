@@ -23,6 +23,7 @@ from src.utils.logger import system_logger
 
 # Module - level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately
+import _GLOBAL_LOGGED_LOADS: set[str] = set
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
 
@@ -30,6 +31,8 @@ class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger, system_logger.getChild("HMMCompositeManager")
         self._cache: dict[str, dict[str, Any]] = {}  # Simple cache to avoid repeated file checks / loads
         # Use shared global sets so multiple instances do not re - log the same events
@@ -67,21 +70,31 @@ class HMMCompositeManager:
         }
 
     def _check_files_exist(self, file_paths: dict[str, str]) -> tuple[bool, list[str]]:
+    pass
+    pass
         """Check if all required files exist."""
         missing_files: list[str] = []
         all_exist, True
 
         for file_type, file_path in file_paths.items():
+    pass
+    pass
         if not os.path.exists(file_path):
+    pass
+    pass
                 all_exist, False
                 missing_files.append(f"{file_type} ({file_path})")
 
         return all_exist, missing_files
 
     def _cleanup_cache_if_needed(self) -> None:
+    pass
+    pass
         """Clean up cache if it's been too long since last cleanup."""
         current_time, time.time()
         if current_time - self._last_cleanup > self._cleanup_interval:
+    pass
+    pass
         # Remove old cache entries (older than 1 hour)
             cutoff_time, current_time - 3600
             old_keys = [
@@ -90,8 +103,14 @@ class HMMCompositeManager:
         if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
             ]
         for key in old_keys:
+    pass
+    pass
         try:
                     del self._cache[key]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
                     pass
 
@@ -133,9 +152,13 @@ class HMMCompositeManager:
 
         # Return cached DataFrame if already loaded during this run
         if cache_key in self._cache:
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(block_states_path):
+    pass
+    pass
         self.logger.info(
                 f"HMM block states not found for {exchange}_{symbol}_{timeframe}",
             )
@@ -143,9 +166,15 @@ class HMMCompositeManager:
 
         try:
             df, pd.read_parquet(block_states_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
         self.logger.info(
                     f"✅ Loaded HMM block states for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
                 )
@@ -190,14 +219,22 @@ class HMMCompositeManager:
 
         # Return cached DataFrame if already loaded during this run
         if cache_key in self._cache:
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(composite_path):
+    pass
+    pass
             event_key = (
                 f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
             )
         if auto_create:
+    pass
+    pass
         if event_key not in self._logged_events:
+    pass
+    pass
         self.logger.info(
                         f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; will create them",
                     )
@@ -205,6 +242,8 @@ class HMMCompositeManager:
         # Return None to indicate they need to be created
         return None
         if event_key not in self._logged_events:
+    pass
+    pass
         self.logger.info(
                     f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; using meta - only",
                 )
@@ -213,9 +252,15 @@ class HMMCompositeManager:
 
         try:
             df, pd.read_parquet(composite_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
         self.logger.info(
                     f"✅ Loaded HMM composite clusters for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
                 )
@@ -258,18 +303,28 @@ class HMMCompositeManager:
 
         # Return cached meta if already loaded during this run
         if cache_key in self._cache:
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(meta_path):
+    pass
+    pass
         self.logger.info(f"HMM meta not found for {exchange}_{symbol}_{timeframe}")
         return None
 
         try:
         with open(meta_path) as f:
                 meta, json.load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
         self.logger.info(
                     f"✅ Loaded HMM meta for {exchange}_{symbol}_{timeframe}",
                 )
@@ -312,9 +367,13 @@ class HMMCompositeManager:
 
         # Return cached DataFrame if already loaded during this run
         if cache_key in self._cache:
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(intensity_path):
+    pass
+    pass
         self.logger.info(
                 f"HMM intensity not found for {exchange}_{symbol}_{timeframe}",
             )
@@ -322,9 +381,15 @@ class HMMCompositeManager:
 
         try:
             df, pd.read_parquet(intensity_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": df, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
         self.logger.info(
                     f"✅ Loaded HMM intensity for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
                 )
@@ -367,9 +432,13 @@ class HMMCompositeManager:
 
         # Return cached meta if already loaded during this run
         if cache_key in self._cache:
+    pass
+    pass
         return self._cache[cache_key]["data"]  # type: ignore[return - value]
 
         if not os.path.exists(basic_meta_path):
+    pass
+    pass
         self.logger.info(
                 f"HMM basic meta not found for {exchange}_{symbol}_{timeframe}",
             )
@@ -378,9 +447,15 @@ class HMMCompositeManager:
         try:
         with open(basic_meta_path) as f:
                 meta, json.load(f)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache for subsequent calls and log only once per key
         self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
         if cache_key not in self._logged_loads:
+    pass
+    pass
         self.logger.info(
                     f"✅ Loaded HMM basic meta for {exchange}_{symbol}_{timeframe}",
                 )
@@ -424,12 +499,16 @@ class HMMCompositeManager:
         all_exist, missing_files, self._check_files_exist(file_paths)
 
         if all_exist and not force_rerun:
+    pass
+    pass
         self.logger.info(
                 f"✅ All HMM composite cluster files already exist for {exchange}_{symbol}_{timeframe} - skipping creation",
             )
         return True
 
         if not all_exist:
+    pass
+    pass
         self.logger.info(
                 f"⚠️ Some HMM files missing - will create: {', '.join(missing_files)}",
             )
@@ -452,6 +531,8 @@ class HMMCompositeManager:
         )
 
         if success:
+    pass
+    pass
         self.logger.info(
                 f"✅ Successfully created HMM composite clusters for {exchange}_{symbol}_{timeframe}",
             )
@@ -493,6 +574,8 @@ class HMMCompositeManager:
         df, self.load_composite_clusters(exchange, symbol, timeframe, data_dir)
 
         if df is not None and not force_rerun:
+    pass
+    pass
         return df
 
         # If files don't exist or force_rerun is True, create them
@@ -506,6 +589,8 @@ class HMMCompositeManager:
         )
 
         if success:
+    pass
+    pass
         # Try to load the newly created files
         return self.load_composite_clusters(exchange, symbol, timeframe, data_dir)
 
@@ -534,9 +619,17 @@ class HMMCompositeManager:
         file_info: dict[str, Any] = {}
 
         for file_type, file_path in file_paths.items():
+    pass
+    pass
         if os.path.exists(file_path):
+    pass
+    pass
         try:
                     stat, os.stat(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     file_info[file_type] = {
                         "exists": True,
                         "size_bytes": stat.st_size,
@@ -586,6 +679,8 @@ class HMMCompositeManager:
         all_exist, missing_files, self._check_files_exist(file_paths)
 
         if not all_exist:
+    pass
+    pass
             validation_results["valid"] = False
             validation_results["errors"].extend(
                 [f"Missing file: {f}" for f in missing_files],
@@ -593,11 +688,23 @@ class HMMCompositeManager:
 
         # Try to load each file to validate they can be read
         for file_type, file_path in file_paths.items():
+    pass
+    pass
         if os.path.exists(file_path):
+    pass
+    pass
         try:
         if file_type in ["composite_clusters", "block_states", "intensity"]:
+    pass
+    except Exception as e:
+        pass
+    pass
                         df, pd.read_parquet(file_path)
+    except Exception as e:
+        pass
         if df.empty:
+    pass
+    pass
                             validation_results["warnings"].append(
                                 f"{file_type} is empty",
                             )
@@ -627,6 +734,8 @@ class HMMCompositeManager:
             timeframe: Timeframe (optional; if None clears all)
         """
         if exchange is None and symbol is None and timeframe is None:
+    pass
+    pass
         # Fallback implementation for exchange is None and symbol is None and timeframe
         # Clear all cache
         self._cache.clear()
@@ -635,17 +744,31 @@ class HMMCompositeManager:
         # Clear specific cache entries
             keys_to_remove: list[str] = []
         for key in list(self._cache.keys()):
+    pass
+    pass
         if exchange and exchange not in key:
+    pass
+    pass
                     continue
         if symbol and symbol not in key:
+    pass
+    pass
                     continue
         if timeframe and timeframe not in key:
+    pass
+    pass
                     continue
                 keys_to_remove.append(key)
 
         for key in keys_to_remove:
+    pass
+    pass
         try:
                     del self._cache[key]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception:
                     pass
 
@@ -654,6 +777,8 @@ class HMMCompositeManager:
             )
 
     def get_cache_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get cache statistics.
 
@@ -679,9 +804,13 @@ class HMMCompositeManager:
 _hmm_composite_manager: HMMCompositeManager | None, None
 
 def get_hmm_composite_manager() -> HMMCompositeManager:
+    pass
+    pass
     """Get the global HMM composite manager instance."""
     global _hmm_composite_manager
     if _hmm_composite_manager is None:
+    pass
+    pass
         # Fallback implementation for _hmm_composite_manager
         _hmm_composite_manager, HMMCompositeManager()
     return _hmm_composite_manager

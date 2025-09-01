@@ -24,17 +24,21 @@ from .efficiency_optimizer import EfficiencyOptimizer
 from .evaluation_engine import AdvancedEvaluationEngine as EvaluationEngine
 from .hyperparameter_optimization_config import HyperparameterOptimizationConfig
 from .optimized_optuna_optimization import (
+import AdvancedOptunaManager as OptimizedOptunaOptimization,
     AdvancedOptunaManager as OptimizedOptunaOptimization,
 )
 from .step17_probabilistic_bayesian_optimization import (
+import Step17ProbabilisticBayesianOptimization,
     Step17ProbabilisticBayesianOptimization,
     create_step17_probabilistic_bayesian_optimization,
 )
 from .comprehensive_parameter_integration import (
+import ComprehensiveParameterIntegration,
     ComprehensiveParameterIntegration,
     create_comprehensive_parameter_integration,
 )
 from .optimized_step17_implementation import (
+import HierarchicalOptimizer,
     HierarchicalOptimizer,
     IntelligentParameterPruner,
     AdaptiveTrialAllocator,
@@ -42,6 +46,7 @@ from .optimized_step17_implementation import (
     create_hierarchical_optimizer,
 )
 from .advanced_optimization_engine import (
+import MultiObjectiveParetoOptimizer,
     MultiObjectiveParetoOptimizer,
     CrossValidationPruner,
     EnsembleParameterOptimizer,

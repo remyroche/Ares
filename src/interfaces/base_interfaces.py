@@ -98,14 +98,20 @@ class IStateManager(ABC):
 
     @abstractmethod
     def get_state(self, key: str) -> Any:
+    pass
+    pass
         """Get state value"""
 
     @abstractmethod
     def set_state(self, key: str, value: Any) -> None:
+    pass
+    pass
         """Set state value"""
 
     @abstractmethod
     def get_state_if_not_exists(self, key: str, default_value: Any) -> Any:
+    pass
+    pass
         # default_value parameter used in the method implementation
         """Get state value or set default if not exists"""
 
@@ -135,10 +141,14 @@ class IEventBus(ABC):
 
     @abstractmethod
     def subscribe(self, event_type: str, callback) -> None:
+    pass
+    pass
         """Subscribe to an event type"""
 
     @abstractmethod
     def unsubscribe(self, event_type: str, callback) -> None:
+    pass
+    pass
         """Unsubscribe from an event type"""
 
 
@@ -258,14 +268,20 @@ class IModelManager(ABC):
 
     @abstractmethod
     def get_analyst(self) -> IAnalyst:
+    pass
+    pass
         """Get analyst instance"""
 
     @abstractmethod
     def get_strategist(self) -> IStrategist:
+    pass
+    pass
         """Get strategist instance"""
 
     @abstractmethod
     def get_tactician(self) -> ITactician:
+    pass
+    pass
         """Get tactician instance"""
 
     @abstractmethod

@@ -22,6 +22,7 @@ from src.training.multi_objective_optimizer import MultiObjectiveOptimizer  # no
 from src.training.optimized_backtester import OptimizedBacktester  # noqa: E402
 
 # Configure logging
+import logging.basicConfig
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -30,11 +31,19 @@ logger = logging.getLogger(__name__)
 
 
 def safe_call(func):
+    pass
+    pass
     """Decorator to catch and log exceptions for demo methods."""
 
     def wrapper(*args, **kwargs):
+    pass
+    pass
         try:
             return func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         except Exception as exc:  # pragma: no cover - demonstration guard
             logger.error("Error in %s: %s", func.__name__, exc, exc_info=True)
             return None
@@ -46,6 +55,8 @@ class ConfigurationUsageExample:
     """Example class demonstrating configuration usage"""
 
     def __init__(self) -> None:
+    pass
+    pass
         self.config: Dict[str, Any] = CONFIG
         self.hpo_config: Dict[str, Any] = CONFIG["hyperparameter_optimization"]
         self.comp_config: Dict[str, Any] = CONFIG["computational_optimization"]
@@ -59,7 +70,11 @@ class ConfigurationUsageExample:
             "computational_optimization",
         ]
         for section in required_sections:
+    pass
+    pass
             if section not in self.config:
+    pass
+    pass
                 msg = f"Missing required configuration section: {section}"
                 raise ValueError(msg)
 
@@ -86,19 +101,23 @@ class ConfigurationUsageExample:
 
     @safe_call
     def print_configuration_summary(self) -> None:
+    pass
+    pass
         """Print a summary of the current configuration"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("CONFIGURATION SUMMARY")
         print("=" * 60)
 
         # Hyperparameter Optimization Summary
-        print("\n📊 HYPERPARAMETER OPTIMIZATION:")
+        print("\\\n📊 HYPERPARAMETER OPTIMIZATION:")
         hpo_config = self.hpo_config
 
         print(
             f"  Multi-Objective: {'✅ Enabled' if hpo_config['multi_objective']['enabled'] else '❌ Disabled'}",
         )
         if hpo_config["multi_objective"]["enabled"]:
+    pass
+    pass
             objectives = hpo_config["multi_objective"]["objectives"]
             weights = hpo_config["multi_objective"]["weights"]
             print(f"    Objectives: {objectives}")
@@ -108,6 +127,8 @@ class ConfigurationUsageExample:
             f"  Bayesian: {'✅ Enabled' if hpo_config['bayesian_optimization']['enabled'] else '❌ Disabled'}",
         )
         if hpo_config["bayesian_optimization"]["enabled"]:
+    pass
+    pass
             bayesian = hpo_config["bayesian_optimization"]
             print(f"    Strategy: {bayesian['sampling_strategy']}")
             print(f"    Max Trials: {bayesian['max_trials']}")
@@ -117,19 +138,23 @@ class ConfigurationUsageExample:
             f"  Adaptive: {'✅ Enabled' if hpo_config['adaptive_optimization']['enabled'] else '❌ Disabled'}",
         )
         if hpo_config["adaptive_optimization"]["enabled"]:
+    pass
+    pass
             regimes = list(
                 hpo_config["adaptive_optimization"]["regime_specific_constraints"].keys()
             )
             print(f"    Regimes: {regimes}")
 
         # Computational Optimization Summary
-        print("\n⚡ COMPUTATIONAL OPTIMIZATION:")
+        print("\\\n⚡ COMPUTATIONAL OPTIMIZATION:")
         comp_config = self.comp_config
 
         print(
             f"  Caching: {'✅ Enabled' if comp_config['caching']['enabled'] else '❌ Disabled'}",
         )
         if comp_config["caching"]["enabled"]:
+    pass
+    pass
             print(f"    Max Cache Size: {comp_config['caching']['max_cache_size']}")
             print(f"    Cache TTL: {comp_config['caching']['cache_ttl']}s")
 
@@ -137,6 +162,8 @@ class ConfigurationUsageExample:
             f"  Parallelization: {'✅ Enabled' if comp_config['parallelization']['enabled'] else '❌ Disabled'}",
         )
         if comp_config["parallelization"]["enabled"]:
+    pass
+    pass
             print(f"    Max Workers: {comp_config['parallelization']['max_workers']}")
             print(f"    Chunk Size: {comp_config['parallelization']['chunk_size']}")
 
@@ -144,6 +171,8 @@ class ConfigurationUsageExample:
             f"  Memory Management: {'✅ Enabled' if comp_config['memory_management']['enabled'] else '❌ Disabled'}",
         )
         if comp_config["memory_management"]["enabled"]:
+    pass
+    pass
             print(
                 f"    Memory Threshold: {comp_config['memory_management']['memory_threshold']*100}%",
             )
@@ -155,26 +184,32 @@ class ConfigurationUsageExample:
             f"  Early Stopping: {'✅ Enabled' if comp_config['early_stopping']['enabled'] else '❌ Disabled'}",
         )
         if comp_config["early_stopping"]["enabled"]:
+    pass
+    pass
             print(f"    Patience: {comp_config['early_stopping']['patience']}")
             print(f"    Min Trials: {comp_config['early_stopping']['min_trials']}")
 
     @safe_call
     def demonstrate_multi_objective_config(self) -> None:
+    pass
+    pass
         """Demonstrate multi-objective optimization configuration usage"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("MULTI-OBJECTIVE OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
         multi_obj_config = self.hpo_config["multi_objective"]
 
         if multi_obj_config["enabled"]:
+    pass
+    pass
             print("✅ Multi-objective optimization is enabled")
 
             # Access objectives and weights
             objectives = multi_obj_config["objectives"]
             weights = multi_obj_config["weights"]
 
-            print(f"\n📈 Objectives: {objectives}")
+            print(f"\\\n📈 Objectives: {objectives}")
             print(f"⚖️  Weights: {weights}")
 
             # Calculate weighted score example
@@ -186,8 +221,10 @@ class ConfigurationUsageExample:
 
             weighted_score = sum(example_scores[obj] * weights[obj] for obj in objectives)
 
-            print("\n📊 Example weighted score calculation:")
+            print("\\\n📊 Example weighted score calculation:")
             for obj in objectives:
+    pass
+    pass
                 print(
                     f"  {obj}: {example_scores[obj]} × {weights[obj]} = {example_scores[obj] * weights[obj]:.3f}",
                 )
@@ -195,37 +232,49 @@ class ConfigurationUsageExample:
 
             # Risk constraints
             risk_constraints = multi_obj_config["risk_constraints"]
-            print("\n🛡️  Risk Constraints:")
+            print("\\\n🛡️  Risk Constraints:")
             for constraint, value in risk_constraints.items():
+    pass
+    pass
                 print(f"  {constraint}: {value}")
         else:
             print(warning("Multi-objective optimization is disabled"))
 
     @safe_call
     def demonstrate_bayesian_config(self) -> None:
+    pass
+    pass
         """Demonstrate Bayesian optimization configuration usage"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("BAYESIAN OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
         bayesian_config = self.hpo_config["bayesian_optimization"]
 
         if bayesian_config["enabled"]:
+    pass
+    pass
             print("✅ Bayesian optimization is enabled")
 
-            print(f"\n🔍 Sampling Strategy: {bayesian_config['sampling_strategy']}")
+            print(f"\\\n🔍 Sampling Strategy: {bayesian_config['sampling_strategy']}")
             print(f"📊 Max Trials: {bayesian_config['max_trials']}")
             print(f"⏳ Patience: {bayesian_config['patience']}")
             print(f"🎯 Acquisition Function: {bayesian_config['acquisition_function']}")
 
             # Search spaces
             search_spaces = self.hpo_config["search_spaces"]
-            print("\n🔍 Search Spaces:")
+            print("\\\n🔍 Search Spaces:")
 
             for space_name, space_config in search_spaces.items():
-                print(f"\n  {space_name.upper()}:")
+    pass
+    pass
+                print(f"\\\n  {space_name.upper()}:")
                 for param_name, param_config in space_config.items():
+    pass
+    pass
                     if isinstance(param_config, dict) and "low" in param_config:
+    pass
+    pass
                         print(
                             f"    {param_name}: {param_config['low']} to {param_config['high']} ({param_config['type']})",
                         )
@@ -238,37 +287,49 @@ class ConfigurationUsageExample:
 
     @safe_call
     def demonstrate_adaptive_config(self) -> None:
+    pass
+    pass
         """Demonstrate adaptive optimization configuration usage"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("ADAPTIVE OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
         adaptive_config = self.hpo_config["adaptive_optimization"]
 
         if adaptive_config["enabled"]:
+    pass
+    pass
             print("✅ Adaptive optimization is enabled")
 
             # Regime detection settings
             regime_detection = adaptive_config["regime_detection"]
-            print("\n🎯 Regime Detection Settings:")
+            print("\\\n🎯 Regime Detection Settings:")
             for setting, value in regime_detection.items():
+    pass
+    pass
                 print(f"  {setting}: {value}")
 
             # Regime-specific constraints
             regime_constraints = adaptive_config["regime_specific_constraints"]
-            print("\n📊 Regime-Specific Constraints:")
+            print("\\\n📊 Regime-Specific Constraints:")
 
             for regime, constraints in regime_constraints.items():
-                print(f"\n  {regime.upper()} REGIME:")
+    pass
+    pass
+                print(f"\\\n  {regime.upper()} REGIME:")
                 for constraint_name, constraint_range in constraints.items():
+    pass
+    pass
                     print(f"    {constraint_name}: {constraint_range}")
         else:
             print(warning("Adaptive optimization is disabled"))
 
     @safe_call
     def demonstrate_computational_config(self) -> None:
+    pass
+    pass
         """Demonstrate computational optimization configuration usage"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("COMPUTATIONAL OPTIMIZATION CONFIGURATION")
         print("=" * 60)
 
@@ -277,6 +338,8 @@ class ConfigurationUsageExample:
         # Caching
         caching_config = comp_config["caching"]
         if caching_config["enabled"]:
+    pass
+    pass
             print("✅ Caching is enabled")
             print(f"  Max cache size: {caching_config['max_cache_size']} entries")
             print(f"  Cache TTL: {caching_config['cache_ttl']} seconds")
@@ -286,40 +349,48 @@ class ConfigurationUsageExample:
         # Parallelization
         parallel_config = comp_config["parallelization"]
         if parallel_config["enabled"]:
-            print("\n✅ Parallelization is enabled")
+    pass
+    pass
+            print("\\\n✅ Parallelization is enabled")
             print(f"  Max workers: {parallel_config['max_workers']}")
             print(f"  Chunk size: {parallel_config['chunk_size']}")
         else:
-            print("\n❌ Parallelization is disabled")
+            print("\\\n❌ Parallelization is disabled")
 
         # Memory management
         memory_config = comp_config["memory_management"]
         if memory_config["enabled"]:
-            print("\n✅ Memory management is enabled")
+    pass
+    pass
+            print("\\\n✅ Memory management is enabled")
             print(f"  Memory threshold: {memory_config['memory_threshold']*100}%")
             print(
                 f"  Cleanup frequency: {memory_config['cleanup_frequency']} operations",
             )
         else:
-            print("\n❌ Memory management is disabled")
+            print("\\\n❌ Memory management is disabled")
 
         # Progressive evaluation
         progressive_config = comp_config["progressive_evaluation"]
         if progressive_config["enabled"]:
-            print("\n✅ Progressive evaluation is enabled")
+    pass
+    pass
+            print("\\\n✅ Progressive evaluation is enabled")
             stages = progressive_config["stages"]
             print("  Stages:")
             for i, stage in enumerate(stages, 1):
+    pass
+    pass
                 print(
                     f"    Stage {i}: {stage['data_ratio']*100}% data, weight {stage['weight']}",
                 )
         else:
-            print("\n❌ Progressive evaluation is disabled")
+            print("\\\n❌ Progressive evaluation is disabled")
 
     @safe_call
     async def demonstrate_optimization_usage(self) -> None:
         """Demonstrate how to use the configuration in actual optimization"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("OPTIMIZATION USAGE EXAMPLES")
         print("=" * 60)
 
@@ -327,9 +398,13 @@ class ConfigurationUsageExample:
         mock_market_data: Dict[str, Any] = {"symbol": "ETHUSDT", "data": []}
 
         # Example 1: Multi-objective optimization
-        print("\n📊 Example 1: Multi-Objective Optimization")
+        print("\\\n📊 Example 1: Multi-Objective Optimization")
         try:
             _moo = MultiObjectiveOptimizer(config=self.hpo_config, market_data=mock_market_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print("✅ Multi-objective optimizer initialized successfully")
             print("  Configuration loaded from config file")
             print("  Objectives: Sharpe ratio, Win rate, Profit factor")
@@ -342,11 +417,15 @@ class ConfigurationUsageExample:
             )
 
         # Example 2: Bayesian optimization
-        print("\n🔍 Example 2: Bayesian Optimization")
+        print("\\\n🔍 Example 2: Bayesian Optimization")
         try:
             _bayes = AdvancedBayesianOptimizer(
                 config=self.hpo_config["bayesian_optimization"],
                 search_space=self.hpo_config["search_spaces"],
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             print("✅ Bayesian optimizer initialized successfully")
             print(
@@ -359,9 +438,13 @@ class ConfigurationUsageExample:
             print(initialization_error(f"Error initializing Bayesian optimizer: {exc}"))
 
         # Example 3: Computational optimization
-        print("\n⚡ Example 3: Computational Optimization")
+        print("\\\n⚡ Example 3: Computational Optimization")
         try:
             _bt = OptimizedBacktester(market_data=mock_market_data, config=self.comp_config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             print("✅ Optimized backtester initialized successfully")
             print(
                 f"  Caching: {'Enabled' if self.comp_config['caching']['enabled'] else 'Disabled'}",
@@ -377,13 +460,15 @@ class ConfigurationUsageExample:
 
     @safe_call
     def demonstrate_configuration_modification(self) -> None:
+    pass
+    pass
         """Demonstrate how to modify configuration settings"""
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("CONFIGURATION MODIFICATION EXAMPLES")
         print("=" * 60)
 
         # Example: Modify Bayesian optimization settings
-        print("\n🔧 Example: Modifying Bayesian Optimization Settings")
+        print("\\\n🔧 Example: Modifying Bayesian Optimization Settings")
 
         # Create a copy of the configuration for modification
         modified_config = dict(self.hpo_config)
@@ -406,7 +491,7 @@ class ConfigurationUsageExample:
         print(f"  Strategy: {old_strategy} → {bayesian_config['sampling_strategy']}")
 
         # Example: Modify computational optimization settings
-        print("\n⚡ Example: Modifying Computational Optimization Settings")
+        print("\\\n⚡ Example: Modifying Computational Optimization Settings")
 
         modified_comp_config = dict(self.comp_config)
 
@@ -433,12 +518,16 @@ class ConfigurationUsageExample:
         )
 
     def run_all_demonstrations(self) -> bool:
+    pass
+    pass
         """Run all configuration demonstrations"""
         print("🚀 Starting Configuration Usage Demonstrations")
         print("=" * 60)
 
         # Validate configuration
         if not self.validate_configuration():
+    pass
+    pass
             print(failed("Configuration validation failed. Exiting."))
             return False
 
@@ -457,7 +546,7 @@ class ConfigurationUsageExample:
         # Demonstrate configuration modification
         self.demonstrate_configuration_modification()
 
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("✅ All demonstrations completed successfully!")
         print("=" * 60)
 
@@ -465,20 +554,28 @@ class ConfigurationUsageExample:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function to run the configuration usage example"""
     try:
         example = ConfigurationUsageExample()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = example.run_all_demonstrations()
 
         if success:
-            print("\n🎉 Configuration usage demonstration completed successfully!")
-            print("\n📚 Next steps:")
+    pass
+    pass
+            print("\\\n🎉 Configuration usage demonstration completed successfully!")
+            print("\\\n📚 Next steps:")
             print("  1. Review the configuration settings in src/config.py")
             print("  2. Modify settings based on your requirements")
             print("  3. Use the configuration in your optimization scripts")
             print("  4. Monitor performance and adjust settings as needed")
         else:
-            print("\n❌ Configuration usage demonstration failed!")
+            print("\\\n❌ Configuration usage demonstration failed!")
             sys.exit(1)
     except Exception as exc:  # pragma: no cover - defensive CLI wrapper
         print(error(f"Error running configuration usage example: {exc}"))
@@ -486,4 +583,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

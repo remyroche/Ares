@@ -20,6 +20,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -49,6 +50,7 @@ from src.training.steps.step06_feature_engineering_validator import run_validato
 from src.training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 
 
+import class Steps1To7ComprehensiveExecutor:
 class Steps1To7ComprehensiveExecutor:
     """
     Comprehensive executor for steps 1-7 with enhanced data quality management.
@@ -63,6 +65,8 @@ class Steps1To7ComprehensiveExecutor:
     """
 
     def __init__(self, config: Dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("Steps1To7Executor")
         self.pipeline_state = {}
@@ -101,8 +105,14 @@ class Steps1To7ComprehensiveExecutor:
         self.logger.info("🔧 Initializing all pipeline steps...")
 
         for step_name, step_instance in self.steps.items():
+    pass
+    pass
             try:
                 self.logger.info(f"🔧 Initializing {step_name}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 await step_instance.initialize()
                 self.logger.info(f"✅ {step_name} initialized successfully")
             except Exception as e:
@@ -124,13 +134,23 @@ class Steps1To7ComprehensiveExecutor:
 
         try:
             if data is None:
+    pass
+    except Exception as e:
+        pass
+    pass
                 validation_result["compatible"] = False
                 validation_result["issues"].append("Data is None")
                 return validation_result
 
+    except Exception as e:
+        pass
             if isinstance(data, pd.DataFrame):
+    pass
+    pass
                 # Check DataFrame compatibility
                 if data.empty:
+    pass
+    pass
                     validation_result["compatible"] = False
                     validation_result["issues"].append("DataFrame is empty")
 
@@ -138,22 +158,30 @@ class Steps1To7ComprehensiveExecutor:
                 required_columns = self._get_required_columns_for_step(step_name)
                 missing_columns = [col for col in required_columns if col not in data.columns]
                 if missing_columns:
+    pass
+    pass
                     validation_result["compatible"] = False
                     validation_result["issues"].append(f"Missing required columns: {missing_columns}")
 
                 # Check data types
                 type_issues = self._validate_data_types(data, step_name)
                 if type_issues:
+    pass
+    pass
                     validation_result["warnings"].extend(type_issues)
 
                 # Check temporal indexing
                 index_issues = self._validate_temporal_index(data, step_name)
                 if index_issues:
+    pass
+    pass
                     validation_result["issues"].extend(index_issues)
 
                 # Check for null values
                 null_counts = data.isnull().sum()
                 if null_counts.sum() > 0:
+    pass
+    pass
                     validation_result["warnings"].append(f"Found null values: {null_counts.to_dict()}")
 
             elif isinstance(data, dict):
@@ -161,6 +189,8 @@ class Steps1To7ComprehensiveExecutor:
                 required_keys = self._get_required_keys_for_step(step_name)
                 missing_keys = [key for key in required_keys if key not in data]
                 if missing_keys:
+    pass
+    pass
                     validation_result["compatible"] = False
                     validation_result["issues"].append(f"Missing required keys: {missing_keys}")
 
@@ -171,6 +201,8 @@ class Steps1To7ComprehensiveExecutor:
         return validation_result
 
     def _get_required_columns_for_step(self, step_name: str) -> List[str]:
+    pass
+    pass
         """Get required columns for a specific step."""
         column_requirements = {
             "step1": ["timestamp", "open", "high", "low", "close", "volume"],
@@ -185,6 +217,8 @@ class Steps1To7ComprehensiveExecutor:
         return column_requirements.get(step_name, [])
 
     def _get_required_keys_for_step(self, step_name: str) -> List[str]:
+    pass
+    pass
         """Get required keys for a specific step."""
         key_requirements = {
             "step1": ["symbol", "exchange", "timeframe", "data_dir"],
@@ -199,6 +233,8 @@ class Steps1To7ComprehensiveExecutor:
         return key_requirements.get(step_name, [])
 
     def _validate_data_types(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Validate data types for a specific step."""
         issues = []
 
@@ -212,30 +248,48 @@ class Steps1To7ComprehensiveExecutor:
         }
 
         for column, expected_type in expected_types.items():
+    pass
+    pass
             if column in data.columns:
+    pass
+    pass
                 actual_type = str(data[column].dtype)
                 if actual_type != expected_type:
+    pass
+    pass
                     issues.append(f"Column {column}: expected {expected_type}, got {actual_type}")
 
         return issues
 
     def _validate_temporal_index(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Validate temporal indexing for a specific step."""
         issues = []
 
         if "timestamp" in data.columns:
+    pass
+    pass
             # Check if timestamp is sorted
             if not data["timestamp"].is_monotonic_increasing:
+    pass
+    pass
                 issues.append("Timestamp column is not monotonically increasing")
 
             # Check for duplicate timestamps
             if data["timestamp"].duplicated().any():
+    pass
+    pass
                 issues.append("Found duplicate timestamps")
 
             # Check for gaps in data
             if len(data) > 1:
+    pass
+    pass
                 time_diff = data["timestamp"].diff().dropna()
                 if time_diff.std() > time_diff.mean() * 2:
+    pass
+    pass
                     issues.append("Large variations in time intervals detected")
 
         return issues
@@ -251,6 +305,10 @@ class Steps1To7ComprehensiveExecutor:
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Calculate quality score based on various metrics
                 quality_metrics = {}
 
@@ -272,21 +330,33 @@ class Steps1To7ComprehensiveExecutor:
 
                 # Identify issues
                 if completeness < 0.95:
+    pass
+    pass
                     quality_result["issues"].append(f"Low completeness: {completeness:.3f}")
 
                 if consistency_score < 0.8:
+    pass
+    pass
                     quality_result["issues"].append(f"Low consistency: {consistency_score:.3f}")
 
                 if validity_score < 0.9:
+    pass
+    pass
                     quality_result["issues"].append(f"Low validity: {validity_score:.3f}")
 
                 # Suggest improvements
                 if data.isnull().any().any():
+    pass
+    pass
                     quality_result["improvements"].append("Consider imputation for missing values")
 
                 if len(data) < 1000:
+    pass
+    pass
                     quality_result["improvements"].append("Consider collecting more data")
 
+    except Exception as e:
+        pass
         except Exception as e:
             quality_result["passed"] = False
             quality_result["issues"].append(f"Quality assessment error: {str(e)}")
@@ -294,11 +364,19 @@ class Steps1To7ComprehensiveExecutor:
         return quality_result
 
     def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate consistency score for the data."""
         try:
             # Check price relationships
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             price_consistency = 0
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
                 valid_prices = (
                     (data["high"] >= data["low"]) &
                     (data["high"] >= data["open"]) &
@@ -311,6 +389,8 @@ class Steps1To7ComprehensiveExecutor:
             # Check volume consistency
             volume_consistency = 1.0
             if "volume" in data.columns:
+    pass
+    pass
                 volume_consistency = (data["volume"] >= 0).mean()
 
             return (price_consistency + volume_consistency) / 2
@@ -319,12 +399,20 @@ class Steps1To7ComprehensiveExecutor:
             return 0.5
 
     def _calculate_validity_score(self, data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate validity score for the data."""
         try:
             validity_checks = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check for negative prices
             if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
                 price_validity = (
                     (data[["open", "high", "low", "close"]] > 0).all(axis=1)
                 ).mean()
@@ -332,6 +420,8 @@ class Steps1To7ComprehensiveExecutor:
 
             # Check for reasonable price ranges
             if "close" in data.columns:
+    pass
+    pass
                 price_range_validity = (
                     (data["close"] > 0) & (data["close"] < 1e6)
                 ).mean()
@@ -339,6 +429,8 @@ class Steps1To7ComprehensiveExecutor:
 
             # Check for reasonable volumes
             if "volume" in data.columns:
+    pass
+    pass
                 volume_validity = (
                     (data["volume"] >= 0) & (data["volume"] < 1e12)
                 ).mean()
@@ -360,21 +452,33 @@ class Steps1To7ComprehensiveExecutor:
 
         try:
             if isinstance(data, pd.DataFrame):
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Ensure proper data types
                 conversions = self._apply_format_conversions(data, step_name)
                 if conversions:
+    pass
+    pass
                     format_result["conversions_applied"] = conversions
 
                 # Ensure proper indexing
                 index_issues = self._ensure_proper_indexing(data, step_name)
                 if index_issues:
+    pass
+    pass
                     format_result["issues"].extend(index_issues)
 
                 # Ensure column naming consistency
                 naming_issues = self._ensure_column_naming(data, step_name)
                 if naming_issues:
+    pass
+    pass
                     format_result["issues"].extend(naming_issues)
 
+    except Exception as e:
+        pass
         except Exception as e:
             format_result["compatible"] = False
             format_result["issues"].append(f"Format compatibility error: {str(e)}")
@@ -382,13 +486,21 @@ class Steps1To7ComprehensiveExecutor:
         return format_result
 
     def _apply_format_conversions(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Apply format conversions to ensure compatibility."""
         conversions = []
 
         # Convert timestamp to datetime if needed
         if "timestamp" in data.columns and data["timestamp"].dtype != "datetime64[ns]":
+    pass
+    pass
             try:
                 data["timestamp"] = pd.to_datetime(data["timestamp"])
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 conversions.append("Converted timestamp to datetime64[ns]")
             except Exception:
                 pass
@@ -396,9 +508,17 @@ class Steps1To7ComprehensiveExecutor:
         # Convert numeric columns to float64
         numeric_columns = ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
+    pass
+    pass
             if col in data.columns and data[col].dtype != "float64":
+    pass
+    pass
                 try:
                     data[col] = data[col].astype("float64")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     conversions.append(f"Converted {col} to float64")
                 except Exception:
                     pass
@@ -406,22 +526,38 @@ class Steps1To7ComprehensiveExecutor:
         return conversions
 
     def _ensure_proper_indexing(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Ensure proper indexing for the data."""
         issues = []
 
         if "timestamp" in data.columns:
+    pass
+    pass
             # Set timestamp as index if not already
             if data.index.name != "timestamp":
+    pass
+    pass
                 try:
                     data.set_index("timestamp", inplace=True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     issues.append("Set timestamp as index")
                 except Exception:
                     issues.append("Failed to set timestamp as index")
 
             # Sort by timestamp
             if not data.index.is_monotonic_increasing:
+    pass
+    pass
                 try:
                     data.sort_index(inplace=True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     issues.append("Sorted data by timestamp")
                 except Exception:
                     issues.append("Failed to sort data by timestamp")
@@ -429,16 +565,26 @@ class Steps1To7ComprehensiveExecutor:
         return issues
 
     def _ensure_column_naming(self, data: pd.DataFrame, step_name: str) -> List[str]:
+    pass
+    pass
         """Ensure consistent column naming."""
         issues = []
 
         # Standardize column names to lowercase
         expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
         for expected_col in expected_columns:
+    pass
+    pass
             if expected_col not in data.columns:
+    pass
+    pass
                 # Check for case variations
                 for col in data.columns:
+    pass
+    pass
                     if col.lower() == expected_col:
+    pass
+    pass
                         data.rename(columns={col: expected_col}, inplace=True)
                         issues.append(f"Renamed {col} to {expected_col}")
                         break
@@ -462,6 +608,10 @@ class Steps1To7ComprehensiveExecutor:
 
         try:
             # Execute the step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             step_instance = self.steps[step_name]
             step_data = await step_instance.execute(training_input, self.pipeline_state)
 
@@ -473,23 +623,37 @@ class Steps1To7ComprehensiveExecutor:
             step_result["validation_passed"] = validation_result.get("validation_passed", False)
 
             if step_result["validation_passed"]:
+    pass
+    pass
                 # Check data compatibility
                 if "data" in step_data:
+    pass
+    pass
                     compatibility_result = await self.validate_data_compatibility(step_name, step_data["data"])
                     if not compatibility_result["compatible"]:
+    pass
+    pass
                         step_result["warnings"].extend(compatibility_result["issues"])
 
                 # Ensure data quality
                 if "data" in step_data:
+    pass
+    pass
                     quality_result = await self.ensure_data_quality(step_name, step_data["data"])
                     step_result["quality_score"] = quality_result["quality_score"]
                     if not quality_result["passed"]:
+    pass
+    pass
                         step_result["warnings"].extend(quality_result["issues"])
 
                 # Ensure format compatibility
                 if "data" in step_data:
+    pass
+    pass
                     format_result = await self.ensure_format_compatibility(step_name, step_data["data"])
                     if not format_result["compatible"]:
+    pass
+    pass
                         step_result["warnings"].extend(format_result["issues"])
 
                 step_result["success"] = True
@@ -507,6 +671,8 @@ class Steps1To7ComprehensiveExecutor:
             self.execution_timings[step_name] = step_result["execution_time"]
 
             if step_result["success"]:
+    pass
+    pass
                 self.data_quality_scores[step_name] = step_result["quality_score"]
                 self.logger.info(f"✅ {step_name} completed successfully (Quality: {step_result['quality_score']:.3f})")
             else:
@@ -521,6 +687,8 @@ class Steps1To7ComprehensiveExecutor:
 
         # Initialize all steps
         if not await self.initialize_all_steps():
+    pass
+    pass
             return {"success": False, "error": "Failed to initialize steps"}
 
         # Execute steps in order
@@ -528,11 +696,15 @@ class Steps1To7ComprehensiveExecutor:
         step_results = {}
 
         for step_name in step_order:
+    pass
+    pass
             self.logger.info(f"🔄 Executing {step_name}...")
             step_result = await self.execute_step_with_validation(step_name, training_input)
             step_results[step_name] = step_result
 
             if not step_result["success"]:
+    pass
+    pass
                 self.logger.error(f"❌ Pipeline failed at {step_name}")
                 break
 
@@ -555,6 +727,10 @@ class Steps1To7ComprehensiveExecutor:
         """Log comprehensive pipeline execution report."""
         try:
             symbol = training_input.get("symbol", "UNKNOWN")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
 
@@ -600,7 +776,7 @@ async def main():
         "TIMEFRAME": "1m",
         "DATA_DIR": "data_cache",
         "LOOKBACK_DAYS": 1095,
-        "project_version": "1.0.0"
+        "project_version": "1.00"
     }
 
     # Example training input
@@ -617,7 +793,7 @@ async def main():
     result = await executor.execute_pipeline(training_input)
 
     # Print results
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print("PIPELINE EXECUTION RESULTS")
     print("="*80)
     print(f"Overall Success: {'✅' if result['success'] else '❌'}")
@@ -625,17 +801,25 @@ async def main():
     print(f"Average Quality Score: {result['average_quality_score']:.3f}")
     print(f"Errors Encountered: {len(result['errors_encountered'])}")
 
-    print("\nStep Results:")
+    print("\\\nStep Results:")
     for step_name, step_result in result['step_results'].items():
+    pass
+    pass
         status = "✅" if step_result['success'] else "❌"
         quality = f"Quality: {step_result['quality_score']:.3f}" if step_result['quality_score'] > 0 else "N/A"
         print(f"  {step_name}: {status} ({quality}) - {step_result['execution_time']:.2f}s")
 
     if result['errors_encountered']:
-        print("\nErrors:")
+    pass
+    pass
+        print("\\\nErrors:")
         for error in result['errors_encountered']:
+    pass
+    pass
             print(f"  - {error}")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

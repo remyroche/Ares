@@ -20,11 +20,13 @@ from pathlib import Path
 
 from src.training.steps.step1.data_gap_detector import DataGapDetector
 from src.training.steps.step1.missing_data_downloader_and_gap_filler import (
+import MissingDataDownloaderAndGapFiller,
     MissingDataDownloaderAndGapFiller,
 )
 from src.utils.logger import system_logger
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -38,6 +40,8 @@ class AggtradesGapUpdater:
     """Comprehensive tool for updating and fixing aggtrades gaps"""
 
     def __init__(self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"):
+    pass
+    pass
         self.symbol = symbol
         self.exchange = exchange
         self.gap_detector = DataGapDetector()
@@ -53,8 +57,12 @@ class AggtradesGapUpdater:
         # Group gaps by file
         gaps_by_file = {}
         for gap in gaps:
+    pass
+    pass
             file_name = gap["file"]
             if file_name not in gaps_by_file:
+    pass
+    pass
                 gaps_by_file[file_name] = []
             gaps_by_file[file_name].append(gap)
 
@@ -63,6 +71,8 @@ class AggtradesGapUpdater:
         total_gaps = len(gaps)
 
         if gaps_by_file:
+    pass
+    pass
             gaps_per_file = [
                 (file, len(file_gaps)) for file, file_gaps in gaps_by_file.items()
             ]
@@ -70,6 +80,8 @@ class AggtradesGapUpdater:
 
             logger.info("📊 FILES WITH MOST GAPS:")
             for i, (file_name, gap_count) in enumerate(gaps_per_file[:10], 1):
+    pass
+    pass
                 logger.info(f"   {i:2d}. {file_name}: {gap_count} gaps")
 
         return {
@@ -90,6 +102,8 @@ class AggtradesGapUpdater:
         target_gaps = [gap for gap in all_gaps if gap["file"] in target_files]
 
         if not target_gaps:
+    pass
+    pass
             logger.info("✅ No gaps found in specified files")
             return {"success": True, "gaps_fixed": 0, "gaps_failed": 0}
 
@@ -118,11 +132,15 @@ class AggtradesGapUpdater:
         ]
 
         if not target_files:
+    pass
+    pass
             logger.info(f"✅ No files found with ≥{min_gaps} gaps")
             return {"success": True, "gaps_fixed": 0, "gaps_failed": 0}
 
         logger.info(f"🔧 Will fix gaps in {len(target_files)} files:")
         for file_name in target_files:
+    pass
+    pass
             gap_count = analysis["gaps_by_file"][file_name]
             logger.info(f"   • {file_name}: {len(gap_count)} gaps")
 
@@ -136,6 +154,8 @@ class AggtradesGapUpdater:
         all_gaps = self.gap_detector.detect_aggtrades_gaps(self.symbol, self.exchange)
 
         if not all_gaps:
+    pass
+    pass
             logger.info("✅ No gaps found in dataset")
             return {"success": True, "gaps_fixed": 0, "gaps_failed": 0}
 
@@ -204,12 +224,18 @@ async def main():
     before_analysis = await updater.analyze_gaps()
 
     if args.mode == "analyze":
+    pass
+    pass
         logger.info("✅ Analysis complete. Use --mode to perform fixes.")
         return True
 
     # Perform the requested operation
     if args.mode == "specific":
+    pass
+    pass
         if not args.files:
+    pass
+    pass
             logger.error("❌ --files required for specific mode")
             return False
         await updater.fix_specific_files(args.files)
@@ -226,6 +252,8 @@ async def main():
     # Final summary
     logger.info("=" * 80)
     if improvements["improvement_rate"] > EXCELLENT_IMPROVEMENT_THRESHOLD:
+    pass
+    pass
         logger.info("🎉 EXCELLENT: Significant improvement achieved!")
         success = True
     elif improvements["improvement_rate"] > 0:
@@ -240,6 +268,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = asyncio.run(main())
-    print(f"\nScript completed with {'success' if success else 'limited success'}")
+    print(f"\\\nScript completed with {'success' if success else 'limited success'}")
     sys.exit(0 if success else 1)

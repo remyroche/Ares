@@ -68,6 +68,8 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     )
 
     if not trades:
+    pass
+    pass
         print(warning("⚠️ No aggregated trades received from MEXC"))
         return False
 
@@ -81,9 +83,13 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     missing_columns = [col for col in expected_columns if col not in df.columns]
 
     if missing_columns:
+    pass
+    pass
         print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
     # Add missing columns with default values
     for col in missing_columns:
+    pass
+    pass
             df[col] = 0
 
     # Reorder columns to match Binance format
@@ -122,6 +128,8 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
 
     # Check if all required columns are present
     if all(col in df.columns for col in expected_columns):
+    pass
+    pass
         logger.info("✅ All required columns present")
     else:
         print(missing("❌ Missing required columns"))
@@ -129,16 +137,22 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
 
     # Check data types
     if df["p"].dtype in ["float64", "float32"]:
+    pass
+    pass
         logger.info("✅ Price column is numeric")
     else:
         print(warning("⚠️ Price column is not numeric"))
 
     if df["q"].dtype in ["float64", "float32"]:
+    pass
+    pass
         logger.info("✅ Quantity column is numeric")
     else:
         print(warning("⚠️ Quantity column is not numeric"))
 
     if df["m"].dtype == "bool":
+    pass
+    pass
         logger.info("✅ Maker flag column is boolean")
     else:
         print(warning("⚠️ Maker flag column is not boolean"))
@@ -171,6 +185,8 @@ async def main():
     )
 
     if success:
+    pass
+    pass
         logger.info("✅ MEXC aggregated trades download completed successfully!")
         sys.exit(0)
     else:
@@ -178,4 +194,6 @@ async def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from src.utils.centralized_decorators import (
+import performance_monitor,
     performance_monitor,
     PerformanceLevel,
 )
 from src.utils.logger import system_logger
 
 
+import @dataclass
 @dataclass
 class MonitoringComponents:
     metrics_dashboard: Optional["MetricsDashboard"] = None
@@ -31,6 +33,8 @@ class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("MonitoringIntegrationManager")
         self.integration_config = config.get("monitoring_integration", {})

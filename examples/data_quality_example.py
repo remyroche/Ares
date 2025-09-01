@@ -13,11 +13,14 @@ import pandas as pd
 
 # Import the orchestrator
 from src.training.steps.vectorized_labelling_orchestrator import (
+import VectorizedLabellingOrchestrator,
     VectorizedLabellingOrchestrator,
 )
 
 
 def create_test_data_with_nans() -> tuple[pd.DataFrame, pd.DataFrame]:
+    pass
+    pass
     """Create test data with known NaN values for demonstration."""
 
     # Create time index
@@ -84,30 +87,34 @@ async def example_data_quality_assessment():
     success = await orchestrator.initialize()
 
     if not success:
+    pass
+    pass
         print("❌ Failed to initialize orchestrator")
         return
 
     print("✅ Orchestrator initialized successfully")
 
     # 2. Create test data
-    print("\n📊 Creating test data with known NaN values...")
+    print("\\\n📊 Creating test data with known NaN values...")
     price_data, volume_data = create_test_data_with_nans()
 
     print(f"   Price data shape: {price_data.shape}")
     print(f"   Volume data shape: {volume_data.shape}")
 
     # 3. Perform data quality assessment
-    print("\n🔍 Performing data quality assessment...")
+    print("\\\n🔍 Performing data quality assessment...")
     quality_report = await orchestrator.assess_input_data_quality(
         price_data, volume_data,
     )
 
     if "error" in quality_report:
+    pass
+    pass
         print(f"❌ Error: {quality_report['error']}")
         return
 
     # 4. Analyze the results
-    print("\n📋 ANALYSIS RESULTS:")
+    print("\\\n📋 ANALYSIS RESULTS:")
     print("-" * 30)
 
     summary = quality_report.get("summary", {})
@@ -117,15 +124,21 @@ async def example_data_quality_assessment():
     print(f"Severity: {summary.get('severity', 'N/A')}")
 
     # 5. Check specific datasets
-    print("\n📊 DATASET DETAILS:")
+    print("\\\n📊 DATASET DETAILS:")
     print("-" * 20)
 
     for dataset_name, dataset_stats in quality_report.items():
+    pass
+    pass
         if dataset_name in ["summary", "recommendations", "assessment_timestamp"]:
+    pass
+    pass
             continue
 
-        print(f"\n{dataset_name.upper()}:")
+        print(f"\\\n{dataset_name.upper()}:")
         if "error" in dataset_stats:
+    pass
+    pass
             print(f"  ❌ {dataset_stats['error']}")
         else:
             print(f"  Shape: {dataset_stats.get('shape', 'N/A')}")
@@ -137,8 +150,12 @@ async def example_data_quality_assessment():
             # Show columns with NaN values
             columns_with_nans = dataset_stats.get("columns_with_nans", {})
             if columns_with_nans:
+    pass
+    pass
                 print("  Columns with NaN values:")
                 for col, col_stats in columns_with_nans.items():
+    pass
+    pass
                     print(
                         f"    - {col}: {col_stats['nan_count']} NaNs ({col_stats['nan_percentage']:.2f}%)",
                     )
@@ -146,18 +163,24 @@ async def example_data_quality_assessment():
     # 6. Show recommendations
     recommendations = quality_report.get("recommendations", [])
     if recommendations:
-        print("\n💡 RECOMMENDATIONS:")
+    pass
+    pass
+        print("\\\n💡 RECOMMENDATIONS:")
         print("-" * 20)
         for i , rec in enumerate(recommendations, 1):
+    pass
+    pass
             print(f"  {i}. {rec}")
 
     # 7. Demonstrate how to use the results programmatically
-    print("\n🔧 PROGRAMMATIC USAGE:")
+    print("\\\n🔧 PROGRAMMATIC USAGE:")
     print("-" * 25)
 
     # Check if data quality is acceptable
     severity = summary.get("severity", "UNKNOWN")
     if severity in ["EXCELLENT", "GOOD", "ACCEPTABLE"]:
+    pass
+    pass
         print("✅ Data quality is acceptable for processing")
     elif severity == "POOR":
         print("⚠️ Data quality is poor - consider cleaning")
@@ -167,16 +190,20 @@ async def example_data_quality_assessment():
     # Get specific column issues
     price_issues = quality_report.get("price_data", {}).get("columns_with_nans", {})
     if price_issues:
-        print(f"\nPrice data issues found in {len(price_issues)} columns")
+    pass
+    pass
+        print(f"\\\nPrice data issues found in {len(price_issues)} columns")
         for col , stats in price_issues.items():
+    pass
+    pass
             print(f"  - {col}: {stats['nan_count']} missing values")
 
-    print("\n✅ Example completed!")
+    print("\\\n✅ Example completed!")
 
 async def example_with_real_data_loading():
     """Example showing how to integrate with real data loading."""
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("🔍 REAL DATA INTEGRATION EXAMPLE")
     print("=" * 60)
 
@@ -194,6 +221,10 @@ async def example_with_real_data_loading():
         # 1. Load your data (implement based on your data format)
         try:
             # Example for CSV files:
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # price_file = f"{data_path}/{symbol}_{exchange}_price.csv"
             # volume_file = f"{data_path}/{symbol}_{exchange}_volume.csv"
 
@@ -231,9 +262,13 @@ async def example_with_real_data_loading():
         severity = summary.get("severity", "UNKNOWN")
 
         if severity in ["CRITICAL"]:
+    pass
+    pass
             print(f"❌ Data quality is CRITICAL for {symbol}. Skipping processing.")
             return None
         if severity in ["VERY_POOR", "POOR"]:
+    pass
+    pass
             print(
                 f"⚠️ Data quality is {severity} for {symbol}. Proceeding with caution.",
             )
@@ -249,12 +284,14 @@ async def example_with_real_data_loading():
     result = await load_and_assess_data("ETHUSDT", "binance", "/path/to/data")
 
     if result:
-        print("\n✅ Successfully loaded and assessed data")
+    pass
+    pass
+        print("\\\n✅ Successfully loaded and assessed data")
         print(
             f"   Quality score: {result['quality_report']['summary']['data_quality_score']:.1f}/100",
         )
     else:
-        print("\n❌ Failed to load or assess data")
+        print("\\\n❌ Failed to load or assess data")
 
 async def main():
     """Main function to run the examples."""
@@ -267,9 +304,11 @@ async def main():
     # Run the real data integration example
     await example_with_real_data_loading()
 
-    print("\n" + "=" * 50)
+    print("\\\n" + "=" * 50)
     print("✅ All examples completed!")
     print("=" * 50)
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

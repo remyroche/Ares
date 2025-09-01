@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     missing,
@@ -22,10 +23,13 @@ sys.path.insert(0, str(project_root))
 from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
 
+import class Step9TacticianSpecialistTrainingValidator
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         super().__init__("step09_tactician_specialist_training", config)
 
     async def validate(
@@ -55,6 +59,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.validation_results["error_absence"] = error_metrics
 
         if not error_passed:
+    pass
+    pass
         self.print(error("❌ Tactician specialist training step had errors"))
         return False
 
@@ -65,6 +71,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             data_dir,
         )
         if not model_files_passed:
+    pass
+    pass
         self.print(failed("❌ Tactician model files validation failed"))
         return False
 
@@ -75,6 +83,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             data_dir,
         )
         if not performance_passed:
+    pass
+    pass
         self.print(failed("❌ Tactician model performance validation failed"))
         return False
 
@@ -85,6 +95,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             data_dir,
         )
         if not metrics_passed:
+    pass
+    pass
         self.print(failed("❌ Tactician training metrics validation failed"))
         return False
 
@@ -95,6 +107,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             data_dir,
         )
         if not quality_passed:
+    pass
+    pass
         self.print(failed("❌ Tactician model quality validation failed"))
         return False
 
@@ -105,6 +119,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.validation_results["outcome_favorability"] = outcome_metrics
 
         if not outcome_passed:
+    pass
+    pass
         self.logger.warning(
                 "⚠️ Tactician specialist training outcome is not favorable",
             )
@@ -135,15 +151,25 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             ]
 
             missing_files: list[str] = []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         for file_path in expected_files:
+    pass
+    pass
                 file_passed, _file_metrics, self.validate_file_exists(
                     file_path,
                     "tactician_model_files",
                 )
         if not file_passed:
+    pass
+    pass
                     missing_files.append(file_path)
 
         if missing_files:
+    pass
+    pass
         self.print(missing(f"❌ Missing tactician model files: {missing_files}"))
         return False
 
@@ -173,7 +199,13 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if not os.path.exists(history_file):
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Tactician training history file not found: {history_file}",
                 )
@@ -186,10 +218,14 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Extract performance metrics
         if "metrics" in training_history:
+    pass
+    pass
                 metrics, training_history["metrics"]
 
         # Validate accuracy
         if "accuracy" in metrics:
+    pass
+    pass
                     accuracy, metrics["accuracy"]
                     accuracy_passed, accuracy_metrics, self.validate_model_performance(
                         accuracy,
@@ -199,6 +235,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.validation_results["tactician_accuracy"] = accuracy_metrics
 
         if not accuracy_passed:
+    pass
+    pass
         self.logger.error(
                             f"❌ Tactician model accuracy too low: {accuracy:.3f}",
                         )
@@ -206,6 +244,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Validate loss
         if "loss" in metrics:
+    pass
+    pass
                     loss, metrics["loss"]
                     loss_passed, loss_metrics, self.validate_model_performance(
                         0.0,
@@ -215,6 +255,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.validation_results["tactician_loss"] = loss_metrics
 
         if not loss_passed:
+    pass
+    pass
         self.logger.error(
                             f"❌ Tactician model loss too high: {loss:.3f}",
                         )
@@ -222,16 +264,24 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Validate signal prediction accuracy
         if "signal_accuracy" in metrics:
+    pass
+    pass
                     signal_acc, metrics["signal_accuracy"]
         if signal_acc < 0.6:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low signal prediction accuracy: {signal_acc:.3f}",
                         )
 
         # Validate confidence calibration
         if "confidence_calibration" in metrics:
+    pass
+    pass
                     calibration_score, metrics["confidence_calibration"]
         if calibration_score < 0.7:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Poor confidence calibration: {calibration_score:.3f}",
                         )
@@ -261,9 +311,15 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         try:
             history_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
         if not os.path.exists(history_file):
+    pass
+    pass
         self.logger.warning(
                     f"⚠️ Tactician training history file not found: {history_file}",
                 )
@@ -276,16 +332,24 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check for training epochs
         if "epochs" in training_history:
+    pass
+    pass
                 epochs, training_history["epochs"]
         if epochs < 10:
+    pass
+    pass
         self.print(error(f"⚠️ Few training epochs: {epochs}"))
                 elif epochs > 1000:
         self.print(error(f"⚠️ Many training epochs: {epochs}"))
 
         # Check for convergence indicators
         if "converged" in training_history:
+    pass
+    pass
                 converged, training_history["converged"]
         if not converged:
+    pass
+    pass
         self.print(error("⚠️ Tactician model did not converge"))
 
         # Check for overfitting indicators
@@ -305,6 +369,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check for training time
         if "training_time" in training_history:
+    pass
+    pass
                 training_time, training_history["training_time"]
         if training_time > 3600:  # More than 1 hour
         self.logger.warning(
@@ -317,15 +383,23 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check for signal - specific metrics
         if "signal_precision" in training_history:
+    pass
+    pass
                 signal_precision, training_history["signal_precision"]
         if signal_precision < 0.6:
+    pass
+    pass
         self.logger.warning(
                         f"⚠️ Low signal precision: {signal_precision:.3f}",
                     )
 
         if "signal_recall" in training_history:
+    pass
+    pass
                 signal_recall, training_history["signal_recall"]
         if signal_recall < 0.6:
+    pass
+    pass
         self.print(error(f"⚠️ Low signal recall: {signal_recall:.3f}"))
 
         self.logger.info("✅ Tactician training metrics validation passed")
@@ -356,7 +430,13 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                 f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
             )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if os.path.exists(metadata_file):
+    pass
+    pass
                 import json
 
         with open(metadata_file) as f:
@@ -364,14 +444,20 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check model type
         if "model_type" in metadata:
+    pass
+    pass
                     model_type, metadata["model_type"]
         self.logger.info(f"Tactician model type: {model_type}")
 
         # Check model parameters
         if "parameters" in metadata:
+    pass
+    pass
                     params, metadata["parameters"]
                     param_count, len(params)
         if param_count < 100:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Few tactician model parameters: {param_count}",
                         )
@@ -382,6 +468,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check model size
         if "model_size_mb" in metadata:
+    pass
+    pass
                     model_size, metadata["model_size_mb"]
         if model_size > 100:  # More than 100MB
         self.logger.warning(
@@ -394,16 +482,24 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check signal prediction capabilities
         if "signal_prediction_accuracy" in metadata:
+    pass
+    pass
                     signal_acc, metadata["signal_prediction_accuracy"]
         if signal_acc < 0.6:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Low signal prediction accuracy: {signal_acc:.3f}",
                         )
 
         # Check confidence calibration
         if "confidence_calibration_score" in metadata:
+    pass
+    pass
                     calibration_score, metadata["confidence_calibration_score"]
         if calibration_score < 0.7:
+    pass
+    pass
         self.logger.warning(
                             f"⚠️ Poor confidence calibration: {calibration_score:.3f}",
                         )
@@ -412,27 +508,39 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             model_file, f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl"
 
         if os.path.exists(model_file):
+    pass
+    pass
         try:
         with open(model_file, "rb") as f:
                         loaded_artifact, pickle.load(f)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Unwrap common wrappers to get the estimator
                     model, self._unwrap_estimator(loaded_artifact)
 
         # Basic model validation
         if callable(getattr(model, "predict", None)):
+    pass
+    pass
         self.logger.info("✅ Tactician model has predict method")
                     else:
         self.print(missing("❌ Tactician model missing predict method"))
         return False
 
         if callable(getattr(model, "fit", None)):
+    pass
+    pass
         self.logger.info("✅ Tactician model has fit method")
                     else:
         self.print(missing("⚠️ Tactician model missing fit method"))
 
         # Check for signal prediction capabilities
         if hasattr(model, "predict_proba"):
+    pass
+    pass
         self.logger.info(
                             "✅ Tactician model has probability prediction",
                         )
@@ -443,10 +551,16 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 
         # Check model attributes
         if hasattr(model, "feature_importances_"):
+    pass
+    pass
                         importances, getattr(model, "feature_importances_")
         if len(importances) > 0:
+    pass
+    pass
                             non_zero_features, int(np.sum(np.array(importances) > 0))
         if non_zero_features < 5:
+    pass
+    pass
         self.logger.warning(
                                     f"⚠️ Few non - zero feature importances: {non_zero_features}",
                                 )
@@ -465,6 +579,8 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         return False
 
     def _unwrap_estimator(self, artifact: Any) -> Any:
+    pass
+    pass
         """Unwrap a potentially wrapped model artifact to get the estimator.
 
         Supports dict wrappers ('model', 'estimator', 'clf', 'pipeline'),
@@ -473,26 +589,52 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         """
         try:
         if callable(getattr(artifact, "predict", None)):
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return artifact
         if isinstance(artifact, dict):
+    pass
+    pass
         for key in ("model", "estimator", "clf", "pipeline"):
+    pass
+    pass
         if key in artifact:
+    pass
+    pass
                         inner, artifact[key]
         if callable(getattr(inner, "predict", None)):
+    pass
+    pass
         return inner
         if isinstance(inner, dict):
+    pass
+    pass
         for inner_key in ("model", "estimator", "clf"):
+    pass
+    pass
         if inner_key in inner and callable(
                                     getattr(inner[inner_key], "predict", None),
                                 ):
         return inner[inner_key]
         if hasattr(artifact, "best_estimator_"):
+    pass
+    pass
                 inner, getattr(artifact, "best_estimator_", None)
         if callable(getattr(inner, "predict", None)):
+    pass
+    pass
         return inner
         if isinstance(artifact, (list, tuple)) and artifact:
+    pass
+    pass
                 first, artifact[0]
         if callable(getattr(first, "predict", None)):
+    pass
+    pass
         return first
         return artifact
         except Exception:
@@ -522,6 +664,8 @@ async def run_validator(
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio as _asyncio
 
     # Example usage

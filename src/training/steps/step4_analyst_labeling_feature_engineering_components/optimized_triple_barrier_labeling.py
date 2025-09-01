@@ -7,18 +7,26 @@ import numpy as np
 import pandas as pd
 
 from src.utils.centralized_decorators import (
+import guard_dataframe_nulls,
     guard_dataframe_nulls,
     handle_errors,
     with_tracing_span,
 )
 from src.utils.logger import get_logger
 
+import try:
 try:
     import numba  # type: ignore
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
 except Exception:  # pragma: no cover
     numba, None  # type: ignore
 
 if "numba" in globals() and numba is not None:
+    pass
+    pass
     pass  # TODO: Add proper implementation
     @numba.jit(nopython = True, cache = True)
     def _numba_triple_barrier_labels(
@@ -40,12 +48,16 @@ if "numba" in globals() and numba is not None:
         n, close.shape[0]
 
         for i in range(n - 1):
+    pass
+    pass
             entry_price, close[i]
             profit_barrier, entry_price * (1.0 + pt_mult)
             stop_barrier, entry_price * (1.0 - sl_mult)
             end_idx, int(end_idx_arr[i])
 
         if end_idx <= i + 1:
+    pass
+    pass
                 labels[i] = 0  # HOLD - no position
                 profit_pcts[i] = 0.0
                 continue
@@ -54,13 +66,19 @@ if "numba" in globals() and numba is not None:
             profit_pct, 0.0
 
         for j in range(i + 1, end_idx):
+    pass
+    pass
         # Profit check first to match tie handling with vectorized baseline
         if high[j] >= profit_barrier:
+    pass
+    pass
                     lab, 1  # LONG position - price moved up, take profit
         # Calculate actual profit percentage at barrier hit
                     profit_pct, pt_mult
                     break
         if low[j] <= stop_barrier:
+    pass
+    pass
                     lab = -1  # SHORT position - price moved down, take profit
         # Calculate actual loss percentage at barrier hit
                     profit_pct = -sl_mult
@@ -110,6 +128,8 @@ class OptimizedTripleBarrierLabeling:
         self.logger, get_logger("OptimizedTripleBarrierLabeling")
 
         if self.binary_classification:
+    pass
+    pass
         self.logger.info(
                 "🔖 Triple barrier labeling configured for binary classification (BUY / SELL only)",
             )
@@ -150,6 +170,10 @@ class OptimizedTripleBarrierLabeling:
         # Normalize common OHLCV column name variants to lowercase expected by downstream logic
         try:
             rename_map: dict[str, str] = {}
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             canonical_map = {
                 "Open": "open",
                 "High": "high",
@@ -163,9 +187,15 @@ class OptimizedTripleBarrierLabeling:
                 "VOLUME": "volume",
             }
         for original, canonical in canonical_map.items():
+    pass
+    pass
         if original in data.columns and canonical not in data.columns:
+    pass
+    pass
                     rename_map[original] = canonical
         if rename_map:
+    pass
+    pass
                 data, data.rename(columns = rename_map)
         except Exception:
         # Non - fatal: keep going with original columns; required check below will handle
@@ -175,6 +205,8 @@ class OptimizedTripleBarrierLabeling:
         required_columns = ["close", "high", "low"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
+    pass
+    pass
             msg, f"Missing required OHLC columns {missing_columns}; cannot perform labeling"
         with contextlib.suppress(Exception):
         self.logger.error(msg)
@@ -183,6 +215,8 @@ class OptimizedTripleBarrierLabeling:
         labeled_data, data.copy()
         n, len(labeled_data)
         if n < 2:
+    pass
+    pass
             labeled_data["label"] = 0  # Default to hold signal
             labeled_data["potential_profit_pct"] = 0.0  # Default profit percentage
         return labeled_data
@@ -194,8 +228,12 @@ class OptimizedTripleBarrierLabeling:
         idx, labeled_data.index
         use_time_barrier, isinstance(idx, pd.DatetimeIndex)
         if use_time_barrier:
+    pass
+    pass
         # Only trust time barrier if index is strictly increasing without duplicates
         if (not idx.is_monotonic_increasing) or idx.has_duplicates:
+    pass
+    pass
         self.logger.warning(
                     "DatetimeIndex not strictly increasing or has duplicates; disabling time barrier for labeling",
                 )
@@ -205,8 +243,14 @@ class OptimizedTripleBarrierLabeling:
         arange_n, np.arange(n, dtype = np.int64)
         end_by_lookahead, np.minimum(arange_n + 1 + int(self.max_lookahead), n)
         if use_time_barrier:
+    pass
+    pass
         try:
                 idx_ns, idx.view(np.int64)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 delta_ns, np.int64(self.time_barrier_minutes) * np.int64(
                     60_000_000_000,
                 )
@@ -229,6 +273,8 @@ class OptimizedTripleBarrierLabeling:
             and callable(globals().get("_numba_triple_barrier_labels"))
         )
         if use_numba and n >= 512:
+    pass
+    pass
         self.logger.info("⚡ Using Numba - accelerated triple barrier labeling with profit tracking")
             labels, profit_pcts, _numba_triple_barrier_labels(
                 close.astype(np.float64),
@@ -245,12 +291,16 @@ class OptimizedTripleBarrierLabeling:
             profit_pcts, np.zeros(n, dtype = np.float64)
 
         for i in range(n - 1):
+    pass
+    pass
                 entry_price, close[i]
                 profit_barrier, entry_price * (1.0 + pt_mult)
                 stop_barrier, entry_price * (1.0 - sl_mult)
                 end_idx, int(end_idx_arr[i])
 
         if end_idx <= i + 1:
+    pass
+    pass
                     labels[i] = 0
                     profit_pcts[i] = 0.0
                     continue
@@ -261,22 +311,30 @@ class OptimizedTripleBarrierLabeling:
                 stop_hits, np.where(win_low <= stop_barrier)[0]
 
         if profit_hits.size == 0 and stop_hits.size == 0:
+    pass
+    pass
                     labels[i] = 0
                     profit_pcts[i] = 0.0
                     continue
 
         if profit_hits.size == 0:
+    pass
+    pass
                     labels[i] = -1
                     profit_pcts[i] = -sl_mult  # SHORT position - stop loss hit
                     continue
 
         if stop_hits.size == 0:
+    pass
+    pass
                     labels[i] = 1
                     profit_pcts[i] = pt_mult  # LONG position - profit take hit
                     continue
 
         # Both barriers hit - check which came first
         if profit_hits[0] <= stop_hits[0]:
+    pass
+    pass
                     labels[i] = 1
                     profit_pcts[i] = pt_mult  # LONG position - profit take hit first
                 else:
@@ -304,6 +362,8 @@ class OptimizedTripleBarrierLabeling:
 
         # Log profit statistics
         if len(labeled_data) > 0:
+    pass
+    pass
             long_profits, labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
             short_profits, labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
 
@@ -313,6 +373,8 @@ class OptimizedTripleBarrierLabeling:
         self.logger.info(f"   Overall - Avg profit: {labeled_data['potential_profit_pct'].mean():.4f}, Std: {labeled_data['potential_profit_pct'].std():.4f}")
 
         if self.binary_classification:
+    pass
+    pass
         self.logger.info(
                 "   Reason: binary_classification = True. HOLDs occur when neither profit - take nor stop - loss was hit before the time barrier;"
                 " removing them balances the dataset for LONG vs SHORT classification.",
@@ -392,6 +454,8 @@ class OptimizedTripleBarrierLabeling:
         context="optimized_triple_barrier_labeling.process_chunk"
     )
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Process a single chunk of data.
 
         Args:
@@ -403,6 +467,8 @@ class OptimizedTripleBarrierLabeling:
         return self.apply_triple_barrier_labeling_vectorized(chunk)
 
     def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         """Apply triple barrier labels and return only the labels series.
 
         This is a convenience method for backward compatibility.
@@ -419,6 +485,8 @@ class OptimizedTripleBarrierLabeling:
 @with_tracing_span("benchmark_triple_barrier_methods", log_args = False)
 @handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
+    pass
+    pass
     """Benchmark different triple barrier labeling methods.
 
     Args:
@@ -455,6 +523,8 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     }
 
 if __name__ == "__main__":
+    pass
+    pass
     # Example usage
     import numpy as np
 
@@ -480,6 +550,6 @@ if __name__ == "__main__":
     print(f"Benchmark results: {results}")
 
     # Show profit tracking results
-    print(f"\nProfit tracking results:")
+    print(f"\\\nProfit tracking results:")
     print(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")
     print(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['potential_profit_pct'].describe()}")

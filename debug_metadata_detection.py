@@ -6,17 +6,26 @@ Debug script to test metadata detection in step files.
 import re
 from pathlib import Path
 
+import def test_metadata_detection
 def test_metadata_detection(file_path: Path):
+    pass
+    pass
     """Test metadata detection in a step file."""
-    print(f"\n🔍 Testing metadata detection in {file_path.name}")
+    print(f"\\\n🔍 Testing metadata detection in {file_path.name}")
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract step number
-        step_match = re.search(r'step(\d+(?:_\d+)?)', file_path.name)
+        step_match = re.search(r'step(\\\d+(?:_\\\d+)?)', file_path.name)
         if not step_match:
+    pass
+    pass
             print("❌ Could not extract step number")
             return
 
@@ -26,30 +35,40 @@ def test_metadata_detection(file_path: Path):
         print(f"   Looking for method: {method_name}")
 
         if method_name not in content:
+    pass
+    pass
             print(f"❌ Method {method_name} not found")
             return
 
         # Find method content
         method_start = content.find(method_name)
         if method_start == -1:
+    pass
+    pass
             print("❌ Could not find method start")
             return
 
         # Find the opening brace of the method
         brace_start = content.find(":", method_start)
         if brace_start == -1:
+    pass
+    pass
             print("❌ Could not find method opening brace")
             return
 
         # Find method end by looking for the next method or end of file
         # Look for the next method that's at the same indentation level
-        lines = content.split('\n')
-        method_start_line = content[:method_start].count('\n')
+        lines = content.split('\\\n')
+        method_start_line = content[:method_start].count('\\\n')
 
         method_end = len(content)
         for i in range(method_start_line + 1, len(lines)):
+    pass
+    pass
             line = lines[i]
             if line.strip().startswith('def ') and line.strip() != method_name:
+    pass
+    pass
                 # Found next method, calculate end position
                 method_end = content.find(line, method_start)
                 break
@@ -65,6 +84,8 @@ def test_metadata_detection(file_path: Path):
         metadata_fields = ["asset", "lookback_period", "project_version", "date"]
 
         for field in metadata_fields:
+    pass
+    pass
             # Look for different patterns
             patterns = [
                 f'"{field}"',
@@ -74,12 +95,18 @@ def test_metadata_detection(file_path: Path):
 
             found = False
             for pattern in patterns:
+    pass
+    pass
                 if pattern in method_content:
+    pass
+    pass
                     found = True
                     print(f"   ✅ Found {field} with pattern: {pattern}")
                     break
 
             if not found:
+    pass
+    pass
                 print(f"   ❌ Not found: {field}")
 
         # Test specific patterns we added
@@ -90,9 +117,13 @@ def test_metadata_detection(file_path: Path):
             'datetime.now()'
         ]
 
-        print(f"\n   Testing specific patterns:")
+        print(f"\\\n   Testing specific patterns:")
         for pattern in specific_patterns:
+    pass
+    pass
             if pattern in method_content:
+    pass
+    pass
                 print(f"   ✅ Found: {pattern}")
             else:
                 print(f"   ❌ Not found: {pattern}")
@@ -101,6 +132,8 @@ def test_metadata_detection(file_path: Path):
         print(f"❌ Error testing {file_path.name}: {e}")
 
 def main():
+    pass
+    pass
     """Main function to test metadata detection."""
     steps_dir = Path("src/training/steps")
 
@@ -112,11 +145,17 @@ def main():
     ]
 
     for test_file in test_files:
+    pass
+    pass
         file_path = steps_dir / test_file
         if file_path.exists():
+    pass
+    pass
             test_metadata_detection(file_path)
         else:
             print(f"❌ File not found: {test_file}")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

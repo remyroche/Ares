@@ -7,7 +7,10 @@ import os
 import re
 from pathlib import Path
 
+import def standardize_utility_module
 def standardize_utility_module(file_path: str) -> bool:
+    pass
+    pass
     """Standardize a single utility module with pipeline standards."""
     print(f"Standardizing {file_path}...")
 
@@ -15,8 +18,14 @@ def standardize_utility_module(file_path: str) -> bool:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if already standardized
         if "from src.utils.pipeline_standards import" in content:
+    pass
+    pass
             print(f"  ✅ Already standardized: {file_path}")
             return True
 
@@ -31,42 +40,50 @@ def standardize_utility_module(file_path: str) -> bool:
 
         filename = os.path.basename(file_path)
         if filename in skip_files:
+    pass
+    pass
             print(f"  ⏭️ Skipping {file_path} (excluded)")
             return True
 
         # Add pipeline standards import
-        import_pattern = r'from src\.utils\.logger import system_logger'
+        import_pattern = r'from src\\\.utils\\\.logger import system_logger'
         if import_pattern in content:
+    pass
+    pass
             content = content.replace(
                 import_pattern,
-                'from src.utils.logger import system_logger\nfrom src.utils.pipeline_standards import PipelineStandards, pipeline_standards'
+                'from src.utils.logger import system_logger\\\nfrom src.utils.pipeline_standards import PipelineStandards, pipeline_standards'
             )
         else:
             # Try to find a good place to add the import
             # Look for other imports from src.utils
-            utils_import_pattern = r'(from src\.utils\.[^ ]+ import [^\n]+)'
+            utils_import_pattern = r'(from src\\\.utils\\\.[^ ]+ import [^\\\n]+)'
             utils_match = re.search(utils_import_pattern, content)
             if utils_match:
+    pass
+    pass
                 last_utils_import = utils_match.group(1)
                 content = content.replace(
                     last_utils_import,
-                    last_utils_import + '\nfrom src.utils.pipeline_standards import PipelineStandards, pipeline_standards'
+                    last_utils_import + '\\\nfrom src.utils.pipeline_standards import PipelineStandards, pipeline_standards'
                 )
             else:
                 # Add at the top after other imports
                 content = re.sub(
-                    r'(import [^\n]+\n)',
-                    r'\1from src.utils.pipeline_standards import PipelineStandards, pipeline_standards\n',
+                    r'(import [^\\\n]+\\\n)',
+                    r'\\\1from src.utils.pipeline_standards import PipelineStandards, pipeline_standards\\\n',
                     content,
                     count=1
                 )
 
         # Add safe import patterns for external modules
         # Look for try/except import blocks and enhance them
-        try_import_pattern = r'try:\s+import ([^\n]+)\nexcept ImportError:\s+([^\n]+) = None'
+        try_import_pattern = r'try:\\\s+import ([^\\\n]+)\\\nexcept ImportError:\\\s+([^\\\n]+) = None'
         try_matches = re.finditer(try_import_pattern, content)
 
         for match in try_matches:
+    pass
+    pass
             module_name = match.group(1)
             var_name = match.group(2)
 
@@ -76,16 +93,18 @@ def standardize_utility_module(file_path: str) -> bool:
 
         # Add fallback implementations for missing modules
         # Look for if module is None patterns
-        if_none_pattern = r'if ([^\n]+) is None:'
+        if_none_pattern = r'if ([^\\\n]+) is None:'
         if_none_matches = re.finditer(if_none_pattern, content)
 
         for match in if_none_matches:
+    pass
+    pass
             var_name = match.group(1)
             # Add fallback comment
             fallback_comment = f'# Fallback implementation for {var_name}'
             content = content.replace(
                 f'if {var_name} is None:',
-                f'if {var_name} is None:\n        {fallback_comment}'
+                f'if {var_name} is None:\\\n        {fallback_comment}'
             )
 
         # Write back the standardized content
@@ -100,6 +119,8 @@ def standardize_utility_module(file_path: str) -> bool:
         return False
 
 def main():
+    pass
+    pass
     """Main function to standardize utility modules."""
     utils_dir = Path("src/utils")
 
@@ -108,20 +129,30 @@ def main():
 
     # Process all Python files in utils directory
     for py_file in utils_dir.glob("*.py"):
+    pass
+    pass
         if py_file.is_file():
+    pass
+    pass
             total_count += 1
             if standardize_utility_module(str(py_file)):
+    pass
+    pass
                 success_count += 1
 
-    print(f"\n📊 Utility Module Standardization Summary:")
+    print(f"\\\n📊 Utility Module Standardization Summary:")
     print(f"  Total files processed: {total_count}")
     print(f"  Successfully standardized: {success_count}")
     print(f"  Failed: {total_count - success_count}")
 
     if success_count == total_count:
+    pass
+    pass
         print("🎉 All utility modules have been successfully standardized!")
     else:
         print("⚠️ Some utility modules failed standardization. Please check the errors above.")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

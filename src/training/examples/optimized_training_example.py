@@ -10,15 +10,18 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config.computational_optimization_config import (
+import get_optimization_config,
     get_optimization_config,
     get_performance_expectations,
     validate_optimization_config,
 )
 from src.training.factory import (
+import OptimizedTrainingFactory,
     OptimizedTrainingFactory,
     create_optimized_training_system,
     get_optimization_recommendations,
@@ -27,6 +30,7 @@ from src.training.memory_profiler import MemoryProfiler
 from src.utils.logger import system_logger
 
 
+import async def main
 async def main() -> None:
     """Main example function demonstrating optimized training."""
     logger = system_logger.getChild("OptimizedTrainingExample")
@@ -61,20 +65,34 @@ async def main() -> None:
     # 3. Validate configuration
     validation_results = validate_optimization_config(optimization_config)
     if not validation_results["valid"]:
+    pass
+    pass
         for _error in validation_results["errors"]:
+    pass
+    pass
             logger.error(f"Optimization config error: {_error}")
         return
 
     if validation_results["warnings"]:
+    pass
+    pass
         for _warning in validation_results["warnings"]:
+    pass
+    pass
             logger.warning(f"Optimization config warning: {_warning}")
     # 4. Get optimization recommendations
     recommendations = get_optimization_recommendations(base_config)
     logger.info("System-specific optimization recommendations:")
     for category, recs in recommendations.items():
+    pass
+    pass
         if recs:
+    pass
+    pass
             logger.info(f"  {category.replace('_', ' ').title()}:")
             for rec in recs:
+    pass
+    pass
                 logger.info(f"    - {rec}")
 
     # 5. Create optimized training system
@@ -114,6 +132,8 @@ async def main() -> None:
 
     # Initialize training manager
     if not await training_manager.initialize():
+    pass
+    pass
         return
 
     # 9. Take initial memory snapshot
@@ -131,6 +151,10 @@ async def main() -> None:
 
     try:
         # Option A: Use the enhanced training manager directly
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         training_results = await training_manager.execute_optimized_training(
             symbol=symbol,
             exchange=exchange,
@@ -160,9 +184,15 @@ async def main() -> None:
     # Check for memory leaks
     leak_results = leak_detector.check_for_leaks()
     if leak_results["leak_detected"]:
+    pass
+    pass
         for _indicator in leak_results.get("indicators", []):
+    pass
+    pass
             logger.warning(f"Memory leak indicator: {_indicator}")
         for rec in leak_results.get("recommendations", []):
+    pass
+    pass
             logger.info(f"Leak mitigation recommendation: {rec}")
     else:
         logger.info("No memory leaks detected")
@@ -170,6 +200,8 @@ async def main() -> None:
     # 12. Generate memory usage trends
     memory_trends = memory_profiler.analyze_memory_trends()
     if memory_trends["status"] == "success":
+    pass
+    pass
         rss_stats = memory_trends["rss_stats"]
         logger.info(
             f"Memory usage trends - Mean: {rss_stats['mean']:.1f}MB, "
@@ -179,6 +211,8 @@ async def main() -> None:
 
     # 13. Get execution statistics
     if hasattr(step_executor, "get_execution_stats"):
+    pass
+    pass
         exec_stats = step_executor.get_execution_stats()
         logger.info("Execution Statistics:")
         logger.info(f"  Cache hit ratio: {exec_stats.get('cache_hit_ratio', 0):.2%}")
@@ -193,8 +227,12 @@ async def main() -> None:
     # 14. Generate comprehensive memory report
     memory_report = memory_profiler.generate_memory_report()
     if memory_report["status"] == "success":
+    pass
+    pass
         logger.info("Memory Report Generated:")
         for rec in memory_report.get("recommendations", []):
+    pass
+    pass
             logger.info(f"  - {rec}")
 
     # 15. Force memory optimization and cleanup
@@ -210,7 +248,7 @@ async def main() -> None:
     logger.info("✅ Optimized training example completed successfully")
 
     # 17. Summary of results
-    logger.info("\n📊 TRAINING SUMMARY:")
+    logger.info("\\\n📊 TRAINING SUMMARY:")
     logger.info(f"Symbol: {symbol}")
     logger.info(f"Exchange: {exchange}")
     logger.info(f"Timeframe: {timeframe}")
@@ -223,6 +261,8 @@ async def main() -> None:
     )
 
     if training_results.get("execution_stats"):
+    pass
+    pass
         stats = training_results["execution_stats"]
         logger.info(f"Total Execution Time: {stats.get('total_time_seconds', 0):.2f}s")
         logger.info(f"Cache Hit Ratio: {stats.get('cache_hit_ratio', 0):.2%}")
@@ -230,6 +270,8 @@ async def main() -> None:
 
 
 def demonstrate_individual_components() -> None:
+    pass
+    pass
     """Demonstrate individual optimization components."""
     logger = system_logger.getChild("ComponentDemo")
     logger.info("🔧 Demonstrating Individual Optimization Components")
@@ -269,6 +311,8 @@ def demonstrate_individual_components() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the main example
     asyncio.run(main())
 

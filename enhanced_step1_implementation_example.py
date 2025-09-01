@@ -27,13 +27,23 @@ sys.path.insert(0, str(project_root))
 # Import existing utilities with fallbacks
 try:
     from src.utils.logger import system_logger
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import except ImportError:
 except ImportError:
     system_logger = logging.getLogger("EnhancedStep1")
 
 try:
 except ImportError:
     def handle_errors(*args, **kwargs):
+    pass
+    pass
         def decorator(func):
+    pass
+    pass
             return func
         return decorator
 
@@ -73,18 +83,30 @@ class Step1Config:
     temp_dir: str = "data_cache/temp"
 
     def validate(self) -> List[str]:
+    pass
+    pass
         """Validate configuration and return any issues."""
         issues = []
 
         if self.lookback_days <= 0:
+    pass
+    pass
             issues.append("lookback_days must be positive")
         if self.chunk_size <= 0:
+    pass
+    pass
             issues.append("chunk_size must be positive")
         if self.max_memory_mb <= 0:
+    pass
+    pass
             issues.append("max_memory_mb must be positive")
         if self.max_retries < 0:
+    pass
+    pass
             issues.append("max_retries must be non-negative")
         if self.max_nan_ratio < 0 or self.max_nan_ratio > 1:
+    pass
+    pass
             issues.append("max_nan_ratio must be between 0 and 1")
 
         return issues
@@ -103,18 +125,30 @@ class NonRetryableError(Exception):
     pass
 
 def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
+    pass
+    pass
     """Decorator for retrying operations with exponential backoff."""
     def decorator(func):
+    pass
+    pass
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             last_exception = None
 
             for attempt in range(max_retries + 1):
+    pass
+    pass
                 try:
                     return await func(*args, **kwargs)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except RetryableError as e:
                     last_exception = e
                     if attempt < max_retries:
+    pass
+    pass
                         wait_time = backoff_factor ** attempt
                         logging.warning(f"Retryable error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
@@ -127,6 +161,8 @@ def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2.0):
                 except Exception as e:
                     last_exception = e
                     if attempt < max_retries:
+    pass
+    pass
                         wait_time = backoff_factor ** attempt
                         logging.warning(f"Unexpected error on attempt {attempt + 1}: {e}. Waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
@@ -147,13 +183,21 @@ class MemoryMonitor:
     """Monitor memory usage during processing."""
 
     def __init__(self):
+    pass
+    pass
         self.peak_usage = 0
         self.usage_history = []
 
     def get_usage_mb(self) -> float:
+    pass
+    pass
         """Get current memory usage in MB."""
         try:
             import psutil
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             process = psutil.Process()
             usage_mb = process.memory_info().rss / 1024 / 1024
             self.peak_usage = max(self.peak_usage, usage_mb)
@@ -163,17 +207,25 @@ class MemoryMonitor:
             return 0.0
 
     def get_peak_usage_mb(self) -> float:
+    pass
+    pass
         """Get peak memory usage in MB."""
         return self.peak_usage
 
     def is_memory_pressure(self, threshold_mb: float) -> bool:
+    pass
+    pass
         """Check if memory usage is above threshold."""
         return self.get_usage_mb() > threshold_mb
 
 
 def memory_efficient(max_memory_mb: int = 1024):
+    pass
+    pass
     """Decorator for memory-efficient processing."""
     def decorator(func):
+    pass
+    pass
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             monitor = MemoryMonitor()
@@ -185,6 +237,10 @@ def memory_efficient(max_memory_mb: int = 1024):
             try:
                 result = await func(*args, **kwargs)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 # Check memory after processing
                 final_memory = monitor.get_usage_mb()
                 peak_memory = monitor.get_peak_usage_mb()
@@ -192,6 +248,8 @@ def memory_efficient(max_memory_mb: int = 1024):
                 logging.info(f"Memory after {func.__name__}: {final_memory:.1f}MB (peak: {peak_memory:.1f}MB)")
 
                 if peak_memory > max_memory_mb:
+    pass
+    pass
                     logging.warning(f"Peak memory usage ({peak_memory:.1f}MB) exceeded limit ({max_memory_mb}MB)")
 
                 return result
@@ -214,11 +272,15 @@ class QualityResult:
     metrics: Dict[str, Any] = field(default_factory=dict)
 
     def add_issue(self, issue_type: str, description: str):
+    pass
+    pass
         """Add a quality issue."""
         self.issues.append(f"{issue_type}: {description}")
         self.passed = False
 
     def add_metric(self, name: str, value: Any):
+    pass
+    pass
         """Add a quality metric."""
         self.metrics[name] = value
 
@@ -227,6 +289,8 @@ class EnhancedDataQualityValidator:
     """Enhanced data quality validation with real-time monitoring."""
 
     def __init__(self, config: Step1Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataQualityValidator")
 
@@ -235,6 +299,8 @@ class EnhancedDataQualityValidator:
         result = QualityResult()
 
         if df is None or df.empty:
+    pass
+    pass
             result.add_issue("empty_data", "DataFrame is None or empty")
             return result
 
@@ -252,13 +318,19 @@ class EnhancedDataQualityValidator:
         result.add_metric("nan_ratio", nan_ratio)
 
         if nan_ratio > self.config.max_nan_ratio:
+    pass
+    pass
             result.add_issue("nan_values", f"NaN ratio {nan_ratio:.4f} exceeds threshold {self.config.max_nan_ratio}")
 
         # Check for infinite values
         infinite_counts = {}
         for col in df.select_dtypes(include=[np.number]).columns:
+    pass
+    pass
             infinite_count = np.isinf(df[col]).sum()
             if infinite_count > 0:
+    pass
+    pass
                 infinite_counts[col] = infinite_count
 
         total_infinites = sum(infinite_counts.values())
@@ -266,32 +338,48 @@ class EnhancedDataQualityValidator:
         result.add_metric("infinite_columns", infinite_counts)
 
         if total_infinites > self.config.max_infinite_count:
+    pass
+    pass
             result.add_issue("infinite_values", f"Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}")
 
         # Check for constant features
         constant_features = []
         for col in df.columns:
+    pass
+    pass
             unique_count = df[col].nunique()
             if unique_count < self.config.min_unique_values:
+    pass
+    pass
                 constant_features.append(col)
 
         result.add_metric("constant_features", constant_features)
         if constant_features:
+    pass
+    pass
             result.add_issue("constant_features", f"Found {len(constant_features)} constant features: {constant_features}")
 
         # Check for price anomalies (if OHLC columns exist)
         price_columns = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
         if price_columns:
+    pass
+    pass
             price_anomalies = self._detect_price_anomalies(df, price_columns)
             result.add_metric("price_anomalies", price_anomalies)
             if price_anomalies:
+    pass
+    pass
                 result.add_issue("price_anomalies", f"Found {len(price_anomalies)} price anomalies")
 
         # Check for timestamp consistency
         if 'timestamp' in df.columns:
+    pass
+    pass
             timestamp_issues = self._validate_timestamp_consistency(df)
             result.add_metric("timestamp_issues", timestamp_issues)
             if timestamp_issues:
+    pass
+    pass
                 result.add_issue("timestamp_issues", f"Found {len(timestamp_issues)} timestamp issues")
 
         self.logger.info(f"Quality validation for {context}: {'PASSED' if result.passed else 'FAILED'} "
@@ -300,15 +388,23 @@ class EnhancedDataQualityValidator:
         return result
 
     def _detect_price_anomalies(self, df: pd.DataFrame, price_columns: List[str]) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Detect price anomalies in OHLC data."""
         anomalies = []
 
         for i in range(len(df)):
+    pass
+    pass
             row = df.iloc[i]
 
             # Check for negative prices
             for col in price_columns:
+    pass
+    pass
                 if row[col] < -self.config.price_tolerance:
+    pass
+    pass
                     anomalies.append({
                         "row": i,
                         "column": col,
@@ -318,7 +414,11 @@ class EnhancedDataQualityValidator:
 
             # Check for OHLC consistency
             if all(col in price_columns for col in ['open', 'high', 'low', 'close']):
+    pass
+    pass
                 if row['high'] < row['low']:
+    pass
+    pass
                     anomalies.append({
                         "row": i,
                         "type": "high_low_inversion",
@@ -327,6 +427,8 @@ class EnhancedDataQualityValidator:
                     })
 
                 if row['close'] > row['high'] or row['close'] < row['low']:
+    pass
+    pass
                     anomalies.append({
                         "row": i,
                         "type": "close_outside_range",
@@ -338,6 +440,8 @@ class EnhancedDataQualityValidator:
         return anomalies
 
     def _validate_timestamp_consistency(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    pass
+    pass
         """Validate timestamp consistency."""
         issues = []
 
@@ -350,6 +454,8 @@ class EnhancedDataQualityValidator:
 
         large_gaps = time_diffs[time_diffs > expected_interval * 2]
         if not large_gaps.empty:
+    pass
+    pass
             issues.append({
                 "type": "large_gaps",
                 "count": len(large_gaps),
@@ -359,6 +465,8 @@ class EnhancedDataQualityValidator:
         # Check for duplicates
         duplicates = timestamps.duplicated()
         if duplicates.any():
+    pass
+    pass
             issues.append({
                 "type": "duplicate_timestamps",
                 "count": duplicates.sum()
@@ -375,6 +483,8 @@ class OptimizedDataProcessor:
     """Optimized data processing with streaming and parallelization."""
 
     def __init__(self, config: Step1Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("DataProcessor")
         self.quality_validator = EnhancedDataQualityValidator(config)
@@ -391,6 +501,10 @@ class OptimizedDataProcessor:
 
         try:
             for chunk in pd.read_parquet(file_path, chunksize=self.config.chunk_size):
+    pass
+    except Exception as e:
+        pass
+    pass
                 chunk_count += 1
                 self.logger.debug(f"Processing chunk {chunk_count}")
 
@@ -400,6 +514,8 @@ class OptimizedDataProcessor:
                 )
 
                 if not quality_result.passed:
+    pass
+    pass
                     self.logger.warning(f"Quality issues in chunk {chunk_count}: {quality_result.issues}")
 
                 # Process chunk
@@ -408,15 +524,21 @@ class OptimizedDataProcessor:
 
                 # Check memory pressure
                 if self.memory_monitor.is_memory_pressure(self.config.max_memory_mb * 0.8):
+    pass
+    pass
                     self.logger.warning("Memory pressure detected, processing existing chunks")
                     break
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error processing dataset: {e}")
             raise
 
         # Combine chunks
         if chunks:
+    pass
+    pass
             result = pd.concat(chunks, ignore_index=True)
             self.logger.info(f"Processed {len(chunks)} chunks, final shape: {result.shape}")
             return result
@@ -427,6 +549,8 @@ class OptimizedDataProcessor:
     async def _process_chunk_parallel(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Process data chunk using parallel operations."""
         if chunk.empty:
+    pass
+    pass
             return chunk
 
         # Optimize data types for memory efficiency
@@ -434,6 +558,8 @@ class OptimizedDataProcessor:
 
         # Process in parallel if chunk is large enough
         if len(chunk) > 1000:
+    pass
+    pass
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 # Split chunk for parallel processing
                 chunk_splits = np.array_split(chunk, self.config.max_workers)
@@ -451,20 +577,30 @@ class OptimizedDataProcessor:
             return self._process_chunk_sync(chunk)
 
     def _process_chunk_sync(self, chunk: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Synchronous chunk processing."""
         # Add any specific processing logic here
         return chunk
 
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize DataFrame data types for memory efficiency."""
         for col in df.columns:
+    pass
+    pass
             if df[col].dtype == 'float64':
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], downcast='float')
             elif df[col].dtype == 'int64':
                 df[col] = pd.to_numeric(df[col], downcast='integer')
             elif df[col].dtype == 'object':
                 # Try to convert to category if it has few unique values
                 if df[col].nunique() / len(df[col]) < 0.5:
+    pass
+    pass
                     df[col] = df[col].astype('category')
         return df
 
@@ -482,6 +618,8 @@ class EnhancedStep1DataCollection:
     """
 
     def __init__(self, config: Step1Config):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("EnhancedStep1")
         self.processor = OptimizedDataProcessor(config)
@@ -491,6 +629,8 @@ class EnhancedStep1DataCollection:
         # Validate configuration
         config_issues = config.validate()
         if config_issues:
+    pass
+    pass
             raise ValueError(f"Configuration validation failed: {config_issues}")
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -509,12 +649,18 @@ class EnhancedStep1DataCollection:
 
         try:
             # Initialize directories
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._initialize_directories()
 
             # Download data with enhanced resilience
             download_success = await self._download_data_with_resilience(training_input)
 
             if not download_success:
+    pass
+    pass
                 self.logger.error("❌ Data download failed")
                 pipeline_state["data_collection_completed"] = False
                 pipeline_state["quality_check_passed"] = False
@@ -524,6 +670,8 @@ class EnhancedStep1DataCollection:
             processing_success = await self._process_and_validate_data(training_input)
 
             if processing_success:
+    pass
+    pass
                 self.logger.info("✅ Enhanced data collection completed successfully")
                 pipeline_state["data_collection_completed"] = True
                 pipeline_state["quality_check_passed"] = True
@@ -550,6 +698,8 @@ class EnhancedStep1DataCollection:
         directories = [self.config.data_dir, self.config.backup_dir, self.config.temp_dir]
 
         for directory in directories:
+    pass
+    pass
             os.makedirs(directory, exist_ok=True)
             self.logger.debug(f"Initialized directory: {directory}")
 
@@ -558,6 +708,10 @@ class EnhancedStep1DataCollection:
         """Download data with enhanced resilience."""
         try:
             symbol = training_input.get("symbol", self.config.symbol)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
 
@@ -567,6 +721,12 @@ class EnhancedStep1DataCollection:
             try:
                 from src.training.steps.data_downloader import download_all_data_with_consolidation
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import success = await download_all_data_with_consolidation
                 success = await download_all_data_with_consolidation(
                     symbol=symbol,
                     exchange_name=exchange,
@@ -574,6 +734,8 @@ class EnhancedStep1DataCollection:
                 )
 
                 if success:
+    pass
+    pass
                     self.logger.info("✅ Data download completed successfully")
                     return True
                 else:
@@ -599,6 +761,10 @@ class EnhancedStep1DataCollection:
         """Process and validate downloaded data."""
         try:
             symbol = training_input.get("symbol", self.config.symbol)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             exchange = training_input.get("exchange", self.config.exchange)
             timeframe = training_input.get("timeframe", self.config.timeframe)
 
@@ -608,11 +774,17 @@ class EnhancedStep1DataCollection:
 
             files_to_process = []
             if os.path.exists(klines_file):
+    pass
+    pass
                 files_to_process.append(("klines", klines_file))
             if os.path.exists(aggtrades_file):
+    pass
+    pass
                 files_to_process.append(("aggtrades", aggtrades_file))
 
             if not files_to_process:
+    pass
+    pass
                 self.logger.warning("No data files found for processing")
                 return False
 
@@ -620,12 +792,16 @@ class EnhancedStep1DataCollection:
             all_quality_passed = True
 
             for data_type, file_path in files_to_process:
+    pass
+    pass
                 self.logger.info(f"🔍 Processing {data_type} data: {file_path}")
 
                 # Process with streaming
                 processed_data = await self.processor.process_large_dataset_streaming(file_path)
 
                 if processed_data.empty:
+    pass
+    pass
                     self.logger.warning(f"⚠️ No data processed for {data_type}")
                     all_quality_passed = False
                     continue
@@ -636,6 +812,8 @@ class EnhancedStep1DataCollection:
                 )
 
                 if not quality_result.passed:
+    pass
+    pass
                     self.logger.warning(f"⚠️ Quality issues in {data_type}: {quality_result.issues}")
                     all_quality_passed = False
                 else:
@@ -689,6 +867,10 @@ async def main():
     try:
         result = await step1.execute(training_input, pipeline_state)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print("=" * 60)
         print("ENHANCED STEP1 EXECUTION RESULTS")
         print("=" * 60)
@@ -701,6 +883,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,

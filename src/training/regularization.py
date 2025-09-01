@@ -11,6 +11,7 @@ from torch import nn
 # These imports are here to allow the apply_regularization_to_ensembles method
 # to correctly apply the config to the ensemble instances.
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import RegimePredictiveEnsembles,
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
@@ -20,6 +21,7 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 
 
+import class RegularizationManager:
 class RegularizationManager:
     """Manages the L1-L2 regularization configuration for the Ares Trading Bot's
     machine learning models. It extracts, applies, and validates regularization
@@ -27,11 +29,15 @@ class RegularizationManager:
     """
 
     def __init__(self) -> None:
+    pass
+    pass
         self.logger = system_logger.getChild("RegularizationManager")
         self.regularization_config = self._get_regularization_config()
         self.logger.info("RegularizationManager initialized.")
 
     def _get_regularization_config(self) -> dict[str, Any]:
+    pass
+    pass
         """Extract and validate L1-L2 regularization configuration from CONFIG."""
         base_reg_config = CONFIG["MODEL_TRAINING"].get("regularization", {})
 
@@ -75,6 +81,10 @@ class RegularizationManager:
             for (
                 regime_name,
                 ensemble_instance,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ) in ensemble_orchestrator.regime_ensembles.items():
                 self._apply_regularization_to_single_ensemble(
                     ensemble_instance,
@@ -97,8 +107,14 @@ class RegularizationManager:
         """Applies regularization configuration to a specific ensemble instance."""
         try:
             # Check if the ensemble instance has a 'regularization_config' attribute
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # and set it. This is how the ensemble models access the parameters.
             if hasattr(ensemble_instance, "regularization_config"):
+    pass
+    pass
                 ensemble_instance.regularization_config = self.regularization_config
             else:
                 # If not present, add it. This ensures it's available for model creation.
@@ -106,6 +122,8 @@ class RegularizationManager:
 
             # If the ensemble has specific deep learning config, update it directly
             if hasattr(ensemble_instance, "dl_config"):
+    pass
+    pass
                 ensemble_instance.dl_config.update(
                     {
                         "l1_reg": self.regularization_config["tensorflow"]["l1_reg"],
@@ -124,6 +142,8 @@ class RegularizationManager:
             )
 
     def validate_and_report_regularization(self) -> bool:
+    pass
+    pass
         """Validates regularization configuration and reports on the setup.
 
         Returns:
@@ -133,6 +153,10 @@ class RegularizationManager:
         try:
             self.logger.info("=== L1-L2 Regularization Validation Report ===")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Check configuration completeness
             required_keys = ["l1_alpha", "l2_alpha", "dropout_rate"]
             missing_keys = [
@@ -140,6 +164,8 @@ class RegularizationManager:
             ]
 
             if missing_keys:
+    pass
+    pass
                 self.logger.warning(
                     f"Missing regularization config keys: {missing_keys}",
                 )
@@ -153,7 +179,7 @@ class RegularizationManager:
                 f"   - Dropout Rate: {self.regularization_config['dropout_rate']}",
             )
 
-            self.logger.info("\n🌳 LightGBM Regularization:")
+            self.logger.info("\\\n🌳 LightGBM Regularization:")
             lgbm_config = self.regularization_config.get("lightgbm", {})
             self.logger.info(
                 f"   - L1 (reg_alpha): {lgbm_config.get('reg_alpha', 'Not set')}",
@@ -162,7 +188,7 @@ class RegularizationManager:
                 f"   - L2 (reg_lambda): {lgbm_config.get('reg_lambda', 'Not set')}",
             )
 
-            self.logger.info("\n🧠 TensorFlow/Keras Regularization:")
+            self.logger.info("\\\n🧠 TensorFlow/Keras Regularization:")
             tf_config = self.regularization_config.get("tensorflow", {})
             self.logger.info(
                 f"   - L1 Regularization: {tf_config.get('l1_reg', 'Not set')}",
@@ -174,10 +200,10 @@ class RegularizationManager:
                 f"   - Dropout Rate: {tf_config.get('dropout_rate', 'Not set')}",
             )
 
-            self.logger.info("\n📈 Scikit-learn Regularization:")
+            self.logger.info("\\\n📈 Scikit-learn Regularization:")
             self.regularization_config.get("sklearn", {})
 
-            self.logger.info("\n🎯 TabNet Regularization:")
+            self.logger.info("\\\n🎯 TabNet Regularization:")
             tabnet_config = self.regularization_config.get("tabnet", {})
             self.logger.info(
                 f"   - lambda_sparse (L1): {tabnet_config.get('lambda_sparse', 'Not set')}",
@@ -190,13 +216,21 @@ class RegularizationManager:
             validation_issues = []
 
             if self.regularization_config["l1_alpha"] <= 0:
+    pass
+    pass
                 validation_issues.append("L1 alpha should be positive")
             if self.regularization_config["l2_alpha"] <= 0:
+    pass
+    pass
                 validation_issues.append("L2 alpha should be positive")
             if not 0 <= self.regularization_config["dropout_rate"] <= 1:
+    pass
+    pass
                 validation_issues.append("Dropout rate should be between 0 and 1")
 
             if validation_issues:
+    pass
+    pass
                 self.logger.warning(
                     f"⚠️  Regularization validation issues: {validation_issues}",
                 )
@@ -234,8 +268,16 @@ class RegularizationManager:
         """
         try:
             if architecture == "LightGBM":
+    pass
+    except Exception as e:
+        pass
+    pass
                 return await self._optimize_lightgbm_regularization(features_df, target, model_type)
+    except Exception as e:
+        pass
             if architecture in ["CNN", "TCN", "Transformer"]:
+    pass
+    pass
                 return await self._optimize_neural_network_regularization(features_df, target, model_type, architecture)
             return await self._optimize_general_regularization(features_df, target, model_type)
 
@@ -252,10 +294,16 @@ class RegularizationManager:
         """Optimize LightGBM regularization parameters using Optuna."""
         try:
             def objective(trial):
+    pass
+    except Exception as e:
+        pass
+    pass
                 reg_alpha = trial.suggest_float("reg_alpha", 0.001, 0.1)
                 reg_lambda = trial.suggest_float("reg_lambda", 0.001, 0.1)
 
                 if model_type == "classification":
+    pass
+    pass
                     model = lgb.LGBMClassifier(
                         reg_alpha=reg_alpha,
                         reg_lambda=reg_lambda,
@@ -277,6 +325,8 @@ class RegularizationManager:
                 scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
                 return scores.mean()
 
+    except Exception as e:
+        pass
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
 
@@ -300,6 +350,10 @@ class RegularizationManager:
         """Optimize neural network regularization parameters using Optuna."""
         try:
             def objective(trial):
+    pass
+    except Exception as e:
+        pass
+    pass
                 weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3)
                 dropout = trial.suggest_float("dropout", 0.1, 0.5)
 
@@ -314,7 +368,15 @@ class RegularizationManager:
                 try:
                     from sklearn.preprocessing import StandardScaler
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
                     # Prepare data
+    except Exception as e:
+        pass
+import X = features_df.values
                     X = features_df.values
                     y = target.values
 
@@ -327,6 +389,8 @@ class RegularizationManager:
                     X_tensor = torch.FloatTensor(X_scaled)
 
                     if model_type == "classification":
+    pass
+    pass
                         y_tensor = torch.LongTensor(y)
                         criterion = torch.nn.CrossEntropyLoss()
                     else:
@@ -349,6 +413,8 @@ class RegularizationManager:
                     with torch.no_grad():
                         predictions = model(X_tensor)
                         if model_type == "classification":
+    pass
+    pass
                             _, predicted = torch.max(predictions, 1)
                             return (predicted == y_tensor).float().mean().item()
                         mse = criterion(predictions, y_tensor).item()
@@ -380,6 +446,10 @@ class RegularizationManager:
         """Optimize general regularization parameters using ElasticNet."""
         try:
             def objective(trial):
+    pass
+    except Exception as e:
+        pass
+    pass
                 alpha = trial.suggest_float("alpha", 0.001, 0.1)
                 l1_ratio = trial.suggest_float("l1_ratio", 0.1, 0.9)
 
@@ -388,6 +458,8 @@ class RegularizationManager:
                 scores = cross_val_score(model, features_df, target, cv=3, scoring=scoring)
                 return scores.mean()
 
+    except Exception as e:
+        pass
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=20)
 
@@ -402,9 +474,13 @@ class RegularizationManager:
             return {"alpha": 0.01, "l1_ratio": 0.5}
 
     def _create_simple_nn_model(self, input_size: int, params: dict[str, Any], model_type: str):
+    pass
+    pass
         """Create a simple neural network model for regularization testing."""
         class SimpleNN(nn.Module):
             def __init__(self, input_size, params, model_type) -> None:
+    pass
+    pass
                 super().__init__()
                 self.layers = nn.Sequential(
                     nn.Linear(input_size, 128),
@@ -417,14 +493,22 @@ class RegularizationManager:
                 )
 
             def forward(self, x):
+    pass
+    pass
                 return self.layers(x)
 
         return SimpleNN(input_size, params, model_type)
 
     def _get_default_regularization_params(self, architecture: str) -> dict[str, Any]:
+    pass
+    pass
         """Get default regularization parameters for an architecture."""
         if architecture == "LightGBM":
+    pass
+    pass
             return {"reg_alpha": 0.01, "reg_lambda": 0.001}
         if architecture in ["CNN", "TCN", "Transformer"]:
+    pass
+    pass
             return {"weight_decay": 1e-4, "dropout": 0.2}
         return {"alpha": 0.01, "l1_ratio": 0.5}

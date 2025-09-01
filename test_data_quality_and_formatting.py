@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -28,10 +29,13 @@ from src.utils.data_formatting_framework import data_formatting_framework, DataF
 from src.utils.logger import system_logger
 
 
+import class DataQualityAndFormattingTester:
 class DataQualityAndFormattingTester:
     """Comprehensive data quality and formatting testing framework."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize tester."""
         self.logger = system_logger.getChild("DataQualityAndFormattingTester")
         self.quality_framework = data_quality_framework
@@ -40,6 +44,8 @@ class DataQualityAndFormattingTester:
         self.start_time = time.time()
 
     def run_all_tests(self) -> Dict[str, Any]:
+    pass
+    pass
         """Run all data quality and formatting tests."""
         self.logger.info("🔍 Starting Comprehensive Data Quality and Formatting Tests")
 
@@ -57,8 +63,14 @@ class DataQualityAndFormattingTester:
         ]
 
         for test_name, test_func in test_suite:
+    pass
+    pass
             try:
                 self.logger.info(f"Running {test_name}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 result = test_func()
                 self.test_results[test_name] = {
                     "status": "PASSED" if result else "FAILED",
@@ -75,6 +87,8 @@ class DataQualityAndFormattingTester:
         return self.generate_test_report()
 
     def test_data_validation(self) -> bool:
+    pass
+    pass
         """Test data validation functionality."""
         self.logger.info("Testing data validation...")
 
@@ -86,12 +100,16 @@ class DataQualityAndFormattingTester:
 
         # Check validation results
         if not validation_results["overall_passed"]:
+    pass
+    pass
             self.logger.error("Data validation failed")
             return False
 
         # Test specific validation rules
         schema_validation = self.quality_framework.validate_data(test_data, ["klines_schema"])
         if not schema_validation["overall_passed"]:
+    pass
+    pass
             self.logger.error("Schema validation failed")
             return False
 
@@ -99,6 +117,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_data_formatting(self) -> bool:
+    pass
+    pass
         """Test data formatting functionality."""
         self.logger.info("Testing data formatting...")
 
@@ -111,6 +131,8 @@ class DataQualityAndFormattingTester:
         # Validate formatted data
         validation_results = self.formatting_framework.validate_data_format(formatted_data, FormatEnum.KLINES)
         if not validation_results["valid"]:
+    pass
+    pass
             self.logger.error("Formatted data validation failed")
             return False
 
@@ -120,6 +142,8 @@ class DataQualityAndFormattingTester:
 
         validation_results = self.formatting_framework.validate_data_format(formatted_features, FormatEnum.FEATURES)
         if not validation_results["valid"]:
+    pass
+    pass
             self.logger.error("Features formatting validation failed")
             return False
 
@@ -127,6 +151,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_data_cleaning(self) -> bool:
+    pass
+    pass
         """Test data cleaning functionality."""
         self.logger.info("Testing data cleaning...")
 
@@ -141,6 +167,8 @@ class DataQualityAndFormattingTester:
         cleaned_quality = self.quality_framework.calculate_quality_score(cleaned_data)
 
         if cleaned_quality <= dirty_quality:
+    pass
+    pass
             self.logger.error("Data cleaning did not improve quality")
             return False
 
@@ -150,6 +178,8 @@ class DataQualityAndFormattingTester:
         cleaned_no_duplicates = self.quality_framework.clean_data(data_with_duplicates, {"remove_duplicates": True})
 
         if len(cleaned_no_duplicates) >= len(data_with_duplicates):
+    pass
+    pass
             self.logger.error("Duplicate removal failed")
             return False
 
@@ -157,6 +187,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_data_profiling(self) -> bool:
+    pass
+    pass
         """Test data profiling functionality."""
         self.logger.info("Testing data profiling...")
 
@@ -169,16 +201,24 @@ class DataQualityAndFormattingTester:
         # Check profile structure
         required_keys = ["timestamp", "data_shape", "columns", "summary"]
         for key in required_keys:
+    pass
+    pass
             if key not in profile:
+    pass
+    pass
                 self.logger.error(f"Missing key in profile: {key}")
                 return False
 
         # Check profile content
         if profile["data_shape"] != test_data.shape:
+    pass
+    pass
             self.logger.error("Profile data shape mismatch")
             return False
 
         if len(profile["columns"]) != len(test_data.columns):
+    pass
+    pass
             self.logger.error("Profile columns count mismatch")
             return False
 
@@ -186,6 +226,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_quality_scoring(self) -> bool:
+    pass
+    pass
         """Test quality scoring functionality."""
         self.logger.info("Testing quality scoring...")
 
@@ -201,6 +243,8 @@ class DataQualityAndFormattingTester:
 
         # Check that high-quality data has higher score
         if high_quality_score <= low_quality_score:
+    pass
+    pass
             self.logger.error("Quality scoring failed: high-quality data should have higher score")
             return False
 
@@ -209,7 +253,11 @@ class DataQualityAndFormattingTester:
 
         required_metrics = ["completeness", "consistency", "accuracy", "timeliness"]
         for metric in required_metrics:
+    pass
+    pass
             if metric not in quality_report["quality_metrics"]:
+    pass
+    pass
                 self.logger.error(f"Missing quality metric: {metric}")
                 return False
 
@@ -217,6 +265,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_format_validation(self) -> bool:
+    pass
+    pass
         """Test format validation functionality."""
         self.logger.info("Testing format validation...")
 
@@ -225,6 +275,8 @@ class DataQualityAndFormattingTester:
         validation_results = self.formatting_framework.validate_data_format(valid_klines, FormatEnum.KLINES)
 
         if not validation_results["valid"]:
+    pass
+    pass
             self.logger.error("Valid klines format validation failed")
             return False
 
@@ -233,6 +285,8 @@ class DataQualityAndFormattingTester:
         validation_results = self.formatting_framework.validate_data_format(invalid_data, FormatEnum.KLINES)
 
         if validation_results["valid"]:
+    pass
+    pass
             self.logger.error("Invalid format validation should have failed")
             return False
 
@@ -240,7 +294,11 @@ class DataQualityAndFormattingTester:
         format_spec = self.formatting_framework.get_format_specification(FormatEnum.KLINES)
         required_keys = ["required_columns", "data_types", "column_order"]
         for key in required_keys:
+    pass
+    pass
             if key not in format_spec:
+    pass
+    pass
                 self.logger.error(f"Missing key in format specification: {key}")
                 return False
 
@@ -248,6 +306,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_timestamp_normalization(self) -> bool:
+    pass
+    pass
         """Test timestamp normalization functionality."""
         self.logger.info("Testing timestamp normalization...")
 
@@ -259,6 +319,8 @@ class DataQualityAndFormattingTester:
 
         # Check that timestamps are integers
         if not pd.api.types.is_integer_dtype(normalized_data["timestamp"]):
+    pass
+    pass
             self.logger.error("Timestamp normalization to unix_seconds failed")
             return False
 
@@ -267,6 +329,8 @@ class DataQualityAndFormattingTester:
 
         # Check that timestamps are strings
         if not pd.api.types.is_string_dtype(normalized_data["timestamp"]):
+    pass
+    pass
             self.logger.error("Timestamp normalization to ISO string failed")
             return False
 
@@ -274,6 +338,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_missing_value_handling(self) -> bool:
+    pass
+    pass
         """Test missing value handling functionality."""
         self.logger.info("Testing missing value handling...")
 
@@ -287,6 +353,8 @@ class DataQualityAndFormattingTester:
 
         # Check that missing values were handled
         if filled_data.isnull().sum().sum() > 0:
+    pass
+    pass
             self.logger.error("Forward fill did not handle all missing values")
             return False
 
@@ -295,6 +363,8 @@ class DataQualityAndFormattingTester:
         filled_data = self.formatting_framework.handle_missing_values(test_data, "median")
 
         if filled_data.isnull().sum().sum() > 0:
+    pass
+    pass
             self.logger.error("Median fill did not handle all missing values")
             return False
 
@@ -302,6 +372,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_data_type_standardization(self) -> bool:
+    pass
+    pass
         """Test data type standardization functionality."""
         self.logger.info("Testing data type standardization...")
 
@@ -314,14 +386,24 @@ class DataQualityAndFormattingTester:
         # Check that numeric columns are float64
         numeric_columns = ["open", "high", "low", "close", "volume"]
         for col in numeric_columns:
+    pass
+    pass
             if col in formatted_data.columns:
+    pass
+    pass
                 if not pd.api.types.is_float_dtype(formatted_data[col]):
+    pass
+    pass
                     self.logger.error(f"Column {col} is not float64 after standardization")
                     return False
 
         # Check that timestamp is int64
         if "timestamp" in formatted_data.columns:
+    pass
+    pass
             if not pd.api.types.is_integer_dtype(formatted_data["timestamp"]):
+    pass
+    pass
                 self.logger.error("Timestamp is not int64 after standardization")
                 return False
 
@@ -329,6 +411,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def test_cross_step_consistency(self) -> bool:
+    pass
+    pass
         """Test cross-step format consistency."""
         self.logger.info("Testing cross-step format consistency...")
 
@@ -345,17 +429,27 @@ class DataQualityAndFormattingTester:
         # Check that all have timestamp column with same format
         timestamp_columns = ["timestamp"]
         for data, format_name in [(formatted_klines, "klines"), (formatted_features, "features"), (formatted_labels, "labels")]:
+    pass
+    pass
             if "timestamp" not in data.columns:
+    pass
+    pass
                 self.logger.error(f"Missing timestamp column in {format_name}")
                 return False
 
             if not pd.api.types.is_integer_dtype(data["timestamp"]):
+    pass
+    pass
                 self.logger.error(f"Timestamp column in {format_name} is not integer")
                 return False
 
         # Check that data can be merged on timestamp
         try:
             merged_data = formatted_klines.merge(formatted_features, on="timestamp", how="inner")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             merged_data = merged_data.merge(formatted_labels, on="timestamp", how="inner")
         except Exception as e:
             self.logger.error(f"Failed to merge data across steps: {e}")
@@ -365,6 +459,8 @@ class DataQualityAndFormattingTester:
         return True
 
     def _create_test_klines_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test klines data."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -378,6 +474,8 @@ class DataQualityAndFormattingTester:
         return pd.DataFrame(data)
 
     def _create_inconsistent_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with inconsistent format."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -391,6 +489,8 @@ class DataQualityAndFormattingTester:
         return pd.DataFrame(data)
 
     def _create_test_features_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test features data."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -402,6 +502,8 @@ class DataQualityAndFormattingTester:
         return pd.DataFrame(data)
 
     def _create_test_labels_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test labels data."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -412,6 +514,8 @@ class DataQualityAndFormattingTester:
         return pd.DataFrame(data)
 
     def _create_dirty_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create dirty test data with quality issues."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -434,6 +538,8 @@ class DataQualityAndFormattingTester:
         return df
 
     def _create_mixed_type_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with mixed types."""
         timestamps = pd.date_range(start="2024-01-01", periods=100, freq="1min").astype(np.int64) // 10**9
         data = {
@@ -447,6 +553,8 @@ class DataQualityAndFormattingTester:
         return pd.DataFrame(data)
 
     def generate_test_report(self) -> Dict[str, Any]:
+    pass
+    pass
         """Generate comprehensive test report."""
         end_time = time.time()
         duration = end_time - self.start_time
@@ -485,6 +593,8 @@ class DataQualityAndFormattingTester:
         return report
 
     def _generate_recommendations(self) -> List[str]:
+    pass
+    pass
         """Generate recommendations based on test results."""
         recommendations = []
 
@@ -492,29 +602,43 @@ class DataQualityAndFormattingTester:
         error_tests = [name for name, result in self.test_results.items() if result["status"] == "ERROR"]
 
         if failed_tests:
+    pass
+    pass
             recommendations.append(f"Fix failed tests: {', '.join(failed_tests)}")
 
         if error_tests:
+    pass
+    pass
             recommendations.append(f"Investigate test errors: {', '.join(error_tests)}")
 
         # Check framework capabilities
         if len(self.quality_framework.validation_rules) < 5:
+    pass
+    pass
             recommendations.append("Add more validation rules for comprehensive data quality checking")
 
         if len(self.formatting_framework.standard_formats) < 4:
+    pass
+    pass
             recommendations.append("Add more standard data formats for comprehensive formatting")
 
         # Check quality policies
         if not self.quality_framework.quality_policies["strict_validation"]:
+    pass
+    pass
             recommendations.append("Enable strict validation for better data quality enforcement")
 
         if not self.quality_framework.quality_policies["auto_clean"]:
+    pass
+    pass
             recommendations.append("Consider enabling auto-cleaning for automatic data quality improvement")
 
         return recommendations
 
 
 def main():
+    pass
+    pass
     """Main function to run data quality and formatting tests."""
     print("🔍 Comprehensive Data Quality and Formatting Testing Framework")
     print("=" * 70)
@@ -524,7 +648,7 @@ def main():
 
     # Print summary
     summary = report["test_summary"]
-    print(f"\n📊 Test Summary:")
+    print(f"\\\n📊 Test Summary:")
     print(f"  Total Tests: {summary['total_tests']}")
     print(f"  Passed: {summary['passed_tests']}")
     print(f"  Failed: {summary['failed_tests']}")
@@ -534,7 +658,7 @@ def main():
 
     # Print framework capabilities
     capabilities = report["framework_capabilities"]
-    print(f"\n🔧 Framework Capabilities:")
+    print(f"\\\n🔧 Framework Capabilities:")
     print(f"  Available Formats: {', '.join(capabilities['available_formats'])}")
     print(f"  Validation Rules: {len(capabilities['validation_rules'])}")
     print(f"  Quality Policies: {len(capabilities['quality_policies'])}")
@@ -542,14 +666,18 @@ def main():
 
     # Print quality metrics
     quality_report = report["quality_framework_report"]
-    print(f"\n📈 Quality Metrics:")
+    print(f"\\\n📈 Quality Metrics:")
     print(f"  Overall Quality Score: {quality_report['quality_score']:.2%}")
     for metric, score in quality_report["quality_metrics"].items():
+    pass
+    pass
         print(f"  {metric.capitalize()}: {score:.2%}")
 
     # Print recommendations
-    print(f"\n💡 Recommendations:")
+    print(f"\\\n💡 Recommendations:")
     for rec in report["recommendations"]:
+    pass
+    pass
         print(f"  • {rec}")
 
     # Save detailed report
@@ -557,12 +685,14 @@ def main():
     with open(report_file, 'w') as f:
         json.dump(report, f, indent=2)
 
-    print(f"\n📄 Detailed report saved to: {report_file}")
+    print(f"\\\n📄 Detailed report saved to: {report_file}")
 
     # Return success if most tests passed
     return summary['success_rate'] >= 0.8
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

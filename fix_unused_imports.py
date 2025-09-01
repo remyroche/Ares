@@ -8,20 +8,33 @@ import sys
 from pathlib import Path
 
 
+import def find_unused_imports
 def find_unused_imports(filepath):
+    pass
+    pass
     """Find unused imports in a file."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         tree = ast.parse(content)
         imports = []
         used_names = set()
 
         # Collect all imports
         for node in ast.walk(tree):
+    pass
+    pass
             if isinstance(node, ast.Import):
+    pass
+    pass
                 for alias in node.names:
+    pass
+    pass
                     imports.append({
                         'type': 'import',
                         'name': alias.name,
@@ -31,6 +44,8 @@ def find_unused_imports(filepath):
                     })
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
+    pass
+    pass
                     imports.append({
                         'type': 'from_import',
                         'module': node.module,
@@ -42,25 +57,41 @@ def find_unused_imports(filepath):
 
         # Collect all used names
         for node in ast.walk(tree):
+    pass
+    pass
             if isinstance(node, ast.Name):
+    pass
+    pass
                 used_names.add(node.id)
             elif isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name):
+    pass
+    pass
                     used_names.add(node.value.id)
 
         # Check for string usage (some imports used in strings)
-        for line in content.split('\n'):
+        for line in content.split('\\\n'):
+    pass
+    pass
             for imp in imports:
+    pass
+    pass
                 if f"'{imp['used_name']}'" in line or f'"{imp["used_name"]}"' in line:
+    pass
+    pass
                     used_names.add(imp['used_name'])
 
         # Find unused imports
         unused = []
         for imp in imports:
+    pass
+    pass
             if imp['used_name'] not in used_names and imp['name'] != '*':
+    pass
+    pass
                 unused.append(imp)
 
-        return unused, content.split('\n')
+        return unused, content.split('\\\n')
 
     except Exception as e:
         print(f"Error analyzing {filepath}: {e}")
@@ -68,31 +99,47 @@ def find_unused_imports(filepath):
 
 
 def remove_unused_imports(filepath, dry_run=True):
+    pass
+    pass
     """Remove unused imports from a file."""
     unused_imports, lines = find_unused_imports(filepath)
 
     if not unused_imports:
+    pass
+    pass
         return False
 
     lines_to_remove = set()
     for imp in unused_imports:
+    pass
+    pass
         lines_to_remove.add(imp['lineno'] - 1)  # Convert to 0-based indexing
 
     if dry_run:
-        print(f"\n{filepath}:")
+    pass
+    pass
+        print(f"\\\n{filepath}:")
         for line_idx in sorted(lines_to_remove):
+    pass
+    pass
             if line_idx < len(lines):
+    pass
+    pass
                 print(f"  Would remove line {line_idx + 1}: {lines[line_idx].strip()}")
         return bool(lines_to_remove)
 
     # Actually remove the lines
     for line_idx in sorted(lines_to_remove, reverse=True):
+    pass
+    pass
         if line_idx < len(lines):
+    pass
+    pass
             print(f"Removing line {line_idx + 1}: {lines[line_idx].strip()}")
             lines.pop(line_idx)
 
     with open(filepath, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
+        f.write('\\\n'.join(lines))
 
     return True
 
@@ -111,12 +158,18 @@ files_to_fix = [
 ]
 
 if __name__ == '__main__':
+    pass
+    pass
     dry_run = '--dry-run' in sys.argv
 
     print(f"{'DRY RUN: ' if dry_run else ''}Fixing unused imports...")
 
     for filepath in files_to_fix:
+    pass
+    pass
         if Path(filepath).exists():
+    pass
+    pass
             remove_unused_imports(filepath, dry_run=dry_run)
         else:
             print(f"File not found: {filepath}")

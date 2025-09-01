@@ -6,6 +6,8 @@ Targeted script to fix specific syntax issues without breaking import statements
 import re
 
 def fix_state_manager():
+    pass
+    pass
     """Fix src/utils/state_manager.py with targeted patterns"""
     file_path = "src/utils/state_manager.py"
 
@@ -14,13 +16,13 @@ def fix_state_manager():
 
     # Fix specific patterns only
     # Fix variable assignments in class methods (self.var, value)
-    content = re.sub(r'(self\.\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(self\\\.\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     # Fix function parameter syntax (param: type, default)
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -28,6 +30,8 @@ def fix_state_manager():
     print(f"✅ Fixed {file_path}")
 
 def fix_model_manager():
+    pass
+    pass
     """Fix src/utils/model_manager.py with targeted patterns"""
     file_path = "src/utils/model_manager.py"
 
@@ -36,13 +40,13 @@ def fix_model_manager():
 
     # Fix specific patterns only
     # Fix variable assignments
-    content = re.sub(r'(\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix function parameter syntax
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     # Fix getattr calls
-    content = re.sub(r'getattr\((\w+) = (\w+)', r'getattr(\1, \2', content)
+    content = re.sub(r'getattr\\\((\\\w+) = (\\\w+)', r'getattr(\\\1, \\\2', content)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -50,6 +54,8 @@ def fix_model_manager():
     print(f"✅ Fixed {file_path}")
 
 def fix_config_loader():
+    pass
+    pass
     """Fix src/utils/config_loader.py with targeted patterns"""
     file_path = "src/utils/config_loader.py"
 
@@ -58,10 +64,10 @@ def fix_config_loader():
 
     # Fix specific patterns only
     # Fix function parameter syntax
-    content = re.sub(r'(\w+): (\w+), (\w+)', r'\1: \2 = \3', content)
+    content = re.sub(r'(\\\w+): (\\\w+), (\\\w+)', r'\\\1: \\\2 = \\\3', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -69,6 +75,8 @@ def fix_config_loader():
     print(f"✅ Fixed {file_path}")
 
 def fix_async_utils():
+    pass
+    pass
     """Fix src/utils/async_utils.py with targeted patterns"""
     file_path = "src/utils/async_utils.py"
 
@@ -77,10 +85,10 @@ def fix_async_utils():
 
     # Fix specific patterns only
     # Fix variable assignments
-    content = re.sub(r'(\w+), (\w+)', r'\1 = \2', content)
+    content = re.sub(r'(\\\w+), (\\\w+)', r'\\\1 = \\\2', content)
 
     # Fix decorator parameters
-    content = re.sub(r'default_return, (\w+)', r'default_return=\1', content)
+    content = re.sub(r'default_return, (\\\w+)', r'default_return=\\\1', content)
 
     with open(file_path, 'w') as f:
         f.write(content)
@@ -88,6 +96,8 @@ def fix_async_utils():
     print(f"✅ Fixed {file_path}")
 
 def main():
+    pass
+    pass
     """Main function to fix all remaining files"""
     print("🔧 Applying targeted fixes...")
 
@@ -100,4 +110,6 @@ def main():
     print("✅ All files processed!")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

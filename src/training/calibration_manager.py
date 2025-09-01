@@ -4,11 +4,13 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     invalid,
@@ -21,6 +23,8 @@ class CalibrationManager:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize calibration manager.
 
         Args:
@@ -71,8 +75,14 @@ class CalibrationManager:
         try:
             self.logger.info("Initializing Calibration Manager...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Validate configuration
             if not self._validate_configuration():
+    pass
+    pass
                 self.print(invalid("Invalid configuration for calibration manager"))
                 return False
 
@@ -92,6 +102,8 @@ class CalibrationManager:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate calibration manager configuration.
 
         Returns:
@@ -100,6 +112,10 @@ class CalibrationManager:
         """
         try:
             # Validate calibration manager specific settings
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not any(
                 [
                     self.enable_confidence_calibration,
@@ -125,16 +141,25 @@ class CalibrationManager:
         """Initialize calibration components."""
         try:
             # Initialize ML confidence predictor for calibration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 
+import self.ml_confidence_predictor = MLConfidencePredictor
             self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()
 
             # Initialize calibration methods
             if self.enable_temperature_scaling:
+    pass
+    pass
                 self.logger.info("✅ Temperature scaling calibration initialized")
 
             if self.enable_isotonic_regression:
+    pass
+    pass
                 self.logger.info("✅ Isotonic regression calibration initialized")
 
             self.logger.info("✅ All calibration components initialized")
@@ -171,15 +196,23 @@ class CalibrationManager:
         """
         try:
             self.logger.info("🎯 Starting model calibration...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_calibrating = True
 
             # Validate inputs
             if not self._validate_calibration_inputs(ensemble_results, training_input):
+    pass
+    pass
                 return None
 
             # Calibrate analyst models
             analyst_calibration = None
             if ensemble_results.get("analyst_ensembles"):
+    pass
+    pass
                 analyst_calibration = await self._calibrate_analyst_models(
                     ensemble_results["analyst_ensembles"],
                     training_input,
@@ -188,6 +221,8 @@ class CalibrationManager:
             # Calibrate tactician models
             tactician_calibration = None
             if ensemble_results.get("tactician_ensembles"):
+    pass
+    pass
                 tactician_calibration = await self._calibrate_tactician_models(
                     ensemble_results["tactician_ensembles"],
                     training_input,
@@ -235,12 +270,20 @@ class CalibrationManager:
         """
         try:
             # Validate ensemble results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not ensemble_results:
+    pass
+    pass
                 self.print(error("Ensemble results are empty"))
                 return False
 
             # Validate training input
             if not training_input:
+    pass
+    pass
                 self.print(error("Training input is empty"))
                 return False
 
@@ -280,16 +323,24 @@ class CalibrationManager:
         try:
             self.logger.info("🧠 Calibrating analyst models...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             calibration_results = {}
 
             # Calibrate each analyst ensemble
             for ensemble_name, ensemble in analyst_ensembles.items():
+    pass
+    pass
                 calibrated_ensemble = await self._calibrate_single_ensemble(
                     ensemble,
                     ensemble_name,
                     "analyst",
                 )
                 if calibrated_ensemble:
+    pass
+    pass
                     calibration_results[ensemble_name] = calibrated_ensemble
 
             self.logger.info(
@@ -324,16 +375,24 @@ class CalibrationManager:
         try:
             self.logger.info("🎯 Calibrating tactician models...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             calibration_results = {}
 
             # Calibrate each tactician ensemble
             for ensemble_name, ensemble in tactician_ensembles.items():
+    pass
+    pass
                 calibrated_ensemble = await self._calibrate_single_ensemble(
                     ensemble,
                     ensemble_name,
                     "tactician",
                 )
                 if calibrated_ensemble:
+    pass
+    pass
                     calibration_results[ensemble_name] = calibrated_ensemble
 
             self.logger.info(
@@ -370,6 +429,10 @@ class CalibrationManager:
         try:
             self.logger.info(
                 f"🎯 Calibrating {ensemble_type} ensemble: {ensemble_name}",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             # Apply different calibration methods
@@ -377,22 +440,34 @@ class CalibrationManager:
 
             # Temperature scaling calibration
             if self.enable_temperature_scaling:
+    pass
+    pass
                 temperature_scaled = await self._apply_temperature_scaling(ensemble)
                 if temperature_scaled:
+    pass
+    pass
                     calibrated_ensemble["temperature_scaling"] = temperature_scaled
 
             # Isotonic regression calibration
             if self.enable_isotonic_regression:
+    pass
+    pass
                 isotonic_calibrated = await self._apply_isotonic_regression(ensemble)
                 if isotonic_calibrated:
+    pass
+    pass
                     calibrated_ensemble["isotonic_regression"] = isotonic_calibrated
 
             # Confidence calibration
             if self.enable_confidence_calibration:
+    pass
+    pass
                 confidence_calibrated = await self._apply_confidence_calibration(
                     ensemble,
                 )
                 if confidence_calibrated:
+    pass
+    pass
                     calibrated_ensemble["confidence_calibration"] = (
                         confidence_calibrated
                     )
@@ -436,6 +511,10 @@ class CalibrationManager:
         """
         try:
             # This would implement actual temperature scaling logic
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return a placeholder result
             return {
                 "temperature": 1.2,
@@ -467,6 +546,10 @@ class CalibrationManager:
         """
         try:
             # This would implement actual isotonic regression logic
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return a placeholder result
             return {
                 "calibration_error": 0.018,
@@ -498,6 +581,10 @@ class CalibrationManager:
         """
         try:
             # This would implement actual confidence calibration logic
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # For now, return a placeholder result
             return {
                 "confidence_threshold": 0.75,
@@ -527,6 +614,10 @@ class CalibrationManager:
         try:
             self.logger.info("📁 Storing calibration results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Store calibration results in memory for now
             # In practice, this would store to database or file system
             self.calibration_results = calibration_results.copy()
@@ -537,6 +628,8 @@ class CalibrationManager:
             self.print(failed("❌ Failed to store calibration results: {e}"))
 
     def get_calibration_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get current calibration status.
 
         Returns:
@@ -552,6 +645,8 @@ class CalibrationManager:
         }
 
     def get_calibration_results(self) -> dict[str, Any]:
+    pass
+    pass
         """Get the latest calibration results.
 
         Returns:
@@ -569,6 +664,10 @@ class CalibrationManager:
         """Stop the calibration manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Calibration Manager...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_calibrating = False
             self.logger.info("✅ Calibration Manager stopped successfully")
         except Exception:
@@ -594,7 +693,13 @@ async def setup_calibration_manager(
     """
     try:
         manager = CalibrationManager(config or {})
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if await manager.initialize():
+    pass
+    pass
             return manager
         return None
     except Exception as e:

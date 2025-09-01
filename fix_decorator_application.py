@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 # Steps that need decorator application fixes
+import STEPS_TO_FIX = [
 STEPS_TO_FIX = [
     "step2_5_sr_optimization.py",
     "step4_triple_barrier_method.py",
@@ -17,26 +18,38 @@ STEPS_TO_FIX = [
 ]
 
 def find_execute_method(file_path: Path) -> Tuple[bool, str, int]:
+    pass
+    pass
     """Find the execute method in a step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        lines = content.split('\n')
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
+        lines = content.split('\\\n')
 
         # Look for different execute method patterns
         patterns = [
-            r'async def execute\s*\([^)]*\)\s*->[^:]*:',
-            r'def execute\s*\([^)]*\)\s*->[^:]*:',
-            r'async def execute_[a-zA-Z_]*\s*\([^)]*\)\s*->[^:]*:',
-            r'def execute_[a-zA-Z_]*\s*\([^)]*\)\s*->[^:]*:',
-            r'async def execute_triple_barrier_method\s*\([^)]*\)\s*->[^:]*:',
-            r'async def execute_labeling\s*\([^)]*\)\s*->[^:]*:',
+            r'async def execute\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'def execute\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'async def execute_[a-zA-Z_]*\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'def execute_[a-zA-Z_]*\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'async def execute_triple_barrier_method\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
+            r'async def execute_labeling\\\s*\\\([^)]*\\\)\\\s*->[^:]*:',
         ]
 
         for i, line in enumerate(lines):
+    pass
+    pass
             for pattern in patterns:
+    pass
+    pass
                 if re.search(pattern, line):
+    pass
+    pass
                     return True, line.strip(), i
 
         return False, "", -1
@@ -46,21 +59,33 @@ def find_execute_method(file_path: Path) -> Tuple[bool, str, int]:
         return False, "", -1
 
 def check_decorator_applied(file_path: Path) -> bool:
+    pass
+    pass
     """Check if decorator is applied to execute method."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Find execute method
         found, method_line, line_num = find_execute_method(file_path)
 
         if not found:
+    pass
+    pass
             return False
 
         # Check if decorator is present before execute method
-        lines = content.split('\n')
+        lines = content.split('\\\n')
         for i in range(line_num - 1, max(0, line_num - 10), -1):
+    pass
+    pass
             if lines[i].strip().startswith('@with_enhanced_mlflow_logging'):
+    pass
+    pass
                 return True
             elif lines[i].strip() and not lines[i].strip().startswith('@'):
                 break
@@ -72,13 +97,21 @@ def check_decorator_applied(file_path: Path) -> bool:
         return False
 
 def apply_decorator_to_execute(file_path: Path) -> bool:
+    pass
+    pass
     """Apply decorator to execute method if not already applied."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if decorator is already applied
         if check_decorator_applied(file_path):
+    pass
+    pass
             print(f"✅ Decorator already applied to execute method in {file_path.name}")
             return True
 
@@ -86,31 +119,39 @@ def apply_decorator_to_execute(file_path: Path) -> bool:
         found, method_line, line_num = find_execute_method(file_path)
 
         if not found:
+    pass
+    pass
             print(f"⚠️ Could not find execute method in {file_path.name}")
             return False
 
         # Extract step number from filename
-        step_match = re.search(r'step(\d+(?:_\d+)?)', file_path.name)
+        step_match = re.search(r'step(\\\d+(?:_\\\d+)?)', file_path.name)
         if not step_match:
+    pass
+    pass
             print(f"⚠️ Could not extract step number from {file_path.name}")
             return False
 
         step_num = step_match.group(1)
 
         # Add decorator before execute method
-        lines = content.split('\n')
+        lines = content.split('\\\n')
         decorator = f'    @with_enhanced_mlflow_logging("step{step_num}")'
 
         # Find the right position (before other decorators)
         insert_pos = line_num
         for i in range(line_num - 1, -1, -1):
+    pass
+    pass
             if lines[i].strip().startswith('@'):
+    pass
+    pass
                 insert_pos = i
             elif lines[i].strip() and not lines[i].strip().startswith('#'):
                 break
 
         lines.insert(insert_pos, decorator)
-        new_content = '\n'.join(lines)
+        new_content = '\\\n'.join(lines)
 
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
@@ -123,10 +164,14 @@ def apply_decorator_to_execute(file_path: Path) -> bool:
         return False
 
 def main():
+    pass
+    pass
     """Main function to fix decorator application."""
     steps_dir = Path("src/training/steps")
 
     if not steps_dir.exists():
+    pass
+    pass
         print(f"❌ Steps directory not found: {steps_dir}")
         return
 
@@ -137,13 +182,17 @@ def main():
     results = {}
 
     for step_file in STEPS_TO_FIX:
+    pass
+    pass
         file_path = steps_dir / step_file
 
         if not file_path.exists():
+    pass
+    pass
             print(f"⚠️ Step file not found: {step_file}")
             continue
 
-        print(f"\n🔄 Processing {step_file}...")
+        print(f"\\\n🔄 Processing {step_file}...")
 
         # Check current status
         decorator_present = "@with_enhanced_mlflow_logging" in file_path.read_text()
@@ -153,6 +202,8 @@ def main():
         print(f"   - Decorator applied to execute: {'✅' if decorator_applied else '❌'}")
 
         if decorator_present and not decorator_applied:
+    pass
+    pass
             success = apply_decorator_to_execute(file_path)
             results[step_file] = success
         elif decorator_applied:
@@ -163,7 +214,7 @@ def main():
             results[step_file] = False
 
     # Print summary
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("📊 DECORATOR FIX SUMMARY")
     print("="*60)
 
@@ -171,15 +222,21 @@ def main():
     total_steps = len(results)
 
     for step_file, success in results.items():
+    pass
+    pass
         status = "✅ Fixed" if success else "❌ Failed"
         print(f"{status} {step_file}")
 
-    print(f"\n🎯 Overall: {successful_fixes}/{total_steps} decorators fixed")
+    print(f"\\\n🎯 Overall: {successful_fixes}/{total_steps} decorators fixed")
 
     if successful_fixes == total_steps:
+    pass
+    pass
         print("🎉 All decorators successfully applied to execute methods!")
     else:
         print("⚠️ Some steps may need manual review")
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

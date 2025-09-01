@@ -5,6 +5,7 @@ import yaml
 from pathlib import Path
 from datetime import datetime, timedelta
 
+import guard_dataframe_nulls,
     guard_dataframe_nulls,
     handle_errors,
     with_tracing_span,
@@ -14,6 +15,7 @@ from src.utils.warning_symbols import error, warning
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
 
 
+import class TacticianEnhancedPredictionIntegrator:
 class TacticianEnhancedPredictionIntegrator:
     """
     Enhanced Prediction Integrator for Tactician that delivers multi-outcome predictions
@@ -29,6 +31,8 @@ class TacticianEnhancedPredictionIntegrator:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize the Tactician enhanced prediction integrator."""
         self.config = config
         self.logger = get_logger(__name__)
@@ -45,6 +49,8 @@ class TacticianEnhancedPredictionIntegrator:
         self.logger.info("🚀 Tactician Enhanced Prediction Integrator initialized")
 
     def _load_tactician_config(self) -> None:
+    pass
+    pass
         """Load Tactician-specific configuration."""
         tactician_config = self.config.get("tactician_triple_barrier", {})
 
@@ -74,12 +80,16 @@ class TacticianEnhancedPredictionIntegrator:
         }
 
     def _initialize_tactician_models(self) -> dict[str, Any]:
+    pass
+    pass
         """Initialize Tactician prediction models."""
         # Placeholder for actual ML models
         # In production, these would be trained models for each prediction type
         models = {}
 
         for prediction_type in self.prediction_types:
+    pass
+    pass
             models[prediction_type] = {
                 "model": None,  # Placeholder for actual model
                 "confidence": 0.90,  # Higher base confidence than Analyst
@@ -118,7 +128,13 @@ class TacticianEnhancedPredictionIntegrator:
         """
         try:
             # Determine timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if timeframe is None:
+    pass
+    pass
                 timeframe = self._determine_optimal_timeframe(market_data)
 
             # Get dynamic barriers for this timeframe (smaller than Analyst)
@@ -128,6 +144,8 @@ class TacticianEnhancedPredictionIntegrator:
             tactician_predictions = {}
 
             for prediction_type in self.prediction_types:
+    pass
+    pass
                 enhanced_prediction = await self._generate_enhanced_prediction(
                     prediction_type=prediction_type,
                     market_data=market_data,
@@ -140,6 +158,8 @@ class TacticianEnhancedPredictionIntegrator:
                 )
 
                 if enhanced_prediction:
+    pass
+    pass
                     tactician_predictions[prediction_type] = enhanced_prediction
 
             # Add metadata
@@ -176,9 +196,15 @@ class TacticianEnhancedPredictionIntegrator:
         """Generate enhanced prediction for a specific type."""
         try:
             # Get base prediction from Analyst
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_prediction = self._extract_analyst_prediction(analyst_predictions, prediction_type)
 
             if base_prediction is None:
+    pass
+    pass
                 return None
 
             # Apply Tactician-specific enhancement
@@ -193,6 +219,8 @@ class TacticianEnhancedPredictionIntegrator:
 
             # Apply basic precision filtering
             if enhanced_prediction.get("confidence", 0.0) < self.precision_threshold:
+    pass
+    pass
                 return None
 
             return enhanced_prediction
@@ -209,6 +237,10 @@ class TacticianEnhancedPredictionIntegrator:
         """Extract base prediction from Analyst predictions."""
         try:
             # Map Tactician prediction types to Analyst prediction types
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             analyst_type_mapping = {
                 "price_deviation_prediction": "price_prediction",
                 "price_direction_prediction": "direction_prediction",
@@ -219,7 +251,11 @@ class TacticianEnhancedPredictionIntegrator:
 
             # Look for prediction in various possible locations
             for key, value in analyst_predictions.items():
+    pass
+    pass
                 if analyst_type in key.lower():
+    pass
+    pass
                     return value
                 elif isinstance(value, dict) and analyst_type in value:
                     return value[analyst_type]
@@ -239,18 +275,32 @@ class TacticianEnhancedPredictionIntegrator:
         """Create synthetic prediction when Analyst prediction is not available."""
         try:
             # Extract any available confidence or prediction values
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             base_confidence = 0.5
             base_prediction = 0.0
 
             for key, value in analyst_predictions.items():
+    pass
+    pass
                 if isinstance(value, dict):
+    pass
+    pass
                     if "confidence" in value:
+    pass
+    pass
                         base_confidence = value["confidence"]
                     if "prediction" in value:
+    pass
+    pass
                         base_prediction = value["prediction"]
 
             # Create synthetic prediction based on type
             if prediction_type == "price_deviation_prediction":
+    pass
+    pass
                 # Price deviation for both 50% and 25% of Analyst barriers
                 # This will be calculated by the ML model based on market conditions
                 synthetic_value = base_prediction * 0.5  # Base 50% of Analyst deviation
@@ -293,8 +343,14 @@ class TacticianEnhancedPredictionIntegrator:
         """Apply Tactician-specific enhancement to base prediction."""
         try:
             # Get ML model confidence factor for this prediction type
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
             if ml_confidence_factor is None:
+    pass
+    pass
                 # Fallback to base confidence if ML model hasn't provided factor yet
                 ml_confidence_factor = 1.0
 
@@ -356,11 +412,17 @@ class TacticianEnhancedPredictionIntegrator:
         """Enhance prediction value for 2 barrier combinations."""
         try:
             if prediction_type == "price_deviation_prediction":
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Calculate price deviations for 2 barrier combinations
                 current_price = market_data['close'].iloc[-1] if not market_data.empty else 100.0
 
                 deviations = {}
                 for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+    pass
+    pass
                     # Calculate deviations for this barrier combination
                     upper_deviation = (upper_barrier - current_price) / current_price
                     lower_deviation = (current_price - lower_barrier) / current_price
@@ -373,10 +435,14 @@ class TacticianEnhancedPredictionIntegrator:
 
                 return deviations
 
+    except Exception as e:
+        pass
             elif prediction_type == "price_direction_prediction":
                 # Same direction as Analyst for 2 barrier combinations
                 directions = {}
                 for barrier_name in barrier_combinations.keys():
+    pass
+    pass
                     directions[barrier_name] = base_value  # Keep same direction
 
                 return directions
@@ -386,6 +452,8 @@ class TacticianEnhancedPredictionIntegrator:
                 # ML model calculates this based on market conditions, volatility, and barrier distances
                 confidences = {}
                 for barrier_name, (upper_barrier, lower_barrier) in barrier_combinations.items():
+    pass
+    pass
                     # ML model will calculate confidence based on:
                     # - Market volatility
                     # - Barrier distances
@@ -415,10 +483,16 @@ class TacticianEnhancedPredictionIntegrator:
         """Calculate enhanced confidence using ML model factor."""
         try:
             # Base enhancement from ML model factor
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             enhanced_confidence = min(1.0, base_confidence * ml_confidence_factor)
 
             # Additional enhancement based on market data quality
             if not market_data.empty:
+    pass
+    pass
                 # Check for recent volatility (lower volatility = higher confidence)
                 recent_volatility = market_data['close'].pct_change().tail(10).std()
                 volatility_factor = max(0.6, 1.0 - recent_volatility * 8)  # Less penalty for volatility
@@ -444,6 +518,10 @@ class TacticianEnhancedPredictionIntegrator:
         """Calculate precision score for the enhanced prediction."""
         try:
             # Base precision from confidence
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             precision_score = enhanced_confidence
 
             # Adjust based on timeframe (shorter timeframes get higher precision)
@@ -452,6 +530,8 @@ class TacticianEnhancedPredictionIntegrator:
 
             # Adjust based on market data quality
             if not market_data.empty:
+    pass
+    pass
                 # More data points = higher precision
                 data_quality_factor = min(1.3, len(market_data) / 100)
                 precision_score *= data_quality_factor
@@ -463,15 +543,27 @@ class TacticianEnhancedPredictionIntegrator:
             return enhanced_confidence
 
     def _determine_optimal_timeframe(self, market_data: pd.DataFrame) -> str:
+    pass
+    pass
         """Determine optimal timeframe based on market data."""
         try:
             if market_data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return self.primary_timeframe
 
+    except Exception as e:
+        pass
             # Check data frequency
             if len(market_data) > 1:
+    pass
+    pass
                 time_diff = market_data.index[1] - market_data.index[0]
                 if time_diff <= timedelta(minutes=1):
+    pass
+    pass
                     return "1m"
                 elif time_diff <= timedelta(minutes=5):
                     return "5m"
@@ -499,20 +591,32 @@ class TacticianEnhancedPredictionIntegrator:
                 "validation_score": 0.0,
                 "issues": [],
                 "enhancements": []
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             total_score = 0.0
             valid_predictions = 0
 
             for prediction_type in self.prediction_types:
+    pass
+    pass
                 if prediction_type in tactician_predictions:
+    pass
+    pass
                     tactician_pred = tactician_predictions[prediction_type]
                     analyst_pred = self._extract_analyst_prediction(analyst_predictions, prediction_type)
 
                     if analyst_pred:
+    pass
+    pass
                         # Validate confidence enhancement using ML model factors
                         ml_confidence_factor = self.ml_confidence_factors.get(prediction_type, 1.0)
                         if ml_confidence_factor is None:
+    pass
+    pass
                             ml_confidence_factor = 1.0  # Fallback
 
                         tactician_confidence = tactician_pred.get("confidence", 0.0)
@@ -520,8 +624,12 @@ class TacticianEnhancedPredictionIntegrator:
 
                         # Check if Tactician confidence meets ML model expectations
                         if ml_confidence_factor > 1.0:
+    pass
+    pass
                             expected_confidence = analyst_confidence * ml_confidence_factor * 0.8
                             if tactician_confidence >= expected_confidence:
+    pass
+    pass
                                 validation_results["enhancements"].append(f"{prediction_type}: ML model confidence enhancement")
                                 total_score += 1.0
                             else:
@@ -536,8 +644,12 @@ class TacticianEnhancedPredictionIntegrator:
                         analyst_value = analyst_pred.get("prediction", 0.0)
 
                         if prediction_type == "price_deviation_prediction":
+    pass
+    pass
                             # Tactician should have smaller deviation
                             if abs(tactician_value) <= abs(analyst_value):
+    pass
+    pass
                                 total_score += 0.5
                             else:
                                 validation_results["issues"].append(f"{prediction_type}: Deviation not smaller than Analyst")
@@ -553,6 +665,8 @@ class TacticianEnhancedPredictionIntegrator:
 
             # Calculate overall validation score
             if valid_predictions > 0:
+    pass
+    pass
                 validation_results["validation_score"] = total_score / valid_predictions
                 validation_results["is_valid"] = validation_results["validation_score"] >= 0.7
 
@@ -563,18 +677,30 @@ class TacticianEnhancedPredictionIntegrator:
             return {"is_valid": False, "validation_score": 0.0, "issues": [str(e)], "enhancements": []}
 
     def update_ml_confidence_factors(self, new_factors: dict[str, float]) -> None:
+    pass
+    pass
         """Update ML confidence factors dynamically (called by ML model)."""
         try:
             for prediction_type, factor in new_factors.items():
+    pass
+    except Exception as e:
+        pass
+    pass
                 if prediction_type in self.ml_confidence_factors:
+    pass
+    pass
                     self.ml_confidence_factors[prediction_type] = factor
                     self.logger.info(f"Updated ML confidence factor for {prediction_type}: {factor}")
                 else:
                     self.logger.warning(f"Unknown prediction type for ML confidence factor: {prediction_type}")
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error updating ML confidence factors: {e}")
 
     def load_step12_ml_confidence_factors(self, step12_results_path: str = None) -> bool:
+    pass
+    pass
         """
         Automatically load ML confidence factors from step12 results.
         This method is called automatically when step12 completes.
@@ -587,7 +713,13 @@ class TacticianEnhancedPredictionIntegrator:
         """
         try:
             # Try to load from step12 results
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if step12_results_path and Path(step12_results_path).exists():
+    pass
+    pass
                 # Load from specific file
                 with open(step12_results_path, 'r') as f:
                     step12_results = yaml.safe_load(f)
@@ -602,23 +734,35 @@ class TacticianEnhancedPredictionIntegrator:
 
                 step12_results = None
                 for path in default_paths:
+    pass
+    pass
                     if Path(path).exists():
+    pass
+    pass
                         with open(path, 'r') as f:
                             step12_results = yaml.safe_load(f)
                             self.logger.info(f"Loaded step12 results from: {path}")
                             break
 
                 if not step12_results:
+    pass
+    pass
                     self.logger.warning("No step12 results found, using default ML confidence factors")
                     return False
 
             # Extract ML confidence factors from step12 results
             if "ml_confidence_factors" in step12_results:
+    pass
+    pass
                 ml_factors = step12_results["ml_confidence_factors"]
 
                 # Update our ML confidence factors
                 for prediction_type in self.ml_confidence_factors:
+    pass
+    pass
                     if prediction_type in ml_factors:
+    pass
+    pass
                         self.ml_confidence_factors[prediction_type] = ml_factors[prediction_type]
                         self.logger.info(f"Loaded ML confidence factor for {prediction_type}: {ml_factors[prediction_type]}")
                     else:
@@ -626,7 +770,11 @@ class TacticianEnhancedPredictionIntegrator:
 
                 # Also update the models
                 for prediction_type, model_data in self.tactician_models.items():
+    pass
+    pass
                     if prediction_type in self.ml_confidence_factors:
+    pass
+    pass
                         model_data["ml_confidence_factor"] = self.ml_confidence_factors[prediction_type]
 
                 self.logger.info("✅ Successfully loaded ML confidence factors from step12 results")
@@ -641,16 +789,24 @@ class TacticianEnhancedPredictionIntegrator:
             return False
 
     def auto_refresh_from_step12(self) -> bool:
+    pass
+    pass
         """
         Automatically refresh ML confidence factors from step12 results.
         This method is called periodically to check for new step12 results.
         """
         try:
             # Check if step12 results have been updated
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             step12_config = self.config.get("step12_confidence_optimization", {})
             auto_refresh = step12_config.get("auto_refresh", True)
 
             if not auto_refresh:
+    pass
+    pass
                 return False
 
             # Try to load latest step12 results
@@ -661,6 +817,8 @@ class TacticianEnhancedPredictionIntegrator:
             return False
 
     def get_prediction_summary(self, tactician_predictions: dict[str, Any]) -> dict[str, Any]:
+    pass
+    pass
         """Get summary of Tactician predictions."""
         try:
             summary = {
@@ -670,6 +828,10 @@ class TacticianEnhancedPredictionIntegrator:
                 "average_precision_score": 0.0,
                 "prediction_types": {},
                 "timeframe": tactician_predictions.get("metadata", {}).get("timeframe", "unknown")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             total_confidence = 0.0
@@ -677,7 +839,11 @@ class TacticianEnhancedPredictionIntegrator:
             valid_predictions = 0
 
             for prediction_type in self.prediction_types:
+    pass
+    pass
                 if prediction_type in tactician_predictions:
+    pass
+    pass
                     pred = tactician_predictions[prediction_type]
                     summary["total_predictions"] += 1
 
@@ -689,6 +855,8 @@ class TacticianEnhancedPredictionIntegrator:
                     valid_predictions += 1
 
                     if precision_score >= self.precision_threshold:
+    pass
+    pass
                         summary["high_precision_predictions"] += 1
 
                     summary["prediction_types"][prediction_type] = {
@@ -698,6 +866,8 @@ class TacticianEnhancedPredictionIntegrator:
                     }
 
             if valid_predictions > 0:
+    pass
+    pass
                 summary["average_confidence"] = total_confidence / valid_predictions
                 summary["average_precision_score"] = total_precision / valid_predictions
 

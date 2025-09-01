@@ -26,6 +26,8 @@ class ComprehensiveGapFiller:
     """Comprehensive gap filler that handles all data types."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+    pass
+    pass
         self.data_cache_path, Path(data_cache_path)
         self.session: aiohttp.ClientSession | None, None
         self.max_api_calls_per_gap, 50  # Maximum calls to prevent infinite loops
@@ -35,12 +37,16 @@ class ComprehensiveGapFiller:
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session is available."""
         if self.session is None:
+    pass
+    pass
             timeout, aiohttp.ClientTimeout(total = 60)
         self.session, aiohttp.ClientSession(timeout = timeout)
 
     async def close_session(self) -> None:
         """Close aiohttp session."""
         if self.session:
+    pass
+    pass
         await self.session.close()
         self.session, None
 
@@ -52,7 +58,13 @@ class ComprehensiveGapFiller:
         """Detect gaps in a single aggtrades file."""
         try:
         # Read the file (Parquet or CSV)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
                 df, pd.read_parquet(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df, pd.read_csv(file_path)
@@ -60,10 +72,14 @@ class ComprehensiveGapFiller:
         return []
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Ensure timestamp column exists
         if "timestamp" not in df.columns:
+    pass
+    pass
         return []
 
         # Sort by timestamp
@@ -79,7 +95,11 @@ class ComprehensiveGapFiller:
             gap_rows, df[df["time_diff"] > min_gap_seconds]
 
         for idx, row in gap_rows.iterrows():
+    pass
+    pass
         if idx > 0:
+    pass
+    pass
                     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
@@ -109,7 +129,13 @@ class ComprehensiveGapFiller:
         """Detect gaps in a single futures file."""
         try:
         # Read the file (Parquet or CSV)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
                 df, pd.read_parquet(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df, pd.read_csv(file_path)
@@ -117,10 +143,14 @@ class ComprehensiveGapFiller:
         return []
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Ensure timestamp column exists
         if "timestamp" not in df.columns:
+    pass
+    pass
         return []
 
         # Sort by timestamp
@@ -137,7 +167,11 @@ class ComprehensiveGapFiller:
             gap_rows, df[df["time_diff_hours"] > min_gap_hours]
 
         for idx, row in gap_rows.iterrows():
+    pass
+    pass
         if idx > 0:
+    pass
+    pass
                     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
@@ -169,7 +203,13 @@ class ComprehensiveGapFiller:
         """Detect gaps in a single klines file."""
         try:
         # Read the file (Parquet or CSV)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
                 df, pd.read_parquet(file_path)
             elif file_path.suffix.lower() == ".csv":
                 df, pd.read_csv(file_path)
@@ -177,10 +217,14 @@ class ComprehensiveGapFiller:
         return []
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Ensure timestamp column exists
         if "timestamp" not in df.columns:
+    pass
+    pass
         return []
 
         # Sort by timestamp
@@ -196,7 +240,11 @@ class ComprehensiveGapFiller:
             gap_rows, df[df["time_diff_minutes"] > min_gap_minutes]
 
         for idx, row in gap_rows.iterrows():
+    pass
+    pass
         if idx > 0:
+    pass
+    pass
                     gap_start, pd.to_datetime(
                         df.loc[idx - 1, "timestamp"]
                     ).to_pydatetime()
@@ -221,6 +269,8 @@ class ComprehensiveGapFiller:
         return []
 
     def _should_use_binance_vision(self, gap_start: datetime) -> bool:
+    pass
+    pass
         """Determine if we should use Binance Vision based on date."""
         cutoff_date, datetime.now() - timedelta(days = 7)
         return gap_start < cutoff_date
@@ -236,6 +286,8 @@ class ComprehensiveGapFiller:
     ) -> list[dict[str, Any]]:
         """Fetch aggtrades data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
+    pass
+    pass
         return await self._fetch_aggtrades_from_binance_vision(
                 symbol = symbol,
                 gap_start = gap_start,
@@ -265,6 +317,10 @@ class ComprehensiveGapFiller:
 
         try:
         # Placeholder for real exchange client integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Return empty list to indicate no additional data from
         # regular API in this stub
         return []
@@ -294,15 +350,23 @@ class ComprehensiveGapFiller:
         try:
             ssl_context, ssl.create_default_context(cafile = certifi.where())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             assert self.session is not None
         async with self.session.get(url, ssl = ssl_context) as resp:
         if resp.status != 200:
+    pass
+    pass
         return []
                 content, await resp.read()
 
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
         if not csv_names:
+    pass
+    pass
         return []
 
         with zf.open(csv_names[0]) as f:
@@ -310,10 +374,14 @@ class ComprehensiveGapFiller:
                     df, pd.read_csv(f, header = None)
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Assign column names based on Binance schema
         if df.shape[1] >= 7:
+    pass
+    pass
                 df.columns = [
                     "a",
                     "p",
@@ -326,8 +394,12 @@ class ComprehensiveGapFiller:
 
         # Process data types
         for col in ["a", "f", "l", "T"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         for col in ["p", "q"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
             df["m"] = (
@@ -344,6 +416,8 @@ class ComprehensiveGapFiller:
             df, df[(df["T"] >= start_time_ms) & (df["T"] < end_time_ms)]
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Convert to list of dicts
@@ -363,6 +437,8 @@ class ComprehensiveGapFiller:
     ) -> list[dict[str, Any]]:
         """Fetch futures data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
+    pass
+    pass
         return await self._fetch_futures_from_binance_vision(
                 symbol = symbol,
                 gap_start = gap_start,
@@ -388,6 +464,10 @@ class ComprehensiveGapFiller:
 
         try:
         # Placeholder for real exchange client integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return []
         except Exception:
         return []
@@ -415,26 +495,38 @@ class ComprehensiveGapFiller:
         try:
             ssl_context, ssl.create_default_context(cafile = certifi.where())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             assert self.session is not None
         async with self.session.get(url, ssl = ssl_context) as resp:
         if resp.status != 200:
+    pass
+    pass
         return []
                 content, await resp.read()
 
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
         if not csv_names:
+    pass
+    pass
         return []
 
         with zf.open(csv_names[0]) as f:
                     df, pd.read_csv(f)
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Process data types
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         if "fundingRate" in df.columns:
+    pass
+    pass
                 df["fundingRate"] = pd.to_numeric(
                     df["fundingRate"], errors="coerce",
                 )
@@ -443,6 +535,8 @@ class ComprehensiveGapFiller:
             df, df[(df["timestamp"] >= gap_start) & (df["timestamp"] < gap_end)]
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Convert to list of dicts
@@ -461,6 +555,8 @@ class ComprehensiveGapFiller:
     ) -> list[dict[str, Any]]:
         """Fetch klines data using appropriate source based on date."""
         if self._should_use_binance_vision(gap_start):
+    pass
+    pass
         return await self._fetch_klines_from_binance_vision(
                 symbol = symbol,
                 gap_start = gap_start,
@@ -487,6 +583,10 @@ class ComprehensiveGapFiller:
 
         try:
         # Placeholder for real exchange client integration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return []
         except Exception:
         return []
@@ -513,34 +613,52 @@ class ComprehensiveGapFiller:
         try:
             ssl_context, ssl.create_default_context(cafile = certifi.where())
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             assert self.session is not None
         async with self.session.get(url, ssl = ssl_context) as resp:
         if resp.status != 200:
+    pass
+    pass
         return []
                 content, await resp.read()
 
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
         if not csv_names:
+    pass
+    pass
         return []
 
         with zf.open(csv_names[0]) as f:
                     df, pd.read_csv(f)
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Process data types
         if "timestamp" in df.columns:
+    pass
+    pass
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         for col in ["open", "high", "low", "close", "volume"]:
+    pass
+    pass
         if col in df.columns:
+    pass
+    pass
                     df[col] = pd.to_numeric(df[col], errors="coerce")
 
         # Filter to gap period
             df, df[(df["timestamp"] >= gap_start) & (df["timestamp"] < gap_end)]
 
         if df.empty:
+    pass
+    pass
         return []
 
         # Convert to list of dicts
@@ -555,6 +673,8 @@ class ComprehensiveGapFiller:
         return []
 
     def _standardize_aggtrades_format(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Standardize aggtrades data format."""
         expected_columns = [
             "agg_trade_id",
@@ -568,6 +688,8 @@ class ComprehensiveGapFiller:
 
         # Map Binance Vision format to expected format
         if "a" in df.columns:
+    pass
+    pass
             column_mapping = {
                 "a": "agg_trade_id",
                 "p": "price",
@@ -587,8 +709,12 @@ class ComprehensiveGapFiller:
 
         # Ensure proper data types
         if "price" in df.columns:
+    pass
+    pass
             df["price"] = pd.to_numeric(df["price"], errors="coerce")
         if "quantity" in df.columns:
+    pass
+    pass
             df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
 
         # Select only expected columns that exist
@@ -601,11 +727,17 @@ class ComprehensiveGapFiller:
         """Fill a single gap using multiple API calls until gap is fully filled."""
         try:
             gap_start, gap_info["gap_start"]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             gap_end, gap_info["gap_end"]
             file_name, gap_info["file"]
             data_type, gap_info["data_type"]
 
         if data_type == "aggtrades":
+    pass
+    pass
                 gap_duration, gap_info["gap_duration_seconds"]
             elif data_type == "futures":
                 gap_duration, gap_info["gap_duration_hours"]
@@ -632,6 +764,8 @@ class ComprehensiveGapFiller:
                 missing_data: list[dict[str, Any]] = []
 
         if data_type == "aggtrades":
+    pass
+    pass
         # Convert to timestamps
                     start_time_ms, int(gap_start.timestamp() * 1000)
                     end_time_ms, int(gap_end.timestamp() * 1000)
@@ -656,6 +790,8 @@ class ComprehensiveGapFiller:
                     )
 
         if missing_data and len(missing_data) > 0:
+    pass
+    pass
                     all_missing_data.extend(missing_data)
                     successful_calls += 1
                     consecutive_empty_calls, 0
@@ -664,42 +800,64 @@ class ComprehensiveGapFiller:
 
         # Check if we have enough data to fill the gap
         if data_type == "aggtrades":
+    pass
+    pass
                     expected_min_trades, max(1, int(gap_duration / 2))
         if len(all_missing_data) >= expected_min_trades:
+    pass
+    pass
                         break
                 elif data_type == "futures":
         # Funding happens about every 8 hours
                     expected_min_records, max(1, int(gap_duration / 8))
         if len(all_missing_data) >= expected_min_records:
+    pass
+    pass
                         break
                 elif data_type == "klines":
                     expected_min_records, max(1, int(gap_duration))
         if len(all_missing_data) >= expected_min_records:
+    pass
+    pass
                         break
 
         # Stop if too many consecutive empty calls
         if consecutive_empty_calls >= self.max_consecutive_empty:
+    pass
+    pass
                     break
 
         # Delay between calls
         await asyncio.sleep(self.call_delay)
 
         if all_missing_data:
+    pass
+    pass
         # Remove duplicates based on timestamp
                 unique_data: list[dict[str, Any]] = []
                 seen_timestamps: set[int] = set()
 
         for record in all_missing_data:
+    pass
+    pass
         if data_type == "aggtrades":
+    pass
+    pass
                         timestamp, int(record.get("T", 0))
                     else:
                         ts_val, record.get("timestamp")
         if isinstance(ts_val, (int, float)):
+    pass
+    pass
                             timestamp, int(ts_val)
                         elif isinstance(ts_val, str):
         try:
                                 timestamp, int(
                                     pd.to_datetime(ts_val).value // 10**6,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                 )
         except Exception:
                                 timestamp, 0
@@ -709,6 +867,8 @@ class ComprehensiveGapFiller:
                             timestamp, 0
 
         if timestamp not in seen_timestamps:
+    pass
+    pass
                         seen_timestamps.add(timestamp)
                         unique_data.append(record)
 
@@ -716,13 +876,19 @@ class ComprehensiveGapFiller:
                 df_missing, pd.DataFrame(unique_data)
 
         if data_type == "aggtrades":
+    pass
+    pass
                     df_missing, self._standardize_aggtrades_format(df_missing)
 
         # Load existing file
                 file_path, self.data_cache_path / file_name
         if file_path.exists():
+    pass
+    pass
         # Read existing file (Parquet or CSV)
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
                         df_existing, pd.read_parquet(file_path)
                     elif file_path.suffix.lower() == ".csv":
                         df_existing, pd.read_csv(file_path)
@@ -740,6 +906,8 @@ class ComprehensiveGapFiller:
                         [df_existing, df_missing], ignore_index = True
                     )
         if "timestamp" in df_combined.columns:
+    pass
+    pass
                         df_combined = (
                             df_combined.sort_values("timestamp").drop_duplicates(
                                 subset=["timestamp"],
@@ -748,6 +916,8 @@ class ComprehensiveGapFiller:
 
         # Save back in the same format
         if file_path.suffix.lower() == ".parquet":
+    pass
+    pass
                         df_combined.to_parquet(
                             file_path, compression="zstd", index = False
                         )
@@ -784,6 +954,8 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any]:
         """Regenerate timeframe files after data has been updated / fixed."""
         if timeframes is None:
+    pass
+    pass
             timeframes = ["5m", "15m", "30m", "1h"]  # Removed 4h as requested
 
         results: dict[str, Any] = {
@@ -799,11 +971,17 @@ class ComprehensiveGapFiller:
         try:
         # Get all 1m klines files
             klines_files, list(
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.data_cache_path.glob(
                     f"klines_{exchange}_{symbol}_1m_*.parquet",
                 ),
             )
         if not klines_files:
+    pass
+    pass
                 results["success"] = False
                 results["errors"].append("No 1m klines files found")
         return results
@@ -811,13 +989,21 @@ class ComprehensiveGapFiller:
         # Load and combine all 1m data
             all_1m_data: list[pd.DataFrame] = []
         for file_path in klines_files:
+    pass
+    pass
         try:
                     df, pd.read_parquet(file_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     all_1m_data.append(df)
         except Exception:
                     continue
 
         if not all_1m_data:
+    pass
+    pass
                 results["success"] = False
                 results["errors"].append("No valid 1m data found")
         return results
@@ -825,19 +1011,29 @@ class ComprehensiveGapFiller:
         # Combine all 1m data
             combined_1m, pd.concat(all_1m_data, ignore_index = True)
         if "timestamp" in combined_1m.columns:
+    pass
+    pass
                 combined_1m, combined_1m.sort_values("timestamp").drop_duplicates(
                     subset=["timestamp"],
                 )
 
         # Regenerate each timeframe
         for timeframe in timeframes:
+    pass
+    pass
         try:
         # Resample to the target timeframe
                     resampled_df, self._resample_to_timeframe(
                         combined_1m.copy(), timeframe,
                     )
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if len(resampled_df) == 0:
+    pass
+    pass
                         results["failed_timeframes"].append(timeframe)
                         continue
 
@@ -847,6 +1043,8 @@ class ComprehensiveGapFiller:
                     )
 
         if output_path:
+    pass
+    pass
                         results["regenerated_files"][timeframe] = str(output_path)
                     else:
                         results["failed_timeframes"].append(timeframe)
@@ -861,6 +1059,8 @@ class ComprehensiveGapFiller:
             failed, len(results["failed_timeframes"])
 
         if failed > 0 and failed == len(timeframes):
+    pass
+    pass
                 results["success"] = False
 
         except Exception as e:
@@ -870,8 +1070,12 @@ class ComprehensiveGapFiller:
         return results
 
     def _resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    pass
+    pass
         """Resample 1m data to target timeframe."""
         if len(df) == 0:
+    pass
+    pass
         return pd.DataFrame()
 
         # Ensure timestamp is datetime
@@ -888,6 +1092,8 @@ class ComprehensiveGapFiller:
 
         freq, timeframe_mapping.get(timeframe)
         if freq is None:
+    pass
+    pass
         return pd.DataFrame()
 
         resampled = (
@@ -913,6 +1119,8 @@ class ComprehensiveGapFiller:
     ) -> Path | None:
         """Save resampled data to parquet file."""
         if len(df) == 0:
+    pass
+    pass
         return None
 
         output_filename, f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
@@ -920,6 +1128,10 @@ class ComprehensiveGapFiller:
 
         try:
             output_path.parent.mkdir(parents = True, exist_ok = True)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             df.to_parquet(output_path, compression="zstd", index = False)
         return output_path
         except Exception:
@@ -930,6 +1142,7 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from src.utils.logger import system_logger
+import logger, system_logger.getChild
         logger, system_logger.getChild("ComprehensiveGapFiller")
 
         gap_filling_start, datetime.now()
@@ -968,13 +1181,21 @@ class ComprehensiveGapFiller:
 
         # Add files with types
         for af in aggtrades_files:
+    pass
+    pass
             all_files.append((af, "aggtrades"))
         for ff in futures_files:
+    pass
+    pass
             all_files.append((ff, "futures"))
         for kf in klines_files:
+    pass
+    pass
             all_files.append((kf, "klines"))
 
         if not all_files:
+    pass
+    pass
             logger.warning("⚠️  No data files found for gap filling!")
         return None
 
@@ -991,11 +1212,17 @@ class ComprehensiveGapFiller:
 
         # Process each data type
         for data_type in ["aggtrades", "futures", "klines"]:
+    pass
+    pass
             type_files = [(f, t) for f, t in all_files if t == data_type]
 
         for file_path, _file_type in type_files:
+    pass
+    pass
         # Detect gaps based on data type
         if data_type == "aggtrades":
+    pass
+    pass
                     gaps, self.detect_gaps_in_aggtrades_file(file_path)
                 elif data_type == "futures":
                     gaps, self.detect_gaps_in_futures_file(file_path)
@@ -1007,17 +1234,23 @@ class ComprehensiveGapFiller:
                 total_files_processed += 1
 
         if gaps:
+    pass
+    pass
                     total_files_with_gaps += 1
                     total_gaps_found += len(gaps)
 
         # Fill each gap with multiple API calls
         for _i, gap in enumerate(gaps):
+    pass
+    pass
                     result, await self.fill_gap_until_complete(gap, symbol)
 
                     total_api_calls += int(result.get("api_calls_made", 0))
                     total_successful_calls += int(result.get("successful_calls", 0))
 
         if result.get("success"):
+    pass
+    pass
                         total_gaps_filled += 1
                     else:
                         total_gaps_failed += 1
@@ -1025,10 +1258,14 @@ class ComprehensiveGapFiller:
         # Regenerate timeframe files after each successful gap fill
         # (only for aggtrades)
         if data_type == "aggtrades" and total_gaps_filled > 0:
+    pass
+    pass
                     timeframe_results, await self.regenerate_timeframe_files(
                         symbol, exchange,
                     )
         if timeframe_results.get("success"):
+    pass
+    pass
         # Count regenerated files as succeeded; no - op otherwise
                         _, len(timeframe_results.get("regenerated_files", {}))
                     else:
@@ -1055,10 +1292,14 @@ class ComprehensiveGapFiller:
         logger.info(f"📡 Successful API calls: {total_successful_calls}")
 
         if total_gaps_found > 0:
+    pass
+    pass
             success_rate = (total_gaps_filled / total_gaps_found) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
 
         if total_gaps_filled > 0:
+    pass
+    pass
                 logger.info("✅ GAP FILLING COMPLETED SUCCESSFULLY!")
             else:
                 logger.warning("⚠️  GAP FILLING COMPLETED WITH NO SUCCESSFUL FILLS!")
@@ -1066,6 +1307,8 @@ class ComprehensiveGapFiller:
             logger.info("✅ NO GAPS FOUND - ALL DATA IS COMPLETE!")
 
         if total_gaps_found > 0:
+    pass
+    pass
         return {
                 "files_processed": total_files_processed,
                 "files_with_gaps": total_files_with_gaps,
@@ -1097,8 +1340,14 @@ async def run_comprehensive_gap_filling_pipeline(
 
     try:
         return await gap_filler.process_all_data_types(symbol = symbol, exchange = exchange)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     finally:
         await gap_filler.close_session()
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(run_comprehensive_gap_filling_pipeline())

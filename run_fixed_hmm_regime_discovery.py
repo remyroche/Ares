@@ -15,6 +15,7 @@ import sys
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
 
 # Add the project root to the Python path
+import project_root , Path
 project_root , Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -33,6 +34,10 @@ async def main():
 
     try:
         # Run the HMM regime discovery step with fixed parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         success = await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -43,6 +48,8 @@ async def main():
         )
 
         if success:
+    pass
+    pass
             logger.info("✅ HMM Regime Discovery completed successfully!")
             logger.info("📊 Check the reports directory for detailed regime analysis")
             return True
@@ -56,11 +63,17 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     try:
         success = asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+        print("\\\n🛑 Interrupted by user")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

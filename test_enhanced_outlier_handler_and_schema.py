@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -26,10 +27,13 @@ import numpy as np
 from src.utils.logger import system_logger
 
 
+import class EnhancedOutlierHandlerAndSchemaTester:
 class EnhancedOutlierHandlerAndSchemaTester:
     """Comprehensive tester for enhanced outlier handler and schema validation."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize tester."""
         self.logger = system_logger.getChild("EnhancedOutlierHandlerAndSchemaTester")
         self.handler = enhanced_outlier_handler
@@ -37,6 +41,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         self.start_time = time.time()
 
     def run_all_tests(self) -> Dict[str, Any]:
+    pass
+    pass
         """Run all enhanced outlier handler and schema validation tests."""
         self.logger.info("🔍 Starting Enhanced Outlier Handler and Schema Validation Tests")
 
@@ -54,8 +60,14 @@ class EnhancedOutlierHandlerAndSchemaTester:
         ]
 
         for test_name, test_func in test_suite:
+    pass
+    pass
             try:
                 self.logger.info(f"Running {test_name}...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 result = test_func()
                 self.test_results[test_name] = {
                     "status": "PASSED" if result else "FAILED",
@@ -72,6 +84,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return self.generate_test_report()
 
     def test_outlier_detection_methods(self) -> bool:
+    pass
+    pass
         """Test different outlier detection methods."""
         self.logger.info("Testing outlier detection methods...")
 
@@ -95,11 +109,15 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         # Check that outliers were detected
         if len(zscore_outliers) == 0 and len(iqr_outliers) == 0:
+    pass
+    pass
             self.logger.error("No outliers detected with any method")
             return False
 
         # Check that different methods detect different numbers of outliers
         if len(zscore_outliers) == len(iqr_outliers) == len(mahalanobis_outliers):
+    pass
+    pass
             self.logger.warning("All methods detected same number of outliers")
 
         self.logger.info(f"Z-score outliers: {len(zscore_outliers)}")
@@ -109,6 +127,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_outlier_severity_classification(self) -> bool:
+    pass
+    pass
         """Test outlier severity classification."""
         self.logger.info("Testing outlier severity classification...")
 
@@ -123,6 +143,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         # Check that different severity levels are detected
         severity_counts = {}
         for outlier in outliers:
+    pass
+    pass
             severity = outlier.severity.value
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
 
@@ -130,11 +152,15 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         # Should have at least some high/critical outliers
         if not any(severity in severity_counts for severity in ["high", "critical"]):
+    pass
+    pass
             self.logger.warning("No high/critical outliers detected")
 
         return True
 
     def test_error_raising_behavior(self) -> bool:
+    pass
+    pass
         """Test error raising behavior for critical outliers."""
         self.logger.info("Testing error raising behavior...")
 
@@ -145,6 +171,10 @@ class EnhancedOutlierHandlerAndSchemaTester:
         try:
             self.handler.detect_outliers(
                 test_data, method="zscore", threshold=2.0, raise_errors=True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.logger.error("Expected exception for critical outliers but none raised")
             return False
@@ -155,8 +185,14 @@ class EnhancedOutlierHandlerAndSchemaTester:
         try:
             outliers = self.handler.detect_outliers(
                 test_data, method="zscore", threshold=2.0, raise_errors=False
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             if len(outliers) == 0:
+    pass
+    pass
                 self.logger.error("No outliers detected when errors disabled")
                 return False
         except Exception as e:
@@ -166,6 +202,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_schema_validation(self) -> bool:
+    pass
+    pass
         """Test data schema validation."""
         self.logger.info("Testing schema validation...")
 
@@ -174,6 +212,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         klines_validation = self.handler.validate_data_schema(valid_klines, "klines")
 
         if not klines_validation["valid"]:
+    pass
+    pass
             self.logger.error(f"Valid klines data failed validation: {klines_validation}")
             return False
 
@@ -182,11 +222,15 @@ class EnhancedOutlierHandlerAndSchemaTester:
         invalid_klines_validation = self.handler.validate_data_schema(invalid_klines, "klines")
 
         if invalid_klines_validation["valid"]:
+    pass
+    pass
             self.logger.error("Invalid klines data passed validation")
             return False
 
         # Check that specific errors are reported
         if not invalid_klines_validation["errors"]:
+    pass
+    pass
             self.logger.error("No errors reported for invalid data")
             return False
 
@@ -194,6 +238,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_custom_schema_creation(self) -> bool:
+    pass
+    pass
         """Test custom schema creation."""
         self.logger.info("Testing custom schema creation...")
 
@@ -215,6 +261,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         # Verify schema was created
         if "custom_trading_data" not in self.handler.list_available_schemas():
+    pass
+    pass
             self.logger.error("Custom schema not found in available schemas")
             return False
 
@@ -227,6 +275,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         validation_result = self.handler.validate_data_schema(valid_data, "custom_trading_data")
         if not validation_result["valid"]:
+    pass
+    pass
             self.logger.error(f"Valid data failed custom schema validation: {validation_result}")
             return False
 
@@ -234,6 +284,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_schema_constraints(self) -> bool:
+    pass
+    pass
         """Test schema constraint validation."""
         self.logger.info("Testing schema constraints...")
 
@@ -256,6 +308,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         valid_result = self.handler.validate_data_schema(valid_data, "constraint_test")
         if not valid_result["valid"]:
+    pass
+    pass
             self.logger.error(f"Valid data failed constraint validation: {valid_result}")
             return False
 
@@ -267,6 +321,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         invalid_result = self.handler.validate_data_schema(invalid_data, "constraint_test")
         if invalid_result["valid"]:
+    pass
+    pass
             self.logger.error("Invalid data (duplicate IDs) passed validation")
             return False
 
@@ -278,6 +334,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         invalid_result2 = self.handler.validate_data_schema(invalid_data2, "constraint_test")
         if invalid_result2["valid"]:
+    pass
+    pass
             self.logger.error("Invalid data (out of range) passed validation")
             return False
 
@@ -285,6 +343,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_data_type_validation(self) -> bool:
+    pass
+    pass
         """Test data type validation."""
         self.logger.info("Testing data type validation...")
 
@@ -308,6 +368,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         correct_result = self.handler.validate_data_schema(correct_data, "type_test")
         if not correct_result["valid"]:
+    pass
+    pass
             self.logger.error(f"Correct data types failed validation: {correct_result}")
             return False
 
@@ -320,11 +382,15 @@ class EnhancedOutlierHandlerAndSchemaTester:
 
         incorrect_result = self.handler.validate_data_schema(incorrect_data, "type_test")
         if incorrect_result["valid"]:
+    pass
+    pass
             self.logger.error("Incorrect data types passed validation")
             return False
 
         # Check for type mismatch warnings
         if not incorrect_result["type_mismatches"]:
+    pass
+    pass
             self.logger.error("No type mismatch warnings generated")
             return False
 
@@ -332,6 +398,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_outlier_reporting(self) -> bool:
+    pass
+    pass
         """Test outlier reporting functionality."""
         self.logger.info("Testing outlier reporting...")
 
@@ -349,12 +417,18 @@ class EnhancedOutlierHandlerAndSchemaTester:
         # Check report structure
         required_keys = ["timestamp", "total_outlier_groups", "severity_distribution", "column_distribution"]
         for key in required_keys:
+    pass
+    pass
             if key not in report:
+    pass
+    pass
                 self.logger.error(f"Missing key in outlier report: {key}")
                 return False
 
         # Check that outliers are reported
         if report["total_outlier_groups"] == 0:
+    pass
+    pass
             self.logger.error("No outliers reported in test data")
             return False
 
@@ -362,6 +436,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def test_integration_with_quality_framework(self) -> bool:
+    pass
+    pass
         """Test integration with data quality framework."""
         self.logger.info("Testing integration with quality framework...")
 
@@ -369,6 +445,7 @@ class EnhancedOutlierHandlerAndSchemaTester:
         from src.utils.data_quality_framework import data_quality_framework
 
         # Create test data with outliers
+import test_data = self._create_test_data_with_outliers
         test_data = self._create_test_data_with_outliers()
 
         # Configure quality framework for enhanced outlier handling
@@ -385,6 +462,10 @@ class EnhancedOutlierHandlerAndSchemaTester:
         # Test integration
         try:
             cleaned_data = data_quality_framework.clean_data(test_data, cleaning_rules)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("Integration with quality framework successful")
             return True
         except Exception as e:
@@ -392,6 +473,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
             return False
 
     def test_file_operation_schemas(self) -> bool:
+    pass
+    pass
         """Test schemas for file operations."""
         self.logger.info("Testing file operation schemas...")
 
@@ -400,18 +483,28 @@ class EnhancedOutlierHandlerAndSchemaTester:
         expected_schemas = ["klines", "features", "labels"]
 
         for schema_name in expected_schemas:
+    pass
+    pass
             if schema_name not in available_schemas:
+    pass
+    pass
                 self.logger.error(f"Expected schema {schema_name} not found")
                 return False
 
         # Test schema information retrieval
         for schema_name in expected_schemas:
+    pass
+    pass
             schema_info = self.handler.get_schema_info(schema_name)
             if "error" in schema_info:
+    pass
+    pass
                 self.logger.error(f"Error getting schema info for {schema_name}: {schema_info}")
                 return False
 
             if "required_columns" not in schema_info:
+    pass
+    pass
                 self.logger.error(f"Missing required_columns in schema info for {schema_name}")
                 return False
 
@@ -419,6 +512,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return True
 
     def _create_test_data_with_outliers(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with outliers."""
         np.random.seed(42)
 
@@ -436,6 +531,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         })
 
     def _create_test_data_with_extreme_outliers(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with extreme outliers."""
         np.random.seed(42)
 
@@ -453,6 +550,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         })
 
     def _create_test_data_with_critical_outliers(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with critical outliers."""
         np.random.seed(42)
 
@@ -470,6 +569,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         })
 
     def _create_valid_klines_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create valid klines data."""
         base_time = int(time.time()) - 3600
 
@@ -483,6 +584,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         })
 
     def _create_invalid_klines_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create invalid klines data."""
         base_time = int(time.time()) - 3600
 
@@ -497,6 +600,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         })
 
     def generate_test_report(self) -> Dict[str, Any]:
+    pass
+    pass
         """Generate comprehensive test report."""
         end_time = time.time()
         duration = end_time - self.start_time
@@ -533,6 +638,8 @@ class EnhancedOutlierHandlerAndSchemaTester:
         return report
 
     def _generate_recommendations(self) -> List[str]:
+    pass
+    pass
         """Generate recommendations based on test results."""
         recommendations = []
 
@@ -540,31 +647,45 @@ class EnhancedOutlierHandlerAndSchemaTester:
         error_tests = [name for name, result in self.test_results.items() if result["status"] == "ERROR"]
 
         if failed_tests:
+    pass
+    pass
             recommendations.append(f"Fix failed tests: {', '.join(failed_tests)}")
 
         if error_tests:
+    pass
+    pass
             recommendations.append(f"Investigate test errors: {', '.join(error_tests)}")
 
         # Check handler configuration
         if not self.handler.raise_errors:
+    pass
+    pass
             recommendations.append("Consider enabling error raising for production use")
 
         if not self.handler.log_details:
+    pass
+    pass
             recommendations.append("Consider enabling detailed logging for better debugging")
 
         # Check schema coverage
         available_schemas = self.handler.list_available_schemas()
         if len(available_schemas) < 3:
+    pass
+    pass
             recommendations.append("Add more standard schemas for different data types")
 
         # Check test coverage
         if len(self.test_results) < 10:
+    pass
+    pass
             recommendations.append("Add more comprehensive tests for edge cases")
 
         return recommendations
 
 
 def main():
+    pass
+    pass
     """Main function to run enhanced outlier handler and schema validation tests."""
     print("🔍 Enhanced Outlier Handler and Schema Validation Test Framework")
     print("=" * 70)
@@ -574,7 +695,7 @@ def main():
 
     # Print summary
     summary = report["test_summary"]
-    print(f"\n📊 Test Summary:")
+    print(f"\\\n📊 Test Summary:")
     print(f"  Total Tests: {summary['total_tests']}")
     print(f"  Passed: {summary['passed_tests']}")
     print(f"  Failed: {summary['failed_tests']}")
@@ -584,20 +705,24 @@ def main():
 
     # Print handler configuration
     config = report["handler_configuration"]
-    print(f"\n🔧 Handler Configuration:")
+    print(f"\\\n🔧 Handler Configuration:")
     print(f"  Raise Errors: {config['raise_errors']}")
     print(f"  Log Details: {config['log_details']}")
     print(f"  Available Schemas: {config['available_schemas']}")
     print(f"  Detection Methods: {config['detection_methods']}")
 
     # Print outlier severity levels
-    print(f"\n📈 Outlier Severity Levels:")
+    print(f"\\\n📈 Outlier Severity Levels:")
     for level in report["outlier_severity_levels"]:
+    pass
+    pass
         print(f"  • {level}")
 
     # Print recommendations
-    print(f"\n💡 Recommendations:")
+    print(f"\\\n💡 Recommendations:")
     for rec in report["recommendations"]:
+    pass
+    pass
         print(f"  • {rec}")
 
     # Save detailed report
@@ -605,12 +730,14 @@ def main():
     with open(report_file, 'w') as f:
         json.dump(report, f, indent=2)
 
-    print(f"\n📄 Detailed report saved to: {report_file}")
+    print(f"\\\n📄 Detailed report saved to: {report_file}")
 
     # Return success if most tests passed
     return summary['success_rate'] >= 0.8
 
 
 if __name__ == "__main__":
+    pass
+    pass
     success = main()
     sys.exit(0 if success else 1)

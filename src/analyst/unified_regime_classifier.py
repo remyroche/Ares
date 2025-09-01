@@ -14,12 +14,15 @@ from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
 )
 from src.utils.warning_symbols import (
+import warning,
     warning,
 )
 from src.utils.centralized_decorators_simple import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
@@ -104,6 +107,8 @@ class UnifiedRegimeClassifier:
 
         blank_mode = os.environ.get("BLANK_TRAINING_MODE", "0") == "1"
         if blank_mode:
+    pass
+    pass
             self.min_data_points = self.config.get(
                 "min_data_points",
                 50,
@@ -194,6 +199,8 @@ class UnifiedRegimeClassifier:
         )
         base_checkpoint_dir = CONFIG.get("CHECKPOINT_DIR", "checkpoints")
         if not os.path.isabs(base_checkpoint_dir):
+    pass
+    pass
             base_checkpoint_dir = os.path.join(project_root, base_checkpoint_dir)
 
         self.model_dir = os.path.join(base_checkpoint_dir, "analyst_models")
@@ -230,9 +237,15 @@ class UnifiedRegimeClassifier:
         """Initialize the SRBreakoutPredictor for enhanced S/R analysis."""
         try:
             if not self.enable_sr_integration:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
                 return True
 
+    except Exception as e:
+        pass
             self.logger.info("🚀 Initializing SRBreakoutPredictor for enhanced regime analysis...")
 
             # Initialize SRBreakoutPredictor with enhanced configuration
@@ -240,6 +253,8 @@ class UnifiedRegimeClassifier:
             init_success = await self.sr_predictor.initialize()
 
             if not init_success:
+    pass
+    pass
                 self.logger.error("❌ Failed to initialize SRBreakoutPredictor")
                 return False
 
@@ -252,6 +267,8 @@ class UnifiedRegimeClassifier:
 
     @staticmethod
     def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
+    pass
+    pass
         """Enable compatibility for unpickling NumPy RNG BitGenerators.
 
         Idempotently monkeypatches numpy.random._pickle.__bit_generator_ctor to
@@ -265,8 +282,14 @@ class UnifiedRegimeClassifier:
         try:
             import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
             if original_ctor is None:
+    pass
+    pass
                 UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = (
                     True
                 )
@@ -279,7 +302,13 @@ class UnifiedRegimeClassifier:
                 name_candidate = bit_generator_name
                 try:
                     if hasattr(name_candidate, "__name__"):
+    pass
+    except Exception as e:
+        pass
+    pass
                         name_candidate = name_candidate.__name__
+    except Exception as e:
+        pass
                     elif isinstance(name_candidate, str) and name_candidate.startswith(
                         "<class "
                     ):
@@ -289,22 +318,42 @@ class UnifiedRegimeClassifier:
                 effective_state = kwargs.get("state", state)
                 try:
                     return original_ctor(name_candidate, effective_state)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except (TypeError, ValueError):
                     try:
                         return original_ctor(name_candidate)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     except Exception as ctor_exc:  # noqa: BLE001
                         try:
                             import numpy as _np
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                             bitgen_cls = getattr(_np.random, name_candidate, None)
                             if bitgen_cls is None and name_candidate == "MT19937":
+    pass
+    pass
                                 try:
                                     import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                     bitgen_cls = getattr(_mt, "MT19937", None)
                                 except Exception:
                                     bitgen_cls = None
                             if bitgen_cls is not None:
+    pass
+    pass
                                 return bitgen_cls()
                         except Exception:
                             pass
@@ -313,10 +362,14 @@ class UnifiedRegimeClassifier:
             np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]
             UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
             if logger is not None:
+    pass
+    pass
                 logger.info("Applied NumPy RNG unpickle compatibility shim (URC)")
         except Exception as _shim_exc:
             UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat._patched = True
             if logger is not None:
+    pass
+    pass
                 logger.warning(
                     warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
                 )
@@ -342,6 +395,8 @@ class UnifiedRegimeClassifier:
 
         # Try to load existing models
         if self.load_models():
+    pass
+    pass
             self.logger.info("✅ Loaded existing models successfully")
             self.trained = True
         else:
@@ -367,9 +422,13 @@ class UnifiedRegimeClassifier:
             DataFrame with calculated features
         """
         if min_data_points is None:
+    pass
+    pass
             min_data_points = self.min_data_points
 
         if len(klines_df) < min_data_points:
+    pass
+    pass
             self.logger.warning(
                 f"Insufficient data: {len(klines_df)} < {min_data_points}. Consider reducing min_data_points or collecting more data.",
             )
@@ -440,9 +499,15 @@ class UnifiedRegimeClassifier:
 
         # Enhanced S/R features for improved regime analysis
         if self.sr_predictor and self.enable_sr_integration:
+    pass
+    pass
             # Handle async call for enhanced features
             try:
                 features_df = await self._add_enhanced_sr_features(features_df)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             except Exception as e:
                 self.logger.warning(f"Enhanced S/R features failed, falling back to basic: {e}")
                 features_df = self._add_basic_sr_features(features_df)
@@ -481,7 +546,11 @@ class UnifiedRegimeClassifier:
         ]
 
         for col in technical_columns:
+    pass
+    pass
             if col in features_df.columns:
+    pass
+    pass
                 # Forward fill NaN values for technical indicators
                 features_df[col] = features_df[col].ffill()
                 # Fill any remaining NaN values with 0
@@ -496,7 +565,11 @@ class UnifiedRegimeClassifier:
             "volatility_momentum",
         ]
         for col in price_features:
+    pass
+    pass
             if col in features_df.columns:
+    pass
+    pass
                 features_df[col] = features_df[col].fillna(0)
 
         # For ratio features, use 1 for NaN (neutral ratio)
@@ -506,7 +579,11 @@ class UnifiedRegimeClassifier:
             "volume_ratio",
         ]
         for col in ratio_features:
+    pass
+    pass
             if col in features_df.columns:
+    pass
+    pass
                 features_df[col] = features_df[col].fillna(1)
 
         # For volatility features, use 0 for NaN
@@ -517,7 +594,11 @@ class UnifiedRegimeClassifier:
             "ewma_volatility_20",
         ]
         for col in vol_features:
+    pass
+    pass
             if col in features_df.columns:
+    pass
+    pass
                 features_df[col] = features_df[col].fillna(0)
 
         # Only drop rows that still have NaN values after all the filling
@@ -533,6 +614,8 @@ class UnifiedRegimeClassifier:
         return features_df
 
     def _calculate_volatility_regime(self, features_df: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         """
         Calculate volatility regime for VOLATILE classification.
         """
@@ -579,6 +662,10 @@ class UnifiedRegimeClassifier:
         try:
             self.logger.info("🔧 Adding enhanced S/R features...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize enhanced S/R features
             features_df["sr_proximity"] = 0.0
             features_df["sr_strength"] = 0.0
@@ -596,6 +683,10 @@ class UnifiedRegimeClassifier:
             for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
                 try:
                     # Get window of data for S/R analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     window_data = features_df.iloc[max(0, i-100):i+1]
                     current_price = features_df["close"].iloc[i]
 
@@ -603,6 +694,8 @@ class UnifiedRegimeClassifier:
                     sr_context = await self.sr_predictor.get_sr_context(window_data, current_price)
 
                     if sr_context:
+    pass
+    pass
                         # S/R proximity to nearest levels
                         nearest_support = sr_context.get("nearest_support", current_price * 0.95)
                         nearest_resistance = sr_context.get("nearest_resistance", current_price * 1.05)
@@ -637,29 +730,49 @@ class UnifiedRegimeClassifier:
                         # Fibonacci levels proximity
                         fibonacci_levels = sr_context.get("fibonacci_levels", {})
                         if fibonacci_levels:
+    pass
+    pass
                             fib_proximities = []
                             for fib_price in fibonacci_levels.values():
+    pass
+    pass
                                 if isinstance(fib_price, (int, float)):
+    pass
+    pass
                                     fib_proximities.append(abs(current_price - fib_price) / current_price)
                             if fib_proximities:
+    pass
+    pass
                                 features_df.loc[features_df.index[i], "sr_fibonacci_proximity"] = min(fib_proximities)
 
                         # Elliott Wave levels proximity
                         elliott_levels = sr_context.get("elliott_wave_levels", {})
                         if elliott_levels:
+    pass
+    pass
                             wave_levels = elliott_levels.get("wave_levels", {})
                             if wave_levels:
+    pass
+    pass
                                 elliott_proximities = []
                                 for wave_price in wave_levels.values():
+    pass
+    pass
                                     if isinstance(wave_price, (int, float)):
+    pass
+    pass
                                         elliott_proximities.append(abs(current_price - wave_price) / current_price)
                                 if elliott_proximities:
+    pass
+    pass
                                     features_df.loc[features_df.index[i], "sr_elliott_proximity"] = min(elliott_proximities)
 
                         # Order flow imbalances
                         order_flow_analysis = sr_context.get("order_flow_analysis", {})
                         imbalances = order_flow_analysis.get("imbalances", [])
                         if imbalances:
+    pass
+    pass
                             total_imbalance_volume = sum(imb.get("volume", 0.0) for imb in imbalances)
                             features_df.loc[features_df.index[i], "sr_order_flow_imbalance"] = total_imbalance_volume
 
@@ -669,22 +782,34 @@ class UnifiedRegimeClassifier:
                         all_levels = support_levels + resistance_levels
 
                         if all_levels:
+    pass
+    pass
                             # Calculate average touch count and bounce rate
                             touch_counts = []
                             bounce_rates = []
                             isolation_scores = []
 
                             for level in all_levels:
+    pass
+    pass
                                 if isinstance(level, dict):
+    pass
+    pass
                                     touch_counts.append(level.get("touches", 0))
                                     bounce_rates.append(level.get("bounce_rate", 0.0))
                                     isolation_scores.append(level.get("isolation_score", 0.5))
 
                             if touch_counts:
+    pass
+    pass
                                 features_df.loc[features_df.index[i], "sr_touch_count"] = np.mean(touch_counts)
                             if bounce_rates:
+    pass
+    pass
                                 features_df.loc[features_df.index[i], "sr_bounce_rate"] = np.mean(bounce_rates)
                             if isolation_scores:
+    pass
+    pass
                                 features_df.loc[features_df.index[i], "sr_isolation_score"] = np.mean(isolation_scores)
 
                 except Exception as e:
@@ -700,12 +825,18 @@ class UnifiedRegimeClassifier:
             return self._add_basic_sr_features(features_df)
 
     def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """
         Add basic S/R features as fallback when enhanced analysis is not available.
         """
         try:
             self.logger.info("🔧 Adding basic S/R features...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize basic S/R features
             features_df["sr_proximity"] = 0.0
             features_df["sr_strength"] = 0.0
@@ -721,8 +852,14 @@ class UnifiedRegimeClassifier:
 
             # Calculate basic S/R features using rolling windows
             for i in range(20, len(features_df)):
+    pass
+    pass
                 try:
                     # Get window of data for basic S/R analysis
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     window_data = features_df.iloc[max(0, i-20):i+1]
                     current_price = features_df["close"].iloc[i]
 
@@ -779,6 +916,8 @@ class UnifiedRegimeClassifier:
         context="UnifiedRegimeClassifier._calculate_rsi",
     )
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    pass
+    pass
         """Calculate RSI indicator using price differences."""
         # Use price differences instead of absolute prices
         close_diff = df["close"].diff()
@@ -816,6 +955,8 @@ class UnifiedRegimeClassifier:
         context="UnifiedRegimeClassifier._calculate_adx",
     )
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    pass
+    pass
         """Calculate the Average Directional Index (ADX)."""
         high = df["high"]
         low = df["low"]
@@ -878,6 +1019,8 @@ class UnifiedRegimeClassifier:
         context="UnifiedRegimeClassifier._calculate_atr",
     )
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    pass
+    pass
         """Calculate Average True Range using price differences."""
         # Use price differences instead of absolute prices
         high_diff = df["high"].diff()
@@ -919,9 +1062,13 @@ class UnifiedRegimeClassifier:
         atr_norm_threshold = self.atr_normalized_threshold
 
         for state in range(self.n_states):
+    pass
+    pass
             state_data = analysis_df[analysis_df["state"] == state]
 
             if len(state_data) == 0:
+    pass
+    pass
                 continue
 
             # Calculate state characteristics
@@ -952,6 +1099,8 @@ class UnifiedRegimeClassifier:
             else:
                 # Default to directional based on return sign
                 if mean_return >= 0:
+    pass
+    pass
                     regime = "BULL"
                 else:
                     regime = "BEAR"
@@ -984,7 +1133,11 @@ class UnifiedRegimeClassifier:
         # Log summary of how regimes are derived from HMM states
         mapped_counts: dict[str, int] = {}
         for state, data in state_analysis.items():
+    pass
+    pass
             if state == "state_to_regime_map":
+    pass
+    pass
                 continue
             mapped_counts[data["regime"]] = mapped_counts.get(data["regime"], 0) + int(
                 data.get("count", 0)
@@ -1020,10 +1173,18 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.sr_predictor or not self.enable_sr_integration:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Fallback to basic pivot calculation if SRBreakoutPredictor not available
                 return await self._calculate_basic_pivots(df_window)
 
+    except Exception as e:
+        pass
             if len(df_window) < 5:
+    pass
+    pass
                 return {
                     "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
                     "enhanced_strengths": {},
@@ -1040,6 +1201,8 @@ class UnifiedRegimeClassifier:
             sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
             if not sr_context:
+    pass
+    pass
                 self.logger.warning("Failed to get S/R context, falling back to basic calculation")
                 return await self._calculate_basic_pivots(df_window)
 
@@ -1103,6 +1266,10 @@ class UnifiedRegimeClassifier:
         """
         try:
             if len(df_window) < 5:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return {
                     "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
                     "enhanced_strengths": {},
@@ -1112,6 +1279,8 @@ class UnifiedRegimeClassifier:
                     "order_flow_analysis": {},
                 }
 
+    except Exception as e:
+        pass
             # Calculate basic pivot point
             high = df_window["high"].max()
             low = df_window["low"].min()
@@ -1160,10 +1329,18 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.sr_predictor or not self.enable_sr_integration:
+    pass
+    except Exception as e:
+        pass
+    pass
                 # Fallback to basic volume analysis
                 return self._analyze_basic_volume_levels(df_window)
 
+    except Exception as e:
+        pass
             if df_window.empty or len(df_window) < 20:
+    pass
+    pass
                 return None
 
             # Get current price for S/R context
@@ -1173,6 +1350,8 @@ class UnifiedRegimeClassifier:
             sr_context = await self.sr_predictor.get_sr_context(df_window, current_price)
 
             if not sr_context:
+    pass
+    pass
                 self.logger.warning("Failed to get S/R context for volume analysis, falling back to basic")
                 return self._analyze_basic_volume_levels(df_window)
 
@@ -1180,6 +1359,8 @@ class UnifiedRegimeClassifier:
             order_flow_analysis = sr_context.get("order_flow_analysis", {})
 
             if not order_flow_analysis:
+    pass
+    pass
                 return self._analyze_basic_volume_levels(df_window)
 
             # Extract enhanced volume levels
@@ -1192,6 +1373,8 @@ class UnifiedRegimeClassifier:
 
             # Process POC (Point of Control)
             if poc_level:
+    pass
+    pass
                 analyzed_levels["poc"] = {
                     "price": poc_level.get("price", current_price),
                     "volume": poc_level.get("volume", 0.0),
@@ -1230,6 +1413,8 @@ class UnifiedRegimeClassifier:
             # Add order flow imbalances if available
             imbalances = order_flow_analysis.get("imbalances", [])
             if imbalances:
+    pass
+    pass
                 analyzed_levels["order_imbalances"] = {
                     "count": len(imbalances),
                     "total_volume": sum(imb.get("volume", 0.0) for imb in imbalances),
@@ -1243,10 +1428,14 @@ class UnifiedRegimeClassifier:
             return self._analyze_basic_volume_levels(df_window)
 
     def _analyze_basic_volume_levels(self, df_window: pd.DataFrame) -> dict | None:
+    pass
+    pass
         """
         Basic volume level analysis as fallback when SRBreakoutPredictor is not available.
         """
         if df_window.empty or len(df_window) < 20:
+    pass
+    pass
             return None
 
         # --- 1. ATR-Dynamic Binning ---
@@ -1264,16 +1453,22 @@ class UnifiedRegimeClassifier:
         price_bins = pd.cut(df_window["close"], bins=bins, right=False)
         volume_by_bin = df_window.groupby(price_bins, observed=False)["volume"].sum()
         if volume_by_bin.empty:
+    pass
+    pass
             return None
 
         # Get the top 2 HVNs by volume
         top_hvns = volume_by_bin.nlargest(2)
         if top_hvns.empty:
+    pass
+    pass
             return None
 
         # --- 3. Analyze Each HVN ---
         analyzed_levels = {}
         for i, (level_bin, level_volume) in enumerate(top_hvns.items()):
+    pass
+    pass
             level_price = level_bin.mid
 
             # Find first time price entered this bin to determine age
@@ -1281,6 +1476,8 @@ class UnifiedRegimeClassifier:
                 df_window["close"].between(level_bin.left, level_bin.right)
             ]
             if len(level_indices) == 0:
+    pass
+    pass
                 continue
 
             first_touch_index = level_indices[0]
@@ -1290,6 +1487,8 @@ class UnifiedRegimeClassifier:
             touches = 0
             data_since_formation = df_window.loc[first_touch_index:]
             for k in range(1, len(data_since_formation)):
+    pass
+    pass
                 prev_high = data_since_formation["high"].iloc[k - 1]
                 prev_low = data_since_formation["low"].iloc[k - 1]
                 curr_high = data_since_formation["high"].iloc[k]
@@ -1353,6 +1552,8 @@ class UnifiedRegimeClassifier:
 
         # Check if we have enough data for location classification
         if len(features_df) < long_term_period:
+    pass
+    pass
             self.logger.warning(
                 f"Insufficient data for enhanced location classification. "
                 f"Need at least {long_term_period} rows, but only have {len(features_df)}. "
@@ -1365,6 +1566,8 @@ class UnifiedRegimeClassifier:
         # Start loop after the longest period to ensure enough data for all calculations
         start_index = long_term_period
         for i in range(start_index, len(features_df)):
+    pass
+    pass
             current_price = features_df["close"].iloc[i]
             current_price_diff = features_df["close"].diff().iloc[i]
 
@@ -1388,7 +1591,11 @@ class UnifiedRegimeClassifier:
 
             # Check support levels
             for level in support_levels:
+    pass
+    pass
                 if isinstance(level, dict):
+    pass
+    pass
                     level_price = level.get("price", level)
                     level_strength = level.get("enhanced_strength", 0.5)
                     level_touches = level.get("touches", 0)
@@ -1405,8 +1612,14 @@ class UnifiedRegimeClassifier:
 
             # Check resistance levels
             if not loc_sr:
+    pass
+    pass
                 for level in resistance_levels:
+    pass
+    pass
                     if isinstance(level, dict):
+    pass
+    pass
                         level_price = level.get("price", level)
                         level_strength = level.get("enhanced_strength", 0.5)
                         level_touches = level.get("touches", 0)
@@ -1423,8 +1636,14 @@ class UnifiedRegimeClassifier:
 
             # Check volume levels (POC, HVNs)
             if volume_levels:
+    pass
+    pass
                 for level_name, level_data in volume_levels.items():
+    pass
+    pass
                     if level_name in ["poc", "hvn_primary", "hvn_secondary"]:
+    pass
+    pass
                         if (level_data.get("touches", 0) >= min_level_touches and
                             level_data.get("strength", 0.5) >= min_strength_threshold and
                             abs(current_price - level_data["price"]) / current_price <= tolerance):
@@ -1436,8 +1655,14 @@ class UnifiedRegimeClassifier:
             # Check Fibonacci levels
             fibonacci_levels = short_sr_levels.get("fibonacci_levels", {})
             if fibonacci_levels:
+    pass
+    pass
                 for fib_type, fib_price in fibonacci_levels.items():
+    pass
+    pass
                     if abs(current_price - fib_price) / current_price <= tolerance:
+    pass
+    pass
                         fib_direction = "SUPPORT" if current_price > fib_price else "RESISTANCE"
                         loc_fibonacci = f"FIBONACCI_{fib_type}_{fib_direction}"
                         break
@@ -1445,9 +1670,15 @@ class UnifiedRegimeClassifier:
             # Check Elliott Wave levels
             elliott_levels = short_sr_levels.get("elliott_wave_levels", {})
             if elliott_levels:
+    pass
+    pass
                 wave_levels = elliott_levels.get("wave_levels", {})
                 for wave_type, wave_price in wave_levels.items():
+    pass
+    pass
                     if abs(current_price - wave_price) / current_price <= tolerance:
+    pass
+    pass
                         wave_direction = "SUPPORT" if current_price > wave_price else "RESISTANCE"
                         loc_elliott = f"ELLIOTT_{wave_type}_{wave_direction}"
                         break
@@ -1455,12 +1686,16 @@ class UnifiedRegimeClassifier:
             # --- 4. Enhanced Final Label Assignment with Priority ---
             # Priority: Elliott Wave > Fibonacci > Enhanced S/R > Volume Levels
             if loc_elliott:
+    pass
+    pass
                 locations.append(loc_elliott)
             elif loc_fibonacci:
                 locations.append(loc_fibonacci)
             elif loc_sr and loc_volume:
                 # High confluence: Enhanced S/R aligns with volume level
                 if "SUPPORT" in loc_sr and "SUPPORT" in loc_volume:
+    pass
+    pass
                     locations.append("ENHANCED_CONFLUENCE_SUPPORT")
                 elif "RESISTANCE" in loc_sr and "RESISTANCE" in loc_volume:
                     locations.append("ENHANCED_CONFLUENCE_RESISTANCE")
@@ -1485,16 +1720,28 @@ class UnifiedRegimeClassifier:
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("location_classification")
     def _classify_location(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """
         Legacy location classification method - now calls enhanced version if available.
         """
         if self.sr_predictor and self.enable_sr_integration:
+    pass
+    pass
             # Use enhanced classification if SRBreakoutPredictor is available
             import asyncio
             try:
                 # Create event loop if none exists
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 try:
                     loop = asyncio.get_event_loop()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 except RuntimeError:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -1507,6 +1754,8 @@ class UnifiedRegimeClassifier:
             return self._classify_basic_location(features_df)
 
     def _classify_basic_location(self, features_df: pd.DataFrame) -> list[str]:
+    pass
+    pass
         """
         Basic location classification as fallback when enhanced analysis is not available.
         """
@@ -1520,6 +1769,8 @@ class UnifiedRegimeClassifier:
 
         # Check if we have enough data for location classification
         if len(features_df) < long_term_hvn_period:
+    pass
+    pass
             self.logger.warning(
                 f"Insufficient data for location classification. "
                 f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
@@ -1532,6 +1783,8 @@ class UnifiedRegimeClassifier:
         # Start loop after the longest period to ensure enough data for all calculations
         start_index = long_term_hvn_period
         for i in range(start_index, len(features_df)):
+    pass
+    pass
             current_price_diff = features_df["close"].diff().iloc[i]
 
             # --- 1. Tactical Pivot Analysis (Short-Term) ---
@@ -1550,6 +1803,8 @@ class UnifiedRegimeClassifier:
 
             # Check for Pivot proximity using price differences
             for p_sup in pivot_supports:
+    pass
+    pass
                 if (
                     abs(current_price_diff - p_sup) / (abs(current_price_diff) + 1e-8)
                     <= tolerance
@@ -1557,7 +1812,11 @@ class UnifiedRegimeClassifier:
                     loc_pivot = "PIVOT_S"
                     break
             if not loc_pivot:
+    pass
+    pass
                 for p_res in pivot_resistances:
+    pass
+    pass
                     if (
                         abs(current_price_diff - p_res)
                         / (abs(current_price_diff) + 1e-8)
@@ -1568,9 +1827,15 @@ class UnifiedRegimeClassifier:
 
             # Check for HVN proximity using price differences
             if volume_levels:
+    pass
+    pass
                 for level_data in volume_levels.values():
+    pass
+    pass
                     # Intelligence Rule: Filter out untested levels
                     if level_data["touches"] < min_level_touches:
+    pass
+    pass
                         continue
 
                     if (
@@ -1588,8 +1853,12 @@ class UnifiedRegimeClassifier:
 
             # --- 4. Final Label Assignment ---
             if loc_pivot and loc_hvn:
+    pass
+    pass
                 # A tactical pivot aligns with a strategic volume level - high confluence
                 if "S" in loc_pivot and "SUPPORT" in loc_hvn:
+    pass
+    pass
                     locations.append("CONFLUENCE_S")
                 elif "R" in loc_pivot and "RESISTANCE" in loc_hvn:
                     locations.append("CONFLUENCE_R")
@@ -1618,16 +1887,26 @@ class UnifiedRegimeClassifier:
         try:
             self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize SRBreakoutPredictor for enhanced analysis
             if self.enable_sr_integration:
+    pass
+    pass
                 sr_init_success = await self.initialize_sr_predictor()
                 if not sr_init_success:
+    pass
+    pass
                     self.logger.warning("Failed to initialize SRBreakoutPredictor, continuing with basic analysis")
                     self.enable_sr_integration = False
 
             # Calculate features
             features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
+    pass
+    pass
                 self.logger.error("No features available for HMM training")
                 return False
 
@@ -1685,9 +1964,15 @@ class UnifiedRegimeClassifier:
         try:
             self.logger.info("🎓 Training Location Classifier...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Calculate features
             features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
+    pass
+    pass
                 self.logger.error(
                     "No features available for location classifier training",
                 )
@@ -1696,6 +1981,8 @@ class UnifiedRegimeClassifier:
             # Check if we have enough data for location classification
             long_term_hvn_period = self.config.get("long_term_hvn_period", 720)
             if len(features_df) < long_term_hvn_period:
+    pass
+    pass
                 self.logger.warning(
                     f"Insufficient data for location classification. "
                     f"Need at least {long_term_hvn_period} rows, but only have {len(features_df)}. "
@@ -1708,6 +1995,8 @@ class UnifiedRegimeClassifier:
 
             # Verify that location labels match the features length
             if len(location_labels) != len(features_df):
+    pass
+    pass
                 self.logger.error(
                     f"Location labels length ({len(location_labels)}) does not match "
                     f"features length ({len(features_df)}). Skipping location classifier training."
@@ -1750,9 +2039,15 @@ class UnifiedRegimeClassifier:
         try:
             self.logger.info("🎓 Training Basic Regime Ensemble...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Calculate features
             features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
+    pass
+    pass
                 self.logger.error("No features available for ensemble training")
                 return False
 
@@ -1831,19 +2126,29 @@ class UnifiedRegimeClassifier:
         try:
             self.logger.info("🎓 Training Complete Regime Classification System...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize SR analyzer
             # Legacy S/R/Candle code removed
 
             # Train HMM labeler
             if not await self.train_hmm_labeler(historical_klines):
+    pass
+    pass
                 return False
 
             # Train basic ensemble
             if not await self.train_basic_ensemble(historical_klines):
+    pass
+    pass
                 return False
 
             # Train location classifier
             if not await self.train_location_classifier(historical_klines):
+    pass
+    pass
                 return False
 
             self.trained = True
@@ -1875,16 +2180,26 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.trained:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Models not trained, returning default prediction")
                 return "SIDEWAYS", 0.5, {}
 
+    except Exception as e:
+        pass
             # Calculate features
             features_df = await self._calculate_features(current_klines)
             if features_df.empty:
+    pass
+    pass
                 return "SIDEWAYS", 0.5, {}
 
             current_features = features_df.iloc[-1] if len(features_df) > 0 else None
             if current_features is None:
+    pass
+    pass
                 return "SIDEWAYS", 0.5, {}
 
             # Predict regime
@@ -1906,6 +2221,8 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.basic_ensemble:
+    pass
+    pass
                 regime_proba = self.basic_ensemble.predict_proba(
                     regime_features.iloc[-1:],
                 )
@@ -1943,16 +2260,26 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.trained:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.warning("Models not trained, returning default predictions")
                 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
+    except Exception as e:
+        pass
             # Calculate features
             features_df = await self._calculate_features(current_klines)
             if features_df.empty:
+    pass
+    pass
                 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
             current_features = features_df.iloc[-1] if len(features_df) > 0 else None
             if current_features is None:
+    pass
+    pass
                 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
 
             # Predict regime
@@ -1974,6 +2301,8 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.basic_ensemble:
+    pass
+    pass
                 regime_proba = self.basic_ensemble.predict_proba(
                     regime_features.iloc[-1:],
                 )
@@ -1990,6 +2319,8 @@ class UnifiedRegimeClassifier:
             ].fillna(0)
 
             if self.location_classifier:
+    pass
+    pass
                 location_proba = self.location_classifier.predict_proba(
                     location_features.iloc[-1:],
                 )
@@ -2023,19 +2354,31 @@ class UnifiedRegimeClassifier:
             return "SIDEWAYS", "OPEN_RANGE", 0.5, {"error": str(e)}
 
     def save_models(self) -> None:
+    pass
+    pass
         """Save all trained models."""
         try:
             if self.hmm_model:
+    pass
+    except Exception as e:
+        pass
+    pass
                 joblib.dump(self.hmm_model, self.hmm_model_path)
                 self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
 
+    except Exception as e:
+        pass
             if self.basic_ensemble:
+    pass
+    pass
                 joblib.dump(self.basic_ensemble, self.ensemble_model_path)
                 self.logger.info(
                     f"✅ Basic ensemble saved to {self.ensemble_model_path}",
                 )
 
             if self.location_classifier:
+    pass
+    pass
                 joblib.dump(self.location_classifier, self.location_model_path)
                 self.logger.info(
                     f"✅ Location classifier saved to {self.location_model_path}",
@@ -2043,12 +2386,16 @@ class UnifiedRegimeClassifier:
 
             # Save label encoders
             if self.basic_label_encoder:
+    pass
+    pass
                 joblib.dump(
                     self.basic_label_encoder,
                     self.ensemble_model_path.replace(".joblib", "_encoder.joblib"),
                 )
 
             if self.location_label_encoder:
+    pass
+    pass
                 joblib.dump(
                     self.location_label_encoder,
                     self.location_model_path.replace(".joblib", "_encoder.joblib"),
@@ -2058,9 +2405,15 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"❌ Error saving models: {e}")
 
     def load_models(self) -> bool:
+    pass
+    pass
         """Load all trained models."""
         try:
             # Log model directory and candidate paths
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 {
                     "msg": "UnifiedRegimeClassifier model directories",
@@ -2100,14 +2453,22 @@ class UnifiedRegimeClassifier:
             ]
 
             def _first_existing(paths: list[str]) -> str | None:
+    pass
+    pass
                 for p in paths:
+    pass
+    pass
                     if os.path.exists(p):
+    pass
+    pass
                         return p
                 return None
 
             # Load HMM model
             hmm_path = _first_existing(hmm_candidates)
             if hmm_path is not None:
+    pass
+    pass
                 self.hmm_model = joblib.load(hmm_path)
                 self.logger.info(f"✅ Loaded HMM model from {hmm_path}")
                 loaded_any = True
@@ -2115,6 +2476,8 @@ class UnifiedRegimeClassifier:
             # Load basic ensemble
             ensemble_path = _first_existing(ensemble_candidates)
             if ensemble_path is not None:
+    pass
+    pass
                 self.basic_ensemble = joblib.load(ensemble_path)
                 self.logger.info(f"✅ Loaded basic ensemble from {ensemble_path}")
                 loaded_any = True
@@ -2122,6 +2485,8 @@ class UnifiedRegimeClassifier:
             # Load location classifier
             location_path = _first_existing(location_candidates)
             if location_path is not None:
+    pass
+    pass
                 self.location_classifier = joblib.load(location_path)
                 self.logger.info(f"✅ Loaded location classifier from {location_path}")
                 loaded_any = True
@@ -2136,6 +2501,8 @@ class UnifiedRegimeClassifier:
             ]
             enc_path = _first_existing(encoder_candidates)
             if enc_path is not None:
+    pass
+    pass
                 self.basic_label_encoder = joblib.load(enc_path)
 
             location_encoder_candidates = [
@@ -2147,6 +2514,8 @@ class UnifiedRegimeClassifier:
             ]
             loc_enc_path = _first_existing(location_encoder_candidates)
             if loc_enc_path is not None:
+    pass
+    pass
                 self.location_label_encoder = joblib.load(loc_enc_path)
 
             self.trained = loaded_any
@@ -2170,17 +2539,27 @@ class UnifiedRegimeClassifier:
         """
         try:
             if not self.trained:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info(
                     "🎓 Models not trained, training complete system now...",
                 )
                 training_success = await self.train_complete_system(historical_klines)
                 if not training_success:
+    pass
+    pass
                     self.logger.error("❌ Failed to train regime classification models")
                     return {"error": "Failed to train regime classification models"}
 
+    except Exception as e:
+        pass
             # Calculate features
             features_df = await self._calculate_features(historical_klines)
             if features_df.empty:
+    pass
+    pass
                 self.logger.error("❌ No features available for classification")
                 return {"error": "No features available for classification"}
 
@@ -2206,6 +2585,8 @@ class UnifiedRegimeClassifier:
             regimes = []
             confidence_scores = []
             if self.basic_ensemble and self.basic_label_encoder:
+    pass
+    pass
                 self.logger.info(
                     "🔍 Using trained basic ensemble for regime classification",
                 )
@@ -2251,6 +2632,8 @@ class UnifiedRegimeClassifier:
                     }
                 )
                 if len(unique_regimes) < self.n_states:
+    pass
+    pass
                     self.logger.warning(
                         warning(
                             f"Fewer regimes predicted ({len(unique_regimes)}) than expected ({self.n_states}). "
@@ -2300,6 +2683,8 @@ class UnifiedRegimeClassifier:
                     }
                 )
                 if len(unique_regimes) < self.n_states:
+    pass
+    pass
                     self.logger.warning(
                         warning(
                             f"Fewer regimes predicted ({len(unique_regimes)}) than expected ({self.n_states}). "
@@ -2313,6 +2698,8 @@ class UnifiedRegimeClassifier:
                 # Try to train the complete system
                 training_success = await self.train_complete_system(historical_klines)
                 if not training_success:
+    pass
+    pass
                     self.logger.error("❌ Failed to train regime classification models")
                     return {"error": "Failed to train regime classification models"}
 
@@ -2346,6 +2733,8 @@ class UnifiedRegimeClassifier:
             return {"error": str(e)}
 
     def get_system_status(self) -> dict[str, Any]:
+    pass
+    pass
         """Get system status and statistics."""
         return {
             "trained": self.trained,

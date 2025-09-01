@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -56,6 +58,10 @@ async def run_validator(
 
     try:
         # Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -65,6 +71,8 @@ async def run_validator(
         hmm_models_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_hmm_models.pkl"
 
         if not hmm_models_path.exists():
+    pass
+    pass
             logger.error(f"❌ HMM models file not found: {hmm_models_path}")
         return {
                 "step_name": "step08_hmm_based_training",
@@ -75,6 +83,8 @@ async def run_validator(
         # Check file size
         file_size, hmm_models_path.stat().st_size
         if file_size == 0:
+    pass
+    pass
             logger.error(f"❌ HMM models file is empty: {hmm_models_path}")
         return {
                 "step_name": "step08_hmm_based_training",
@@ -85,6 +95,10 @@ async def run_validator(
         # Try to load and validate the models
         try:
             import pickle
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             import numpy as np
 
         # Load the models
@@ -93,6 +107,8 @@ async def run_validator(
 
         # Check if models_data is a dictionary
         if not isinstance(models_data, dict):
+    pass
+    pass
                 logger.error("❌ HMM models data is not a dictionary")
         return {
                     "step_name": "step08_hmm_based_training",
@@ -105,6 +121,8 @@ async def run_validator(
             missing_keys = [key for key in required_keys if key not in models_data]
 
         if missing_keys:
+    pass
+    pass
                 logger.error(f"❌ Missing required keys in models data: {missing_keys}")
         return {
                     "step_name": "step08_hmm_based_training",
@@ -115,6 +133,8 @@ async def run_validator(
         # Validate models
             models, models_data.get("models", {})
         if not models:
+    pass
+    pass
                 logger.error("❌ No models found in models data")
         return {
                     "step_name": "step08_hmm_based_training",
@@ -125,19 +145,31 @@ async def run_validator(
         # Check each model
             model_validation_results = {}
         for regime_id, model in models.items():
+    pass
+    pass
         try:
         # Basic model validation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if hasattr(model, 'predict'):
+    pass
+    pass
                         model_validation_results[regime_id] = "VALID"
                     else:
                         model_validation_results[regime_id] = "INVALID - No predict method"
 
         # Check for model attributes
         if hasattr(model, 'score'):
+    pass
+    pass
                         model_validation_results[regime_id] += " - Has score method"
 
         # Check for training parameters
         if hasattr(model, 'n_components'):
+    pass
+    pass
                         model_validation_results[regime_id] += f" - {model.n_components} components"
 
         except Exception as e:
@@ -146,22 +178,32 @@ async def run_validator(
         # Validate regime mapping
             regime_mapping, models_data.get("regime_mapping", {})
         if not regime_mapping:
+    pass
+    pass
                 logger.warning("⚠️ No regime mapping found")
 
         # Validate training metadata
             training_metadata, models_data.get("training_metadata", {})
         if not training_metadata:
+    pass
+    pass
                 logger.warning("⚠️ No training metadata found")
 
         # Check for training metrics
             training_metrics, training_metadata.get("metrics", {})
         if training_metrics:
+    pass
+    pass
                 logger.info(f"✅ Training metrics: {training_metrics}")
 
         # Check for reasonable accuracy scores
         if "accuracy" in training_metrics:
+    pass
+    pass
                     accuracy, training_metrics["accuracy"]
         if accuracy < 0.5:
+    pass
+    pass
                         logger.warning(f"⚠️ Low accuracy score: {accuracy}")
                     elif accuracy > 0.95:
                         logger.warning(f"⚠️ Very high accuracy score (potential overfitting): {accuracy}")
@@ -169,11 +211,15 @@ async def run_validator(
         # Check for model performance data
             performance_data, training_metadata.get("performance", {})
         if performance_data:
+    pass
+    pass
                 logger.info(f"✅ Performance data: {performance_data}")
 
         # Check for feature importance if available
             feature_importance, training_metadata.get("feature_importance", {})
         if feature_importance:
+    pass
+    pass
                 logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
 
         # Validate model file structure
@@ -186,6 +232,8 @@ async def run_validator(
         if "INVALID" in status or "ERROR" in status]
 
         if invalid_models:
+    pass
+    pass
                 logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
         return {
                     "step_name": "step08_hmm_based_training",
@@ -228,6 +276,8 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the validator
     async def test():
         test_input = {

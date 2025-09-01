@@ -7,9 +7,12 @@ from .mexc import MexcExchange
 from .okx import OkxExchange
 
 
+import class ExchangeFactory:
 class ExchangeFactory:
     @staticmethod
     def get_exchange(exchange_name: str):
+    pass
+    pass
         name = (exchange_name or "").lower()
         cfg: dict[str, Any] = get_complete_config()
         env = cfg.get("environment", {})
@@ -18,12 +21,17 @@ class ExchangeFactory:
         symbol = env.get("trade_symbol", "BTCUSDT")
 
         if name == "binance":
+    pass
+    pass
             # Prefer the refactored, canonical implementation
             from src.exchange.binance import BinanceExchange as CleanBinance
 
+import return CleanBinance
             return CleanBinance(cfg)
 
         if name == "okx":
+    pass
+    pass
             return OkxExchange(
                 api_key=str(ex_cfg.get("api_key", "")),
                 api_secret=str(ex_cfg.get("api_secret", "")),
@@ -32,6 +40,8 @@ class ExchangeFactory:
             )
 
         if name == "gateio":
+    pass
+    pass
             return GateioExchange(
                 api_key=str(ex_cfg.get("api_key", "")),
                 api_secret=str(ex_cfg.get("api_secret", "")),
@@ -39,6 +49,8 @@ class ExchangeFactory:
             )
 
         if name == "mexc":
+    pass
+    pass
             return MexcExchange(
                 api_key=str(ex_cfg.get("api_key", "")),
                 api_secret=str(ex_cfg.get("api_secret", "")),

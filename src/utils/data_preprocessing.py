@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 
+import warnings.filterwarnings
 warnings.filterwarnings("ignore")
 
 def regularize_timestamps(
@@ -36,6 +37,12 @@ def regularize_timestamps(
 
     try:
         if data is None or data.empty:
+    pass
+    except Exception as e:
+        pass
+    pass
+    except Exception as e:
+        pass
         return data
 
         # Make a copy to avoid modifying original data
@@ -43,6 +50,8 @@ def regularize_timestamps(
 
         # Ensure timestamp is the index
         if "timestamp" in processed_data.columns:
+    pass
+    pass
             processed_data, processed_data.set_index("timestamp")
         elif not isinstance(processed_data.index, pd.DatetimeIndex):
             logger.warning("⚠️ No timestamp column found, cannot regularize intervals")
@@ -54,10 +63,14 @@ def regularize_timestamps(
         # Check for irregular intervals
         time_diffs, processed_data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
+    pass
+    pass
         return data
 
         # Calculate expected interval if not provided
         if expected_interval is None:
+    pass
+    pass
         # Fallback implementation for expected_interval
             expected_interval, (
                 time_diffs.mode().iloc[0]
@@ -90,6 +103,8 @@ def regularize_timestamps(
 
         # Reindex data to regular intervals
         if method == "forward_fill":
+    pass
+    pass
             processed_data, processed_data.reindex(regular_index, method="ffill")
         elif method == "interpolate":
             processed_data, processed_data.reindex(regular_index).interpolate(
@@ -114,18 +129,30 @@ def regularize_timestamps(
         return data
 
 def _get_frequency_string(interval: timedelta) -> str:
+    pass
+    pass
     """Convert timedelta to pandas frequency string."""
     total_seconds, interval.total_seconds()
 
     if total_seconds <= 60:
+    pass
+    pass
         return "1T"  # 1 minute
     if total_seconds <= 300:
+    pass
+    pass
         return "5T"  # 5 minutes
     if total_seconds <= 900:
+    pass
+    pass
         return "15T"  # 15 minutes
     if total_seconds <= 3600:
+    pass
+    pass
         return "1H"  # 1 hour
     if total_seconds <= 14400:
+    pass
+    pass
         return "4H"  # 4 hours
     return "1D"  # 1 day
 
@@ -149,6 +176,10 @@ def preprocess_data_for_multi_timeframe(
 
     try:
         # Regularize timestamps for all data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         processed_price, regularize_timestamps(price_data)
         processed_volume = (
             regularize_timestamps(volume_data) if volume_data is not None else None
@@ -193,8 +224,14 @@ def validate_and_fix_data_quality(
     try:
         fixed_data, data.copy()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Fix common issues based on data type
         if data_type == "klines_ohlcv":
+    pass
+    pass
             fixed_data, issues, _fix_ohlcv_issues(fixed_data)
             validation_results["issues_fixed"].extend(issues)
 
@@ -214,22 +251,34 @@ def validate_and_fix_data_quality(
         return data, validation_results
 
 def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
+    pass
+    pass
     """Fix common OHLCV data issues."""
     issues = []
 
     # Fix negative prices
     for col in ["open", "high", "low", "close"]:
+    pass
+    pass
         if col in data.columns:
+    pass
+    pass
             negative_mask, data[col] < 0
         if negative_mask.any():
+    pass
+    pass
                 data.loc[negative_mask, col] = data.loc[negative_mask, col].abs()
                 issues.append(f"Fixed {negative_mask.sum()} negative {col} values")
 
     # Fix OHLC consistency
     if all(col in data.columns for col in ["open", "high", "low", "close"]):
+    pass
+    pass
         # High should be >= max of open, close
         high_violations, data["high"] < data[["open", "close"]].max(axis = 1)
         if high_violations.any():
+    pass
+    pass
             data.loc[high_violations, "high"] = data.loc[
                 high_violations, ["open", "close"]
             ].max(axis = 1)
@@ -238,6 +287,8 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
         # Low should be <= min of open, close
         low_violations, data["low"] > data[["open", "close"]].min(axis = 1)
         if low_violations.any():
+    pass
+    pass
             data.loc[low_violations, "low"] = data.loc[
                 low_violations, ["open", "close"]
             ].min(axis = 1)
@@ -245,8 +296,12 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
 
     # Fix zero volume
     if "volume" in data.columns:
+    pass
+    pass
         zero_volume, data["volume"] == 0
         if zero_volume.any():
+    pass
+    pass
         # Replace zero volume with small positive value
             data.loc[zero_volume, "volume"] = 0.001
             issues.append(f"Fixed {zero_volume.sum()} zero volume values")

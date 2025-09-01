@@ -29,15 +29,23 @@ async def debug_interaction_flow():
 
     class MockLogger:
         def info(self, msg):
+    pass
+    pass
             print(f"INFO: {msg}")
 
         def warning(self, msg):
+    pass
+    pass
             print(f"WARNING: {msg}")
 
         def error(self, msg):
+    pass
+    pass
             print(f"ERROR: {msg}")
 
         def debug(self, msg):
+    pass
+    pass
             print(f"DEBUG: {msg}")
 
     feature_eng = VectorizedAdvancedFeatureEngineering(config)
@@ -63,11 +71,11 @@ async def debug_interaction_flow():
         "volatility": pd.Series([0.02, 0.03, 0.04, 0.05, 0.06]),
     }
 
-    print(f"\n📊 Initial features: {len(features)}")
+    print(f"\\\n📊 Initial features: {len(features)}")
     print("Feature names:", list(features.keys()))
 
     # Test the interaction features generation method directly
-    print("\n🔍 Testing _generate_interaction_features method directly...")
+    print("\\\n🔍 Testing _generate_interaction_features method directly...")
 
     # Create some enhanced features (difference/acceleration features)
     enhanced_features = {
@@ -93,11 +101,11 @@ async def debug_interaction_flow():
         enhanced_features = features,
         price_data = )
 
-    print(f"\n📊 Interaction features generated: {len(interaction_features)}")
+    print(f"\\\n📊 Interaction features generated: {len(interaction_features)}")
     print("Interaction feature names:", list(interaction_features.keys()))
 
     # Now test the full flow by calling the difference/acceleration method
-    print("\n🔍 Testing full difference/acceleration flow...")
+    print("\\\n🔍 Testing full difference/acceleration flow...")
 
     # Create a larger set of features to simulate the real scenario
     large_features = {}
@@ -122,7 +130,7 @@ async def debug_interaction_flow():
         large_features = price_data,
     )
 
-    print(f"\n📊 Final result: {len(result)}")
+    print(f"\\\n📊 Final result: {len(result)}")
 
     # Check for interaction features in the result
     interaction_features_in_result = [f for f in result.keys() if "_x_" in f]
@@ -132,9 +140,11 @@ async def debug_interaction_flow():
     print("Interaction feature names in result:", interaction_features_in_result)
 
     # Test the summary logging method
-    print("\n🔍 Testing summary logging method...")
+    print("\\\n🔍 Testing summary logging method...")
     feature_eng._log_feature_engineering_summary(result = result)
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(debug_interaction_flow())

@@ -7,6 +7,7 @@ from .leverage_sizer import LeverageSizer
 from .sr_breakout_predictor import SRBreakoutPredictor
 from .ml_tactics_manager import MLTacticsManager
 
+import __all__ = [
 __all__ = [
     "Tactician",
     "setup_tactician",

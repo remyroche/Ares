@@ -15,12 +15,17 @@ import time
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Import enhanced implementations
 try:
         EnhancedStep1DataCollection, run_enhanced_step1
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     )
         EnhancedStep1_5DataConverter, run_enhanced_step1_5
     )
@@ -40,6 +45,8 @@ import pandas as pd
 
 
 def create_test_data():
+    pass
+    pass
     """Create test data for validation."""
     print("🔧 Creating test data...")
 
@@ -79,8 +86,10 @@ def create_test_data():
 
 
 def test_data_quality_validation():
+    pass
+    pass
     """Test data quality validation utilities."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING DATA QUALITY VALIDATION")
     print("="*60)
 
@@ -88,7 +97,7 @@ def test_data_quality_validation():
     klines_df, aggtrades_df = create_test_data()
 
     # Test quick validation
-    print("\n🔍 Testing quick validation...")
+    print("\\\n🔍 Testing quick validation...")
     health_status = check_dataframe_health(klines_df)
     # Convert numpy types to native Python types for JSON serialization
     health_status_json = {
@@ -102,7 +111,7 @@ def test_data_quality_validation():
     print(f"Health status: {json.dumps(health_status_json, indent=2)}")
 
     # Test comprehensive validation
-    print("\n🔍 Testing comprehensive validation...")
+    print("\\\n🔍 Testing comprehensive validation...")
     quality_result = quick_validate_dataframe(klines_df, "test_klines")
     # Convert to JSON-serializable format
     summary = quality_result.get_summary()
@@ -118,7 +127,7 @@ def test_data_quality_validation():
     print(f"Quality result: {json.dumps(summary_json, indent=2)}")
 
     # Test with some issues
-    print("\n🔍 Testing with quality issues...")
+    print("\\\n🔍 Testing with quality issues...")
     problematic_df = klines_df.copy()
     problematic_df.loc[100, 'open'] = np.nan  # Add NaN
     problematic_df.loc[200, 'high'] = np.inf  # Add infinite value
@@ -141,18 +150,20 @@ def test_data_quality_validation():
 
 
 def test_memory_management():
+    pass
+    pass
     """Test memory management utilities."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING MEMORY MANAGEMENT")
     print("="*60)
 
     # Test memory monitoring
-    print("\n💾 Testing memory monitoring...")
+    print("\\\n💾 Testing memory monitoring...")
     initial_memory = get_memory_usage_mb()
     print(f"Initial memory usage: {initial_memory:.1f}MB")
 
     # Create large DataFrame to test memory pressure
-    print("\n💾 Creating large DataFrame...")
+    print("\\\n💾 Creating large DataFrame...")
     large_df = pd.DataFrame({
         'col1': np.random.randn(100000),
         'col2': np.random.randn(100000),
@@ -163,7 +174,7 @@ def test_memory_management():
     print(f"Memory after large DataFrame: {memory_after_large_df:.1f}MB")
 
     # Test garbage collection
-    print("\n💾 Testing garbage collection...")
+    print("\\\n💾 Testing garbage collection...")
     gc_result = trigger_gc_if_needed(max_memory_mb=1024)
     # Convert to JSON-serializable format
     gc_result_json = {
@@ -183,7 +194,7 @@ def test_memory_management():
 
 async def test_enhanced_step1():
     """Test enhanced Step1 implementation."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING ENHANCED STEP1")
     print("="*60)
 
@@ -216,14 +227,18 @@ async def test_enhanced_step1():
     }
 
     # Execute enhanced data collection
-    print("\n🚀 Executing enhanced Step1...")
+    print("\\\n🚀 Executing enhanced Step1...")
     start_time = time.time()
 
     try:
         result = await step1.execute(training_input, pipeline_state)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         duration = time.time() - start_time
 
-        print(f"\n📊 Step1 Execution Results:")
+        print(f"\\\n📊 Step1 Execution Results:")
         print(f"   Duration: {duration:.2f}s")
         print(f"   Data collection completed: {result['data_collection_completed']}")
         print(f"   Quality check passed: {result['quality_check_passed']}")
@@ -242,7 +257,7 @@ async def test_enhanced_step1():
 
 async def test_enhanced_step1_5():
     """Test enhanced Step1_5 implementation."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING ENHANCED STEP1_5")
     print("="*60)
 
@@ -275,14 +290,18 @@ async def test_enhanced_step1_5():
     }
 
     # Execute enhanced data conversion
-    print("\n🔄 Executing enhanced Step1_5...")
+    print("\\\n🔄 Executing enhanced Step1_5...")
     start_time = time.time()
 
     try:
         result = await step1_5.execute(training_input, pipeline_state)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         duration = time.time() - start_time
 
-        print(f"\n📊 Step1_5 Execution Results:")
+        print(f"\\\n📊 Step1_5 Execution Results:")
         print(f"   Duration: {duration:.2f}s")
         print(f"   Data conversion completed: {result['data_conversion_completed']}")
         print(f"   Quality check passed: {result['quality_check_passed']}")
@@ -300,13 +319,15 @@ async def test_enhanced_step1_5():
 
 
 def test_configuration_management():
+    pass
+    pass
     """Test configuration management."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING CONFIGURATION MANAGEMENT")
     print("="*60)
 
     # Test Step1 configuration
-    print("\n⚙️ Testing Step1 configuration...")
+    print("\\\n⚙️ Testing Step1 configuration...")
     step1_config = Step1Config(
         symbol="ETHUSDT",
         exchange="BINANCE",
@@ -317,12 +338,14 @@ def test_configuration_management():
     # Validate configuration
     issues = step1_config.validate()
     if issues:
+    pass
+    pass
         print(f"❌ Configuration validation failed: {issues}")
     else:
         print("✅ Step1 configuration validation passed")
 
     # Test Step1_5 configuration
-    print("\n⚙️ Testing Step1_5 configuration...")
+    print("\\\n⚙️ Testing Step1_5 configuration...")
     step1_5_config = Step1_5Config(
         symbol="ETHUSDT",
         exchange="BINANCE",
@@ -333,12 +356,14 @@ def test_configuration_management():
     # Validate configuration
     issues = step1_5_config.validate()
     if issues:
+    pass
+    pass
         print(f"❌ Configuration validation failed: {issues}")
     else:
         print("✅ Step1_5 configuration validation passed")
 
     # Test pipeline configuration
-    print("\n⚙️ Testing pipeline configuration...")
+    print("\\\n⚙️ Testing pipeline configuration...")
     pipeline_config = PipelineConfig(
         step1=step1_config,
         step1_5=step1_5_config,
@@ -348,6 +373,8 @@ def test_configuration_management():
     # Validate configuration
     issues = pipeline_config.validate()
     if issues:
+    pass
+    pass
         print(f"❌ Pipeline configuration validation failed: {issues}")
     else:
         print("✅ Pipeline configuration validation passed")
@@ -357,7 +384,7 @@ def test_configuration_management():
 
 async def test_integration():
     """Test integration between Step1 and Step1_5."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("TESTING INTEGRATION")
     print("="*60)
 
@@ -365,19 +392,25 @@ async def test_integration():
     create_test_data()
 
     # Test Step1
-    print("\n🔄 Testing Step1 -> Step1_5 integration...")
+    print("\\\n🔄 Testing Step1 -> Step1_5 integration...")
     step1_success = await test_enhanced_step1()
 
     if step1_success:
+    pass
+    pass
         # Test Step1_5
         step1_5_success = await test_enhanced_step1_5()
 
         if step1_5_success:
-            print("\n✅ Integration test completed successfully")
+    pass
+    pass
+            print("\\\n✅ Integration test completed successfully")
 
             # Check if unified data was created
             unified_dir = "data_cache/unified/binance/ethusdt/1m"
             if os.path.exists(unified_dir):
+    pass
+    pass
                 parquet_files = [f for f in os.listdir(unified_dir) if f.endswith('.parquet')]
                 print(f"📁 Unified data created: {len(parquet_files)} files")
             else:
@@ -391,26 +424,34 @@ async def test_integration():
 
 
 def generate_performance_report():
+    pass
+    pass
     """Generate performance report."""
-    print("\n" + "="*60)
+    print("\\\n" + "="*60)
     print("PERFORMANCE REPORT")
     print("="*60)
 
     # Memory usage
     current_memory = get_memory_usage_mb()
-    print(f"\n💾 Current memory usage: {current_memory:.1f}MB")
+    print(f"\\\n💾 Current memory usage: {current_memory:.1f}MB")
 
     # Check for created files
-    print("\n📁 Created files:")
+    print("\\\n📁 Created files:")
     if os.path.exists("data_cache"):
+    pass
+    pass
         for root, dirs, files in os.walk("data_cache"):
+    pass
+    pass
             for file in files:
+    pass
+    pass
                 file_path = os.path.join(root, file)
                 file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
                 print(f"   - {file_path}: {file_size:.1f}MB")
 
     # Configuration summary
-    print("\n⚙️ Configuration summary:")
+    print("\\\n⚙️ Configuration summary:")
     step1_config = Step1Config()
     step1_5_config = Step1_5Config()
 
@@ -435,6 +476,10 @@ async def main():
 
     try:
         # Test individual components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         test_data_quality_validation()
         test_memory_management()
         test_configuration_management()
@@ -449,12 +494,12 @@ async def main():
         # Generate performance report
         generate_performance_report()
 
-        print("\n" + "="*80)
+        print("\\\n" + "="*80)
         print("🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
         print("="*80)
 
     except Exception as e:
-        print(f"\n❌ Test execution failed: {e}")
+        print(f"\\\n❌ Test execution failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -463,12 +508,16 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the tests
     success = asyncio.run(main())
 
     if success:
-        print("\n✅ All tests passed! Enhanced implementations are working correctly.")
+    pass
+    pass
+        print("\\\n✅ All tests passed! Enhanced implementations are working correctly.")
         sys.exit(0)
     else:
-        print("\n❌ Some tests failed. Please check the implementation.")
+        print("\\\n❌ Some tests failed. Please check the implementation.")
         sys.exit(1)

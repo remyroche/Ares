@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import validation_error,
     validation_error,
 )
 
@@ -16,13 +17,19 @@ class WalkForwardValidationStep:
     """Step 13: Walk - Forward Validation using existing step06_walk_forward_validation."""
 
     def _validate_environment(self) -> None:
+    pass
+    pass
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
+    pass
+    pass
             missing_modules, dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
         # Continue with available modules, using fallbacks where needed
 
 def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config, config
         self.logger, system_logger
 
@@ -30,6 +37,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the walk - forward validation step."""
         try:
         self.logger.info("🚀 Initializing Walk - Forward Validation Step...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         self.logger.info("✅ Walk - Forward Validation Step initialized successfully")
         except Exception as e:  # pragma: no cover - defensive
         self.logger.exception(
@@ -52,6 +63,10 @@ def __init__(self, config: dict[str, Any]) -> None:
         try:
         self.logger.info("🔄 Executing Walk - Forward Validation...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Extract parameters
             symbol, training_input.get("symbol", "ETHUSDT")
             exchange, training_input.get("exchange", "BINANCE")
@@ -66,6 +81,8 @@ def __init__(self, config: dict[str, Any]) -> None:
             )
 
         if os.path.exists(wfv_results_file):
+    pass
+    pass
         with open(wfv_results_file) as f:
                     wfv_results: Dict[str, Any] = json.load(f)
             else:
@@ -91,6 +108,12 @@ def __init__(self, config: dict[str, Any]) -> None:
         # Persist WFV results as Parquet partitioned by fold / horizon for pruning
         try:
                 from src.training.enhanced_training_manager_optimized import (
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import ParquetDatasetManager,
                     ParquetDatasetManager,
                 )
 
@@ -103,10 +126,16 @@ def __init__(self, config: dict[str, Any]) -> None:
 
                 summary_rows: list[dict[str, Any]] = []
         for fold_idx, fold in enumerate(wfv_results.get("fold_results", [])):
+    pass
+    pass
                     metrics, fold.get("metrics", {"accuracy": 0.0})
         for k, v in metrics.items():
+    pass
+    pass
                         summary_rows.append({"fold": fold_idx, "metric": k, "value": v})
         if summary_rows:
+    pass
+    pass
                     summary_df, pd.DataFrame(summary_rows)
                     pdm.write_partitioned_dataset(
                         df = summary_df,
@@ -142,6 +171,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
+import with_enhanced_mlflow_logging,
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -249,6 +279,10 @@ async def run_step(
     """
     try:
         # Create step instance
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
         step, WalkForwardValidationStep(config)
         await step.initialize()
@@ -271,6 +305,8 @@ async def run_step(
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the step
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data / training")

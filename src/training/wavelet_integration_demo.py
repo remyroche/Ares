@@ -19,15 +19,18 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.backtesting_with_cached_features import (
+import BacktestingWithCachedFeatures,
     BacktestingWithCachedFeatures,
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
+import VectorizedAdvancedFeatureEngineering,
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     problem,
@@ -41,6 +44,8 @@ class WaveletIntegrationDemo:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("WaveletIntegrationDemo")
 
@@ -55,6 +60,10 @@ class WaveletIntegrationDemo:
         try:
             self.logger.info(
                 "🚀 Initializing comprehensive wavelet integration demo...",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
 
             # Initialize vectorized advanced feature engineering
@@ -85,6 +94,10 @@ class WaveletIntegrationDemo:
         """Create realistic sample data for demonstration."""
         try:
             # Create sample OHLCV data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
             n_points = len(dates)
 
@@ -140,7 +153,11 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate the use of price differences instead of raw prices."""
         try:
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("DEMONSTRATING PRICE DIFFERENCES USAGE")
             self.logger.info("=" * 60)
 
@@ -188,7 +205,11 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate complete feature integration from advanced_feature_engineering.py."""
         try:
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("DEMONSTRATING COMPLETE FEATURE INTEGRATION")
             self.logger.info("=" * 60)
 
@@ -229,7 +250,11 @@ class WaveletIntegrationDemo:
             }
 
             for category, features in feature_categories.items():
+    pass
+    pass
                 if features:
+    pass
+    pass
                     self.logger.info(f"📊 {category}: {len(features)} features")
                     self.logger.info(f"   Examples: {features[:3]}")
 
@@ -243,7 +268,11 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate the complete wavelet workflow."""
         try:
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("DEMONSTRATING COMPLETE WAVELET WORKFLOW")
             self.logger.info("=" * 60)
 
@@ -265,6 +294,8 @@ class WaveletIntegrationDemo:
             )
 
             if precompute_success:
+    pass
+    pass
                 self.logger.info("✅ Wavelet features pre-computed successfully")
             else:
                 self.print(problem("⚠️ Wavelet pre-computation had issues"))
@@ -278,6 +309,8 @@ class WaveletIntegrationDemo:
             )
 
             if backtest_results and "error" not in backtest_results:
+    pass
+    pass
                 self.logger.info("✅ Backtesting with cached features completed")
                 self.logger.info(
                     f"📊 Backtest performance: {backtest_results.get('performance', 'N/A')}",
@@ -299,7 +332,11 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate live trading integration with wavelet features."""
         try:
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("DEMONSTRATING LIVE TRADING INTEGRATION")
             self.logger.info("=" * 60)
 
@@ -328,6 +365,8 @@ class WaveletIntegrationDemo:
 
             # Simulate trading decision based on wavelet features
             if live_wavelet_features:
+    pass
+    pass
                 # Example: Use wavelet energy features for trading decision
                 energy_features = {
                     k: v
@@ -335,11 +374,15 @@ class WaveletIntegrationDemo:
                     if "energy" in k.lower()
                 }
                 if energy_features:
+    pass
+    pass
                     avg_energy = np.mean(list(energy_features.values()))
                     self.logger.info(f"📊 Average wavelet energy: {avg_energy:.6f}")
 
                     # Simple trading logic based on wavelet energy
                     if avg_energy > 0.001:
+    pass
+    pass
                         self.logger.info(
                             "📈 High wavelet energy detected - potential trading opportunity",
                         )
@@ -355,7 +398,11 @@ class WaveletIntegrationDemo:
     ) -> None:
         """Demonstrate extensive wavelet techniques for labelling and ML training."""
         try:
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("DEMONSTRATING EXTENSIVE WAVELET TECHNIQUES")
             self.logger.info("=" * 60)
 
@@ -363,6 +410,8 @@ class WaveletIntegrationDemo:
             wavelet_analyzer = self.feature_engineer.wavelet_analyzer
 
             if wavelet_analyzer:
+    pass
+    pass
                 # Demonstrate different wavelet techniques
                 self.logger.info(
                     "🔍 Analyzing wavelet transforms with multiple techniques...",
@@ -429,10 +478,16 @@ class WaveletIntegrationDemo:
         try:
             self.logger.info("🚀 Starting comprehensive wavelet integration demo...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Create sample data
             price_data, volume_data = await self.create_sample_data()
 
             if price_data.empty:
+    pass
+    pass
                 self.print(failed("❌ Failed to create sample data"))
                 return
 
@@ -445,7 +500,7 @@ class WaveletIntegrationDemo:
             await self.demonstrate_live_trading_integration(price_data, volume_data)
             await self.demonstrate_extensive_wavelet_techniques(price_data)
 
-            self.logger.info("\n" + "=" * 60)
+            self.logger.info("\\\n" + "=" * 60)
             self.logger.info("✅ COMPREHENSIVE WAVELET INTEGRATION DEMO COMPLETED")
             self.logger.info("=" * 60)
 
@@ -467,6 +522,10 @@ async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config = {
             "wavelet_transforms": {
                 "wavelet_type": "db4",
@@ -518,4 +577,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

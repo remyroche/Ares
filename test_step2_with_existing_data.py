@@ -3,7 +3,8 @@
 Test script for the new step2 command functionality.
 
 This script demonstrates how to use ares_launcher to start the enhanced_training_pipeline
-from step2 with existing data (collected and processed in step1 and step1_5),
+from step2 with existing data (collected and processed in step1 and step1_5), import *
+import without triggering new downloads.
 without triggering new downloads.
 """
 
@@ -12,17 +13,21 @@ import asyncio
 from pathlib import Path
 
 # Add the project root to the Python path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Use existing validator orchestrator
 from src.utils.validator_orchestrator import ValidatorOrchestrator
+import print
 print("🔧 Using existing validator orchestrator")
 
 
 def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
+    pass
+    pass
     """Print a formatted validation report for step2 readiness."""
-    print("\n" + "="*80)
+    print("\\\n" + "="*80)
     print(f"📊 DATA VALIDATION REPORT FOR STEP2")
     print(f"🎯 Symbol: {symbol}")
     print(f"🏢 Exchange: {exchange}")
@@ -33,13 +38,19 @@ def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symb
     step1_issues = len(step1_result.get("issues", []))
     print(f"📁 Step1 Data Collection: {step1_status}")
     if step1_issues > 0:
+    pass
+    pass
         print(f"   ⚠️  Found {step1_issues} issues")
 
     # Show step1 file checks
     file_checks = step1_result.get("file_checks", {})
     if file_checks:
+    pass
+    pass
         print(f"   📄 File Status:")
         for filename, check in file_checks.items():
+    pass
+    pass
             status = "✅" if check.get("exists", False) else "❌"
             print(f"     {status} {filename}")
 
@@ -48,35 +59,49 @@ def print_step2_validation_report(step1_result: dict, step1_5_result: dict, symb
     step1_5_issues = len(step1_5_result.get("issues", []))
     print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
     if step1_5_issues > 0:
+    pass
+    pass
         print(f"   ⚠️  Found {step1_5_issues} issues")
 
     # Show step1_5 file checks
     file_checks_1_5 = step1_5_result.get("file_checks", {})
     if file_checks_1_5:
+    pass
+    pass
         print(f"   📄 File Status:")
         for filename, check in file_checks_1_5.items():
+    pass
+    pass
             status = "✅" if check.get("exists", False) else "❌"
             print(f"     {status} {filename}")
 
     # Issues summary
     total_issues = step1_issues + step1_5_issues
     if total_issues > 0:
-        print(f"\n⚠️  ISSUES SUMMARY ({total_issues} total):")
+    pass
+    pass
+        print(f"\\\n⚠️  ISSUES SUMMARY ({total_issues} total):")
         for issue in step1_result.get("issues", []):
+    pass
+    pass
             print(f"   • Step1: {issue}")
         for issue in step1_5_result.get("issues", []):
+    pass
+    pass
             print(f"   • Step1_5: {issue}")
 
     # Overall assessment
     can_start = step1_result.get("validation_passed", False) and step1_5_result.get("validation_passed", False)
     if can_start:
-        print(f"\n✅ READY TO START FROM STEP2")
+    pass
+    pass
+        print(f"\\\n✅ READY TO START FROM STEP2")
         print(f"   Proceeding with existing data...")
     else:
-        print(f"\n❌ NOT READY FOR STEP2")
+        print(f"\\\n❌ NOT READY FOR STEP2")
         print(f"   Data validation failed - missing or invalid data")
 
-    print("="*80 + "\n")
+    print("="*80 + "\\\n")
 
 
 async def test_data_validation():
@@ -88,7 +113,7 @@ async def test_data_validation():
     exchange = "BINANCE"
 
     # Test with empty data_cache (should show missing data)
-    print(f"\n📊 Testing validation for {symbol} on {exchange}")
+    print(f"\\\n📊 Testing validation for {symbol} on {exchange}")
     print("   (with empty data_cache directory)")
 
     # Use existing validator orchestrator
@@ -109,6 +134,7 @@ async def test_data_validation():
     from src.config import CONFIG
 
     # Validate step1 and step1_5 using existing validators
+import print
     print("🔍 Validating step1_data_collection using existing validator")
     step1_result = await validator_orchestrator.run_step_validator(
         "step1_data_collection", training_input, pipeline_state, CONFIG
@@ -119,40 +145,51 @@ async def test_data_validation():
         "step1_5_data_converter", training_input, pipeline_state, CONFIG
     )
 
-    print("\n📋 Validation Results:")
+    print("\\\n📋 Validation Results:")
     print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
     print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
     print(f"   Step1 Warnings: {len(step1_result.get('warnings', []))}")
     print(f"   Step1_5 Warnings: {len(step1_5_result.get('warnings', []))}")
 
     if step1_result.get('warnings'):
-        print("\n⚠️  Step1 Warnings:")
+    pass
+    pass
+        print("\\\n⚠️  Step1 Warnings:")
         for warning in step1_result['warnings']:
+    pass
+    pass
             print(f"   • {warning}")
 
     if step1_5_result.get('warnings'):
-        print("\n⚠️  Step1_5 Warnings:")
+    pass
+    pass
+        print("\\\n⚠️  Step1_5 Warnings:")
         for warning in step1_5_result['warnings']:
+    pass
+    pass
             print(f"   • {warning}")
 
     # Test the overall readiness
-    print(f"\n🔍 Testing step2 readiness...")
+    print(f"\\\n🔍 Testing step2 readiness...")
     can_start = step1_result.get('validation_passed', False) and step1_5_result.get('validation_passed', False)
     print(f"   Can start from step2: {can_start}")
 
-    print(f"\n📊 Printing validation report...")
+    print(f"\\\n📊 Printing validation report...")
     print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
 
 
 def test_step2_command():
+    pass
+    pass
     """Test the new step2 command functionality."""
-    print("\n🚀 Testing Step2 Command Functionality")
+    print("\\\n🚀 Testing Step2 Command Functionality")
     print("=" * 60)
 
     print("""
 The new 'step2' command allows you to start the enhanced_training_pipeline
-from step2 with existing data without triggering new downloads.
+from step2 with existing data without triggering new downloads. import *
 
+import Usage examples:
 Usage examples:
 1. python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
 2. python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_feature_engineering
@@ -169,8 +206,10 @@ Key features:
 
 
 def create_mock_data_files():
+    pass
+    pass
     """Create mock data files for testing."""
-    print("\n🔧 Creating mock data files for testing...")
+    print("\\\n🔧 Creating mock data files for testing...")
 
     # Create data_cache directory if it doesn't exist
     data_cache_dir = Path("data_cache")
@@ -184,8 +223,12 @@ def create_mock_data_files():
     ]
 
     for filename in step1_files:
+    pass
+    pass
         file_path = data_cache_dir / filename
         if not file_path.exists():
+    pass
+    pass
             # Create empty file
             file_path.touch()
             print(f"   ✅ Created mock file: {filename}")
@@ -198,8 +241,12 @@ def create_mock_data_files():
     ]
 
     for filename in step1_5_files:
+    pass
+    pass
         file_path = data_cache_dir / filename
         if not file_path.exists():
+    pass
+    pass
             # Create empty file
             file_path.touch()
             print(f"   ✅ Created mock file: {filename}")
@@ -209,7 +256,7 @@ def create_mock_data_files():
 
 async def test_with_mock_data():
     """Test validation with mock data files."""
-    print("\n🧪 Testing with mock data files...")
+    print("\\\n🧪 Testing with mock data files...")
 
     symbol = "ETHUSDT"
     exchange = "BINANCE"
@@ -235,6 +282,7 @@ async def test_with_mock_data():
     from src.config import CONFIG
 
     # Test validation
+import print
     print("🔍 Validating step1_data_collection using existing validator")
     step1_result = await validator_orchestrator.run_step_validator(
         "step1_data_collection", training_input, pipeline_state, CONFIG
@@ -247,12 +295,12 @@ async def test_with_mock_data():
 
     can_start = step1_result.get('validation_passed', False) and step1_5_result.get('validation_passed', False)
 
-    print(f"\n📊 Validation Results with Mock Data:")
+    print(f"\\\n📊 Validation Results with Mock Data:")
     print(f"   Can start from step2: {can_start}")
     print(f"   Step1 Passed: {step1_result.get('validation_passed', False)}")
     print(f"   Step1_5 Passed: {step1_5_result.get('validation_passed', False)}")
 
-    print(f"\n📊 Full Validation Report:")
+    print(f"\\\n📊 Full Validation Report:")
     print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
 
 
@@ -273,14 +321,14 @@ async def main():
     # Test 3: Data validation with mock data
     await test_with_mock_data()
 
-    print("\n" + "=" * 80)
+    print("\\\n" + "=" * 80)
     print("✅ STEP2 WITH EXISTING DATA TEST COMPLETED")
     print("=" * 80)
-    print("\nTo use the new functionality:")
+    print("\\\nTo use the new functionality:")
     print("1. Ensure you have step1 and step1_5 data in data_cache/")
     print("2. Run: python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE")
     print("3. The launcher will validate existing data and proceed with step2")
-    print("\nThe system will:")
+    print("\\\nThe system will:")
     print("✅ Check for existing step1 and step1_5 data")
     print("✅ Provide warnings for incomplete data")
     print("✅ Detect data gaps")
@@ -289,5 +337,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio
     asyncio.run(main())

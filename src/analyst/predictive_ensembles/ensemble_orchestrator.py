@@ -15,6 +15,7 @@ from src.utils.logger import system_logger
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
 
+import class RegimePredictiveEnsembles:
 class RegimePredictiveEnsembles:
     """
     Orchestrates the training and prediction workflows for all specialized ensembles.
@@ -23,6 +24,8 @@ class RegimePredictiveEnsembles:
     """
 
     def __init__(self, config):
+    pass
+    pass
         self.config = config.get("analyst", {})
         self.logger = system_logger.getChild("PredictiveEnsembles.Orchestrator")
 
@@ -95,6 +98,8 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" in prepared_data.columns:
+    pass
+    pass
             self.logger.info("🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)")
             regime_column = "composite_cluster_id"
             regime_prefix = "hmm_composite_"
@@ -107,6 +112,8 @@ class RegimePredictiveEnsembles:
             return
 
         if "target" not in prepared_data.columns:
+    pass
+    pass
             self.logger.error(
                 "Prepared data is missing 'target' column. Halting training.",
             )
@@ -122,6 +129,8 @@ class RegimePredictiveEnsembles:
         )
 
         for regime_id in unique_regimes:
+    pass
+    pass
             regime_key = f"{regime_prefix}{regime_id}"
             self.logger.info(f"--- Processing ensemble for {regime_key} ---")
 
@@ -129,6 +138,8 @@ class RegimePredictiveEnsembles:
             regime_data = prepared_data[prepared_data[regime_column] == regime_id]
 
             if regime_data.empty or len(regime_data["target"].unique()) < 2:
+    pass
+    pass
                 self.logger.warning(
                     f"Insufficient or single-class data for {regime_key}. Skipping training.",
                 )
@@ -136,6 +147,8 @@ class RegimePredictiveEnsembles:
 
             # Get or create ensemble instance for this regime
             if regime_key not in self.regime_ensembles:
+    pass
+    pass
                 self.logger.info(f"🆕 Creating new ensemble instance for {regime_key}")
                 # Create a new ensemble instance for this HMM composite regime
                 # Use VolatileRegimeEnsemble for all regimes since we're using advanced HMM categorization
@@ -153,6 +166,8 @@ class RegimePredictiveEnsembles:
             # Construct the specific model path for this ensemble and fold
             model_file_name = f"{regime_key.lower()}_ensemble.joblib"
             if model_path_prefix:
+    pass
+    pass
                 full_model_path = f"{model_path_prefix}{model_file_name}"
             else:
                 full_model_path = os.path.join(
@@ -162,10 +177,14 @@ class RegimePredictiveEnsembles:
 
             # Try to load the model first
             if os.path.exists(full_model_path):
+    pass
+    pass
                 self.logger.info(
                     f"Attempting to load {regime_key} ensemble from {full_model_path}...",
                 )
                 if ensemble_instance.load_model(full_model_path):
+    pass
+    pass
                     self.logger.info(f"Successfully loaded {regime_key} ensemble.")
                 else:
                     self.logger.warning(
@@ -184,6 +203,8 @@ class RegimePredictiveEnsembles:
 
             # Save the trained model
             if ensemble_instance.trained:
+    pass
+    pass
                 ensemble_instance.save_model(full_model_path)
 
                 # Collect predictions from this trained ensemble for meta-learner training
@@ -197,6 +218,8 @@ class RegimePredictiveEnsembles:
 
                 # Add regime key to prediction outputs for meta-learner
                 for idx, row in ensemble_predictions_on_full_data.iterrows():
+    pass
+    pass
                     meta_learner_data.append(
                         {
                             "timestamp": idx,
@@ -218,6 +241,8 @@ class RegimePredictiveEnsembles:
 
         # Train the global meta-learner
         if meta_learner_data:
+    pass
+    pass
             self._train_global_meta_learner(meta_learner_data)
         else:
             self.logger.warning(
@@ -247,10 +272,16 @@ class RegimePredictiveEnsembles:
 
         # First, get prediction from the current regime expert
         if current_expert is not None:
+    pass
+    pass
             try:
                 prediction_output = current_expert.get_prediction(
                     current_features,
                     **kwargs,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
 
                 # Store the primary expert's prediction
@@ -265,12 +296,16 @@ class RegimePredictiveEnsembles:
 
                 # Get detailed base predictions from the primary expert
                 if hasattr(current_expert, "_get_meta_features"):
+    pass
+    pass
                     base_preds_dict = current_expert._get_meta_features(
                         current_features,
                         is_live=True,
                         **kwargs,
                     )
                     for model_name, pred_value in base_preds_dict.items():
+    pass
+    pass
                         unique_model_name = f"{primary_regime}_{model_name}"
                         combined_base_predictions[unique_model_name] = pred_value
 
@@ -287,16 +322,24 @@ class RegimePredictiveEnsembles:
 
         # Load and get predictions from other ensembles for meta-learner
         for regime_key, ensemble_instance in self.regime_ensembles.items():
+    pass
+    pass
             if regime_key == primary_regime:
+    pass
+    pass
                 continue  # Skip primary expert as we already processed it
 
             if not ensemble_instance.trained:
+    pass
+    pass
                 # Attempt to load the final model if not already loaded (e.g., at startup)
                 final_model_file_name = os.path.join(
                     self.model_storage_dir,
                     f"final_{regime_key.lower()}_ensemble.joblib",
                 )
                 if not ensemble_instance.load_model(final_model_file_name):
+    pass
+    pass
                     self.logger.warning(
                         f"Could not load final model for {regime_key}. Skipping its prediction.",
                     )
@@ -319,12 +362,16 @@ class RegimePredictiveEnsembles:
 
             # Get detailed base predictions from each ensemble and combine
             if hasattr(ensemble_instance, "_get_meta_features"):
+    pass
+    pass
                 base_preds_dict = ensemble_instance._get_meta_features(
                     current_features,
                     is_live=True,
                     **kwargs,
                 )
                 for model_name, pred_value in base_preds_dict.items():
+    pass
+    pass
                     # Prefix model names with regime to avoid clashes if model names are not unique
                     unique_model_name = f"{regime_key}_{model_name}"
                     combined_base_predictions[unique_model_name] = pred_value
@@ -352,6 +399,8 @@ class RegimePredictiveEnsembles:
         }
 
     def _train_global_meta_learner(self, meta_learner_raw_data: list[dict[str, Any]]):
+    pass
+    pass
         """
         Trains the global meta-learner using outputs from individual ensembles
         and high-level market context.
@@ -372,6 +421,8 @@ class RegimePredictiveEnsembles:
         # Initialize columns to 0 or 'HOLD' to handle cases where an ensemble might not have predicted
         all_regimes = list(self.regime_ensembles.keys())
         for r in all_regimes:
+    pass
+    pass
             meta_df[f"{r}_prediction"] = meta_df.apply(
                 lambda row: row["prediction"] if row[f"regime_{r}"] == 1 else "HOLD",
                 axis=1,
@@ -387,6 +438,8 @@ class RegimePredictiveEnsembles:
         # One-hot encode the prediction columns (BUY, SELL, HOLD)
         prediction_cols = [f"{r}_prediction" for r in all_regimes]
         for col in prediction_cols:
+    pass
+    pass
             meta_df = pd.get_dummies(meta_df, columns=[col], prefix=col)
 
         # Define features (X) and target (y) for the meta-learner
@@ -416,7 +469,11 @@ class RegimePredictiveEnsembles:
 
         # Handle potential missing columns from meta_features (e.g., if a regime never occurred)
         for col in meta_features:
+    pass
+    pass
             if col not in X_meta.columns:
+    pass
+    pass
                 X_meta[col] = 0  # Add missing columns with default value
 
         # Encode target labels (BUY, SELL, HOLD) to integers
@@ -431,6 +488,8 @@ class RegimePredictiveEnsembles:
         best_scaler = None
         best_pca = None
         for train_index, val_index in skf.split(X_meta, y_encoded):
+    pass
+    pass
             X_train_raw, X_val_raw = X_meta.iloc[train_index], X_meta.iloc[val_index]
             y_train, y_val = y_encoded[train_index], y_encoded[val_index]
 
@@ -440,6 +499,8 @@ class RegimePredictiveEnsembles:
 
             # Optional PCA after scaling to reduce dimensionality (fit on train only)
             if self.global_meta_config.get("use_pca", False):
+    pass
+    pass
                 n_components = min(
                     self.global_meta_config.get("pca_components", 16), X_train.shape[1]
                 )
@@ -462,6 +523,8 @@ class RegimePredictiveEnsembles:
             # Use model.score on validation data
             score = model.score(X_val, y_val)
             if score > best_score:
+    pass
+    pass
                 best_score = score
                 best_model = model
                 best_scaler = scaler
@@ -501,6 +564,8 @@ class RegimePredictiveEnsembles:
         # Add predictions and confidences from each ensemble
         all_regimes = list(self.regime_ensembles.keys())
         for r in all_regimes:
+    pass
+    pass
             pred = ensemble_predictions.get(r, "HOLD")
             conf = ensemble_confidences.get(r, 0.0)
             meta_input_data[f"{r}_prediction"] = pred
@@ -519,6 +584,8 @@ class RegimePredictiveEnsembles:
         # One-hot encode the prediction columns (BUY, SELL, HOLD)
         prediction_cols_for_dummies = [f"{r}_prediction" for r in all_regimes]
         for col in prediction_cols_for_dummies:
+    pass
+    pass
             meta_input_df = pd.get_dummies(meta_input_df, columns=[col], prefix=col)
 
         # Ensure all columns that the meta-learner was trained on are present, fill missing with 0
@@ -531,6 +598,8 @@ class RegimePredictiveEnsembles:
         # Align to training columns without masking missing features silently
         missing_cols = list(set(trained_features) - set(meta_input_df.columns))
         if missing_cols:
+    pass
+    pass
             self.logger.warning(f"Missing meta features at inference: {missing_cols}")
         X_meta_live = meta_input_df.reindex(columns=trained_features)
         # Impute remaining NaNs with 0 after logging (explicit)
@@ -540,6 +609,8 @@ class RegimePredictiveEnsembles:
         X_meta_live_scaled = self.global_meta_scaler.transform(X_meta_live)
         # Optional PCA at inference if trained
         if hasattr(self, "global_meta_pca") and self.global_meta_pca is not None:
+    pass
+    pass
             X_meta_live_scaled = self.global_meta_pca.transform(X_meta_live_scaled)
 
         # Make prediction
@@ -553,6 +624,8 @@ class RegimePredictiveEnsembles:
 
         # Apply overall confidence threshold
         if final_confidence < self.overall_confidence_threshold:
+    pass
+    pass
             final_prediction = "HOLD"
             self.logger.info(
                 f"Global meta-learner confidence ({final_confidence:.2f}) below threshold ({self.overall_confidence_threshold}). Final decision: HOLD.",
@@ -561,9 +634,15 @@ class RegimePredictiveEnsembles:
         return final_prediction, final_confidence
 
     def _save_global_meta_learner(self):
+    pass
+    pass
         """Saves the global meta-learner and its scaler/encoder."""
         try:
             dump(self.global_meta_learner, self.global_meta_learner_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             dump(self.global_meta_scaler, self.global_meta_scaler_path)
             dump(self.global_meta_label_encoder, self.global_meta_label_encoder_path)
             self.logger.info(
@@ -576,6 +655,8 @@ class RegimePredictiveEnsembles:
             )
 
     def _load_global_meta_learner(self):
+    pass
+    pass
         """Loads the global meta-learner and its scaler/encoder."""
         if (
             os.path.exists(self.global_meta_learner_path)
@@ -584,6 +665,10 @@ class RegimePredictiveEnsembles:
         ):
             try:
                 self.global_meta_learner = load(self.global_meta_learner_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 self.global_meta_scaler = load(self.global_meta_scaler_path)
                 self.global_meta_label_encoder = load(
                     self.global_meta_label_encoder_path,
@@ -605,15 +690,21 @@ class RegimePredictiveEnsembles:
             )
 
     def get_current_regime(self, current_features: pd.DataFrame) -> str:
+    pass
+    pass
         """
         Determines the current market regime from composite_cluster_id.
         HMM composite clusters are paramount - no fallbacks allowed.
         """
         if current_features.empty:
+    pass
+    pass
             return "UNKNOWN"
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" in current_features.columns:
+    pass
+    pass
             cluster_id = current_features["composite_cluster_id"].iloc[-1]
             return self._map_cluster_to_regime(cluster_id)
         else:
@@ -622,12 +713,16 @@ class RegimePredictiveEnsembles:
             return "UNKNOWN"
 
     def _map_cluster_to_regime(self, cluster_id: int, timeframe: str = "1m") -> str:
+    pass
+    pass
         """
         Maps HMM composite cluster IDs to regime ensemble names.
         Uses dynamic regime mapping based on Step 1.7 results.
         """
         # Try to use dynamic regime mapper if available
         if hasattr(self, "dynamic_mapper") and self.dynamic_mapper:
+    pass
+    pass
             return self.dynamic_mapper.map_cluster_to_regime(cluster_id, timeframe)
 
         # Fallback to static mapping if dynamic mapper not available
@@ -660,6 +755,8 @@ class RegimePredictiveEnsembles:
         return regime
 
     def get_regime_expert(self, cluster_id: int) -> Any:
+    pass
+    pass
         """
         Get the appropriate regime expert based on composite_cluster_id.
         Returns the ensemble instance for the given cluster.
@@ -667,15 +764,21 @@ class RegimePredictiveEnsembles:
         regime_name = self._map_cluster_to_regime(cluster_id)
 
         if regime_name in self.regime_ensembles:
+    pass
+    pass
             ensemble = self.regime_ensembles[regime_name]
 
             # Ensure the ensemble is loaded
             if not ensemble.trained:
+    pass
+    pass
                 final_model_file_name = os.path.join(
                     self.model_storage_dir,
                     f"final_{regime_name.lower()}_ensemble.joblib",
                 )
                 if not ensemble.load_model(final_model_file_name):
+    pass
+    pass
                     self.logger.warning(
                         f"Could not load final model for {regime_name}. Returning None."
                     )
@@ -687,11 +790,15 @@ class RegimePredictiveEnsembles:
             return None
 
     def get_current_regime_info(self, current_features: pd.DataFrame) -> dict[str, Any]:
+    pass
+    pass
         """
         Get comprehensive current regime information including cluster ID and expert.
         HMM composite clusters are paramount - no fallbacks allowed.
         """
         if current_features.empty:
+    pass
+    pass
             return {
                 "cluster_id": -1,
                 "regime_name": "UNKNOWN",
@@ -701,6 +808,8 @@ class RegimePredictiveEnsembles:
 
         # HMM COMPOSITE CLUSTERS ONLY - NO FALLBACKS
         if "composite_cluster_id" not in current_features.columns:
+    pass
+    pass
             self.logger.error("🚨 HMM composite_cluster_id column is missing from current features")
             self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
             return {
@@ -722,6 +831,8 @@ class RegimePredictiveEnsembles:
         # Get confidence from intensity if available
         confidence = 0.0
         if "intensity_cluster_" + str(cluster_id) in current_features.columns:
+    pass
+    pass
             confidence = float(
                 current_features[f"intensity_cluster_{cluster_id}"].iloc[-1]
             )
@@ -737,9 +848,15 @@ class RegimePredictiveEnsembles:
         }
 
     def save_model(self, ensemble_instance: Any, path: str):
+    pass
+    pass
         """Saves a trained ensemble instance to a file."""
         try:
             dump(ensemble_instance, path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(f"Successfully saved trained ensemble to {path}")
         except Exception as e:
             self.logger.error(
@@ -748,11 +865,19 @@ class RegimePredictiveEnsembles:
             )
 
     def load_model(self, ensemble_instance: Any, path: str) -> bool:
+    pass
+    pass
         """Loads a trained ensemble instance from a file."""
         if not os.path.exists(path):
+    pass
+    pass
             return False
         try:
             loaded_ensemble = load(path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Update the existing instance's state instead of replacing it
             ensemble_instance.__dict__.update(loaded_ensemble.__dict__)
             ensemble_instance.trained = True  # Ensure 'trained' flag is set
@@ -766,13 +891,21 @@ class RegimePredictiveEnsembles:
             return False
 
     def load_weights(self, weights: dict[str, Any]):
+    pass
+    pass
         """Loads updated weights into the ensembles for dynamic weighting."""
         for regime, ensemble_weights in weights.items():
+    pass
+    pass
             if regime in self.regime_ensembles:
+    pass
+    pass
                 # Assuming BaseEnsemble has an attribute 'ensemble_weights'
                 self.regime_ensembles[regime].ensemble_weights = ensemble_weights
 
     def get_current_weights(self) -> dict[str, Any]:
+    pass
+    pass
         """Returns the current weights of all ensembles."""
         return {
             regime: ens.ensemble_weights

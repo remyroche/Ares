@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class TrainingOptimizationConfig:
     """Optimizable training optimization parameters from other steps."""
@@ -53,11 +54,15 @@ class TrainingOptimizationConfig:
 
 
 def get_training_optimization_config() -> TrainingOptimizationConfig:
+    pass
+    pass
     """Get training optimization configuration."""
     return TrainingOptimizationConfig()
 
 
 def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for training optimization."""
     return {
         # Step 3: HMM Regime Discovery

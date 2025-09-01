@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class TPSLConfig:
     """Optimizable take profit and stop loss parameters."""
@@ -60,7 +61,11 @@ class TPSLConfig:
     max_risk_reward_ratio: float = 5.0
 
     def __post_init__(self):
+    pass
+    pass
         if self.volatility_thresholds is None:
+    pass
+    pass
             self.volatility_thresholds , {
                 "low_volatility": 0.02,
                 "medium_volatility": 0.05,
@@ -68,6 +73,8 @@ class TPSLConfig:
             }
 
         if self.volatility_tp_multipliers is None:
+    pass
+    pass
             self.volatility_tp_multipliers = {
                 "low_volatility": 0.8,
                 "medium_volatility": 1.0,
@@ -75,6 +82,8 @@ class TPSLConfig:
             }
 
         if self.volatility_sl_multipliers is None:
+    pass
+    pass
             self.volatility_sl_multipliers = {
                 "low_volatility": 1.2,
                 "medium_volatility": 1.0,
@@ -82,6 +91,8 @@ class TPSLConfig:
             }
 
         if self.confidence_tp_multipliers is None:
+    pass
+    pass
             self.confidence_tp_multipliers = {
                 "low_confidence": 0.8,
                 "medium_confidence": 1.0,
@@ -90,6 +101,8 @@ class TPSLConfig:
             }
 
         if self.confidence_sl_multipliers is None:
+    pass
+    pass
             self.confidence_sl_multipliers = {
                 "low_confidence": 1.2,
                 "medium_confidence": 1.0,
@@ -99,11 +112,15 @@ class TPSLConfig:
 
 
 def get_tpsl_config() -> TPSLConfig:
+    pass
+    pass
     """Get TP/SL configuration."""
     return TPSLConfig()
 
 
 def get_tpsl_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for TP/SL optimization."""
     return {
         "early_exit_confidence": {"min": 0.7, "max": 0.95, "type": "float"},

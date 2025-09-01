@@ -14,11 +14,14 @@ from typing import Tuple, List
 from src.utils.warning_symbols import warning
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
 def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
+    pass
+    pass
     """
     Determine the appropriate warning symbol function based on the message content.
 
@@ -33,34 +36,56 @@ def get_warning_symbol_function(message: str, log_level: str = "error") -> str:
 
     # Error patterns
     if any(word in message_lower for word in ["failed", "failure", "fail"]):
+    pass
+    pass
         return "failed"
     if any(word in message_lower for word in ["invalid", "invalid configuration"]):
+    pass
+    pass
         return "invalid"
     if any(
         word in message_lower for word in ["missing", "not found", "file not found"]
     ):
         return "missing"
     if any(word in message_lower for word in ["timeout", "timed out"]):
+    pass
+    pass
         return "timeout"
     if any(word in message_lower for word in ["connection", "network"]):
+    pass
+    pass
         return "connection_error"
     if any(word in message_lower for word in ["validation", "validate"]):
+    pass
+    pass
         return "validation_error"
     if any(word in message_lower for word in ["initialization", "init", "initialize"]):
+    pass
+    pass
         return "initialization_error"
     if any(word in message_lower for word in ["execution", "execute", "runtime"]):
+    pass
+    pass
         return "execution_error"
     if any(word in message_lower for word in ["critical", "fatal"]):
+    pass
+    pass
         return "critical"
     if any(word in message_lower for word in ["problem", "issue"]):
+    pass
+    pass
         return "problem"
     # Default based on log level
     if log_level in ["error", "exception", "critical"]:
+    pass
+    pass
         return "error"
     return "warning"
 
 
 def should_skip_file(file_path: str) -> bool:
+    pass
+    pass
     """
     Check if a file should be skipped from processing.
 
@@ -174,9 +199,15 @@ def should_skip_file(file_path: str) -> bool:
 
     # Check if file matches any skip pattern
     for pattern in skip_patterns:
+    pass
+    pass
         if pattern.startswith("*."):
+    pass
+    pass
             # File extension pattern
             if file_path_lower.endswith(pattern[1:]):
+    pass
+    pass
                 return True
         elif pattern in file_path_lower:
             return True
@@ -185,6 +216,8 @@ def should_skip_file(file_path: str) -> bool:
 
 
 def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
+    pass
+    pass
     """
     Update logging messages in a file with warning symbols.
 
@@ -199,45 +232,51 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
     try:
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         original_content = content
 
         # Patterns to match various logging and print statements
         patterns: list[tuple[str, str]] = [
             # logger.error("message")
-            (r'logger\.error\(f?"([^"]*)"', "error"),
+            (r'logger\\\.error\\\(f?"([^"]*)"', "error"),
             # logger.warning("message")
-            (r'logger\.warning\(f?"([^"]*)"', "warning"),
+            (r'logger\\\.warning\\\(f?"([^"]*)"', "warning"),
             # logger.exception("message")
-            (r'logger\.exception\(f?"([^"]*)"', "exception"),
+            (r'logger\\\.exception\\\(f?"([^"]*)"', "exception"),
             # logger.critical("message")
-            (r'logger\.critical\(f?"([^"]*)"', "critical"),
+            (r'logger\\\.critical\\\(f?"([^"]*)"', "critical"),
             # print("❌ message") -> print(failed("message"))
-            (r'print\(f?"❌ ([^"]*)"', "failed"),
+            (r'print\\\(f?"❌ ([^"]*)"', "failed"),
             # print("⚠️ message") -> print(warning("message"))
-            (r'print\(f?"⚠️ ([^"]*)"', "warning"),
+            (r'print\\\(f?"⚠️ ([^"]*)"', "warning"),
             # print("🚨 message") -> print(error("message"))
-            (r'print\(f?"🚨 ([^"]*)"', "error"),
+            (r'print\\\(f?"🚨 ([^"]*)"', "error"),
             # print("💥 message") -> print(critical("message"))
-            (r'print\(f?"💥 ([^"]*)"', "critical"),
+            (r'print\\\(f?"💥 ([^"]*)"', "critical"),
             # print("🔴 message") -> print(problem("message"))
-            (r'print\(f?"🔴 ([^"]*)"', "problem"),
+            (r'print\\\(f?"🔴 ([^"]*)"', "problem"),
             # print("❗ message") -> print(warning("message"))
-            (r'print\(f?"❗ ([^"]*)"', "warning"),
+            (r'print\\\(f?"❗ ([^"]*)"', "warning"),
             # print("‼ message") -> print(warning("message"))
-            (r'print\(f?"‼ ([^"]*)"', "warning"),
+            (r'print\\\(f?"‼ ([^"]*)"', "warning"),
             # print("⭕ message") -> print(error("message"))
-            (r'print\(f?"⭕ ([^"]*)"', "error"),
+            (r'print\\\(f?"⭕ ([^"]*)"', "error"),
             # print("🛑 message") -> print(error("message"))
-            (r'print\(f?"🛑 ([^"]*)"', "error"),
+            (r'print\\\(f?"🛑 ([^"]*)"', "error"),
             # print("💀 message") -> print(critical("message"))
-            (r'print\(f?"💀 ([^"]*)"', "critical"),
+            (r'print\\\(f?"💀 ([^"]*)"', "critical"),
             # print("💣 message") -> print(critical("message"))
-            (r'print\(f?"💣 ([^"]*)"', "critical"),
+            (r'print\\\(f?"💣 ([^"]*)"', "critical"),
             # print("● message") -> print(problem("message"))
-            (r'print\(f?"● ([^"]*)"', "problem"),
+            (r'print\\\(f?"● ([^"]*)"', "problem"),
         ]
 
         for pattern, default_func in patterns:
+    pass
+    pass
             # Find all matches
             matches = list(re.finditer(pattern, content))
             for match in reversed(matches):  # Process in reverse to avoid index issues
@@ -246,6 +285,8 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
 
                 # Create the replacement
                 if "logger." in pattern:
+    pass
+    pass
                     log_method = pattern.split(".")[1].split("(")[0]
                     new_call = f'logger.{log_method}({warning_func}("{message}"))'
                 else:
@@ -258,6 +299,8 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
 
         # Only write if changes were made
         if content != original_content:
+    pass
+    pass
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             print(f"✅ Updated {file_path} with {changes_made} changes")
@@ -272,6 +315,8 @@ def update_file_logging_messages(file_path: str) -> Tuple[int, int]:
 
 
 def add_warning_symbols_import(file_path: str) -> bool:
+    pass
+    pass
     """
     Add warning symbols import to a file if it doesn't already have it.
 
@@ -285,35 +330,43 @@ def add_warning_symbols_import(file_path: str) -> bool:
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check if warning symbols are already imported
         if "from src.utils.warning_symbols import" in content:
+    pass
+    pass
             return False
 
         # Find the logger import line
-        logger_import_pattern = r"from src\.utils\.logger import.*"
+        logger_import_pattern = r"from src\\\.utils\\\.logger import.*"
         match = re.search(logger_import_pattern, content)
 
         if match:
+    pass
+    pass
             # Add warning symbols import after logger import
             warning_import = (
-                "from src.utils.warning_symbols import (\n"
-                "    error,\n"
-                "    warning,\n"
-                "    problem,\n"
-                "    failed,\n"
-                "    missing,\n"
-                "    timeout,\n"
-                "    connection_error,\n"
-                "    validation_error,\n"
-                "    initialization_error,\n"
-                "    execution_error\n"
+                "from src.utils.warning_symbols import (\\\n"
+                "    error,\\\n"
+                "    warning,\\\n"
+                "    problem,\\\n"
+                "    failed,\\\n"
+                "    missing,\\\n"
+                "    timeout,\\\n"
+                "    connection_error,\\\n"
+                "    validation_error,\\\n"
+                "    initialization_error,\\\n"
+                "    execution_error\\\n"
                 ")"
             )
 
             # Insert after the logger import
             new_content = content.replace(
                 match.group(0),
-                match.group(0) + "\n" + warning_import,
+                match.group(0) + "\\\n" + warning_import,
             )
 
             with open(file_path, "w", encoding="utf-8") as f:
@@ -324,28 +377,32 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
         # Try to find any import line to add after
         import_pattern = r"^import .*$|^from .* import .*$"
-        lines = content.split("\n")
+        lines = content.split("\\\n")
 
         for i, line in enumerate(lines):
+    pass
+    pass
             if re.match(import_pattern, line.strip()):
+    pass
+    pass
                 # Add warning symbols import after this import
                 warning_import = (
-                    "from src.utils.warning_symbols import (\n"
-                    "    error,\n"
-                    "    warning,\n"
-                    "    problem,\n"
-                    "    failed,\n"
-                    "    missing,\n"
-                    "    timeout,\n"
-                    "    connection_error,\n"
-                    "    validation_error,\n"
-                    "    initialization_error,\n"
-                    "    execution_error\n"
+                    "from src.utils.warning_symbols import (\\\n"
+                    "    error,\\\n"
+                    "    warning,\\\n"
+                    "    problem,\\\n"
+                    "    failed,\\\n"
+                    "    missing,\\\n"
+                    "    timeout,\\\n"
+                    "    connection_error,\\\n"
+                    "    validation_error,\\\n"
+                    "    initialization_error,\\\n"
+                    "    execution_error\\\n"
                     ")"
                 )
 
                 lines.insert(i + 1, warning_import)
-                new_content = "\n".join(lines)
+                new_content = "\\\n".join(lines)
 
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(new_content)
@@ -362,6 +419,8 @@ def add_warning_symbols_import(file_path: str) -> bool:
 
 
 def find_python_files(directory: Path) -> List[Path]:
+    pass
+    pass
     """
     Recursively find all Python files in a directory.
 
@@ -375,8 +434,16 @@ def find_python_files(directory: Path) -> List[Path]:
 
     try:
         for item in directory.rglob("*.py"):
+    pass
+    except Exception as e:
+        pass
+    pass
             if not should_skip_file(str(item)):
+    pass
+    pass
                 python_files.append(item)
+    except Exception as e:
+        pass
     except Exception as e:
         print(f"Error searching directory {directory}: {e}")
 
@@ -384,6 +451,8 @@ def find_python_files(directory: Path) -> List[Path]:
 
 
 def main() -> None:
+    pass
+    pass
     """Main function to update all Python files in the repository."""
     print("🚀 Starting comprehensive repository logging update...")
     print(f"📁 Project root: {project_root}")
@@ -398,11 +467,15 @@ def main() -> None:
     files_with_imports_added = 0
 
     for file_path in python_files:
-        print(f"\n📁 Processing {file_path.relative_to(project_root)}...")
+    pass
+    pass
+        print(f"\\\n📁 Processing {file_path.relative_to(project_root)}...")
 
         # Add warning symbols import if needed
         import_added = add_warning_symbols_import(str(file_path))
         if import_added:
+    pass
+    pass
             files_with_imports_added += 1
 
         # Update logging messages
@@ -410,20 +483,26 @@ def main() -> None:
 
         total_changes += changes
         if import_added:
+    pass
+    pass
             total_changes += 1
         total_files_processed += 1
 
-    print("\n✅ Summary:")
+    print("\\\n✅ Summary:")
     print(f"   Files processed: {total_files_processed}")
     print(f"   Files with imports added: {files_with_imports_added}")
     print(f"   Total changes made: {total_changes}")
     if total_files_processed > 0:
+    pass
+    pass
         print(
             f"   Average changes per file: {total_changes / total_files_processed:.1f}",
         )
 
-    print("\n🎉 Repository logging update completed successfully!")
+    print("\\\n🎉 Repository logging update completed successfully!")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

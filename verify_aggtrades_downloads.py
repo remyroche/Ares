@@ -26,6 +26,8 @@ MISSING_AGGTrades_DAYS = [
 
 
 def check_aggtrades_file_exists(date_str: str) -> tuple[bool, list[str]]:
+    pass
+    pass
     """Check if aggtrades files exist for a given date"""
     data_cache_path = "data_cache"
 
@@ -41,14 +43,20 @@ def check_aggtrades_file_exists(date_str: str) -> tuple[bool, list[str]]:
 
     files_found = []
     if csv_exists:
+    pass
+    pass
         files_found.append("CSV")
     if parquet_exists:
+    pass
+    pass
         files_found.append("Parquet")
 
     return csv_exists or parquet_exists, files_found
 
 
 def verify_downloads():
+    pass
+    pass
     """Verify that all missing aggtrades days have been downloaded"""
     print("🔍 VERIFYING AGGTRADES DOWNLOADS")
     print("=" * 60)
@@ -58,17 +66,21 @@ def verify_downloads():
     failed_downloads = 0
 
     for date_str in MISSING_AGGTrades_DAYS:
+    pass
+    pass
         exists, file_types = check_aggtrades_file_exists(date_str)
         results[date_str] = (exists, file_types)
 
         if exists:
+    pass
+    pass
             successful_downloads += 1
             print(f"✅ {date_str}: Found ({', '.join(file_types)})")
         else:
             failed_downloads += 1
             print(f"❌ {date_str}: Missing")
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("📊 VERIFICATION SUMMARY")
     print("=" * 60)
     print(f"✅ Successfully downloaded: {successful_downloads}")
@@ -78,19 +90,27 @@ def verify_downloads():
     print(f"📈 Success rate: {success_rate:.1f}%")
 
     if failed_downloads > 0:
-        print("\n❌ Still missing dates:")
+    pass
+    pass
+        print("\\\n❌ Still missing dates:")
         for date_str, (exists, file_types) in results.items():
+    pass
+    pass
             if not exists:
+    pass
+    pass
                 print(f"   - {date_str}")
     else:
-        print("\n🎉 All missing aggtrades days have been successfully downloaded!")
+        print("\\\n🎉 All missing aggtrades days have been successfully downloaded!")
 
     return successful_downloads == len(MISSING_AGGTrades_DAYS)
 
 
 def check_file_sizes():
+    pass
+    pass
     """Check file sizes to ensure downloads are not empty"""
-    print("\n📏 CHECKING FILE SIZES")
+    print("\\\n📏 CHECKING FILE SIZES")
     print("=" * 60)
 
     data_cache_path = "data_cache"
@@ -98,6 +118,8 @@ def check_file_sizes():
     empty_files = []
 
     for date_str in MISSING_AGGTrades_DAYS:
+    pass
+    pass
         csv_pattern = f"aggtrades_BINANCE_ETHUSDT_{date_str}.csv"
         parquet_pattern = f"aggtrades_BINANCE_ETHUSDT_{date_str}.parquet"
 
@@ -105,38 +127,54 @@ def check_file_sizes():
         parquet_path = os.path.join(data_cache_path, parquet_pattern)
 
         if os.path.exists(csv_path):
+    pass
+    pass
             size = os.path.getsize(csv_path)
             total_size += size
             if size == 0:
+    pass
+    pass
                 empty_files.append(f"{date_str} (CSV)")
             else:
                 print(f"✅ {date_str} (CSV): {size:,} bytes")
 
         if os.path.exists(parquet_path):
+    pass
+    pass
             size = os.path.getsize(parquet_path)
             total_size += size
             if size == 0:
+    pass
+    pass
                 empty_files.append(f"{date_str} (Parquet)")
             else:
                 print(f"✅ {date_str} (Parquet): {size:,} bytes")
 
-    print(f"\n📊 Total size of downloaded files: {total_size:,} bytes")
+    print(f"\\\n📊 Total size of downloaded files: {total_size:,} bytes")
 
     if empty_files:
-        print("\n⚠️ Empty files found:")
+    pass
+    pass
+        print("\\\n⚠️ Empty files found:")
         for file_info in empty_files:
+    pass
+    pass
             print(f"   - {file_info}")
     else:
-        print("\n✅ All downloaded files have content")
+        print("\\\n✅ All downloaded files have content")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     all_downloaded = verify_downloads()
     check_file_sizes()
 
     if all_downloaded:
+    pass
+    pass
         print(
-            "\n🎉 VERIFICATION COMPLETE: All missing aggtrades days are now available!"
+            "\\\n🎉 VERIFICATION COMPLETE: All missing aggtrades days are now available!"
         )
     else:
-        print("\n⚠️ VERIFICATION COMPLETE: Some downloads may still be missing.")
+        print("\\\n⚠️ VERIFICATION COMPLETE: Some downloads may still be missing.")

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Add src to path
+import sys.path.append
 sys.path.append(str(Path(__file__).parent / "src"))
 
 import pandas as pd
@@ -31,7 +32,10 @@ from src.training.steps.step9_hmm_based_training import HMMBasedTrainingStep
 from src.training.steps.step6_feature_engineering import FeatureEngineeringStep
 
 
+import def generate_test_market_data
 def generate_test_market_data(days: int = 100) -> pd.DataFrame:
+    pass
+    pass
     """Generate realistic market data for testing."""
     np.random.seed(42)
 
@@ -41,12 +45,16 @@ def generate_test_market_data(days: int = 100) -> pd.DataFrame:
     prices = [base_price]
 
     for ret in returns[1:]:
+    pass
+    pass
         new_price = prices[-1] * (1 + ret)
         prices.append(new_price)
 
     # Generate OHLCV data
     data = []
     for i, close in enumerate(prices):
+    pass
+    pass
         # Generate realistic OHLC from close
         high = close * (1 + abs(np.random.normal(0, 0.01)))
         low = close * (1 - abs(np.random.normal(0, 0.01)))
@@ -68,6 +76,8 @@ def generate_test_market_data(days: int = 100) -> pd.DataFrame:
 
 
 def create_test_config() -> Dict[str, Any]:
+    pass
+    pass
     """Create test configuration with S/R parameters."""
     return {
         "exchange": "binance",
@@ -146,7 +156,7 @@ def create_test_config() -> Dict[str, Any]:
 
 async def test_sr_breakout_predictor_optimization():
     """Test that SRBreakoutPredictor uses optimized parameters."""
-    print("\n🔍 Testing SRBreakoutPredictor Optimization...")
+    print("\\\n🔍 Testing SRBreakoutPredictor Optimization...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -177,7 +187,7 @@ async def test_sr_breakout_predictor_optimization():
 
 async def test_analyst_components_optimization():
     """Test that analyst components use optimized parameters."""
-    print("\n🔍 Testing Analyst Components Optimization...")
+    print("\\\n🔍 Testing Analyst Components Optimization...")
 
     config = create_test_config()
 
@@ -188,6 +198,8 @@ async def test_analyst_components_optimization():
 
     # Verify S/R predictor uses optimized parameters
     if classifier.sr_predictor:
+    pass
+    pass
         assert classifier.sr_predictor.use_optimized_params == True, "Classifier S/R predictor should use optimized params"
         print(f"   ✅ UnifiedRegimeClassifier uses optimized parameters")
 
@@ -198,6 +210,8 @@ async def test_analyst_components_optimization():
 
     # Verify S/R predictor uses optimized parameters
     if runtime.sr_predictor:
+    pass
+    pass
         assert runtime.sr_predictor.use_optimized_params == True, "Runtime S/R predictor should use optimized params"
         print(f"   ✅ UnifiedRegimeIntelligenceRuntime uses optimized parameters")
 
@@ -206,7 +220,7 @@ async def test_analyst_components_optimization():
 
 async def test_tactician_components_optimization():
     """Test that tactician components use optimized parameters."""
-    print("\n🔍 Testing Tactician Components Optimization...")
+    print("\\\n🔍 Testing Tactician Components Optimization...")
 
     config = create_test_config()
 
@@ -217,6 +231,8 @@ async def test_tactician_components_optimization():
 
     # Verify S/R predictor uses optimized parameters
     if decision_policy.sr_predictor:
+    pass
+    pass
         assert decision_policy.sr_predictor.use_optimized_params == True, "DecisionPolicy S/R predictor should use optimized params"
         print(f"   ✅ DecisionPolicy uses optimized parameters")
 
@@ -225,7 +241,7 @@ async def test_tactician_components_optimization():
 
 async def test_training_components_optimization():
     """Test that training components use optimized parameters."""
-    print("\n🔍 Testing Training Components Optimization...")
+    print("\\\n🔍 Testing Training Components Optimization...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -236,6 +252,8 @@ async def test_training_components_optimization():
     await tactician_step.initialize()
 
     if tactician_step.sr_predictor:
+    pass
+    pass
         assert tactician_step.sr_predictor.use_optimized_params == True, "TacticianSpecialistTrainingStep S/R predictor should use optimized params"
         print(f"   ✅ TacticianSpecialistTrainingStep uses optimized parameters")
 
@@ -245,6 +263,8 @@ async def test_training_components_optimization():
     await regime_step.initialize()
 
     if regime_step.sr_predictor:
+    pass
+    pass
         assert regime_step.sr_predictor.use_optimized_params == True, "UnifiedRegimeIntelligenceStep S/R predictor should use optimized params"
         print(f"   ✅ UnifiedRegimeIntelligenceStep uses optimized parameters")
 
@@ -254,6 +274,8 @@ async def test_training_components_optimization():
     await sr_trainer.initialize()
 
     if sr_trainer.sr_predictor:
+    pass
+    pass
         assert sr_trainer.sr_predictor.use_optimized_params == True, "SROutcomeModelTrainer S/R predictor should use optimized params"
         print(f"   ✅ SROutcomeModelTrainer uses optimized parameters")
 
@@ -263,6 +285,8 @@ async def test_training_components_optimization():
     await hmm_step.initialize()
 
     if hmm_step.sr_predictor:
+    pass
+    pass
         assert hmm_step.sr_predictor.use_optimized_params == True, "HMMRegimeDiscoveryStep S/R predictor should use optimized params"
         print(f"   ✅ HMMRegimeDiscoveryStep uses optimized parameters")
 
@@ -272,6 +296,8 @@ async def test_training_components_optimization():
     await hmm_enhanced_step.initialize()
 
     if hmm_enhanced_step.sr_predictor:
+    pass
+    pass
         assert hmm_enhanced_step.sr_predictor.use_optimized_params == True, "HMMBasedTrainingEnhancedStep S/R predictor should use optimized params"
         print(f"   ✅ HMMBasedTrainingEnhancedStep uses optimized parameters")
 
@@ -281,6 +307,8 @@ async def test_training_components_optimization():
     await hmm_basic_step.initialize()
 
     if hmm_basic_step.sr_predictor:
+    pass
+    pass
         assert hmm_basic_step.sr_predictor.use_optimized_params == True, "HMMBasedTrainingStep S/R predictor should use optimized params"
         print(f"   ✅ HMMBasedTrainingStep uses optimized parameters")
 
@@ -300,7 +328,7 @@ async def test_training_components_optimization():
 
 async def test_optimized_parameters_loading():
     """Test that optimized parameters are actually loaded and used."""
-    print("\n🔍 Testing Optimized Parameters Loading...")
+    print("\\\n🔍 Testing Optimized Parameters Loading...")
 
     config = create_test_config()
     market_data = generate_test_market_data()
@@ -319,6 +347,8 @@ async def test_optimized_parameters_loading():
 
     # Check if optimized parameters are applied
     if sr_predictor.optimized_params:
+    pass
+    pass
         print(f"   ✅ Optimized parameters loaded: {len(sr_predictor.optimized_params)} parameters")
         print(f"   - Method weights: {sr_predictor.optimized_params.get('method_weights', {})}")
         print(f"   - Strength weights: {sr_predictor.optimized_params.get('strength_weights', {})}")
@@ -339,6 +369,10 @@ async def main():
 
     try:
         # Test SRBreakoutPredictor optimization
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         await test_sr_breakout_predictor_optimization()
 
         # Test analyst components
@@ -353,7 +387,7 @@ async def main():
         # Test optimized parameters loading
         await test_optimized_parameters_loading()
 
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("🎉 ALL TESTS PASSED! Optimized parameters are properly integrated.")
         print("✅ Enhanced Training Manager uses optimized S/R parameters")
         print("✅ Analyst components use optimized S/R parameters")
@@ -361,7 +395,7 @@ async def main():
         print("✅ All training steps use optimized S/R parameters")
 
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\\\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -370,6 +404,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the tests
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

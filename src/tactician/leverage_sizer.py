@@ -13,6 +13,7 @@ from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
 
+import class LeverageSizer:
 class LeverageSizer:
     """
     Simplified leverage sizer that uses ML confidence scores and liquidation risk model
@@ -20,11 +21,17 @@ class LeverageSizer:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("LeverageSizer")
         # Backward-compatibility shim for legacy self.print calls
         if not hasattr(self, "print"):
+    pass
+    pass
             def _shim_print(message: str) -> None:
+    pass
+    pass
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
 
@@ -74,6 +81,8 @@ class LeverageSizer:
 
         # Validate configuration
         if not self._validate_configuration():
+    pass
+    pass
             return False
 
         self.is_initialized = True
@@ -81,6 +90,8 @@ class LeverageSizer:
         return True
 
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """Validate leverage sizer configuration."""
         try:
             required_keys = [
@@ -88,18 +99,30 @@ class LeverageSizer:
                 "max_leverage",
                 "confidence_threshold",
                 "liquidation_buffer",
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             ]
             for key in required_keys:
+    pass
+    pass
                 if not hasattr(self, key):
+    pass
+    pass
                     self.logger.error(f"Missing required configuration key: {key}")
                     return False
 
             # Validate values
             if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
+    pass
+    pass
                 self.logger.error("Invalid leverage range configuration")
                 return False
 
             if self.liquidation_buffer <= 0 or self.liquidation_buffer >= 1:
+    pass
+    pass
                 self.logger.error("Invalid liquidation_buffer configuration")
                 return False
 
@@ -110,6 +133,8 @@ class LeverageSizer:
             return False
 
     def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
@@ -119,6 +144,10 @@ class LeverageSizer:
         """
         try:
             if "leverage" in step17_results:
+    pass
+    except Exception as e:
+        pass
+    pass
                 leverage_optimization = step17_results["leverage"]
 
                 # Update leverage parameters
@@ -139,6 +168,8 @@ class LeverageSizer:
 
                 self.logger.info("✅ Leverage sizer configuration refreshed from step17 results")
 
+    except Exception as e:
+        pass
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
 
@@ -176,11 +207,17 @@ class LeverageSizer:
             dict[str, Any]: Leverage sizing analysis
         """
         if not self.is_initialized:
+    pass
+    pass
             self.logger.error("Leverage sizer not initialized")
             return {}
 
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
             # Extract ML confidence scores (for backward compatibility)
@@ -189,6 +226,8 @@ class LeverageSizer:
 
             # NEW: Use combined confidence for leverage sizing if available
             if combined_confidence >= self.leverage_combined_threshold:
+    pass
+    pass
                 # Calculate base ML leverage
                 ml_leverage = self._calculate_ml_leverage(
                     price_target_confidences, adversarial_confidences,
@@ -262,10 +301,16 @@ class LeverageSizer:
         """Calculate leverage based on ML confidence scores."""
         try:
             # Get average confidence for target levels (0.5% to 2.0%)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
 
             for level in target_levels:
+    pass
+    pass
                 closest_level = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -279,6 +324,8 @@ class LeverageSizer:
             # Get average adverse risk
             adverse_risks = []
             for level in target_levels:
+    pass
+    pass
                 closest_level = min(
                     adversarial_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -318,16 +365,24 @@ class LeverageSizer:
         """Calculate safe leverage to avoid liquidation."""
         try:
             # Base liquidation calculation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Assume worst-case scenario: 10% price move against position
             worst_case_move = 0.10
 
             # Adjust for market volatility
             if market_health_analysis:
+    pass
+    pass
                 vol_analysis = market_health_analysis.get("volatility_analysis", {})
                 current_vol = float(vol_analysis.get("current_volatility", 0.02))
 
                 # If volatility is high, increase the worst-case scenario
                 if current_vol > 0.03:
+    pass
+    pass
                     worst_case_move = min(0.20, current_vol * 2)
                 elif current_vol > 0.02:
                     worst_case_move = 0.15
@@ -352,6 +407,10 @@ class LeverageSizer:
         """Calculate weighted leverage using ML and liquidation risk models."""
         try:
             # Calculate weighted leverage
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             weighted_leverage = (
                 ml_leverage * self.ml_weight
                 + liquidation_leverage * self.liquidation_weight
@@ -379,8 +438,14 @@ class LeverageSizer:
         try:
             adjusted = base_leverage
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Apply market health modifiers
             if market_health_analysis:
+    pass
+    pass
                 volatility_modifier = market_health_analysis.get("volatility_modifier", 1.0)
                 liquidity_modifier = market_health_analysis.get("liquidity_modifier", 1.0)
                 stress_modifier = market_health_analysis.get("stress_modifier", 1.0)
@@ -389,6 +454,8 @@ class LeverageSizer:
 
             # Apply strategist risk parameters
             if strategist_risk_parameters:
+    pass
+    pass
                 risk_modifier = strategist_risk_parameters.get("leverage_modifier", 1.0)
                 adjusted *= risk_modifier
 
@@ -417,11 +484,17 @@ class LeverageSizer:
         """Generate reason for leverage sizing decision."""
         try:
             # Get average confidence and risk
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             key_levels = [0.5, 1.0, 1.5, 2.0]
             avg_confidence = 0.0
             avg_risk = 0.0
 
             for level in key_levels:
+    pass
+    pass
                 closest_level = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
@@ -436,6 +509,8 @@ class LeverageSizer:
 
             # NEW: Include combined confidence in leverage reason
             if combined_confidence < self.leverage_combined_threshold:
+    pass
+    pass
                 return (
                     f"Leverage: {final_leverage:.1f}x (minimum due to low combined confidence "
                     f"{combined_confidence:.2f} below threshold {self.leverage_combined_threshold:.2f})"
@@ -457,6 +532,8 @@ class LeverageSizer:
     ) -> list[dict[str, Any]]:
         """Get leverage sizing history."""
         if limit:
+    pass
+    pass
             return self.leverage_sizing_history[-limit:]
         return self.leverage_sizing_history.copy()
 
@@ -469,6 +546,10 @@ class LeverageSizer:
         """Stop the leverage sizer."""
         try:
             self.logger.info("Stopping leverage sizer...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.is_initialized = False
             self.logger.info("✅ Leverage sizer stopped successfully")
         except Exception as e:
@@ -483,6 +564,10 @@ class LeverageSizer:
         """Cleanup leverage sizer resources."""
         try:
             self.logger.info("Cleaning up leverage sizer...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self.stop()
             self.leverage_sizing_history.clear()
             self.logger.info("✅ Leverage sizer cleanup completed")
@@ -509,10 +594,18 @@ async def setup_leverage_sizer(
     """
     try:
         if config is None:
+    pass
+    except Exception as e:
+        pass
+    pass
             config = {}
 
+    except Exception as e:
+        pass
         leverage_sizer = LeverageSizer(config)
         if await leverage_sizer.initialize():
+    pass
+    pass
             return leverage_sizer
         return None
     except Exception as e:

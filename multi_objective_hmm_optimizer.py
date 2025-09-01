@@ -17,6 +17,7 @@ import warnings
 import matplotlib.pyplot as plt
 from scipy import stats
 
+import warnings.filterwarnings
 warnings.filterwarnings('ignore')
 
 
@@ -81,6 +82,8 @@ class MultiObjectiveHMMOptimizer:
 
         # Main optimization loop
         for generation in range(self.generations):
+    pass
+    pass
             print(f"🔄 Generation {generation + 1}/{self.generations}")
 
             # Evaluate objectives for all individuals
@@ -119,11 +122,15 @@ class MultiObjectiveHMMOptimizer:
         return final_results
 
     def _initialize_population(self) -> List[Individual]:
+    pass
+    pass
         """Initialize random population."""
 
         population = []
 
         for _ in range(self.population_size):
+    pass
+    pass
             params = self._generate_random_params()
             individual = Individual(params=params)
             population.append(individual)
@@ -131,6 +138,8 @@ class MultiObjectiveHMMOptimizer:
         return population
 
     def _generate_random_params(self) -> Dict[str, Any]:
+    pass
+    pass
         """Generate random parameters for an individual."""
 
         return {
@@ -155,8 +164,14 @@ class MultiObjectiveHMMOptimizer:
         """Evaluate all objectives for the entire population."""
 
         for individual in self.population:
+    pass
+    pass
             try:
                 # Generate clusters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 cluster_data = self._generate_clusters(individual.params, data)
 
                 # Calculate all objectives
@@ -177,6 +192,8 @@ class MultiObjectiveHMMOptimizer:
                 print(f"⚠️ Individual evaluation failed: {e}")
 
     def _generate_clusters(self, params: Dict[str, Any], data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Generate clusters using given parameters."""
 
         # This is a simplified implementation
@@ -227,6 +244,8 @@ class MultiObjectiveHMMOptimizer:
         """Calculate regime quality objective."""
 
         if 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return 0.0
 
         # Calculate individual metrics
@@ -248,18 +267,26 @@ class MultiObjectiveHMMOptimizer:
         """Calculate regime differentiation."""
 
         if not market_condition_columns or 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return 0.0
 
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
+    pass
+    pass
             return 0.0
 
         differentiation_scores = []
 
         for col in valid_columns:
+    pass
+    pass
             regime_means = cluster_data.groupby('composite_cluster_id')[col].mean()
 
             if len(regime_means) < 2:
+    pass
+    pass
                 continue
 
             # Calculate pairwise differences
@@ -268,13 +295,21 @@ class MultiObjectiveHMMOptimizer:
 
             differences = []
             for i in range(n_regimes):
+    pass
+    pass
                 for j in range(i + 1, n_regimes):
+    pass
+    pass
                     differences.append(abs(means_array[i] - means_array[j]))
 
             if differences:
+    pass
+    pass
                 # Normalize by overall range
                 overall_range = cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
+    pass
+    pass
                     avg_difference = np.mean(differences) / overall_range
                     differentiation_scores.append(avg_difference)
 
@@ -285,28 +320,40 @@ class MultiObjectiveHMMOptimizer:
         """Calculate internal coherence."""
 
         if not market_condition_columns or 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return 0.0
 
         valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
+    pass
+    pass
             return 0.0
 
         coherence_scores = []
 
         for col in valid_columns:
+    pass
+    pass
             regime_stats = cluster_data.groupby('composite_cluster_id')[col].agg(['mean', 'std', 'count'])
             valid_regimes = regime_stats[regime_stats['count'] > 1]
 
             if len(valid_regimes) > 0:
+    pass
+    pass
                 means = valid_regimes['mean'].values
                 stds = valid_regimes['std'].values
 
                 # Calculate coefficient of variation
                 non_zero_means = means != 0
                 if np.any(non_zero_means):
+    pass
+    pass
                     cvs = stds[non_zero_means] / np.abs(means[non_zero_means])
 
                     if len(cvs) > 0:
+    pass
+    pass
                         avg_cv = np.mean(cvs)
                         coherence = 1.0 / (1.0 + avg_cv)
                         coherence_scores.append(coherence)
@@ -314,9 +361,13 @@ class MultiObjectiveHMMOptimizer:
         return np.mean(coherence_scores) if coherence_scores else 0.0
 
     def _calculate_regime_persistence(self, cluster_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate regime persistence."""
 
         if 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return 0.0
 
         cluster_series = cluster_data['composite_cluster_id'].values
@@ -326,12 +377,16 @@ class MultiObjectiveHMMOptimizer:
         total_periods = len(cluster_series)
 
         if total_periods == 0:
+    pass
+    pass
             return 0.0
 
         # Calculate persistence as average regime duration
         change_indices = np.where(regime_changes)[0]
 
         if len(change_indices) == 0:
+    pass
+    pass
             # No changes - perfect persistence
             return 1.0
 
@@ -340,6 +395,8 @@ class MultiObjectiveHMMOptimizer:
         prev_change = -1
 
         for change_idx in change_indices:
+    pass
+    pass
             duration = change_idx - prev_change
             durations.append(duration)
             prev_change = change_idx
@@ -357,9 +414,13 @@ class MultiObjectiveHMMOptimizer:
         return min(1.0, persistence)
 
     def _calculate_transition_smoothness(self, cluster_data: pd.DataFrame) -> float:
+    pass
+    pass
         """Calculate transition smoothness."""
 
         if 'composite_cluster_id' not in cluster_data.columns:
+    pass
+    pass
             return 0.0
 
         cluster_series = cluster_data['composite_cluster_id'].values
@@ -369,6 +430,8 @@ class MultiObjectiveHMMOptimizer:
         n_regimes = len(unique_regimes)
 
         if n_regimes < 2:
+    pass
+    pass
             return 0.0
 
         # Create transition matrix
@@ -376,6 +439,8 @@ class MultiObjectiveHMMOptimizer:
         regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
 
         for i in range(len(cluster_series) - 1):
+    pass
+    pass
             current_regime = cluster_series[i]
             next_regime = cluster_series[i + 1]
 
@@ -393,13 +458,19 @@ class MultiObjectiveHMMOptimizer:
         # Lower entropy = smoother transitions
         entropy = 0.0
         for row in transition_matrix:
+    pass
+    pass
             row = row[row > 0]  # Remove zero probabilities
             if len(row) > 0:
+    pass
+    pass
                 entropy += -np.sum(row * np.log(row))
 
         # Normalize by maximum possible entropy
         max_entropy = n_regimes * np.log(n_regimes)
         if max_entropy > 0:
+    pass
+    pass
             smoothness = 1.0 - (entropy / max_entropy)
         else:
             smoothness = 0.0
@@ -407,6 +478,8 @@ class MultiObjectiveHMMOptimizer:
         return max(0.0, smoothness)
 
     def _calculate_efficiency_objective(self, params: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate computational efficiency objective."""
 
         # Parameter complexity penalty
@@ -418,6 +491,8 @@ class MultiObjectiveHMMOptimizer:
         return max(0.0, efficiency)
 
     def _calculate_parameter_complexity(self, params: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate parameter complexity penalty."""
 
         complexity = 0
@@ -445,6 +520,8 @@ class MultiObjectiveHMMOptimizer:
         target_regimes = params.get('target_regimes', 18)
 
         if 15 <= n_regimes <= 20:
+    pass
+    pass
             regime_count_score = 1.0
         else:
             penalty = abs(n_regimes - target_regimes) / target_regimes
@@ -466,16 +543,22 @@ class MultiObjectiveHMMOptimizer:
         return interpretability
 
     def _calculate_parameter_simplicity(self, params: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate parameter simplicity score."""
 
         simplicity = 1.0
 
         # Penalize complex covariance types
         if params.get('covariance_type') == 'full':
+    pass
+    pass
             simplicity -= 0.2
 
         # Penalize complex merging methods
         if params.get('merging_method') in ['spectral', 'dbscan']:
+    pass
+    pass
             simplicity -= 0.1
 
         # Penalize high iteration counts
@@ -500,21 +583,31 @@ class MultiObjectiveHMMOptimizer:
         return max(0.0, min(1.0, robustness))
 
     def _non_dominated_sort(self) -> List[List[Individual]]:
+    pass
+    pass
         """Perform non-dominated sorting."""
 
         fronts = [[]]
 
         for individual in self.population:
+    pass
+    pass
             individual.domination_count = 0
             individual.dominated_solutions = []
 
             for other in self.population:
+    pass
+    pass
                 if self._dominates(individual, other):
+    pass
+    pass
                     individual.dominated_solutions.append(other)
                 elif self._dominates(other, individual):
                     individual.domination_count += 1
 
             if individual.domination_count == 0:
+    pass
+    pass
                 individual.pareto_rank = 0
                 fronts[0].append(individual)
 
@@ -522,18 +615,28 @@ class MultiObjectiveHMMOptimizer:
         while fronts[i]:
             next_front = []
             for individual in fronts[i]:
+    pass
+    pass
                 for dominated in individual.dominated_solutions:
+    pass
+    pass
                     dominated.domination_count -= 1
                     if dominated.domination_count == 0:
+    pass
+    pass
                         dominated.pareto_rank = i + 1
                         next_front.append(dominated)
             i += 1
             if next_front:
+    pass
+    pass
                 fronts.append(next_front)
 
         return fronts
 
     def _dominates(self, individual1: Individual, individual2: Individual) -> bool:
+    pass
+    pass
         """Check if individual1 dominates individual2."""
 
         objectives1 = individual1.objectives
@@ -548,12 +651,20 @@ class MultiObjectiveHMMOptimizer:
         return at_least_as_good and strictly_better
 
     def _calculate_crowding_distance(self, fronts: List[List[Individual]]):
+    pass
+    pass
         """Calculate crowding distance for all individuals."""
 
         for front in fronts:
+    pass
+    pass
             if len(front) <= 2:
+    pass
+    pass
                 # Assign infinite crowding distance to boundary solutions
                 for individual in front:
+    pass
+    pass
                     individual.crowding_distance = float('inf')
                 continue
 
@@ -561,6 +672,8 @@ class MultiObjectiveHMMOptimizer:
             n_objectives = len(front[0].objectives)
 
             for obj_idx in range(n_objectives):
+    pass
+    pass
                 # Sort front by objective
                 front.sort(key=lambda x: x.objectives[obj_idx])
 
@@ -572,14 +685,20 @@ class MultiObjectiveHMMOptimizer:
                 obj_range = front[-1].objectives[obj_idx] - front[0].objectives[obj_idx]
 
                 if obj_range == 0:
+    pass
+    pass
                     continue
 
                 for i in range(1, len(front) - 1):
+    pass
+    pass
                     distance = (front[i + 1].objectives[obj_idx] -
                               front[i - 1].objectives[obj_idx]) / obj_range
                     front[i].crowding_distance += distance
 
     def _tournament_selection(self) -> List[Individual]:
+    pass
+    pass
         """Perform tournament selection."""
 
         parents = []
@@ -592,12 +711,16 @@ class MultiObjectiveHMMOptimizer:
 
             # Select winner based on Pareto rank and crowding distance
             if individual1.pareto_rank < individual2.pareto_rank:
+    pass
+    pass
                 winner = individual1
             elif individual1.pareto_rank > individual2.pareto_rank:
                 winner = individual2
             else:
                 # Same rank, use crowding distance
                 if individual1.crowding_distance > individual2.crowding_distance:
+    pass
+    pass
                     winner = individual1
                 else:
                     winner = individual2
@@ -607,22 +730,34 @@ class MultiObjectiveHMMOptimizer:
         return parents
 
     def _generate_offspring(self, parents: List[Individual]) -> List[Individual]:
+    pass
+    pass
         """Generate offspring through crossover and mutation."""
 
         offspring = []
 
         for i in range(0, len(parents), 2):
+    pass
+    pass
             if i + 1 < len(parents):
+    pass
+    pass
                 # Crossover
                 if np.random.random() < self.crossover_rate:
+    pass
+    pass
                     child1, child2 = self._crossover(parents[i], parents[i + 1])
                 else:
                     child1, child2 = parents[i], parents[i + 1]
 
                 # Mutation
                 if np.random.random() < self.mutation_rate:
+    pass
+    pass
                     child1 = self._mutate(child1)
                 if np.random.random() < self.mutation_rate:
+    pass
+    pass
                     child2 = self._mutate(child2)
 
                 offspring.extend([child1, child2])
@@ -630,12 +765,16 @@ class MultiObjectiveHMMOptimizer:
                 # Single parent
                 child = parents[i]
                 if np.random.random() < self.mutation_rate:
+    pass
+    pass
                     child = self._mutate(child)
                 offspring.append(child)
 
         return offspring
 
     def _crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
+    pass
+    pass
         """Perform crossover between two parents."""
 
         # Uniform crossover
@@ -643,7 +782,11 @@ class MultiObjectiveHMMOptimizer:
         child2_params = {}
 
         for key in parent1.params:
+    pass
+    pass
             if np.random.random() < 0.5:
+    pass
+    pass
                 child1_params[key] = parent1.params[key]
                 child2_params[key] = parent2.params[key]
             else:
@@ -656,14 +799,20 @@ class MultiObjectiveHMMOptimizer:
         return child1, child2
 
     def _mutate(self, individual: Individual) -> Individual:
+    pass
+    pass
         """Perform mutation on an individual."""
 
         mutated_params = individual.params.copy()
 
         # Randomly mutate some parameters
         for key in mutated_params:
+    pass
+    pass
             if np.random.random() < 0.1:  # 10% mutation probability per parameter
                 if key == 'n_components':
+    pass
+    pass
                     mutated_params[key] = np.random.randint(2, 11)
                 elif key == 'covariance_type':
                     mutated_params[key] = np.random.choice(['full', 'tied', 'diag', 'spherical'])
@@ -691,6 +840,8 @@ class MultiObjectiveHMMOptimizer:
         return Individual(params=mutated_params)
 
     def _environmental_selection(self, combined_population: List[Individual]) -> List[Individual]:
+    pass
+    pass
         """Perform environmental selection."""
 
         # Non-dominated sorting of combined population
@@ -703,7 +854,11 @@ class MultiObjectiveHMMOptimizer:
         new_population = []
 
         for front in fronts:
+    pass
+    pass
             if len(new_population) + len(front) <= self.population_size:
+    pass
+    pass
                 new_population.extend(front)
             else:
                 # Sort front by crowding distance and fill remaining slots
@@ -715,21 +870,31 @@ class MultiObjectiveHMMOptimizer:
         return new_population
 
     def _non_dominated_sort_combined(self, population: List[Individual]) -> List[List[Individual]]:
+    pass
+    pass
         """Non-dominated sorting for combined population."""
 
         fronts = [[]]
 
         for individual in population:
+    pass
+    pass
             individual.domination_count = 0
             individual.dominated_solutions = []
 
             for other in population:
+    pass
+    pass
                 if self._dominates(individual, other):
+    pass
+    pass
                     individual.dominated_solutions.append(other)
                 elif self._dominates(other, individual):
                     individual.domination_count += 1
 
             if individual.domination_count == 0:
+    pass
+    pass
                 individual.pareto_rank = 0
                 fronts[0].append(individual)
 
@@ -737,29 +902,47 @@ class MultiObjectiveHMMOptimizer:
         while fronts[i]:
             next_front = []
             for individual in fronts[i]:
+    pass
+    pass
                 for dominated in individual.dominated_solutions:
+    pass
+    pass
                     dominated.domination_count -= 1
                     if dominated.domination_count == 0:
+    pass
+    pass
                         dominated.pareto_rank = i + 1
                         next_front.append(dominated)
             i += 1
             if next_front:
+    pass
+    pass
                 fronts.append(next_front)
 
         return fronts
 
     def _calculate_crowding_distance_combined(self, fronts: List[List[Individual]]):
+    pass
+    pass
         """Calculate crowding distance for combined population."""
 
         for front in fronts:
+    pass
+    pass
             if len(front) <= 2:
+    pass
+    pass
                 for individual in front:
+    pass
+    pass
                     individual.crowding_distance = float('inf')
                 continue
 
             n_objectives = len(front[0].objectives)
 
             for obj_idx in range(n_objectives):
+    pass
+    pass
                 front.sort(key=lambda x: x.objectives[obj_idx])
 
                 front[0].crowding_distance = float('inf')
@@ -768,27 +951,41 @@ class MultiObjectiveHMMOptimizer:
                 obj_range = front[-1].objectives[obj_idx] - front[0].objectives[obj_idx]
 
                 if obj_range == 0:
+    pass
+    pass
                     continue
 
                 for i in range(1, len(front) - 1):
+    pass
+    pass
                     distance = (front[i + 1].objectives[obj_idx] -
                               front[i - 1].objectives[obj_idx]) / obj_range
                     front[i].crowding_distance += distance
 
     def _update_archive(self):
+    pass
+    pass
         """Update Pareto front archive."""
 
         # Find non-dominated solutions in current population
         non_dominated = []
 
         for individual in self.population:
+    pass
+    pass
             is_dominated = False
             for other in self.population:
+    pass
+    pass
                 if self._dominates(other, individual):
+    pass
+    pass
                     is_dominated = True
                     break
 
             if not is_dominated:
+    pass
+    pass
                 non_dominated.append(individual)
 
         # Add to archive
@@ -798,23 +995,35 @@ class MultiObjectiveHMMOptimizer:
         self.archive = self._remove_dominated_from_archive()
 
     def _remove_dominated_from_archive(self) -> List[Individual]:
+    pass
+    pass
         """Remove dominated solutions from archive."""
 
         non_dominated = []
 
         for individual in self.archive:
+    pass
+    pass
             is_dominated = False
             for other in self.archive:
+    pass
+    pass
                 if individual != other and self._dominates(other, individual):
+    pass
+    pass
                     is_dominated = True
                     break
 
             if not is_dominated:
+    pass
+    pass
                 non_dominated.append(individual)
 
         return non_dominated
 
     def _log_generation_progress(self, generation: int):
+    pass
+    pass
         """Log progress for current generation."""
 
         # Calculate statistics
@@ -838,6 +1047,8 @@ class MultiObjectiveHMMOptimizer:
               f"R={stats['mean_robustness']:.3f}")
 
     def _final_analysis(self) -> Dict[str, Any]:
+    pass
+    pass
         """Perform final analysis of optimization results."""
 
         # Remove duplicates from archive
@@ -857,23 +1068,33 @@ class MultiObjectiveHMMOptimizer:
         }
 
     def _remove_duplicates(self, archive: List[Individual]) -> List[Individual]:
+    pass
+    pass
         """Remove duplicate solutions from archive."""
 
         unique_archive = []
         seen_objectives = set()
 
         for individual in archive:
+    pass
+    pass
             objectives_tuple = tuple(individual.objectives)
             if objectives_tuple not in seen_objectives:
+    pass
+    pass
                 unique_archive.append(individual)
                 seen_objectives.add(objectives_tuple)
 
         return unique_archive
 
     def _calculate_pareto_metrics(self, archive: List[Individual]) -> Dict[str, float]:
+    pass
+    pass
         """Calculate Pareto front metrics."""
 
         if not archive:
+    pass
+    pass
             return {}
 
         objectives_matrix = np.array([ind.objectives for ind in archive])
@@ -895,6 +1116,8 @@ class MultiObjectiveHMMOptimizer:
         }
 
     def _calculate_hypervolume(self, objectives_matrix: np.ndarray) -> float:
+    pass
+    pass
         """Calculate hypervolume indicator (simplified)."""
 
         # Simplified hypervolume calculation
@@ -907,32 +1130,46 @@ class MultiObjectiveHMMOptimizer:
         return hypervolume
 
     def _calculate_spread(self, objectives_matrix: np.ndarray) -> float:
+    pass
+    pass
         """Calculate spread of Pareto front."""
 
         # Calculate maximum distance between any two points
         max_distance = 0
 
         for i in range(len(objectives_matrix)):
+    pass
+    pass
             for j in range(i + 1, len(objectives_matrix)):
+    pass
+    pass
                 distance = np.linalg.norm(objectives_matrix[i] - objectives_matrix[j])
                 max_distance = max(max_distance, distance)
 
         return max_distance
 
     def _calculate_uniformity(self, objectives_matrix: np.ndarray) -> float:
+    pass
+    pass
         """Calculate uniformity of Pareto front."""
 
         if len(objectives_matrix) < 2:
+    pass
+    pass
             return 1.0
 
         # Calculate average distance between consecutive points
         distances = []
 
         for i in range(len(objectives_matrix) - 1):
+    pass
+    pass
             distance = np.linalg.norm(objectives_matrix[i] - objectives_matrix[i + 1])
             distances.append(distance)
 
         if not distances:
+    pass
+    pass
             return 1.0
 
         # Uniformity is inverse of standard deviation
@@ -941,33 +1178,49 @@ class MultiObjectiveHMMOptimizer:
         return uniformity
 
     def _find_knee_points(self, archive: List[Individual]) -> List[Individual]:
+    pass
+    pass
         """Find knee points in Pareto front."""
 
         if len(archive) < 3:
+    pass
+    pass
             return archive
 
         knee_points = []
 
         for i, individual in enumerate(archive):
+    pass
+    pass
             # Calculate angle with neighbors
             angles = []
 
             for j, other in enumerate(archive):
+    pass
+    pass
                 if i != j:
+    pass
+    pass
                     angle = self._calculate_angle(individual, other)
                     angles.append(angle)
 
             # If angle is significantly different from neighbors, it's a knee point
             if angles:
+    pass
+    pass
                 mean_angle = np.mean(angles)
                 std_angle = np.std(angles)
 
                 if abs(angles[0] - mean_angle) > 2 * std_angle:
+    pass
+    pass
                     knee_points.append(individual)
 
         return knee_points
 
     def _calculate_angle(self, individual1: Individual, individual2: Individual) -> float:
+    pass
+    pass
         """Calculate angle between two individuals in objective space."""
 
         obj1 = np.array(individual1.objectives)
@@ -979,6 +1232,8 @@ class MultiObjectiveHMMOptimizer:
         norm2 = np.linalg.norm(obj2)
 
         if norm1 == 0 or norm2 == 0:
+    pass
+    pass
             return 0.0
 
         cos_angle = dot_product / (norm1 * norm2)
@@ -987,12 +1242,18 @@ class MultiObjectiveHMMOptimizer:
         return np.arccos(cos_angle)
 
     def visualize_pareto_front(self, archive: List[Individual] = None):
+    pass
+    pass
         """Visualize Pareto front."""
 
         if archive is None:
+    pass
+    pass
             archive = self.archive
 
         if not archive:
+    pass
+    pass
             print("No solutions in archive to visualize")
             return
 
@@ -1007,7 +1268,11 @@ class MultiObjectiveHMMOptimizer:
 
         plot_idx = 0
         for i in range(4):
+    pass
+    pass
             for j in range(i + 1, 4):
+    pass
+    pass
                 row = plot_idx // 3
                 col = plot_idx % 3
 
@@ -1023,12 +1288,18 @@ class MultiObjectiveHMMOptimizer:
         plt.show()
 
     def interactive_selection(self, archive: List[Individual] = None):
+    pass
+    pass
         """Interactive Pareto front selection."""
 
         if archive is None:
+    pass
+    pass
             archive = self.archive
 
         if not archive:
+    pass
+    pass
             print("No solutions in archive for selection")
             return []
 
@@ -1042,14 +1313,22 @@ class MultiObjectiveHMMOptimizer:
             self._display_solutions(archive)
 
             # Get user preference
-            choice = input("\nEnter solution number to select (or 'q' to quit): ")
+            choice = input("\\\nEnter solution number to select (or 'q' to quit): ")
 
             if choice.lower() == 'q':
+    pass
+    pass
                 break
 
             try:
                 solution_index = int(choice)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if 0 <= solution_index < len(archive):
+    pass
+    pass
                     selected_solution = archive[solution_index]
                     selected_solutions.append(selected_solution)
                     print(f"✅ Selected solution {solution_index}")
@@ -1063,19 +1342,25 @@ class MultiObjectiveHMMOptimizer:
         return selected_solutions
 
     def _display_solutions(self, archive: List[Individual]):
+    pass
+    pass
         """Display available solutions."""
 
-        print("\nAvailable Solutions:")
+        print("\\\nAvailable Solutions:")
         print("-" * 100)
         print(f"{'Index':<6} {'Regime Quality':<15} {'Efficiency':<12} {'Interpretability':<15} {'Robustness':<12}")
         print("-" * 100)
 
         for i, individual in enumerate(archive):
+    pass
+    pass
             objectives = individual.objectives
             print(f"{i:<6} {objectives[0]:<15.4f} {objectives[1]:<12.4f} {objectives[2]:<15.4f} {objectives[3]:<12.4f}")
 
 
 def main():
+    pass
+    pass
     """Example usage of multi-objective optimizer."""
 
     # Create sample data
@@ -1109,7 +1394,7 @@ def main():
     results = optimizer.optimize(data, feature_columns, market_condition_columns)
 
     # Display results
-    print(f"\n🎉 Multi-objective optimization completed!")
+    print(f"\\\n🎉 Multi-objective optimization completed!")
     print(f"🏆 Pareto front size: {len(results['archive'])}")
     print(f"📊 Pareto metrics: {results['pareto_metrics']}")
     print(f"🎯 Knee points: {len(results['knee_points'])}")
@@ -1119,8 +1404,10 @@ def main():
 
     # Interactive selection
     selected = optimizer.interactive_selection()
-    print(f"\n✅ Selected {len(selected)} solutions")
+    print(f"\\\n✅ Selected {len(selected)} solutions")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

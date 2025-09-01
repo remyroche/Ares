@@ -7,26 +7,38 @@ import pandas as pd
 
 
 def convert_csv_to_parquet():
+    pass
+    pass
     print("🔄 Converting CSV klines to Parquet...")
 
     csv_path = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv"
     parquet_path = "data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.parquet"
 
     if not os.path.exists(csv_path):
+    pass
+    pass
         print(f"❌ CSV file not found: {csv_path}")
         return False
 
     if os.path.exists(parquet_path):
+    pass
+    pass
         print(f"✅ Parquet file already exists: {parquet_path}")
         return True
 
     try:
         print(f"📖 Reading CSV: {csv_path}")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         df = pd.read_csv(csv_path)
         print(f"   📊 Loaded {len(df)} rows")
 
         # Convert timestamp to numeric if needed
         if df["timestamp"].dtype == "object":
+    pass
+    pass
             # Convert datetime strings to timestamps
             df["timestamp"] = (
                 pd.to_datetime(df["timestamp"], utc=True).astype(np.int64) // 10**6
@@ -49,4 +61,6 @@ def convert_csv_to_parquet():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     convert_csv_to_parquet()

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 # Add the project root to the Python path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -19,6 +20,7 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.prometheus_metrics import metrics
 from src.utils.warning_symbols import (
+import error,
     error,
     missing,
 )
@@ -27,6 +29,8 @@ class ValidatorOrchestrator:
     """Orchestrator for running step validators in the training pipeline."""
 
     def __init__(self):
+    pass
+    pass
         self.logger, system_logger.getChild("ValidatorOrchestrator")
         self.validators = {}
         self.validation_results = {}
@@ -56,11 +60,19 @@ class ValidatorOrchestrator:
         try:
         self.logger.info(f"🔍 Running {validation_level} validator for {step_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Debug - level context for troubleshooting
         try:
         self.logger.debug(
                     "Input context - training_input_keys=%s pipeline_state_keys=%s validation_level=%s",
                     list(training_input.keys())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if isinstance(training_input, dict)
                     else type(training_input).__name__,
                     list(pipeline_state.keys())
@@ -78,6 +90,8 @@ class ValidatorOrchestrator:
             )
 
         if not pre_validation_result.get("passed", True):
+    pass
+    pass
                 duration, max(0.0, time.perf_counter() - start_perf)
         return self._normalize_result(step_name, pre_validation_result, duration)
 
@@ -116,6 +130,10 @@ class ValidatorOrchestrator:
         try:
                 metrics.record_step_execution(
                     step_name = step_name, duration = duration, status = status
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
         except Exception:
         # Metrics are best - effort; do not fail validation on metrics issues
@@ -124,6 +142,8 @@ class ValidatorOrchestrator:
                 )
 
         if passed:
+    pass
+    pass
                 metrics.record_validation_result(
                     step_name = step_name,
                     validation_type="step_validation",
@@ -167,6 +187,10 @@ class ValidatorOrchestrator:
         try:
                 metrics.record_step_execution(
                     step_name = step_name, duration = duration, status="EXCEPTION"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 )
         except Exception:
         self.logger.debug(
@@ -206,8 +230,14 @@ class ValidatorOrchestrator:
         try:
         self.logger.debug(f"🔍 Running pre - validation checks for {step_name}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Basic input validation
         if not isinstance(training_input, dict):
+    pass
+    pass
         return {
                     "passed": False,
                     "validation_passed": False,
@@ -215,6 +245,8 @@ class ValidatorOrchestrator:
                 }
 
         if not isinstance(pipeline_state, dict):
+    pass
+    pass
         return {
                     "passed": False,
                     "validation_passed": False,
@@ -222,6 +254,8 @@ class ValidatorOrchestrator:
                 }
 
         if not isinstance(config, dict):
+    pass
+    pass
         return {
                     "passed": False,
                     "validation_passed": False,
@@ -233,6 +267,8 @@ class ValidatorOrchestrator:
             missing_params = [param for param in required_params if param not in training_input]
 
         if missing_params:
+    pass
+    pass
         return {
                     "passed": False,
                     "validation_passed": False,
@@ -241,8 +277,12 @@ class ValidatorOrchestrator:
 
         # Enhanced checks for comprehensive validation level
         if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
+    pass
+    pass
         # Validate configuration structure
         if "data_dir" not in config:
+    pass
+    pass
         return {
                         "passed": False,
                         "validation_passed": False,
@@ -256,6 +296,8 @@ class ValidatorOrchestrator:
                 ]
 
         if failed_steps:
+    pass
+    pass
         return {
                         "passed": False,
                         "validation_passed": False,
@@ -304,24 +346,38 @@ class ValidatorOrchestrator:
                 "recommendations": [],
             }
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Check validation result structure
         if not isinstance(validation_result, dict):
+    pass
+    pass
                 post_checks["validation_passed"] = False
                 post_checks["warnings"].append("Validation result is not a dictionary")
         return post_checks
 
         # Enhanced checks for comprehensive validation level
         if validation_level in ["COMPREHENSIVE", "CRITICAL"]:
+    pass
+    pass
         # Check for critical issues in validation result
         if validation_result.get("critical_issues"):
+    pass
+    pass
                     post_checks["warnings"].append(f"Critical issues found: {validation_result['critical_issues']}")
 
         # Check for data quality issues
         if validation_result.get("data_quality_issues"):
+    pass
+    pass
                     post_checks["warnings"].append(f"Data quality issues: {validation_result['data_quality_issues']}")
 
         # Generate recommendations based on validation level
         if validation_level == "CRITICAL":
+    pass
+    pass
                     post_checks["recommendations"].append("Consider running additional data quality checks")
                     post_checks["recommendations"].append("Review model performance metrics")
 
@@ -356,11 +412,19 @@ class ValidatorOrchestrator:
         try:
             combined, dict(main_result)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Add post - validation information
         if post_result.get("warnings"):
+    pass
+    pass
                 combined.setdefault("warnings", []).extend(post_result["warnings"])
 
         if post_result.get("recommendations"):
+    pass
+    pass
                 combined.setdefault("recommendations", []).extend(post_result["recommendations"])
 
         # Determine final validation status
@@ -369,6 +433,8 @@ class ValidatorOrchestrator:
 
         # For critical validation level, both must pass
         if validation_level == "CRITICAL":
+    pass
+    pass
                 combined["validation_passed"] = main_passed and post_passed
             else:
         # For other levels, main result takes precedence
@@ -450,6 +516,8 @@ class ValidatorOrchestrator:
 
         validator_module_name, validator_mapping.get(step_name)
         if not validator_module_name:
+    pass
+    pass
             msg, f"No validator mapping found for step: {step_name}"
             raise ValueError(msg)
 
@@ -458,6 +526,10 @@ class ValidatorOrchestrator:
         # Import the validator module
             module_path, f"src.training.steps.{validator_module_name}"
             validator_module, importlib.import_module(module_path)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Cache module for potential reuse
         self.validators[step_name] = validator_module
 
@@ -466,6 +538,8 @@ class ValidatorOrchestrator:
                 validator_module, "run_validator", None
             )
         if run_validator_func is None or not callable(run_validator_func):
+    pass
+    pass
                 warn_msg = (
                     f"run_validator not found or not callable in module {module_path}"
                 )
@@ -478,6 +552,8 @@ class ValidatorOrchestrator:
 
         # Support both async and sync validators
         if inspect.iscoroutinefunction(run_validator_func):
+    pass
+    pass
                 result, await run_validator_func(training_input, pipeline_state)
             else:
                 result, run_validator_func(training_input, pipeline_state)
@@ -521,6 +597,8 @@ class ValidatorOrchestrator:
         """
         normalized: dict[str, Any]
         if not isinstance(result, dict):
+    pass
+    pass
             normalized = {
                 "step_name": step_name,
                 "validation_passed": bool(result),
@@ -549,32 +627,54 @@ class ValidatorOrchestrator:
         return normalized
 
     def _extract_failure_reason(self, result: dict[str, Any]) -> str:
+    pass
+    pass
         """Heuristically extract a concise failure reason from the result payload."""
         for key in ("error", "warning", "message"):
+    pass
+    pass
             value, result.get(key)
         if isinstance(value, str) and value.strip():
+    pass
+    pass
         return value.strip()
 
         # Look into nested validation_results for first error(s)
         vr, result.get("validation_results")
         if isinstance(vr, dict):
+    pass
+    pass
         # Prefer explicit error strings
         for sub in vr.values():
+    pass
+    pass
         if isinstance(sub, dict):
+    pass
+    pass
         if isinstance(sub.get("error"), str) and sub.get("error"):
+    pass
+    pass
         return str(sub.get("error"))
                     errors, sub.get("errors")
         if isinstance(errors, list) and errors:
+    pass
+    pass
         return ", ".join(map(str, errors[:3]))
         # Common flags
         if sub.get("has_critical_errors"):
+    pass
+    pass
                         msgs, sub.get("error_messages")
         if isinstance(msgs, list) and msgs:
+    pass
+    pass
         return ", ".join(map(str, msgs[:3]))
         return "Critical errors present"
         return "Step validation failed"
 
     def get_validation_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get a summary of all validation results.
 
@@ -600,6 +700,8 @@ class ValidatorOrchestrator:
         }
 
     def get_failed_validations(self) -> list[str]:
+    pass
+    pass
         """
         Get list of steps that failed validation.
 
@@ -613,6 +715,8 @@ class ValidatorOrchestrator:
         ]
 
     def clear_results(self):
+    pass
+    pass
         """Clear all validation results."""
         self.validation_results.clear()
 

@@ -7,12 +7,14 @@ from urllib.parse import urlencode
 import aiohttp
 
 from src.utils.error_handler import (
+import handle_errors,
     handle_errors,
     handle_network_operations,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import connection_error,
     connection_error,
     error,
     failed,
@@ -27,6 +29,8 @@ class BinanceExchange:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         """
         Initialize Binance exchange with enhanced type safety.
 
@@ -76,6 +80,8 @@ class BinanceExchange:
 
         # Validate configuration
         if not self._validate_configuration():
+    pass
+    pass
             self.print(invalid("Invalid configuration for Binance exchange"))
             return False
 
@@ -117,6 +123,8 @@ class BinanceExchange:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         """
         Validate exchange configuration.
 
@@ -125,16 +133,22 @@ class BinanceExchange:
         """
         # Validate timeout
         if self.timeout <= 0:
+    pass
+    pass
             self.print(invalid("Invalid timeout"))
             return False
 
         # Validate max retries
         if self.max_retries < 0:
+    pass
+    pass
             self.print(invalid("Invalid max retries"))
             return False
 
         # Validate API credentials for live trading
         if not self.use_testnet and (not self.api_key or not self.api_secret):
+    pass
+    pass
             self.print(error("API credentials required for live trading"))
             return False
 
@@ -154,6 +168,10 @@ class BinanceExchange:
         """
         try:
             # Create session
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
             )
@@ -161,6 +179,8 @@ class BinanceExchange:
             # Test connection
             server_time = await self._get_server_time()
             if server_time:
+    pass
+    pass
                 self.is_connected = True
                 self.logger.info(
                     f"Connected to Binance API (Server time: {server_time})",
@@ -187,8 +207,14 @@ class BinanceExchange:
         try:
             url = f"{self._get_base_url()}/api/v3/time"
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             async with self.session.get(url) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     return data.get("serverTime")
                 self.print(failed("Failed to get server time: {response.status}"))
@@ -199,14 +225,20 @@ class BinanceExchange:
             return None
 
     def _get_base_url(self) -> str:
+    pass
+    pass
         """Get base URL based on testnet setting."""
         return self.testnet_url if self.use_testnet else self.base_url
 
     def _get_futures_base_url(self) -> str:
+    pass
+    pass
         """Get futures base URL based on testnet setting."""
         return self.testnet_futures_url if self.use_testnet else self.futures_base_url
 
     def _generate_signature(self, params: dict[str, Any]) -> str:
+    pass
+    pass
         """
         Generate HMAC signature for authenticated requests.
 
@@ -218,9 +250,15 @@ class BinanceExchange:
         """
         try:
             if not self.api_secret:
+    pass
+    except Exception as e:
+        pass
+    pass
                 msg = "API secret not configured"
                 raise ValueError(msg)
 
+    except Exception as e:
+        pass
             query_string = urlencode(params)
             return hmac.new(
                 self.api_secret.encode("utf-8"),
@@ -245,10 +283,18 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             if not self.api_key or not self.api_secret:
+    pass
+    pass
                 self.print(error("API credentials required for account info"))
                 return None
 
@@ -269,6 +315,8 @@ class BinanceExchange:
                 headers=headers,
             ) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info("Account information retrieved successfully")
                     return data
@@ -298,10 +346,18 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             if not self.api_key or not self.api_secret:
+    pass
+    pass
                 self.print(error("API credentials required for position risk"))
                 return None
 
@@ -310,6 +366,8 @@ class BinanceExchange:
             params["recvWindow"] = 5000
 
             if symbol:
+    pass
+    pass
                 params["symbol"] = symbol
 
             # Add signature
@@ -326,6 +384,8 @@ class BinanceExchange:
                 headers=headers,
             ) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info("Position risk information retrieved successfully")
                     return data if isinstance(data, list) else [data]
@@ -376,23 +436,37 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             if not self.api_key or not self.api_secret:
+    pass
+    pass
                 self.print(error("API credentials required for order creation"))
                 return None
 
             # Validate parameters
             if side not in ["BUY", "SELL"]:
+    pass
+    pass
                 self.print(invalid("Invalid order side"))
                 return None
 
             if order_type not in ["MARKET", "LIMIT"]:
+    pass
+    pass
                 self.print(invalid("Invalid order type"))
                 return None
 
             if order_type == "LIMIT" and price is None:
+    pass
+    pass
                 self.print(error("Price required for LIMIT orders"))
                 return None
 
@@ -406,19 +480,33 @@ class BinanceExchange:
             }
 
             if price is not None:
+    pass
+    pass
                 params["price"] = price
             if time_in_force:
+    pass
+    pass
                 params["timeInForce"] = time_in_force
             if stop_price is not None:
+    pass
+    pass
                 params["stopPrice"] = stop_price
             if new_client_order_id:
+    pass
+    pass
                 params["newClientOrderId"] = new_client_order_id
             # reduce_only/close_on_trigger are futures-only; include if supported downstream
             if reduce_only is not None:
+    pass
+    pass
                 params["reduceOnly"] = str(reduce_only).lower()
             if close_on_trigger is not None:
+    pass
+    pass
                 params["closePosition"] = str(close_on_trigger).lower()
             if post_only is not None:
+    pass
+    pass
                 params["postOnly"] = str(post_only).lower()
             # take_profit/stop_loss are strategy-level; for spot we skip; for futures these may map to working orders
 
@@ -432,6 +520,8 @@ class BinanceExchange:
 
             async with self.session.post(url, data=params, headers=headers) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info(
                         f"Order created successfully: {data.get('orderId')}",
@@ -453,6 +543,8 @@ class BinanceExchange:
     ) -> dict[str, Any] | bool | None:
         """Make a signed request; returns JSON dict for GET, True/False for DELETE depending on status."""
         if not self.is_connected or not self.api_key or not self.api_secret:
+    pass
+    pass
             self.print(missing("Exchange not connected or missing credentials"))
             return None
         params = {**params, "timestamp": int(time.time() * 1000)}
@@ -461,22 +553,34 @@ class BinanceExchange:
         headers = {"X-MBX-APIKEY": self.api_key}
         try:
             if method == "GET":
+    pass
+    except Exception as e:
+        pass
+    pass
                 async with self.session.get(
                     url,
                     params=params,
                     headers=headers,
                 ) as resp:
                     if resp.status == 200:
+    pass
+    pass
                         return await resp.json()
                     self.print(failed("GET {path} failed: {await resp.text()}"))
                     return None
+    except Exception as e:
+        pass
             if method == "DELETE":
+    pass
+    pass
                 async with self.session.delete(
                     url,
                     params=params,
                     headers=headers,
                 ) as resp:
                     if resp.status == 200:
+    pass
+    pass
                         await resp.read()
                         return True
                     self.print(failed("DELETE {path} failed: {await resp.text()}"))
@@ -512,6 +616,8 @@ class BinanceExchange:
         """Get all open orders, optionally filtered by symbol."""
         params: dict[str, Any] = {}
         if symbol:
+    pass
+    pass
             params["symbol"] = symbol
         result = await self._signed_request(
             method="GET",
@@ -524,6 +630,10 @@ class BinanceExchange:
         """Set margin mode (isolated/cross). Note: For futures endpoints; stubbed for spot."""
         try:
             # Spot API doesn't support margin mode here; return True for compatibility
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return True
         except Exception:
             return False
@@ -532,6 +642,10 @@ class BinanceExchange:
         """Set leverage for symbol. Note: For futures endpoints; stubbed for spot."""
         try:
             # Spot API doesn't support leverage; return True for compatibility
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return True
         except Exception:
             return False
@@ -541,6 +655,10 @@ class BinanceExchange:
         """Subscribe to user trade/fill events and call callback(event_dict)."""
         try:
             # TODO: Implement Binance user data stream listenKey + ws connect
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self._fills_callback = callback
             return True
         except Exception:
@@ -550,6 +668,10 @@ class BinanceExchange:
     async def unsubscribe_fills(self) -> bool:
         try:
             self._fills_callback = None
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             return True
         except Exception:
             return False
@@ -598,9 +720,15 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             # Prepare request
             params = {"symbol": symbol, "interval": interval, "limit": limit}
 
@@ -609,6 +737,8 @@ class BinanceExchange:
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info(
                         f"Klines retrieved successfully: {len(data)} records",
@@ -637,9 +767,15 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             # Prepare request
             params = {"symbol": symbol}
 
@@ -648,6 +784,8 @@ class BinanceExchange:
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info(f"Ticker retrieved successfully: {symbol}")
                     return data
@@ -679,9 +817,15 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             # Prepare request
             params = {"symbol": symbol, "limit": limit}
 
@@ -690,6 +834,8 @@ class BinanceExchange:
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info(f"Order book retrieved successfully: {symbol}")
                     return data
@@ -727,12 +873,18 @@ class BinanceExchange:
                 "startTime": start_time_ms,
                 "endTime": end_time_ms,
                 "limit": 1000,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             url = f"{self._get_base_url()}/api/v3/aggTrades"
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     return await response.json()
                 self.logger.error(
                     f"Failed to get aggregate trades: {response.status}",
@@ -766,9 +918,15 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.print(error("Exchange not connected"))
                 return None
 
+    except Exception as e:
+        pass
             # Prepare request
             params = {
                 "symbol": symbol,
@@ -782,6 +940,8 @@ class BinanceExchange:
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     data = await response.json()
                     self.logger.info(
                         f"Aggregated trades retrieved successfully: {len(data)} records",
@@ -823,12 +983,18 @@ class BinanceExchange:
                 "startTime": start_time_ms,
                 "endTime": end_time_ms,
                 "limit": 1000,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             url = f"{self._get_futures_base_url()}/fapi/v1/fundingRate"
 
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
+    pass
+    pass
                     return await response.json()
                 self.print(failed("Failed to get funding rates: {response.status}"))
                 return None
@@ -838,6 +1004,8 @@ class BinanceExchange:
             return None
 
     def get_exchange_status(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get exchange status information.
 
@@ -865,9 +1033,15 @@ class BinanceExchange:
 
         try:
             if self.session:
+    pass
+    except Exception as e:
+        pass
+    pass
                 await self.session.close()
                 self.session = None
 
+    except Exception as e:
+        pass
             self.is_connected = False
             self.logger.info("✅ Binance Exchange stopped successfully")
 
@@ -899,7 +1073,13 @@ async def setup_binance_exchange(
     try:
         global binance_exchange
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {
                 "binance_exchange": {
                     "use_testnet": True,
@@ -917,6 +1097,8 @@ async def setup_binance_exchange(
         # Initialize Binance exchange
         success = await binance_exchange.initialize()
         if success:
+    pass
+    pass
             return binance_exchange
         return None
 

@@ -6,11 +6,13 @@ This module remains for backward compatibility and forwards to the canonical DI 
 """
 
 from src.core.dependency_injection import (
+import DependencyContainer as _DependencyContainer,
     DependencyContainer as _DependencyContainer,
     ServiceLifetime as _ServiceLifetime,
 )
 from typing import Any, TypeVar
 
+import T = TypeVar
 T = TypeVar("T")
 
 # Re-export canonical classes
@@ -22,8 +24,12 @@ _global_container: _DependencyContainer | None = None
 
 
 def get_container() -> _DependencyContainer:
+    pass
+    pass
     global _global_container
     if _global_container is None:
+    pass
+    pass
         _global_container = _DependencyContainer()
     return _global_container
 

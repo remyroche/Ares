@@ -19,6 +19,7 @@ from src.utils.logger import system_logger
 from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, create_sr_data_integration_simple
 
 
+import @dataclass
 @dataclass
 class SRLevelTest:
     """Individual S/R level test result."""
@@ -102,7 +103,11 @@ class BacktestResult:
     level_tests: List[SRLevelTest] = None
 
     def __post_init__(self):
+    pass
+    pass
         if self.level_tests is None:
+    pass
+    pass
             self.level_tests = []
 
 
@@ -118,6 +123,8 @@ class SRBacktestingValidator:
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         """Initialize the S/R backtesting validator."""
         self.config = config
         self.logger = system_logger.getChild("SRBacktestingValidator")
@@ -178,8 +185,14 @@ class SRBacktestingValidator:
         """
         try:
             if self.logger:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.info("🔧 Initializing data integration for S/R backtesting...")
 
+    except Exception as e:
+        pass
             # Create and initialize data integration
             self.data_integration = await create_sr_data_integration_simple(
                 symbol=symbol,
@@ -190,16 +203,24 @@ class SRBacktestingValidator:
             )
 
             if self.data_integration:
+    pass
+    pass
                 if self.logger:
+    pass
+    pass
                     self.logger.info("✅ Data integration initialized successfully")
                 return True
             else:
                 if self.logger:
+    pass
+    pass
                     self.logger.error("❌ Failed to initialize data integration")
                 return False
 
         except Exception as e:
             if self.logger:
+    pass
+    pass
                 self.logger.error(f"❌ Data integration initialization failed: {e}")
             return False
 
@@ -232,20 +253,30 @@ class SRBacktestingValidator:
         try:
             self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize results
             result = BacktestResult()
             result.total_levels_tested = len(sr_levels)
 
             # Test each S/R level
             for level in sr_levels:
+    pass
+    pass
                 level_test = await self._test_single_level(
                     market_data, level, current_price, multi_timeframe_data
                 )
                 if level_test:
+    pass
+    pass
                     result.level_tests.append(level_test)
 
                     # Update overall metrics
                     if level_test.bounce_rate > self.min_bounce_rate:
+    pass
+    pass
                         result.successful_levels += 1
 
             # Calculate overall metrics
@@ -271,6 +302,10 @@ class SRBacktestingValidator:
         """Test a single S/R level."""
         try:
             level_price = level.get("price", 0.0)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             level_type = level.get("type", "support")
             level_strength = level.get("enhanced_strength", level.get("strength", 0.5))
 
@@ -299,6 +334,8 @@ class SRBacktestingValidator:
 
             # Calculate rates
             if touches > 0:
+    pass
+    pass
                 test.bounce_rate = bounces / touches
                 test.breakout_rate = breakouts / touches
                 test.false_breakout_rate = false_breakouts / touches
@@ -332,6 +369,10 @@ class SRBacktestingValidator:
         """
         try:
             touches = 0
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             bounces = 0
             breakouts = 0
             false_breakouts = 0
@@ -349,6 +390,8 @@ class SRBacktestingValidator:
                 low = market_data['low'].iloc[i]
 
                 if low <= touch_zone_upper and high >= touch_zone_lower:
+    pass
+    pass
                     touches += 1
                     touch_volumes.append(market_data['volume'].iloc[i])
                     touch_indices.append(i)
@@ -359,6 +402,8 @@ class SRBacktestingValidator:
                     )
 
                     if touch_result == "bounce":
+    pass
+    pass
                         bounces += 1
                     elif touch_result == "breakout":
                         breakouts += 1
@@ -388,22 +433,32 @@ class SRBacktestingValidator:
         """
         try:
             # Look ahead for confirmation
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             end_index = min(touch_index + self.confirmation_periods, len(market_data))
             future_data = market_data.iloc[touch_index:end_index]
 
             if level_type == "support":
+    pass
+    pass
                 # For support levels, check if price bounces up or breaks down
                 min_price = future_data['low'].min()
                 max_price = future_data['high'].max()
 
                 # Check for bounce (price moves up significantly)
                 if max_price > level_price * (1 + self.bounce_threshold):
+    pass
+    pass
                     return "bounce"
 
                 # Check for breakout (price moves down significantly)
                 elif min_price < level_price * (1 - self.breakout_threshold):
                     # Check if it's a false breakout (price comes back)
                     if max_price > level_price * (1 + self.false_breakout_threshold):
+    pass
+    pass
                         return "false_breakout"
                     else:
                         return "breakout"
@@ -415,12 +470,16 @@ class SRBacktestingValidator:
 
                 # Check for bounce (price moves down significantly)
                 if min_price < level_price * (1 - self.bounce_threshold):
+    pass
+    pass
                     return "bounce"
 
                 # Check for breakout (price moves up significantly)
                 elif max_price > level_price * (1 + self.breakout_threshold):
                     # Check if it's a false breakout (price comes back)
                     if min_price < level_price * (1 - self.false_breakout_threshold):
+    pass
+    pass
                         return "false_breakout"
                     else:
                         return "breakout"
@@ -450,8 +509,14 @@ class SRBacktestingValidator:
         """
         try:
             if not touch_volumes or len(touch_volumes) == 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             # Calculate volume baseline
             avg_volume = market_data['volume'].rolling(window=self.volume_lookback_periods).mean()
 
@@ -464,21 +529,33 @@ class SRBacktestingValidator:
             institutional_volumes = 0
 
             for i, touch_idx in enumerate(touch_indices):
+    pass
+    pass
                 if touch_idx < len(avg_volume):
+    pass
+    pass
                     baseline_volume = avg_volume.iloc[touch_idx]
                     if baseline_volume > 0:
+    pass
+    pass
                         volume_ratio = touch_volumes[i] / baseline_volume
                         volume_spikes.append(volume_ratio)
 
                         # Check for volume confirmation
                         if volume_ratio >= self.volume_confirmation_threshold:
+    pass
+    pass
                             volume_confirmations += 1
 
                         # Check for institutional volume
                         if volume_ratio >= self.institutional_volume_threshold:
+    pass
+    pass
                             institutional_volumes += 1
 
             if volume_spikes:
+    pass
+    pass
                 test.volume_spike_ratio = np.mean(volume_spikes)
                 test.volume_confirmation_rate = volume_confirmations / len(touch_indices)
                 test.institutional_volume_ratio = institutional_volumes / len(touch_indices)
@@ -488,18 +565,26 @@ class SRBacktestingValidator:
             total_volume = 0
 
             for i, touch_idx in enumerate(touch_indices):
+    pass
+    pass
                 if touch_idx < len(market_data) - self.confirmation_periods:
+    pass
+    pass
                     # Check if this touch resulted in a bounce
                     touch_result = await self._analyze_touch_outcome(
                         market_data, touch_idx, level_price, test.level_type
                     )
 
                     if touch_result == "bounce":
+    pass
+    pass
                         bounce_volumes.append(touch_volumes[i])
 
                     total_volume += touch_volumes[i]
 
             if total_volume > 0 and bounce_volumes:
+    pass
+    pass
                 test.volume_weighted_bounce_rate = sum(bounce_volumes) / total_volume
 
             # 4. Volume clustering analysis
@@ -524,8 +609,14 @@ class SRBacktestingValidator:
         """
         try:
             if not touch_indices:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return 0.0
 
+    except Exception as e:
+        pass
             # Define the level zone
             level_zone_upper = level_price * (1 + self.volume_cluster_radius)
             level_zone_lower = level_price * (1 - self.volume_cluster_radius)
@@ -535,12 +626,18 @@ class SRBacktestingValidator:
             total_volume = market_data['volume'].sum()
 
             for i in range(len(market_data)):
+    pass
+    pass
                 price = market_data['close'].iloc[i]
                 if level_zone_lower <= price <= level_zone_upper:
+    pass
+    pass
                     level_zone_volume += market_data['volume'].iloc[i]
 
             # Calculate volume concentration ratio
             if total_volume > 0:
+    pass
+    pass
                 volume_concentration = level_zone_volume / total_volume
 
                 # Normalize by the size of the zone relative to the price range
@@ -549,6 +646,8 @@ class SRBacktestingValidator:
                 expected_concentration = zone_size / price_range if price_range > 0 else 0
 
                 if expected_concentration > 0:
+    pass
+    pass
                     cluster_score = volume_concentration / expected_concentration
                     return min(cluster_score, 5.0)  # Cap at 5x concentration
 
@@ -559,12 +658,20 @@ class SRBacktestingValidator:
             return 0.0
 
     def _calculate_level_confidence(self, test: SRLevelTest) -> float:
+    pass
+    pass
         """Calculate confidence score for a level based on its performance and volume analysis."""
         try:
             confidence = 0.0
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Base confidence from bounce rate (40% weight)
             if test.bounce_rate > 0.8:
+    pass
+    pass
                 confidence += 0.4
             elif test.bounce_rate > 0.6:
                 confidence += 0.3
@@ -578,6 +685,8 @@ class SRBacktestingValidator:
 
             # Volume spike ratio
             if test.volume_spike_ratio > 2.0:
+    pass
+    pass
                 volume_confidence += 0.15
             elif test.volume_spike_ratio > 1.5:
                 volume_confidence += 0.1
@@ -586,18 +695,24 @@ class SRBacktestingValidator:
 
             # Volume confirmation rate
             if test.volume_confirmation_rate > 0.8:
+    pass
+    pass
                 volume_confidence += 0.1
             elif test.volume_confirmation_rate > 0.6:
                 volume_confidence += 0.05
 
             # Institutional volume presence
             if test.institutional_volume_ratio > 0.3:
+    pass
+    pass
                 volume_confidence += 0.05
 
             confidence += volume_confidence
 
             # Penalty for false breakouts (15% weight)
             if test.false_breakout_rate > 0.3:
+    pass
+    pass
                 confidence -= 0.15
             elif test.false_breakout_rate > 0.2:
                 confidence -= 0.1
@@ -606,6 +721,8 @@ class SRBacktestingValidator:
 
             # Bonus for number of touches (10% weight)
             if test.touches >= 5:
+    pass
+    pass
                 confidence += 0.1
             elif test.touches >= 3:
                 confidence += 0.05
@@ -623,8 +740,14 @@ class SRBacktestingValidator:
         """Calculate overall metrics from individual level tests."""
         try:
             if not result.level_tests:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             # Calculate overall rates
             total_touches = sum(test.touches for test in result.level_tests)
             total_bounces = sum(test.bounces for test in result.level_tests)
@@ -632,6 +755,8 @@ class SRBacktestingValidator:
             total_false_breakouts = sum(test.false_breakouts for test in result.level_tests)
 
             if total_touches > 0:
+    pass
+    pass
                 result.overall_bounce_rate = total_bounces / total_touches
                 result.overall_breakout_rate = total_breakouts / total_touches
                 result.overall_false_breakout_rate = total_false_breakouts / total_touches
@@ -641,20 +766,28 @@ class SRBacktestingValidator:
             resistance_tests = [test for test in result.level_tests if test.level_type == "resistance"]
 
             if support_tests:
+    pass
+    pass
                 support_touches = sum(test.touches for test in support_tests)
                 support_bounces = sum(test.bounces for test in support_tests)
                 support_breakouts = sum(test.breakouts for test in support_tests)
 
                 if support_touches > 0:
+    pass
+    pass
                     result.support_bounce_rate = support_bounces / support_touches
                     result.support_breakout_rate = support_breakouts / support_touches
 
             if resistance_tests:
+    pass
+    pass
                 resistance_touches = sum(test.touches for test in resistance_tests)
                 resistance_bounces = sum(test.bounces for test in resistance_tests)
                 resistance_breakouts = sum(test.breakouts for test in resistance_tests)
 
                 if resistance_touches > 0:
+    pass
+    pass
                     result.resistance_bounce_rate = resistance_bounces / resistance_touches
                     result.resistance_breakout_rate = resistance_breakouts / resistance_touches
 
@@ -664,6 +797,8 @@ class SRBacktestingValidator:
 
             # Calculate volume-related metrics
             if result.level_tests:
+    pass
+    pass
                 result.avg_volume_spike_ratio = np.mean([test.volume_spike_ratio for test in result.level_tests])
                 result.avg_volume_confirmation_rate = np.mean([test.volume_confirmation_rate for test in result.level_tests])
                 result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
@@ -671,17 +806,23 @@ class SRBacktestingValidator:
 
             # Calculate time-based metrics
             if result.level_tests:
+    pass
+    pass
                 result.avg_level_age_days = np.mean([test.level_age_days for test in result.level_tests])
                 result.avg_age_decay_factor = np.mean([test.age_decay_factor for test in result.level_tests])
                 result.level_persistence_score = np.mean([1 - test.age_decay_factor for test in result.level_tests])
 
             # Calculate multi-timeframe metrics
             if result.level_tests:
+    pass
+    pass
                 result.avg_multi_timeframe_score = np.mean([test.multi_timeframe_score for test in result.level_tests])
                 result.avg_higher_timeframe_alignment = np.mean([test.higher_timeframe_alignment for test in result.level_tests])
 
             # Calculate level detection accuracy
             if result.total_levels_tested > 0:
+    pass
+    pass
                 result.level_detection_accuracy = result.successful_levels / result.total_levels_tested
 
         except Exception as e:
@@ -691,6 +832,10 @@ class SRBacktestingValidator:
         """Calculate S/R validation score based on level effectiveness."""
         try:
             # S/R validation score components (0-1)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
 
             false_breakout_score = max(0, 1 - (result.overall_false_breakout_rate / self.max_false_breakout_rate))
@@ -730,8 +875,14 @@ class SRBacktestingValidator:
         """Analyze time-based factors affecting S/R level validity."""
         try:
             if not touch_indices:
+    pass
+    except Exception as e:
+        pass
+    pass
                 return
 
+    except Exception as e:
+        pass
             # Calculate level age
             first_touch_idx = min(touch_indices)
             last_touch_idx = max(touch_indices)
@@ -741,11 +892,15 @@ class SRBacktestingValidator:
 
             # Calculate age in days
             if test.first_touch_date and test.last_touch_date:
+    pass
+    pass
                 age_delta = test.last_touch_date - test.first_touch_date
                 test.level_age_days = age_delta.days
 
             # Calculate age decay factor
             if test.level_age_days > 0:
+    pass
+    pass
                 # Exponential decay based on age
                 test.age_decay_factor = self.age_decay_factor ** (test.level_age_days / 30)  # Decay per month
 
@@ -758,6 +913,10 @@ async def setup_sr_backtesting_validator(config: Dict[str, Any]) -> Optional[SRB
     """Setup S/R backtesting validator."""
     try:
         validator = SRBacktestingValidator(config)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         return validator
     except Exception as e:
         system_logger.error(f"Failed to setup S/R backtesting validator: {e}")

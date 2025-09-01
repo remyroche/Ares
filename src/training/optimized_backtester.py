@@ -16,6 +16,7 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import warning
 
 
+import class OptimizedBacktester:
 class OptimizedBacktester:
     """Optimized backtester with caching, parallelization, and memory management.
 
@@ -28,6 +29,8 @@ class OptimizedBacktester:
     """
 
     def __init__(self, market_data: pd.DataFrame, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("OptimizedBacktester")
 
@@ -50,17 +53,25 @@ class OptimizedBacktester:
         self.evaluation_count = 0
 
     def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         """Optimize DataFrame for memory usage."""
         # Use appropriate dtypes
         for col in df.select_dtypes(include=["float64"]).columns:
+    pass
+    pass
             df[col] = pd.to_numeric(df[col], downcast="float")
 
         for col in df.select_dtypes(include=["int64"]).columns:
+    pass
+    pass
             df[col] = pd.to_numeric(df[col], downcast="integer")
 
         return df
 
     def _precompute_indicators(self) -> dict[str, np.ndarray]:
+    pass
+    pass
         """Precompute all technical indicators once."""
         self.logger.info("Precomputing technical indicators...")
         indicators = {}
@@ -71,6 +82,8 @@ class OptimizedBacktester:
 
         # Moving averages (multiple periods)
         for period in [5, 10, 20, 50, 100]:
+    pass
+    pass
             indicators[f"sma_{period}"] = (
                 self.market_data["close"].rolling(period).mean().values
             )
@@ -92,6 +105,8 @@ class OptimizedBacktester:
         return indicators
 
     def _calculate_atr(self) -> np.ndarray:
+    pass
+    pass
         """Calculate Average True Range."""
         high = self.market_data["high"].values
         low = self.market_data["low"].values
@@ -105,6 +120,8 @@ class OptimizedBacktester:
         return pd.Series(tr).rolling(14).mean().values
 
     def _calculate_rsi(self) -> np.ndarray:
+    pass
+    pass
         """Calculate Relative Strength Index."""
         close = self.market_data["close"].values
         delta = np.diff(close)
@@ -119,6 +136,8 @@ class OptimizedBacktester:
         return 100 - (100 / (1 + rs))
 
     def _calculate_macd(self) -> np.ndarray:
+    pass
+    pass
         """Calculate MACD."""
         close = self.market_data["close"].values
         ema12 = pd.Series(close).ewm(span=12).mean().values
@@ -126,6 +145,8 @@ class OptimizedBacktester:
         return ema12 - ema26
 
     def _generate_cache_key(self, params: dict[str, Any]) -> str:
+    pass
+    pass
         """Generate cache key for parameters."""
         # Sort parameters for consistent hashing
         sorted_params = sorted(params.items())
@@ -138,6 +159,8 @@ class OptimizedBacktester:
         context="cached backtest evaluation",
     )
     def run_cached_backtest(self, params: dict[str, Any]) -> float:
+    pass
+    pass
         """Run backtest with caching."""
         # Check memory usage
         self._check_memory_usage()
@@ -147,6 +170,8 @@ class OptimizedBacktester:
 
         # Check cache
         if cache_key in self.cache:
+    pass
+    pass
             return self.cache[cache_key]
 
         # Run backtest
@@ -154,17 +179,23 @@ class OptimizedBacktester:
 
         # Cache result
         if len(self.cache) < self.max_cache_size:
+    pass
+    pass
             self.cache[cache_key] = result
 
         self.evaluation_count += 1
 
         # Periodic cleanup
         if self.evaluation_count % self.cleanup_frequency == 0:
+    pass
+    pass
             self._cleanup_memory()
 
         return result
 
     def _run_simplified_backtest(self, params: dict[str, Any]) -> float:
+    pass
+    pass
         """Run simplified backtest using precomputed indicators."""
         # Extract parameters
         tp_multiplier = params.get("tp_multiplier", 2.0)
@@ -185,7 +216,11 @@ class OptimizedBacktester:
         entry_price = 0.0
 
         for i in range(1, len(close_prices)):
+    pass
+    pass
             if not position_open and signals[i - 1] == 1:
+    pass
+    pass
                 position_open = True
                 entry_price = close_prices[i - 1]
 
@@ -195,8 +230,12 @@ class OptimizedBacktester:
                 sl_price = entry_price - (sl_multiplier * atr)
 
             if position_open:
+    pass
+    pass
                 # Check exit conditions
                 if high_prices[i] >= tp_price:
+    pass
+    pass
                     pnl = (tp_price - entry_price) / entry_price
                     pnls.append(pnl)
                     position_open = False
@@ -207,6 +246,8 @@ class OptimizedBacktester:
 
         # Calculate performance metrics
         if not pnls:
+    pass
+    pass
             return -1.0
 
         pnl_series = pd.Series(pnls)
@@ -221,6 +262,8 @@ class OptimizedBacktester:
         return 0.5 * sharpe_ratio + 0.3 * win_rate + 0.2 * min(profit_factor, 5.0)
 
     def _generate_signals(self, confidence_threshold: float) -> np.ndarray:
+    pass
+    pass
         """Generate trading signals using precomputed indicators."""
         signals = np.zeros(len(self.market_data))
 
@@ -231,6 +274,8 @@ class OptimizedBacktester:
         close = self.market_data["close"].values
 
         for i in range(20, len(close)):
+    pass
+    pass
             # RSI oversold condition
             rsi_oversold = rsi[i] < 30
             # Price above moving averages
@@ -239,13 +284,19 @@ class OptimizedBacktester:
             momentum_positive = close[i] > close[i - 1]
 
             if rsi_oversold and price_above_ma and momentum_positive:
+    pass
+    pass
                 signals[i] = 1
 
         return signals
 
     def evaluate_batch_parallel(self, param_batch: list[dict[str, Any]]) -> list[float]:
+    pass
+    pass
         """Evaluate multiple parameter sets in parallel."""
         if len(param_batch) <= 1:
+    pass
+    pass
             return [self.run_cached_backtest(params) for params in param_batch]
 
         # Prepare data for parallel processing
@@ -255,6 +306,8 @@ class OptimizedBacktester:
         # Submit batch for parallel evaluation
         futures = []
         for params in param_batch:
+    pass
+    pass
             future = self.executor.submit(
                 self._evaluate_single_params_parallel,
                 data_pickle,
@@ -285,11 +338,19 @@ class OptimizedBacktester:
         return temp_backtester._run_simplified_backtest(params)
 
     def _check_memory_usage(self) -> None:
+    pass
+    pass
         """Check and manage memory usage."""
         try:
             memory_percent = psutil.virtual_memory().percent / 100
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if memory_percent > self.memory_threshold:
+    pass
+    pass
                 self._cleanup_memory()
 
         except Exception as e:
@@ -298,11 +359,15 @@ class OptimizedBacktester:
             self.print(warning(error_msg))
 
     def _cleanup_memory(self) -> None:
+    pass
+    pass
         """Clean up memory by forcing garbage collection."""
         gc.collect()
 
         # Clear cache if it's too large
         if len(self.cache) > self.max_cache_size * 0.8:
+    pass
+    pass
             # Keep only the most recent entries
             cache_items = list(self.cache.items())
             self.cache = dict(cache_items[-self.max_cache_size // 2 :])
@@ -316,6 +381,8 @@ class OptimizedBacktester:
     ) -> float:
         """Evaluate parameters progressively across data subsets."""
         if stages is None:
+    pass
+    pass
             stages = [
                 (0.1, 0.3),  # 10% data = 30% weight
                 (0.3, 0.5),  # 30% data = 50% weight
@@ -326,6 +393,8 @@ class OptimizedBacktester:
         total_weight = 0
 
         for data_ratio, weight in stages:
+    pass
+    pass
             subset_size = int(len(self.market_data) * data_ratio)
             subset_data = self.market_data.iloc[:subset_size]
 
@@ -340,11 +409,15 @@ class OptimizedBacktester:
 
             # Early stopping if performance is poor
             if data_ratio < 1.0 and score < -0.5:
+    pass
+    pass
                 return -1.0  # Stop evaluation
 
         return total_score / total_weight
 
     def get_performance_stats(self) -> dict[str, Any]:
+    pass
+    pass
         """Get performance statistics."""
         return {
             "cache_size": len(self.cache),
@@ -354,14 +427,22 @@ class OptimizedBacktester:
         }
 
     def _calculate_cache_hit_rate(self) -> float:
+    pass
+    pass
         """Calculate cache hit rate."""
         if self.evaluation_count == 0:
+    pass
+    pass
             return 0.0
 
         cache_hits = self.evaluation_count - len(self.cache)
         return max(0, cache_hits / self.evaluation_count)
 
     def __del__(self) -> None:
+    pass
+    pass
         """Cleanup when object is destroyed."""
         if hasattr(self, "executor"):
+    pass
+    pass
             self.executor.shutdown(wait=False)

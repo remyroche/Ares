@@ -10,6 +10,7 @@ import asyncio
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -18,6 +19,7 @@ from src.utils.warning_symbols import (
 from src.utils.logger import system_logger
 
 
+import class EventType
 class EventType(Enum):
     """Event types for the trading system"""
 
@@ -51,6 +53,8 @@ class EventBus:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+    pass
+    pass
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EventBus")
         self.is_running: bool = False
@@ -78,8 +82,14 @@ class EventBus:
     async def initialize(self) -> bool:
         try:
             self.logger.info("Initializing Event Bus...")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._load_event_bus_configuration()
             if not self._validate_configuration():
+    pass
+    pass
                 self.logger.error(invalid("Invalid configuration for event bus"))
                 return False
             await self._initialize_event_processing()
@@ -97,6 +107,10 @@ class EventBus:
     async def _load_event_bus_configuration(self) -> None:
         try:
             self.event_bus_config.setdefault("processing_interval", 10)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.event_bus_config.setdefault("max_history", 100)
             self.processing_interval = self.event_bus_config["processing_interval"]
             self.max_history = self.event_bus_config["max_history"]
@@ -110,11 +124,21 @@ class EventBus:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
+    pass
+    pass
         try:
             if self.processing_interval <= 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                 self.logger.error(invalid("Invalid processing interval"))
                 return False
+    except Exception as e:
+        pass
             if self.max_history <= 0:
+    pass
+    pass
                 self.logger.error(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
@@ -131,6 +155,10 @@ class EventBus:
     async def _initialize_event_processing(self) -> None:
         try:
             # Initialize event processing components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.event_queue = asyncio.Queue()
             self.event_history = []
             self.logger.info("Event processing initialized successfully")
@@ -149,6 +177,10 @@ class EventBus:
     async def run(self) -> bool:
         try:
             self.is_running = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info("🚦 Event Bus started.")
             while self.is_running:
                 await self._process_events()
@@ -167,9 +199,15 @@ class EventBus:
     async def _process_events(self) -> None:
         try:
             now = datetime.now().isoformat()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": now, "status": "running"}
             self.history.append(self.status.copy())
             if len(self.history) > self.max_history:
+    pass
+    pass
                 self.history.pop(0)
 
             # Process events from queue
@@ -189,19 +227,39 @@ class EventBus:
     async def _dispatch_event(self, event: dict[str, Any]) -> None:
         try:
             event_type = event.get("type", "unknown")
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             subscribers = self.subscribers.get(event_type, [])
             payload = event.get("data")
 
             for subscriber in subscribers:
+    pass
+    pass
                 try:
                     if asyncio.iscoroutinefunction(subscriber):
+    pass
+    except Exception as e:
+        pass
+    pass
                         try:
                             await subscriber(payload)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         except TypeError:
                             await subscriber()
+    except Exception as e:
+        pass
                     else:
                         try:
                             subscriber(payload)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                         except TypeError:
                             subscriber()
                 except Exception as e:
@@ -219,6 +277,8 @@ class EventBus:
             )
 
             if len(self.event_history) > self.max_history:
+    pass
+    pass
                 self.event_history.pop(0)
 
             self.logger.info(
@@ -236,6 +296,10 @@ class EventBus:
         self.logger.info("🛑 Stopping Event Bus...")
         try:
             self.is_running = False
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Event Bus stopped successfully")
         except Exception as e:
@@ -247,10 +311,16 @@ class EventBus:
         context="event subscription",
     )
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
+    pass
+    pass
         """Subscribe to an event type."""
         try:
             event_key = (
                 event_type.value if isinstance(event_type, EventType) else str(event_type)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             self.subscribers[event_key].append(callback)
             self.logger.info(f"Subscriber added for event type: {event_key}")
@@ -271,8 +341,14 @@ class EventBus:
         try:
             event_key = (
                 event_type.value if isinstance(event_type, EventType) else str(event_type)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             if event_key in self.subscribers:
+    pass
+    pass
                 self.subscribers[event_key] = [
                     sub for sub in self.subscribers[event_key] if sub != callback
                 ]
@@ -290,6 +366,10 @@ class EventBus:
         try:
             event_key = (
                 event_type.value if isinstance(event_type, EventType) else str(event_type)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             )
             event = {
                 "type": event_key,
@@ -302,21 +382,33 @@ class EventBus:
             self.logger.error(error(f"Error publishing event: {e}"))
 
     def get_status(self) -> dict[str, Any]:
+    pass
+    pass
         return self.status.copy()
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         history = self.history.copy()
         if limit:
+    pass
+    pass
             history = history[-limit:]
         return history
 
     def get_event_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    pass
+    pass
         history = self.event_history.copy()
         if limit:
+    pass
+    pass
             history = history[-limit:]
         return history
 
     def get_subscribers(self) -> dict[str, list[Callable]]:
+    pass
+    pass
         return dict(self.subscribers)
 
 
@@ -332,11 +424,19 @@ event_bus: EventBus | None = None
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:
     try:
         global event_bus
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if config is None:
+    pass
+    pass
             config = {"event_bus": {"processing_interval": 10, "max_history": 100}}
         event_bus = EventBus(config)
         success = await event_bus.initialize()
         if success:
+    pass
+    pass
             return event_bus
         return None
     except Exception as e:

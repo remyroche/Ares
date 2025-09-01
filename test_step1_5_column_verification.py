@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
@@ -20,14 +21,19 @@ sys.path.insert(0, str(project_root))
 from src.training.steps.step1_5_data_converter import ColumnVerifier, UnifiedDataConverter
 
 
+import class Step1_5ColumnVerificationTester:
 class Step1_5ColumnVerificationTester:
     """Test class for Step1_5 column verification and calculation functionality."""
 
     def __init__(self):
+    pass
+    pass
         self.logger = None  # Will be set by the converter
         self.test_results = {}
 
     def create_test_data(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with some missing columns to test verification and calculation."""
         print("📊 Creating test data...")
 
@@ -40,6 +46,8 @@ class Step1_5ColumnVerificationTester:
         price_changes = np.random.normal(0, 0.001, len(dates))  # Small random changes
         prices = [base_price]
         for change in price_changes[1:]:
+    pass
+    pass
             prices.append(prices[-1] * (1 + change))
 
         # Create OHLCV data
@@ -64,6 +72,8 @@ class Step1_5ColumnVerificationTester:
         return df
 
     def create_data_with_missing_columns(self) -> pd.DataFrame:
+    pass
+    pass
         """Create test data with intentionally missing columns to test calculation."""
         print("📊 Creating test data with missing columns...")
 
@@ -76,6 +86,8 @@ class Step1_5ColumnVerificationTester:
         price_changes = np.random.normal(0, 0.001, len(dates))
         prices = [base_price]
         for change in price_changes[1:]:
+    pass
+    pass
             prices.append(prices[-1] * (1 + change))
 
         # Create OHLCV data (missing calculated columns)
@@ -97,11 +109,17 @@ class Step1_5ColumnVerificationTester:
         return df
 
     def test_column_verifier(self) -> bool:
+    pass
+    pass
         """Test the ColumnVerifier class functionality."""
-        print("\n🧪 Testing ColumnVerifier...")
+        print("\\\n🧪 Testing ColumnVerifier...")
 
         try:
             # Create test data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             test_data = self.create_data_with_missing_columns()
 
             # Initialize column verifier
@@ -132,24 +150,32 @@ class Step1_5ColumnVerificationTester:
             # Verify specific calculations
             success = True
             if 'close_return' in new_columns:
+    pass
+    pass
                 print("   ✅ close_return calculated successfully")
             else:
                 print("   ❌ close_return not calculated")
                 success = False
 
             if 'vwap' in new_columns:
+    pass
+    pass
                 print("   ✅ vwap calculated successfully")
             else:
                 print("   ❌ vwap not calculated")
                 success = False
 
             if 'vwap_return' in new_columns:
+    pass
+    pass
                 print("   ✅ vwap_return calculated successfully")
             else:
                 print("   ❌ vwap_return not calculated")
                 success = False
 
             if 'price_vwap_ratio' in new_columns:
+    pass
+    pass
                 print("   ✅ price_vwap_ratio calculated successfully")
             else:
                 print("   ❌ price_vwap_ratio not calculated")
@@ -158,6 +184,8 @@ class Step1_5ColumnVerificationTester:
             # Test data quality
             print("🔍 Testing calculated data quality...")
             if 'close_return' in enhanced_data.columns:
+    pass
+    pass
                 # Check for reasonable values
                 close_return = enhanced_data['close_return']
                 if close_return.isna().sum() > len(close_return) * 0.1:  # More than 10% NaN
@@ -167,6 +195,8 @@ class Step1_5ColumnVerificationTester:
                     print("   ✅ close_return data quality looks good")
 
             if 'vwap' in enhanced_data.columns:
+    pass
+    pass
                 # Check for reasonable values
                 vwap = enhanced_data['vwap']
                 if vwap.isna().sum() > len(vwap) * 0.2:  # More than 20% NaN (rolling window effect)
@@ -185,10 +215,14 @@ class Step1_5ColumnVerificationTester:
 
     async def test_unified_data_converter_integration(self) -> bool:
         """Test the integration of column verification in UnifiedDataConverter."""
-        print("\n🧪 Testing UnifiedDataConverter integration...")
+        print("\\\n🧪 Testing UnifiedDataConverter integration...")
 
         try:
             # Create test data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             test_data = self.create_data_with_missing_columns()
 
             # Initialize converter
@@ -212,6 +246,8 @@ class Step1_5ColumnVerificationTester:
             # Verify integration worked
             success = len(new_columns) > 0
             if success:
+    pass
+    pass
                 print("   ✅ Integration test passed - columns were calculated")
             else:
                 print("   ❌ Integration test failed - no columns were calculated")
@@ -225,12 +261,18 @@ class Step1_5ColumnVerificationTester:
             return False
 
     def test_edge_cases(self) -> bool:
+    pass
+    pass
         """Test edge cases and error handling."""
-        print("\n🧪 Testing edge cases...")
+        print("\\\n🧪 Testing edge cases...")
 
         try:
             column_verifier = ColumnVerifier()
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Test with empty DataFrame
             print("🔍 Testing with empty DataFrame...")
             empty_df = pd.DataFrame()
@@ -255,6 +297,8 @@ class Step1_5ColumnVerificationTester:
 
             # Check if VWAP was calculated (should be possible with close and volume)
             if 'vwap' in enhanced_partial.columns:
+    pass
+    pass
                 print("   ✅ VWAP calculation with partial data works")
             else:
                 print("   ❌ VWAP calculation with partial data failed")
@@ -269,6 +313,8 @@ class Step1_5ColumnVerificationTester:
             return False
 
     def run_all_tests(self) -> dict:
+    pass
+    pass
         """Run all tests and return results."""
         print("🚀 Starting Step1_5 Column Verification Tests")
         print("=" * 60)
@@ -279,7 +325,7 @@ class Step1_5ColumnVerificationTester:
         self.test_edge_cases()
 
         # Print summary
-        print("\n" + "=" * 60)
+        print("\\\n" + "=" * 60)
         print("📊 TEST RESULTS SUMMARY")
         print("=" * 60)
 
@@ -287,12 +333,16 @@ class Step1_5ColumnVerificationTester:
         passed_tests = sum(self.test_results.values())
 
         for test_name, result in self.test_results.items():
+    pass
+    pass
             status = "✅ PASSED" if result else "❌ FAILED"
             print(f"   {test_name}: {status}")
 
-        print(f"\nOverall: {passed_tests}/{total_tests} tests passed")
+        print(f"\\\nOverall: {passed_tests}/{total_tests} tests passed")
 
         if passed_tests == total_tests:
+    pass
+    pass
             print("🎉 All tests passed! Step1_5 column verification enhancement is working correctly.")
         else:
             print("⚠️ Some tests failed. Please review the implementation.")
@@ -307,20 +357,28 @@ async def main():
 
     # Return exit code based on test results
     if all(results.values()):
-        print("\n✅ All tests passed - exiting with success")
+    pass
+    pass
+        print("\\\n✅ All tests passed - exiting with success")
         return 0
     else:
-        print("\n❌ Some tests failed - exiting with error")
+        print("\\\n❌ Some tests failed - exiting with error")
         return 1
 
 
 if __name__ == "__main__":
+    pass
+    pass
     try:
         exit_code = asyncio.run(main())
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sys.exit(exit_code)
     except KeyboardInterrupt:
-        print("\n⚠️ Tests interrupted by user")
+        print("\\\n⚠️ Tests interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\\\n❌ Unexpected error: {e}")
         sys.exit(1)

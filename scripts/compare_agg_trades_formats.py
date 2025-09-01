@@ -15,6 +15,7 @@ from exchange.factory import ExchangeFactory
 from src.utils.error_handler import handle_errors
 
 # Add the project root to the Python path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -56,11 +57,15 @@ async def compare_agg_trades_formats(symbol: str = "BTCUSDT", lookback_hours: in
     results = {}
 
     for exchange_name, exchange in exchanges.items():
+    pass
+    pass
         logger.info(f"📥 Downloading from {exchange_name.upper()}...")
         trades = await exchange.get_historical_agg_trades(
             symbol, start_time_ms=start_time_ms, end_time_ms=end_time_ms, limit=100
         )
         if trades:
+    pass
+    pass
             df = pd.DataFrame(trades)
             results[exchange_name] = df
             logger.info(
@@ -72,17 +77,25 @@ async def compare_agg_trades_formats(symbol: str = "BTCUSDT", lookback_hours: in
 
     # Compare formats (columns) between the two exchanges
     if "binance" in results and "mexc" in results:
+    pass
+    pass
         binance_cols = set(results["binance"].columns)
         mexc_cols = set(results["mexc"].columns)
         if binance_cols == mexc_cols:
+    pass
+    pass
             logger.info("✅ Column formats match between MEXC and Binance")
             return True
         else:
             missing_in_mexc = binance_cols - mexc_cols
             missing_in_binance = mexc_cols - binance_cols
             if missing_in_mexc:
+    pass
+    pass
                 print(missing(f"❌ Columns missing in MEXC: {sorted(missing_in_mexc)}"))
             if missing_in_binance:
+    pass
+    pass
                 print(missing(f"❌ Columns missing in Binance: {sorted(missing_in_binance)}"))
             return False
 
@@ -91,6 +104,8 @@ async def compare_agg_trades_formats(symbol: str = "BTCUSDT", lookback_hours: in
 
 
 def main():
+    pass
+    pass
     parser = argparse.ArgumentParser(description="Compare aggregated trades formats")
     parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol")
     parser.add_argument("--hours", type=int, default=24, help="Lookback hours")
@@ -100,4 +115,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

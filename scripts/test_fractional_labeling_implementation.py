@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -16,6 +17,8 @@ class FractionalLabelingTester:
     """Test fractional labeling implementation."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the tester."""
         self.output_dir = Path("data/fractional_performance/fractional_labeling_test")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -40,6 +43,8 @@ class FractionalLabelingTester:
         }
 
     def generate_test_data(self, n_samples: int = 1000) -> Dict[str, Any]:
+    pass
+    pass
         """Generate synthetic test data.
 
         Args:
@@ -58,6 +63,8 @@ class FractionalLabelingTester:
         prices = [base_price]
 
         for i in range(n_samples - 1):
+    pass
+    pass
             # Add trend and noise
             trend = 0.0001  # Small positive trend
             noise = random.gauss(0, 0.02)  # 2% volatility
@@ -75,12 +82,16 @@ class FractionalLabelingTester:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             data['high'][i] = max(data['high'][i], data['close'][i])
             data['low'][i] = min(data['low'][i], data['close'][i])
 
         return data
 
     def test_baseline_labeling(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Test baseline binary labeling.
 
         Args:
@@ -97,8 +108,12 @@ class FractionalLabelingTester:
         # Generate binary labels (-1, 1)
         labels = []
         for i in range(n_samples):
+    pass
+    pass
             # Simulate barrier hits
             if i < n_samples - 1:
+    pass
+    pass
                 price_change = (data['close'][i+1] - data['close'][i]) / data['close'][i]
                 if price_change > 0.002:  # Profit target
                     labels.append(1)
@@ -134,6 +149,8 @@ class FractionalLabelingTester:
         return baseline_results
 
     def test_fractional_labeling(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Test fractional labeling.
 
         Args:
@@ -155,7 +172,11 @@ class FractionalLabelingTester:
         volatility_scores = []
 
         for i in range(n_samples):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 price_change = (data['close'][i+1] - data['close'][i]) / data['close'][i]
 
                 # Calculate distance score (how close to barriers)
@@ -178,6 +199,8 @@ class FractionalLabelingTester:
 
                 # Apply sign based on direction
                 if price_change > 0:
+    pass
+    pass
                     fractional_label = abs(fractional_label)
                 else:
                     fractional_label = -abs(fractional_label)
@@ -242,6 +265,8 @@ class FractionalLabelingTester:
         return fractional_results
 
     def compare_results(self, baseline_results: Dict[str, Any], fractional_results: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Compare baseline and fractional labeling results.
 
         Args:
@@ -381,6 +406,8 @@ class FractionalLabelingTester:
         print(f"   ✅ Results exported to: {self.output_dir}")
 
     def run_complete_test(self, n_samples: int = 1000):
+    pass
+    pass
         """Run complete fractional labeling test.
 
         Args:
@@ -404,7 +431,7 @@ class FractionalLabelingTester:
         # Export results
         self.export_results(test_data, baseline_results, fractional_results, comparison)
 
-        print("\n✅ Fractional labeling test complete!")
+        print("\\\n✅ Fractional labeling test complete!")
         print(f"📁 Results saved to: {self.output_dir}")
 
         return {
@@ -416,11 +443,13 @@ class FractionalLabelingTester:
 
 
 def main():
+    pass
+    pass
     """Main function to run fractional labeling test."""
     tester = FractionalLabelingTester()
     results = tester.run_complete_test(n_samples=1000)
 
-    print("\n🎯 Key Findings:")
+    print("\\\n🎯 Key Findings:")
     print("   • Fractional labeling provides continuous labels instead of binary")
     print("   • Confidence scoring enables better filtering")
     print("   • Component-based approach allows fine-tuning")
@@ -428,4 +457,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

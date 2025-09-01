@@ -27,6 +27,7 @@ from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.warning_symbols import failed
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -53,12 +54,16 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
     )
 
     if session_id:
+    pass
+    pass
         logger.info(f"✅ Training completed successfully! Session ID: {session_id}")
 
         # Display efficiency stats
         stats = training_manager.get_efficiency_stats()
         logger.info("📊 Final Efficiency Statistics:")
         for key , value in stats.items():
+    pass
+    pass
             logger.info(f"  {key}: {value}")
 
         return True
@@ -83,6 +88,8 @@ async def run_efficiency_demo():
     await training_manager.initialize_efficiency_optimizer(symbol, timeframe)
 
     if training_manager.efficiency_optimizer:
+    pass
+    pass
         # Demonstrate memory optimization
         logger.info("📊 Memory optimization demo:")
 
@@ -118,6 +125,8 @@ async def run_efficiency_demo():
         logger.info(f"  Created {len(segments)} segments")
 
         for i, (start_date, end_date, segment_data) in enumerate(segments[:3]):
+    pass
+    pass
             logger.info(
                 f"  Segment {i+1}: {start_date} to {end_date}, {len(segment_data)} rows",
             )
@@ -126,6 +135,8 @@ async def run_efficiency_demo():
         logger.info("📊 Database statistics:")
         stats = training_manager.efficiency_optimizer.get_database_stats()
         for key , value in stats.items():
+    pass
+    pass
             logger.info(f"  {key}: {value}")
 
     logger.info("✅ Efficiency features demonstration completed")
@@ -148,6 +159,8 @@ async def run_checkpoint_demo():
     await training_manager.initialize_efficiency_optimizer(symbol, timeframe)
 
     if training_manager.efficiency_optimizer:
+    pass
+    pass
         # Create a test checkpoint
         logger.info("📝 Creating test checkpoint...")
         test_metadata = {
@@ -168,6 +181,8 @@ async def run_checkpoint_demo():
         )
 
         if checkpoint:
+    pass
+    pass
             logger.info(f"  Checkpoint timestamp: {checkpoint['timestamp']}")
             logger.info(f"  Checkpoint metadata: {checkpoint['metadata']}")
 
@@ -179,6 +194,8 @@ async def run_checkpoint_demo():
     logger.info("✅ Checkpoint and resume demonstration completed")
 
 def main():
+    pass
+    pass
     """Main function with command line interface."""
     parser, argparse.ArgumentParser(
         description="Enhanced Training Runner for Large Datasets",
@@ -230,6 +247,8 @@ Examples:
 
     # Handle blank mode - use limited data and parameters
     if args.blank_mode:
+    pass
+    pass
         CONFIG["MODEL_TRAINING"]["data_retention_days"] = (
             args.lookback
         )  # Use command line lookback
@@ -246,6 +265,8 @@ Examples:
 
     # Run appropriate function
     if args.demo:
+    pass
+    pass
         asyncio.run(run_efficiency_demo())
     elif args.checkpoint:
         asyncio.run(run_checkpoint_demo())
@@ -258,4 +279,6 @@ Examples:
         sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

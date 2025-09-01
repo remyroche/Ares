@@ -12,17 +12,25 @@ import pandas as pd
 from datetime import datetime
 
 # Add the src directory to the path
+import sys.path.insert
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_multi_output_probability_trainer_complete():
+    pass
+    pass
     """Test the complete MultiOutputProbabilityTrainer functionality."""
     print("🧪 Testing MultiOutputProbabilityTrainer complete functionality...")
 
     try:
         # Test if we can import the trainer
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create test data
+import n_samples = 200
         n_samples = 200
         n_features = 10
 
@@ -56,6 +64,8 @@ def test_multi_output_probability_trainer_complete():
         # Verify targets
         expected_targets = ["triple_barrier", "direction", "magnitude", "barrier_avoidance"]
         for target_name in expected_targets:
+    pass
+    pass
             assert target_name in y_multi, f"Missing target: {target_name}"
             assert len(y_multi[target_name]) == len(X), f"Target length mismatch for {target_name}"
             assert np.all((y_multi[target_name] >= 0) & (y_multi[target_name] <= 1)), f"Invalid target values for {target_name}"
@@ -91,6 +101,8 @@ def test_multi_output_probability_trainer_complete():
         ]
 
         for prob_name in expected_probabilities:
+    pass
+    pass
             assert prob_name in price_action_probabilities, f"Missing probability: {prob_name}"
             prob_value = price_action_probabilities[prob_name]
             assert 0.0 <= prob_value <= 1.0, f"Invalid probability value for {prob_name}: {prob_value}"
@@ -119,14 +131,22 @@ def test_multi_output_probability_trainer_complete():
         return False
 
 def test_model_saving_utils_complete():
+    pass
+    pass
     """Test model saving utilities with multi-output models."""
     print("🧪 Testing model saving utilities complete functionality...")
 
     try:
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
         from training.model_saving_utils import save_multi_output_model_with_probabilities, load_model_with_probabilities
 
         # Create test trainer
+import config = {
         config = {
             "use_lightgbm": True,
             "n_estimators": 50,
@@ -184,6 +204,8 @@ def test_model_saving_utils_complete():
         # Clean up
         import os
         if os.path.exists(model_path):
+    pass
+    pass
             os.remove(model_path)
 
         print("✅ Model saving utilities complete test passed!")
@@ -196,11 +218,17 @@ def test_model_saving_utils_complete():
         return False
 
 def test_step6_integration_direct():
+    pass
+    pass
     """Test Step 6 integration by directly testing the updated function."""
     print("🧪 Testing Step 6 integration directly...")
 
     try:
         # Import the specific function without importing the entire step
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -208,6 +236,7 @@ def test_step6_integration_direct():
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create test data similar to what Step 6 would use
+import n_samples = 300
         n_samples = 300
         n_features = 15
 
@@ -219,6 +248,8 @@ def test_step6_integration_direct():
 
         # Add features
         for i in range(n_features):
+    pass
+    pass
             data[f'feature_{i}'] = np.random.randn(n_samples)
 
         data = pd.DataFrame(data)
@@ -274,6 +305,8 @@ def test_step6_integration_direct():
         ]
 
         for prob_name in expected_probabilities:
+    pass
+    pass
             assert prob_name in price_action_probabilities, f"Missing probability in Step 6 simulation: {prob_name}"
 
         print("✅ Step 6 integration simulation test passed!")
@@ -286,14 +319,21 @@ def test_step6_integration_direct():
         return False
 
 def test_step9_integration_direct():
+    pass
+    pass
     """Test Step 9 integration by directly testing the updated function."""
     print("🧪 Testing Step 9 integration directly...")
 
     try:
         # Test the multi-output training logic directly
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Create test data similar to what Step 9 would use
+import n_samples = 400
         n_samples = 400
         n_features = 12
 
@@ -353,6 +393,8 @@ def test_step9_integration_direct():
         ]
 
         for prob_name in expected_probabilities:
+    pass
+    pass
             assert prob_name in price_action_probabilities, f"Missing probability in Step 9 simulation: {prob_name}"
 
         print("✅ Step 9 integration simulation test passed!")
@@ -365,6 +407,8 @@ def test_step9_integration_direct():
         return False
 
 def run_core_tests():
+    pass
+    pass
     """Run all core integration tests."""
     print("🚀 Starting Core Multi-Output Training Integration Tests")
     print("=" * 60)
@@ -379,14 +423,22 @@ def run_core_tests():
     results = {}
 
     for test_name, test_func in tests:
-        print(f"\n{'='*60}")
+    pass
+    pass
+        print(f"\\\n{'='*60}")
         print(f"Running {test_name} test...")
 
         try:
             result = test_func()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             results[test_name] = result
 
             if result:
+    pass
+    pass
                 print(f"✅ {test_name} PASSED")
             else:
                 print(f"❌ {test_name} FAILED")
@@ -396,7 +448,7 @@ def run_core_tests():
             results[test_name] = False
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\\\n{'='*60}")
     print("CORE INTEGRATION TEST SUMMARY")
     print(f"{'='*60}")
 
@@ -404,14 +456,18 @@ def run_core_tests():
     total = len(results)
 
     for test_name, result in results.items():
+    pass
+    pass
         status = "✅ PASSED" if result else "❌ FAILED"
         print(f"{test_name}: {status}")
 
-    print(f"\nOverall: {passed}/{total} tests passed")
+    print(f"\\\nOverall: {passed}/{total} tests passed")
 
     if passed == total:
+    pass
+    pass
         print("🎉 ALL CORE TESTS PASSED! Multi-output training integration is working correctly.")
-        print("\n📋 IMPLEMENTATION STATUS:")
+        print("\\\n📋 IMPLEMENTATION STATUS:")
         print("✅ MultiOutputProbabilityTrainer is fully implemented and functional")
         print("✅ Step 6 (HMM-based training) has been updated with multi-output training")
         print("✅ Step 9 (Tactician specialist training) has been updated with multi-output training")
@@ -421,8 +477,8 @@ def run_core_tests():
         print("   - direction_probability")
         print("   - magnitude_probability")
         print("   - barrier_avoidance_probability")
-        print("\n🎯 The multi-output training plan has been successfully implemented!")
-        print("\n📝 NEXT STEPS:")
+        print("\\\n🎯 The multi-output training plan has been successfully implemented!")
+        print("\\\n📝 NEXT STEPS:")
         print("1. The decorator issues in other training steps need to be fixed")
         print("2. Full integration testing can be done once dependencies are resolved")
         print("3. The multi-output training is ready for production use")
@@ -432,5 +488,7 @@ def run_core_tests():
     return passed == total
 
 if __name__ == "__main__":
+    pass
+    pass
     success = run_core_tests()
     sys.exit(0 if success else 1)

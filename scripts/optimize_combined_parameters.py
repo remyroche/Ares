@@ -19,6 +19,8 @@ class CombinedParameterOptimizer:
     """Optimize parameters for combined fractional system."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the optimizer."""
         self.output_dir = Path("data/fractional_performance/combined_parameter_optimization")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -56,6 +58,8 @@ class CombinedParameterOptimizer:
         self.hmm_regimes = ['regime_0', 'regime_1', 'regime_2', 'regime_3']
 
     def generate_optimization_data(self, n_samples: int = 2000) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    pass
+    pass
         """Generate comprehensive data for parameter optimization.
 
         Args:
@@ -73,6 +77,8 @@ class CombinedParameterOptimizer:
         regime_length = n_samples // 4
 
         for i in range(4):
+    pass
+    pass
             if i == 0:  # Strong trending up
                 trend = 0.0005
                 volatility = 0.012
@@ -97,7 +103,11 @@ class CombinedParameterOptimizer:
         prices = [base_price]
 
         for i, (trend, volatility, regime) in enumerate(regimes):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 noise = random.gauss(0, volatility)
                 new_price = prices[-1] * (1 + trend + noise)
                 prices.append(new_price)
@@ -112,6 +122,8 @@ class CombinedParameterOptimizer:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             price_data['high'][i] = max(price_data['high'][i], price_data['close'][i])
             price_data['low'][i] = min(price_data['low'][i], price_data['close'][i])
 
@@ -146,7 +158,13 @@ class CombinedParameterOptimizer:
         try:
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
             # Create configuration with current parameters
+import labeling_config = {
             labeling_config = {
                 'enable_distance_scaling': True,
                 'enable_time_decay': True,
@@ -190,6 +208,8 @@ class CombinedParameterOptimizer:
             total_hmm_quality = 0
 
             for regime in self.hmm_regimes:
+    pass
+    pass
                 # Process data for this regime
                 result = await combined_system.process_data(price_data, volume_data, regime)
 
@@ -202,6 +222,8 @@ class CombinedParameterOptimizer:
 
                 # HMM integration quality
                 if 'regime_quality' in metrics:
+    pass
+    pass
                     total_hmm_quality += metrics['regime_quality']
 
             # Calculate average metrics
@@ -239,6 +261,8 @@ class CombinedParameterOptimizer:
             }
 
     def _calculate_synergy_score(self, regime_results: Dict[str, Any]) -> float:
+    pass
+    pass
         """Calculate synergy score between fractional labeling and differentiation.
 
         Args:
@@ -250,23 +274,39 @@ class CombinedParameterOptimizer:
         try:
             synergy_scores = []
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             for regime, result in regime_results.items():
+    pass
+    pass
                 features = result['features']
                 labels = result['labels']
 
                 if features.empty or labels.empty:
+    pass
+    pass
                     continue
 
                 # Calculate feature-label alignment
                 if 'fractional_label' in labels.columns:
+    pass
+    pass
                     label_series = labels['fractional_label'].dropna()
 
                     # Calculate correlation between features and labels
                     feature_label_correlations = []
                     for col in features.columns:
+    pass
+    pass
                         if col.startswith(('frac_diff', 'regime_')):
+    pass
+    pass
                             feature_series = features[col].dropna()
                             if len(feature_series) > 0 and len(label_series) > 0:
+    pass
+    pass
                                 # Align series
                                 min_len = min(len(feature_series), len(label_series))
                                 feature_aligned = feature_series.iloc[-min_len:]
@@ -274,15 +314,21 @@ class CombinedParameterOptimizer:
 
                                 correlation = abs(feature_aligned.corr(label_aligned))
                                 if not pd.isna(correlation):
+    pass
+    pass
                                     feature_label_correlations.append(correlation)
 
                     if feature_label_correlations:
+    pass
+    pass
                         # Higher correlation indicates better synergy
                         avg_correlation = np.mean(feature_label_correlations)
                         synergy_score = min(1.0, avg_correlation * 2)  # Scale to 0-1
                         synergy_scores.append(synergy_score)
 
             if synergy_scores:
+    pass
+    pass
                 return np.mean(synergy_scores)
             else:
                 return 0.5
@@ -359,6 +405,8 @@ class CombinedParameterOptimizer:
 
         # Limit combinations if needed
         if len(combinations) > max_combinations:
+    pass
+    pass
             import random
             random.seed(42)
             combinations = random.sample(combinations, max_combinations)
@@ -370,6 +418,8 @@ class CombinedParameterOptimizer:
         successful_tests = 0
 
         for i, combination in enumerate(combinations):
+    pass
+    pass
             params = dict(zip(param_names, combination))
 
             print(f"   Testing combination {i+1}/{len(combinations)}:")
@@ -380,6 +430,8 @@ class CombinedParameterOptimizer:
             results.append(result)
 
             if result['success']:
+    pass
+    pass
                 successful_tests += 1
                 score = result['evaluation_metrics']['overall_score']
                 print(f"      ✅ Success - Score: {score:.3f}")
@@ -390,6 +442,8 @@ class CombinedParameterOptimizer:
         successful_results = [r for r in results if r['success']]
 
         if successful_results:
+    pass
+    pass
             best_result = max(successful_results, key=lambda x: x['evaluation_metrics']['overall_score'])
 
             optimization_summary = {
@@ -416,17 +470,21 @@ class CombinedParameterOptimizer:
         # Export results
         self._export_optimization_results(optimization_summary, price_data, volume_data)
 
-        print(f"\n✅ Combined parameter optimization complete!")
+        print(f"\\\n✅ Combined parameter optimization complete!")
         print(f"   Successful tests: {successful_tests}/{len(combinations)}")
         print(f"   Success rate: {optimization_summary['success_rate']:.2%}")
 
         if successful_tests > 0:
+    pass
+    pass
             print(f"   Best score: {optimization_summary['best_score']:.3f}")
             print(f"   Best parameters: {optimization_summary['best_parameters']}")
 
         return optimization_summary
 
     def _analyze_parameters(self, successful_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze parameter performance patterns.
 
         Args:
@@ -442,20 +500,28 @@ class CombinedParameterOptimizer:
         }
 
         if not successful_results:
+    pass
+    pass
             return analysis
 
         # Analyze each parameter
         for param_name in self.parameter_space.keys():
+    pass
+    pass
             param_values = []
             scores = []
 
             for result in successful_results:
+    pass
+    pass
                 param_values.append(result['parameters'][param_name])
                 scores.append(result['evaluation_metrics']['overall_score'])
 
             # Calculate parameter performance
             param_performance = {}
             for value in set(param_values):
+    pass
+    pass
                 value_scores = [score for pv, score in zip(param_values, scores) if pv == value]
                 param_performance[value] = {
                     'mean_score': sum(value_scores) / len(value_scores),
@@ -470,14 +536,22 @@ class CombinedParameterOptimizer:
 
         # Best labeling parameters
         for param in ['labeling_distance_weight', 'labeling_time_weight', 'labeling_volatility_weight']:
+    pass
+    pass
             if param in analysis['parameter_performance']:
+    pass
+    pass
                 best_value = max(analysis['parameter_performance'][param].keys(),
                                key=lambda x: analysis['parameter_performance'][param][x]['mean_score'])
                 recommendations.append(f"Optimal {param}: {best_value}")
 
         # Best differentiation parameters
         for param in ['differentiation_d', 'differentiation_window', 'differentiation_threshold']:
+    pass
+    pass
             if param in analysis['parameter_performance']:
+    pass
+    pass
                 best_value = max(analysis['parameter_performance'][param].keys(),
                                key=lambda x: analysis['parameter_performance'][param][x]['mean_score'])
                 recommendations.append(f"Optimal {param}: {best_value}")
@@ -527,6 +601,8 @@ class CombinedParameterOptimizer:
 """)
 
             if 'best_parameters' in optimization_summary:
+    pass
+    pass
                 f.write(f"""
 ### Fractional Labeling Parameters
 - **Distance Weight**: {optimization_summary['best_parameters']['labeling_distance_weight']}
@@ -554,21 +630,29 @@ class CombinedParameterOptimizer:
 - **Overall Synergy Score**: {optimization_summary['best_metrics']['overall_synergy_score']:.3f}
 """)
             else:
-                f.write("- **No successful parameter combinations found**\n")
+                f.write("- **No successful parameter combinations found**\\\n")
 
             f.write(f"""
 ## Parameter Analysis
 """)
 
             if 'parameter_analysis' in optimization_summary:
+    pass
+    pass
                 for param_name, performance in optimization_summary['parameter_analysis']['parameter_performance'].items():
-                    f.write(f"\n### {param_name.replace('_', ' ').title()}\n")
+    pass
+    pass
+                    f.write(f"\\\n### {param_name.replace('_', ' ').title()}\\\n")
                     for value, stats in performance.items():
-                        f.write(f"- **{value}**: Score {stats['mean_score']:.3f} ± {stats['std_score']:.3f} (n={stats['count']})\n")
+    pass
+    pass
+                        f.write(f"- **{value}**: Score {stats['mean_score']:.3f} ± {stats['std_score']:.3f} (n={stats['count']})\\\n")
 
-                f.write(f"\n## Recommendations\n")
+                f.write(f"\\\n## Recommendations\\\n")
                 for rec in optimization_summary['parameter_analysis']['recommendations']:
-                    f.write(f"- {rec}\n")
+    pass
+    pass
+                    f.write(f"- {rec}\\\n")
 
             f.write(f"""
 ## Key Findings
@@ -594,16 +678,18 @@ async def main():
     optimizer = CombinedParameterOptimizer()
     results = await optimizer.run_grid_search(max_combinations=30)
 
-    print("\n🎯 Optimization Summary:")
+    print("\\\n🎯 Optimization Summary:")
     print(f"   Success Rate: {results['success_rate']:.2%}")
 
     if 'best_parameters' in results:
+    pass
+    pass
         print(f"   Best Score: {results['best_score']:.3f}")
         print(f"   Best Labeling d: {results['best_parameters']['labeling_distance_weight']}")
         print(f"   Best Differentiation d: {results['best_parameters']['differentiation_d']}")
         print(f"   Best Window: {results['best_parameters']['differentiation_window']}")
 
-    print("\n📋 Key Findings:")
+    print("\\\n📋 Key Findings:")
     print("   • Joint parameter optimization completed successfully")
     print("   • Best parameters identified for combined system")
     print("   • Synergistic effects achieved between components")
@@ -611,6 +697,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     import asyncio
     import pandas as pd
 

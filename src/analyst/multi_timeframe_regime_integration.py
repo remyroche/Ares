@@ -30,11 +30,13 @@ sys.path.insert(0, str(project_root))
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from src.config import CONFIG
 from src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer import (
+import RegimeSpecificTPSLOptimizer,
     RegimeSpecificTPSLOptimizer,
 )
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import error,
     error,
     failed,
     initialization_error,
@@ -54,6 +56,8 @@ class MultiTimeframeRegimeIntegration:
     """
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         """
         Initialize the multi-timeframe regime integration.
 
@@ -125,13 +129,21 @@ class MultiTimeframeRegimeIntegration:
         try:
             self.logger.info("Initializing Multi-Timeframe Regime Integration...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Initialize HMM classifier
             if not await self._initialize_regime_classifier():
+    pass
+    pass
                 self.print(failed("Failed to initialize HMM classifier"))
                 return False
 
             # Initialize regime-specific TP/SL optimizer
             if not await self.regime_tpsl_optimizer.initialize():
+    pass
+    pass
                 self.logger.error(
                     "Failed to initialize regime-specific TP/SL optimizer",
                 )
@@ -157,6 +169,10 @@ class MultiTimeframeRegimeIntegration:
         """
         try:
             # Try to load existing HMM model
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             model_path = os.path.join(
                 CONFIG["CHECKPOINT_DIR"],
                 "analyst_models",
@@ -164,7 +180,11 @@ class MultiTimeframeRegimeIntegration:
             )
 
             if os.path.exists(model_path):
+    pass
+    pass
                 if self.regime_classifier.load_models():
+    pass
+    pass
                     self.logger.info("✅ Loaded existing HMM regime classifier")
                     return True
                 self.print(failed("Failed to load existing HMM model"))
@@ -198,7 +218,13 @@ class MultiTimeframeRegimeIntegration:
         """
         try:
             # Validate that we have 1h data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self._validate_1h_data(data_1h):
+    pass
+    pass
                 self.logger.warning(
                     "Invalid 1h data provided for regime classification",
                 )
@@ -210,6 +236,8 @@ class MultiTimeframeRegimeIntegration:
 
             # Check if we need to update regime (cache management)
             if self._should_update_regime():
+    pass
+    pass
                 regime, confidence, info = self.regime_classifier.predict_regime(
                     data_1h,
                 )
@@ -235,6 +263,8 @@ class MultiTimeframeRegimeIntegration:
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
     def _validate_1h_data(self, data: pd.DataFrame) -> bool:
+    pass
+    pass
         """
         Validate that the data is from 1h timeframe.
 
@@ -245,12 +275,18 @@ class MultiTimeframeRegimeIntegration:
             bool: True if valid 1h data, False otherwise
         """
         if data.empty:
+    pass
+    pass
             return False
 
         if not isinstance(data.index, pd.DatetimeIndex):
+    pass
+    pass
             return False
 
         if len(data) < 2:
+    pass
+    pass
             return False
 
         # Check timeframe
@@ -261,6 +297,8 @@ class MultiTimeframeRegimeIntegration:
         return 0.8 <= hours_diff <= 1.2
 
     def _should_update_regime(self) -> bool:
+    pass
+    pass
         """
         Check if regime should be updated based on cache duration.
 
@@ -268,6 +306,8 @@ class MultiTimeframeRegimeIntegration:
             bool: True if regime should be updated, False otherwise
         """
         if self.last_regime_update is None:
+    pass
+    pass
             return True
 
         time_since_update = datetime.now() - self.last_regime_update
@@ -300,6 +340,10 @@ class MultiTimeframeRegimeIntegration:
         """
         try:
             # Get regime classification from 1h data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             regime, confidence, regime_info = await self.classify_regime_1h(data_1h)
 
             # Create timeframe-specific regime information
@@ -315,6 +359,8 @@ class MultiTimeframeRegimeIntegration:
 
             # Add timeframe-specific adjustments if needed
             if timeframe != "1h":
+    pass
+    pass
                 timeframe_regime_info.update(
                     {
                         "timeframe_adjustment": self._get_timeframe_adjustment(
@@ -344,6 +390,8 @@ class MultiTimeframeRegimeIntegration:
             }
 
     def _get_timeframe_adjustment(self, timeframe: str, regime: str) -> dict[str, Any]:
+    pass
+    pass
         """
         Get timeframe-specific adjustments for regime information.
 
@@ -437,6 +485,10 @@ class MultiTimeframeRegimeIntegration:
         """
         try:
             # Get regime information
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             regime_info = await self.get_regime_for_timeframe(
                 timeframe,
                 current_data,
@@ -490,7 +542,13 @@ class MultiTimeframeRegimeIntegration:
         try:
             self.logger.info("🎓 Training HMM regime classifier with 1h data...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             if not self._validate_1h_data(historical_data_1h):
+    pass
+    pass
                 self.print(invalid("Invalid 1h data provided for training"))
                 return False
 
@@ -499,6 +557,8 @@ class MultiTimeframeRegimeIntegration:
             )
 
             if success:
+    pass
+    pass
                 self.logger.info("✅ HMM regime classifier trained successfully")
                 # Save the model
                 # Model saving is handled automatically by UnifiedRegimeClassifier
@@ -511,6 +571,8 @@ class MultiTimeframeRegimeIntegration:
             return False
 
     def get_integration_statistics(self) -> dict[str, Any]:
+    pass
+    pass
         """
         Get statistics about the multi-timeframe regime integration.
 

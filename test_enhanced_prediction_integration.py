@@ -21,7 +21,10 @@ from src.analyst.analyst import setup_analyst
 from src.tactician.tactician import setup_tactician
 
 
+import def create_sample_market_data
 def create_sample_market_data() -> pd.DataFrame:
+    pass
+    pass
     """Create sample market data for testing."""
     import numpy as np
 
@@ -35,11 +38,15 @@ def create_sample_market_data() -> pd.DataFrame:
 
     prices = [base_price]
     for ret in returns[1:]:
+    pass
+    pass
         prices.append(prices[-1] * (1 + ret))
 
     # Create OHLCV data
     data = []
     for i, (date, price) in enumerate(zip(dates, prices)):
+    pass
+    pass
         # Add some intraday volatility
         volatility = 0.002  # 0.2% intraday volatility
         high = price * (1 + abs(np.random.normal(0, volatility)))
@@ -63,6 +70,8 @@ def create_sample_market_data() -> pd.DataFrame:
 
 
 def create_sample_regime_info() -> Dict[str, Any]:
+    pass
+    pass
     """Create sample regime information."""
     return {
         "regime": "trending_bullish",
@@ -74,6 +83,8 @@ def create_sample_regime_info() -> Dict[str, Any]:
 
 
 def create_sample_analyst_signals() -> Dict[str, Any]:
+    pass
+    pass
     """Create sample analyst signals."""
     return {
         "signal": 1,  # Buy signal
@@ -91,8 +102,14 @@ async def test_analyst_enhanced_predictions():
 
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config_path = Path("src/config/enhanced_prediction_integration.yaml")
         if config_path.exists():
+    pass
+    pass
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
         else:
@@ -111,6 +128,8 @@ async def test_analyst_enhanced_predictions():
         # Setup analyst
         analyst = await setup_analyst(config)
         if not analyst:
+    pass
+    pass
             print("❌ Failed to setup Analyst")
             return False
 
@@ -135,6 +154,8 @@ async def test_analyst_enhanced_predictions():
         success = await analyst.execute_analysis(analysis_input)
 
         if success:
+    pass
+    pass
             # Get analysis results
             results = analyst.get_analysis_results()
 
@@ -145,6 +166,8 @@ async def test_analyst_enhanced_predictions():
             # Check for enhanced predictions
             enhanced_predictions = results.get("enhanced_predictions", {})
             if enhanced_predictions:
+    pass
+    pass
                 print("🎯 Enhanced predictions found:")
                 print(f"   - Price predictions: {len(enhanced_predictions.get('price_predictions', {}))}")
                 print(f"   - Confidence scores: {len(enhanced_predictions.get('confidence_scores', {}))}")
@@ -153,8 +176,12 @@ async def test_analyst_enhanced_predictions():
                 # Show some sample predictions
                 price_predictions = enhanced_predictions.get("price_predictions", {})
                 if price_predictions:
+    pass
+    pass
                     print("   📈 Sample price predictions:")
                     for name, pred in list(price_predictions.items())[:3]:
+    pass
+    pass
                         print(f"      {name}: {pred.get('prediction', 'N/A')} (confidence: {pred.get('confidence', 'N/A')})")
             else:
                 print("⚠️ No enhanced predictions found (models may not be available)")
@@ -171,12 +198,18 @@ async def test_analyst_enhanced_predictions():
 
 async def test_tactician_enhanced_predictions():
     """Test the Tactician enhanced prediction integration."""
-    print("\n🧪 Testing Tactician Enhanced Prediction Integration...")
+    print("\\\n🧪 Testing Tactician Enhanced Prediction Integration...")
 
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config_path = Path("src/config/enhanced_prediction_integration.yaml")
         if config_path.exists():
+    pass
+    pass
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
         else:
@@ -197,6 +230,8 @@ async def test_tactician_enhanced_predictions():
         # Setup tactician
         tactician = await setup_tactician(config)
         if not tactician:
+    pass
+    pass
             print("❌ Failed to setup Tactician")
             return False
 
@@ -209,6 +244,8 @@ async def test_tactician_enhanced_predictions():
 
         # Test enhanced predictions directly
         if tactician.enhanced_prediction_integrator:
+    pass
+    pass
             print("🔄 Generating enhanced tactician predictions...")
 
             predictions = await tactician._get_enhanced_predictions(
@@ -221,6 +258,8 @@ async def test_tactician_enhanced_predictions():
             )
 
             if predictions:
+    pass
+    pass
                 print("✅ Enhanced tactician predictions generated successfully")
                 print(f"📊 Prediction timestamp: {predictions.get('timestamp')}")
 
@@ -234,6 +273,8 @@ async def test_tactician_enhanced_predictions():
                 # Show ML confidence predictions
                 ml_confidence = predictions.get("ml_confidence_predictions", {})
                 if ml_confidence:
+    pass
+    pass
                     aggregate_ml = ml_confidence.get("aggregate_ml_confidence", {})
                     print(f"   📈 ML Confidence:")
                     print(f"      - Weighted ML confidence: {aggregate_ml.get('weighted_ml_confidence', 'N/A')}")
@@ -273,12 +314,18 @@ async def test_tactician_enhanced_predictions():
 
 async def test_integration_workflow():
     """Test the complete integration workflow."""
-    print("\n🧪 Testing Complete Integration Workflow...")
+    print("\\\n🧪 Testing Complete Integration Workflow...")
 
     try:
         # Load configuration
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         config_path = Path("src/config/enhanced_prediction_integration.yaml")
         if config_path.exists():
+    pass
+    pass
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
         else:
@@ -292,6 +339,8 @@ async def test_integration_workflow():
         tactician = await setup_tactician(config)
 
         if not analyst or not tactician:
+    pass
+    pass
             print("❌ Failed to setup components")
             return False
 
@@ -314,6 +363,8 @@ async def test_integration_workflow():
 
         analysis_success = await analyst.execute_analysis(analysis_input)
         if not analysis_success:
+    pass
+    pass
             print("❌ Analyst analysis failed")
             return False
 
@@ -345,17 +396,21 @@ async def test_integration_workflow():
         )
 
         if tactician_predictions:
+    pass
+    pass
             print("✅ Tactician predictions completed")
             print(f"   - ML confidence predictions: {len(tactician_predictions.get('ml_confidence_predictions', {}))}")
             print(f"   - Calibrated confidence scores: {len(tactician_predictions.get('calibrated_confidence_scores', {}))}")
             print(f"   - HMM predictions: {len(tactician_predictions.get('hmm_predictions', {}))}")
 
             # Show integration results
-            print("\n🎯 Integration Results:")
+            print("\\\n🎯 Integration Results:")
 
             # ML confidence
             ml_confidence = tactician_predictions.get("ml_confidence_predictions", {})
             if ml_confidence:
+    pass
+    pass
                 aggregate_ml = ml_confidence.get("aggregate_ml_confidence", {})
                 print(f"   📈 ML Confidence: {aggregate_ml.get('weighted_ml_confidence', 'N/A')}")
 
@@ -398,22 +453,26 @@ async def main():
     workflow_success = await test_integration_workflow()
 
     # Summary
-    print("\n" + "=" * 50)
+    print("\\\n" + "=" * 50)
     print("📋 Test Summary:")
     print(f"   Analyst Enhanced Predictions: {'✅ PASS' if analyst_success else '❌ FAIL'}")
     print(f"   Tactician Enhanced Predictions: {'✅ PASS' if tactician_success else '❌ FAIL'}")
     print(f"   Complete Integration Workflow: {'✅ PASS' if workflow_success else '❌ FAIL'}")
 
     if analyst_success and tactician_success and workflow_success:
-        print("\n🎉 All tests passed! Enhanced prediction integration is working correctly.")
+    pass
+    pass
+        print("\\\n🎉 All tests passed! Enhanced prediction integration is working correctly.")
     else:
-        print("\n⚠️ Some tests failed. Check the logs for details.")
+        print("\\\n⚠️ Some tests failed. Check the logs for details.")
 
-    print("\n📝 Notes:")
+    print("\\\n📝 Notes:")
     print("   - If models are not available, predictions will be empty but components will still initialize")
     print("   - This is expected behavior when running without trained models from steps 6-14")
     print("   - To see full functionality, run the enhanced training manager first")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

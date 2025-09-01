@@ -49,6 +49,8 @@ sys.path.insert(0, str(project_root))
 logger = logging.getLogger("OptimizedDataDownloader")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
+    pass
+    pass
     handler = logging.StreamHandler()
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -58,10 +60,15 @@ if not logger.handlers:
 
 try:
     # Try importing with relative path first
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
     # Import required modules
     from src.utils.error_handler import (
+import critical,
         critical,
         failed
     )
@@ -81,6 +88,8 @@ except ImportError as e:
     class ExchangeFactory:
         @staticmethod
         def get_exchange(exchange_name: str):
+    pass
+    pass
             msg = f"Exchange {exchange_name} not available in fallback mode"
             raise NotImplementedError(msg)
 
@@ -108,12 +117,16 @@ class OptimizedDataDownloader:
     """Optimized data downloader with parallel processing and concurrent requests."""
 
     def __init__(self, config: DownloadConfig):
+    pass
+    pass
         self.config = config
         self.session = None
         self.semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         self.download_semaphore = asyncio.Semaphore(config.max_concurrent_downloads)
         # Create structured cache directory: data_cache/exchange/asset/
         if config.data_dir is None:
+    pass
+    pass
             self.cache_dir = os.path.join("data_cache", config.exchange.lower(), config.symbol.lower())
         else:
             self.cache_dir = config.data_dir
@@ -131,6 +144,8 @@ class OptimizedDataDownloader:
 
     @staticmethod
     def _to_utc_ms(dt: datetime) -> int:
+    pass
+    pass
         """Convert naive-UTC datetime to milliseconds since epoch = preserving sub-second precision."""
 
         return int(calendar.timegm(dt.timetuple()) * 1000 + (dt.microsecond // 1000))
@@ -147,9 +162,13 @@ class OptimizedDataDownloader:
         """
 
         def find_last_timestamp(csv_path: Path) -> int | None:
+    pass
+    pass
             try:
 
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
+    pass
+    pass
                     return None
                 # Read timestamp column and compute max to be robust to unsorted files
                 df = pd.read_csv(
@@ -158,21 +177,33 @@ class OptimizedDataDownloader:
                     low_memory=False
                 )
                 if df.empty or "timestamp" not in df.columns:
+    pass
+    pass
                     return None
                 return int(df["timestamp"].max().value // 1_000_000)
             except Exception:
                 return None
 
         def find_first_timestamp(csv_path: Path) -> int | None:
+    pass
+    pass
             try:
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
+    pass
+    except Exception as e:
+        pass
+    pass
                     return None
+    except Exception as e:
+        pass
                 df = pd.read_csv(
                     csv_path, usecols=["timestamp"],
                     parse_dates=["timestamp"],
                     low_memory=False
                 )
                 if df.empty or "timestamp" not in df.columns:
+    pass
+    pass
                     return None
                 return int(df["timestamp"].min().value // 1_000_000)
             except Exception:
@@ -194,10 +225,14 @@ class OptimizedDataDownloader:
 
         prev_last = find_last_timestamp(prev_csv)
         if prev_last is not None:
+    pass
+    pass
             effective_start_ms = max(effective_start_ms, prev_last + 1)
 
         next_first = find_first_timestamp(next_csv)
         if next_first is not None:
+    pass
+    pass
             effective_end_ms = min(effective_end_ms, next_first)
 
         return effective_start_ms, effective_end_ms
@@ -234,6 +269,8 @@ class OptimizedDataDownloader:
 
             async with self.session.get(url, ssl=ssl_context) as resp:
                 if resp.status != 200:
+    pass
+    pass
                     logger.info(
                         f"Binance Vision: no file for {symbol} {date_str} (status {resp.status})",
                     )
@@ -244,6 +281,8 @@ class OptimizedDataDownloader:
                 # Pick first CSV entry
                 csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
+    pass
+    pass
                     logger.warning(
                         f"Binance Vision: archive for {symbol} {date_str} has no CSV entries",
                     )
@@ -256,12 +295,18 @@ class OptimizedDataDownloader:
                     )
 
             if df.empty:
+    pass
+    pass
                 return []
 
             # Coerce types to expected numeric/bool
             for col in ["a", "f", "l", "T"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             for col in ["p", "q"]:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             # Normalize boolean 'm'
             df["m"] = (
@@ -284,6 +329,8 @@ class OptimizedDataDownloader:
             # Filter to the effective time window
             df = df[(df["T"] >= effective_start_ms) & (df["T"] < effective_end_ms)]
             if df.empty:
+    pass
+    pass
                 return []
 
             # Convert to list of dicts compatible with _process_aggtrades_data
@@ -294,7 +341,7 @@ class OptimizedDataDownloader:
 
             error_details = traceback.format_exc()
             logger.warning(
-                f"Binance Vision fallback failed for {symbol} {date_str}: {e}\n{error_details}",
+                f"Binance Vision fallback failed for {symbol} {date_str}: {e}\\\n{error_details}",
             )
             return []
 
@@ -370,22 +417,38 @@ class OptimizedDataDownloader:
     async def cleanup(self):
         """Clean up resources."""
         if self.session:
+    pass
+    pass
             await self.session.close()
         if self.exchange_client and hasattr(self.exchange_client, "close"):
+    pass
+    pass
             await self.exchange_client.close()
 
     def _find_latest_aggtrades_timestamp(self) -> datetime | None:
+    pass
+    pass
         """Find the latest timestamp using partitioned dataset manifest or dataset scan; fallback to CSV tail."""
         try:
             from src.data.parquet_dataset_manager import ParquetDatasetManager
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import pdm = ParquetDatasetManager
             pdm = ParquetDatasetManager(logger=logger)
             # Prefer partitioned parquet manifest
             base_dir = os.path.join(self.cache_dir, "parquet", "aggtrades")
             if os.path.isdir(base_dir):
+    pass
+    pass
                 latest_ms = pdm.get_latest_timestamp_from_manifest(
                     base_dir) or pdm.get_latest_timestamp(base_dir)
                 if latest_ms is not None:
+    pass
+    pass
                     return datetime.fromtimestamp(int(latest_ms) / 1000)
         except Exception:
             pass
@@ -394,12 +457,20 @@ class OptimizedDataDownloader:
 
         try:
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             files = glob.glob(os.path.join(self.cache_dir, pattern))
             if not files:
+    pass
+    pass
                 print("🔍 DEBUG: No existing aggtrades files found")
                 return None
             latest_timestamp = None
             for file_path in files:
+    pass
+    pass
                 try:
 
                     result = subprocess.run(
@@ -408,14 +479,22 @@ class OptimizedDataDownloader:
                         check=False
                     )
                     if result.returncode != 0:
+    pass
+    pass
                         continue
-                    lines = result.stdout.strip().split("\n")
+                    lines = result.stdout.strip().split("\\\n")
                     if len(lines) < 2:
+    pass
+    pass
                         continue
                     data_lines = lines[1:]
                     timestamps = []
                     for line in data_lines:
+    pass
+    pass
                         if "," in line:
+    pass
+    pass
                             ts = line.split(",")[0]
                             try:
 
@@ -437,18 +516,26 @@ class OptimizedDataDownloader:
                                     except Exception:
                                         continue
                     if timestamps:
+    pass
+    pass
                         file_latest = max(timestamps)
                         if latest_timestamp is None or file_latest > latest_timestamp:
+    pass
+    pass
                             latest_timestamp = file_latest
                 except Exception:
                     continue
             if latest_timestamp:
+    pass
+    pass
                 return latest_timestamp + timedelta(seconds=1)
             return None
         except Exception:
             return None
 
     def get_time_periods(self, data_type: str) -> list[tuple[datetime, datetime]]:
+    pass
+    pass
         """Get time periods for downloading data = excluding already downloaded periods."""
         print(f"📅 STEP 2: Calculating time periods for {data_type}...")
         print(f"🔍 DEBUG: Force mode: {getattr(self.config, 'force', False)}")
@@ -456,7 +543,11 @@ class OptimizedDataDownloader:
 
         # For aggtrades = allow explicit backfill range; otherwise use latest-timestamp heuristic
         if data_type == "aggtrades":
+    pass
+    pass
             if self.config.start_date_str and self.config.end_date_str:
+    pass
+    pass
                 try:
 
                     start_date = datetime.strptime(
@@ -474,6 +565,8 @@ class OptimizedDataDownloader:
                     )
                     latest_timestamp = self._find_latest_aggtrades_timestamp()
                     if latest_timestamp:
+    pass
+    pass
                         print(
                             f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}",
                         )
@@ -486,6 +579,8 @@ class OptimizedDataDownloader:
             else:
                 latest_timestamp = self._find_latest_aggtrades_timestamp()
                 if latest_timestamp:
+    pass
+    pass
                     print(
                         f"🔍 DEBUG: Found latest aggtrades timestamp: {latest_timestamp}",
                     )
@@ -530,6 +625,8 @@ class OptimizedDataDownloader:
         logger.info(f"📊 Total days: {(end_date - start_date).days}")
 
         if data_type == "klines":
+    pass
+    pass
             print("   📈 Processing klines (monthly periods)...")
             logger.info("📈 Processing klines (monthly periods)...")
             # Monthly periods for klines
@@ -578,6 +675,8 @@ class OptimizedDataDownloader:
             )
             return periods
         if data_type == "aggtrades":
+    pass
+    pass
             print("   📊 Processing aggtrades (daily periods)...")
             logger.info("📊 Processing aggtrades (daily periods)...")
             # Daily periods for aggtrades
@@ -591,9 +690,13 @@ class OptimizedDataDownloader:
             # Helper to compute CSV coverage (first and last timestamps in ms)
 
             def _csv_ts_bounds(path: str) -> tuple[int | None , int | None]:
+    pass
+    pass
                 try:
 
                     if not os.path.exists(path) or os.path.getsize(path) == 0:
+    pass
+    pass
                         return None
                     df_cov = pd.read_csv(
                         path, usecols=["timestamp"],
@@ -601,6 +704,8 @@ class OptimizedDataDownloader:
                         low_memory=False
                     )  # type: ignore[arg-type]
                     if df_cov.empty:
+    pass
+    pass
                         return None
                     first_ms = int(df_cov["timestamp"].iloc[0].value // 1_000_000)
                     last_ms = int(df_cov["timestamp"].iloc[-1].value // 1_000_000)
@@ -635,6 +740,8 @@ class OptimizedDataDownloader:
                     cov_first_ms, cov_last_ms = _csv_ts_bounds(filepath)
 
                     if cov_first_ms is None or cov_last_ms is None:
+    pass
+    pass
                         # Unreadable or empty after parse → full day
                         periods.append((current, period_end))
                         scheduled_count += 1
@@ -643,6 +750,8 @@ class OptimizedDataDownloader:
                         missing = False
                         # Prefix gap
                         if cov_first_ms > day_start_ms:
+    pass
+    pass
                             # Build timezone-aware UTC datetimes for precise slicing
 
                             gap_start_dt = current.replace(tzinfo=UTC)
@@ -658,6 +767,8 @@ class OptimizedDataDownloader:
                             )
                         # Suffix gap
                         if cov_last_ms < day_end_ms - 1:
+    pass
+    pass
                             pass  # TODO: Add proper implementation
                             gap_start_dt = _dt.fromtimestamp(
                                 (cov_last_ms + 1) / 1000.0,
@@ -671,6 +782,8 @@ class OptimizedDataDownloader:
                                 f"📥 Will top-up suffix: {gap_start_dt} → {gap_end_dt}",
                             )
                         if not missing:
+    pass
+    pass
                             fully_covered_count += 1
                             # Only log at DEBUG level to reduce verbosity
                             logger.debug(f"✅ Already fully covered: {filename}")
@@ -747,6 +860,8 @@ class OptimizedDataDownloader:
         logger.info(f"📊 Found {len(periods)} monthly periods to download")
 
         if not periods:
+    pass
+    pass
             print("   ⚠️ No klines periods to download - all data already exists")
             logger.info("⚠️ No klines periods to download - all data already exists")
             return True
@@ -757,6 +872,8 @@ class OptimizedDataDownloader:
         # Create tasks for parallel download
         tasks = []
         for i, (start_dt, end_dt) in enumerate(periods):
+    pass
+    pass
             print(
                 f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}",
             )
@@ -779,7 +896,11 @@ class OptimizedDataDownloader:
         success_count = 0
         error_count = 0
         for i, result in enumerate(results):
+    pass
+    pass
             if isinstance(result, Exception):
+    pass
+    pass
                 error_count += 1
                 print(f"   ❌ Task {i+1} failed: {result}")
                 print(failed("❌ Task {i+1} failed: {result}"))
@@ -900,6 +1021,8 @@ class OptimizedDataDownloader:
                         raise
 
                     if not batch_klines:
+    pass
+    pass
                         print(f"         ⚠️ No more klines found in batch {batch_count}")
                         logger.info(f"⚠️ No more klines found in batch {batch_count}")
                         break
@@ -916,6 +1039,8 @@ class OptimizedDataDownloader:
 
                     # Find the latest timestamp in this batch to continue from
                     if batch_klines:
+    pass
+    pass
                         latest_kline = max(
                             batch_klines, key=lambda x: x[0]
                             if isinstance(x, list) and len(x) > 0
@@ -928,6 +1053,8 @@ class OptimizedDataDownloader:
                         )
 
                         if latest_time <= current_start_time:
+    pass
+    pass
                             print(
                                 "         ⚠️ No progress in timestamp = stopping pagination",
                             )
@@ -957,6 +1084,8 @@ class OptimizedDataDownloader:
                 logger.info(f"📊 Received {len(klines) if klines else 0} klines")
 
                 if not klines:
+    pass
+    pass
                     print(
                         f"         ⚠️ No klines received for {start_dt.strftime('%Y-%m')}",
                     )
@@ -966,6 +1095,8 @@ class OptimizedDataDownloader:
 
                     # For MEXC = create synthetic klines when no historical data is available
                     if self.config.exchange.upper() == "MEXC":
+    pass
+    pass
                         print("         🔧 Creating synthetic klines for MEXC...")
                         logger.info("🔧 Creating synthetic klines for MEXC...")
 
@@ -974,6 +1105,8 @@ class OptimizedDataDownloader:
 
                         # Use realistic base price based on the date (historical ETH prices)
                         if start_dt.year == 2022:
+    pass
+    pass
                             base_price = (
                                 1500.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2022
@@ -998,8 +1131,12 @@ class OptimizedDataDownloader:
 
                         current_price = base_price
                         for i in range(minutes_in_month):
+    pass
+    pass
                             # Simulate realistic price movement
                             if i > 0:
+    pass
+    pass
                                 # Simulate price changes with some volatility
                                 change_percent = random.uniform(
                                     -0.1,
@@ -1119,6 +1256,8 @@ class OptimizedDataDownloader:
         logger.info(f"📊 Found {len(periods)} daily periods to download")
 
         if not periods:
+    pass
+    pass
             print("   ⚠️ No aggtrades periods to download - all data already exists")
             logger.info("⚠️ No aggtrades periods to download - all data already exists")
             return True
@@ -1129,6 +1268,8 @@ class OptimizedDataDownloader:
         # Create tasks for parallel download
         tasks = []
         for i , (start_dt, end_dt) in enumerate(periods):
+    pass
+    pass
             if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                 print(
                     f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
@@ -1163,7 +1304,11 @@ class OptimizedDataDownloader:
         success_count = 0
         error_count = 0
         for i , result in enumerate(results):
+    pass
+    pass
             if isinstance(result , Exception):
+    pass
+    pass
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
@@ -1216,6 +1361,8 @@ class OptimizedDataDownloader:
 
                 # If fully covered by neighbors = skip gracefully
                 if effective_start_ms >= effective_end_ms:
+    pass
+    pass
                     print(
                         "         ⏭️ Skipping day: fully covered by neighboring data (no safe gap to download)",
                     )
@@ -1254,6 +1401,8 @@ class OptimizedDataDownloader:
 
                 # For MEXC = use synthetic data since the API doesn't return historical data properly
                 if self.config.exchange.upper() == "MEXC":
+    pass
+    pass
                     print(
                         "         🔧 Using MEXC-specific approach with synthetic data...",
                     )
@@ -1277,6 +1426,8 @@ class OptimizedDataDownloader:
                     )
 
                     if not klines:
+    pass
+    pass
                         # If no klines for this specific day = create comprehensive synthetic data
                         print(
                             f"         🔧 No klines for {start_dt.strftime('%Y-%m-%d')}, creating comprehensive synthetic data...",
@@ -1291,6 +1442,8 @@ class OptimizedDataDownloader:
                         # Use realistic base price based on the date (historical ETH prices)
                         # Historical ETH prices: 2022-2023 range from ~$1000 to ~$4000
                         if start_dt.year == 2022:
+    pass
+    pass
                             base_price = (
                                 1500.0 + (start_dt.month - 1) * 50
                             )  # Gradual increase through 2022
@@ -1309,6 +1462,8 @@ class OptimizedDataDownloader:
 
                         # Create 1440 synthetic trades (one per minute for 24 hours)
                         for i in range(1440):
+    pass
+    pass
                             # Simulate realistic price movement with volatility
 
                             random.seed(
@@ -1316,6 +1471,8 @@ class OptimizedDataDownloader:
 
                             # Create realistic price movements
                             if i == 0:
+    pass
+    pass
                                 current_price = base_price
                             else:
                                 # Simulate price changes with some volatility
@@ -1366,7 +1523,11 @@ class OptimizedDataDownloader:
                         # Convert klines to trade-like format
                         trades = []
                         for kline in klines:
+    pass
+    pass
                             if isinstance(kline , dict) and "T" in kline:
+    pass
+    pass
                                 # Convert kline to trade format
                                 trade = {
                                     "a": int(kline["T"] / 1000),  # Use timestamp as ID
@@ -1388,6 +1549,8 @@ class OptimizedDataDownloader:
                 else:
                     # For BINANCE and older dates, try archive first
                     if prefer_archive:
+    pass
+    pass
                         try:
 
                             vision_trades = (
@@ -1398,6 +1561,8 @@ class OptimizedDataDownloader:
                                 )
                             )
                             if vision_trades:
+    pass
+    pass
                                 df = self._process_aggtrades_data(vision_trades)
                                 merged_df = self._merge_existing_aggtrades(
                                     filepath, df,
@@ -1407,6 +1572,10 @@ class OptimizedDataDownloader:
                                 try:
                                     parquet_path = (
                                         os.path.splitext(filepath)[0] + ".parquet"
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                                     )
                                     merged_df.to_parquet(
                                         parquet_path, compression="zstd",
@@ -1490,6 +1659,8 @@ class OptimizedDataDownloader:
                         logging.getLogger().setLevel(original_level)
 
                         if not batch_trades:
+    pass
+    pass
                             print(
                                 f"         ⚠️ No more trades found in batch {batch_count}",
                             )
@@ -1510,8 +1681,12 @@ class OptimizedDataDownloader:
 
                         # Find the latest timestamp in this batch to continue from
                         if batch_trades:
+    pass
+    pass
                             # Debug: print first few trades to see structure
                             if batch_count == 1:
+    pass
+    pass
                                 print(
                                     f"         🔍 DEBUG: First trade structure: {batch_trades[0] if batch_trades else 'No trades'}",
                                 )
@@ -1522,6 +1697,8 @@ class OptimizedDataDownloader:
                             # Find the latest timestamp - try different possible field names
                             latest_time = 0
                             for trade in batch_trades:
+    pass
+    pass
                                 # Try different possible timestamp field names
                                 timestamp = (
                                     trade.get("T")
@@ -1530,6 +1707,8 @@ class OptimizedDataDownloader:
                                     or trade.get("t")
                                 )
                                 if timestamp and timestamp > latest_time:
+    pass
+    pass
                                     latest_time = timestamp
 
                             print(
@@ -1540,6 +1719,8 @@ class OptimizedDataDownloader:
                             )
 
                             if latest_time <= current_start_time:
+    pass
+    pass
                                 print(
                                     "         ⚠️ No progress in timestamp = stopping pagination",
                                 )
@@ -1565,6 +1746,8 @@ class OptimizedDataDownloader:
 
                                             # Process and save data incrementally
                         if all_trades:
+    pass
+    pass
                             print(
                                 f"         🔄 Processing {len(all_trades)} total trades...",
                             )
@@ -1630,6 +1813,8 @@ class OptimizedDataDownloader:
                                 effective_end_ms, limit=1000,
                             )
                         if not ccxt_trades:
+    pass
+    pass
                             print(
                                 "         🔁 CCXT empty, trying Binance Vision archive...",
                             )
@@ -1644,6 +1829,8 @@ class OptimizedDataDownloader:
                                 )
                             )
                             if not vision_trades:
+    pass
+    pass
                                 print(
                                     f"         ⚠️ No aggtrades available from API/CCXT/Vision for {start_dt.strftime('%Y-%m-%d')}",
                                 )
@@ -1700,6 +1887,8 @@ class OptimizedDataDownloader:
         logger.info(f"📊 Found {len(periods)} daily periods to download")
 
         if not periods:
+    pass
+    pass
             print("   ⚠️ No futures periods to download - all data already exists")
             logger.info("⚠️ No futures periods to download - all data already exists")
             return True
@@ -1710,6 +1899,8 @@ class OptimizedDataDownloader:
         # Create tasks for parallel download
         tasks = []
         for i , (start_dt, end_dt) in enumerate(periods):
+    pass
+    pass
             if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                 print(
                     f"   📋 Task {i+1}: {start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
@@ -1733,7 +1924,11 @@ class OptimizedDataDownloader:
         success_count = 0
         error_count = 0
         for i , result in enumerate(results):
+    pass
+    pass
             if isinstance(result , Exception):
+    pass
+    pass
                 error_count += 1
                 if i < 5 or i % 50 == 0:  # Show first 5 and every 50th
                     print(f"   ❌ Task {i+1} failed: {result}")
@@ -1824,6 +2019,8 @@ class OptimizedDataDownloader:
                     batch_futures = batch_futures_response.get("funding_rates", []) if isinstance(batch_futures_response, dict) else []
 
                     if not batch_futures:
+    pass
+    pass
                         print(
                             f"         ⚠️ No more futures data found in batch {batch_count}",
                         )
@@ -1844,6 +2041,8 @@ class OptimizedDataDownloader:
 
                     # Find the latest timestamp in this batch to continue from
                     if batch_futures:
+    pass
+    pass
                         # For funding rates = use fundingTime field
                         latest_future = max(
                             batch_futures, key=lambda x: x.get("fundingTime", 0)
@@ -1857,6 +2056,8 @@ class OptimizedDataDownloader:
                         )
 
                         if latest_time <= current_start_time:
+    pass
+    pass
                             print(
                                 "         ⚠️ No progress in timestamp = stopping pagination",
                             )
@@ -1890,6 +2091,8 @@ class OptimizedDataDownloader:
                 )
 
                 if not futures_data:
+    pass
+    pass
                     print(
                         f"         ⚠️ No futures data received for {start_dt.strftime('%Y-%m')}",
                     )
@@ -1944,6 +2147,8 @@ class OptimizedDataDownloader:
                 return False
 
     def _process_klines_data(self, klines: list[list]) -> pd.DataFrame:
+    pass
+    pass
         """Process klines data into a DataFrame."""
         df = pd.DataFrame(
             klines, columns = [
@@ -1973,8 +2178,12 @@ class OptimizedDataDownloader:
         return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
     def _process_aggtrades_data(self, trades: list[dict]) -> pd.DataFrame:
+    pass
+    pass
         """Process aggregated trades data into a DataFrame."""
         if not trades:
+    pass
+    pass
             return pd.DataFrame()
 
         # Convert to DataFrame
@@ -1995,12 +2204,18 @@ class OptimizedDataDownloader:
 
         # Convert timestamp
         if "timestamp" in df.columns:
+    pass
+    pass
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
         # Convert numeric columns
         numeric_cols = ["price", "quantity"]
         for col in numeric_cols:
+    pass
+    pass
             if col in df.columns:
+    pass
+    pass
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
@@ -2021,9 +2236,13 @@ class OptimizedDataDownloader:
         # Normalize timezone handling to naive UTC for comparison
 
         def _naive_utc(dt: datetime) -> datetime:
+    pass
+    pass
             try:
 
                 if dt.tzinfo is not None:
+    pass
+    pass
                     return dt.astimezone(UTC).replace(tzinfo=None)
             except Exception:
                 pass
@@ -2037,6 +2256,8 @@ class OptimizedDataDownloader:
         try:
 
             if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+    pass
+    pass
                 existing_df = pd.read_csv(
                     filepath, parse_dates=["timestamp"],
                     low_memory=False
@@ -2061,6 +2282,8 @@ class OptimizedDataDownloader:
 
         # Deduplicate
         if "agg_trade_id" in merged.columns:
+    pass
+    pass
             merged = merged.drop_duplicates(subset=["agg_trade_id"], keep="first")
         else:
             dedup_keys = [
@@ -2075,12 +2298,16 @@ class OptimizedDataDownloader:
                 if c in merged.columns
             ]
             if dedup_keys:
+    pass
+    pass
                 merged = merged.drop_duplicates(subset=dedup_keys, keep="first")
             else:
                 merged = merged.drop_duplicates(keep="first")
 
         # Clip to the day window and sort
         if "timestamp" in merged.columns:
+    pass
+    pass
             merged = merged[
                 (merged["timestamp"] >= start_dt_naive)
                 & (merged["timestamp"] < end_dt_naive)
@@ -2089,14 +2316,20 @@ class OptimizedDataDownloader:
         return merged.reset_index(drop=True)
 
     def _process_futures_data(self, futures_data: list[dict]) -> pd.DataFrame:
+    pass
+    pass
         """Process futures data into a DataFrame."""
         if not futures_data:
+    pass
+    pass
             return pd.DataFrame()
 
         df = pd.DataFrame(futures_data)
 
         # Convert fundingTime to timestamp for funding rates
         if "fundingTime" in df.columns:
+    pass
+    pass
             df["timestamp"] = pd.to_datetime(df["fundingTime"], unit="ms")
         elif "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -2140,6 +2373,8 @@ class OptimizedDataDownloader:
             print("🔍 DEBUG: Config symbol:", self.config.symbol)
 
             if not await self.initialize():
+    pass
+    pass
                 print(failed("INITIALIZATION FAILED - Aborting download process"))
                 print(failed("❌ INITIALIZATION FAILED - Aborting download process"))
                 return False
@@ -2182,8 +2417,12 @@ class OptimizedDataDownloader:
             success_count = 0
             error_count = 0
             for i, result in enumerate(results):
+    pass
+    pass
                 data_types = ["Klines", "Aggtrades", "Futures"]
                 if isinstance(result, Exception):
+    pass
+    pass
                     error_count += 1
                     print(f"   ❌ {data_types[i]} download failed: {result}")
                     print(failed("❌ {data_types[i]} download failed: {result}"))
@@ -2346,6 +2585,8 @@ async def main():
     success = await downloader.run_optimized_download()
 
     if success:
+    pass
+    pass
         logger.info("✅ Optimized download completed successfully")
         sys.exit(0)
     else:
@@ -2353,4 +2594,6 @@ async def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(main())

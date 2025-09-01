@@ -5,6 +5,7 @@
 from typing import Literal, TypedDict
 
 from .base_types import (
+import ConfidenceLevel,
     ConfidenceLevel,
     LeverageMultiplier,
     Percentage,

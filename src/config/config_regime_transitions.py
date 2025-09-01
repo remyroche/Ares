@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class RegimeTransitionConfig:
     """Optimizable regime transition parameters."""
@@ -59,11 +60,15 @@ class RegimeTransitionConfig:
 
 
 def get_regime_transition_config() -> RegimeTransitionConfig:
+    pass
+    pass
     """Get regime transition configuration."""
     return RegimeTransitionConfig()
 
 
 def get_regime_transition_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for regime transition optimization."""
     return {
         # Transition detection thresholds

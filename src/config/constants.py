@@ -7,6 +7,7 @@ to ensure consistency and maintainability.
 from typing import Final
 
 # Time Constants
+import DEFAULT_SIGNAL_VALIDITY_DURATION: Final[int] = 120
 DEFAULT_SIGNAL_VALIDITY_DURATION: Final[int] = 120
 DEFAULT_SIGNAL_CHECK_INTERVAL: Final[int] = 10
 DEFAULT_MAX_SIGNAL_AGE: Final[float] = 300.0  # 5 minutes

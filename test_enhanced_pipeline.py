@@ -19,12 +19,14 @@ import sys
 from pathlib import Path
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.logger import system_logger
 
+import logger = system_logger.getChild
 logger = system_logger.getChild("EnhancedPipelineTest")
 
 
@@ -120,6 +122,10 @@ async def test_enhanced_pipeline():
 
     try:
         # Initialize the enhanced training manager
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         logger.info("🔧 Initializing Enhanced Training Manager...")
         training_manager = EnhancedTrainingManager(config)
 
@@ -128,18 +134,28 @@ async def test_enhanced_pipeline():
         success = await training_manager.run_enhanced_training_pipeline(training_input)
 
         if success:
+    pass
+    pass
             logger.info("✅ Enhanced Pipeline completed successfully!")
 
             # Print summary of results
             logger.info("📊 Pipeline Results Summary:")
             if hasattr(training_manager, 'enhanced_training_results'):
+    pass
+    pass
                 for step, result in training_manager.enhanced_training_results.items():
+    pass
+    pass
                     logger.info(f"   {step}: {result.get('status', 'UNKNOWN')}")
 
             # Print step timings
             logger.info("⏱️ Step Timings:")
             if hasattr(training_manager, 'step_times'):
+    pass
+    pass
                 for step, timing in training_manager.step_times.items():
+    pass
+    pass
                     logger.info(f"   {step}: {timing:.2f}s")
 
         else:
@@ -164,6 +180,12 @@ async def test_specific_steps():
     try:
         from src.training.steps.step4_triple_barrier_method import run_step as run_step4
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import step4_success = await run_step4
         step4_success = await run_step4(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -174,6 +196,8 @@ async def test_specific_steps():
         )
 
         if step4_success:
+    pass
+    pass
             logger.info("✅ Step 4: Triple Barrier Method test passed")
         else:
             logger.error("❌ Step 4: Triple Barrier Method test failed")
@@ -186,6 +210,12 @@ async def test_specific_steps():
     try:
         from src.training.steps.step5_labeling import run_step as run_step5
 
+    except Exception as e:
+        pass
+import except Exception as e:
+    except Exception as e:
+        pass
+import step5_success = await run_step5
         step5_success = await run_step5(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -196,6 +226,8 @@ async def test_specific_steps():
         )
 
         if step5_success:
+    pass
+    pass
             logger.info("✅ Step 5: Labeling test passed")
         else:
             logger.error("❌ Step 5: Labeling test failed")
@@ -223,5 +255,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     # Run the test suite
     asyncio.run(main())

@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
+import project_root, Path
 project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
+import comprehensive_data_validation,
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -56,6 +58,10 @@ async def run_validator(
 
     try:
         # Extract parameters
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         symbol, training_input.get("symbol", "ETHUSDT")
         exchange, training_input.get("exchange", "BINANCE")
         timeframe, training_input.get("timeframe", "1m")
@@ -66,6 +72,8 @@ async def run_validator(
         validation_path, Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_splits_validation.parquet"
 
         if not train_path.exists():
+    pass
+    pass
             logger.error(f"❌ Regime splits train file not found: {train_path}")
         return {
                 "step_name": "step07_regime_data_splitting",
@@ -74,6 +82,8 @@ async def run_validator(
             }
 
         if not validation_path.exists():
+    pass
+    pass
             logger.error(f"❌ Regime splits validation file not found: {validation_path}")
         return {
                 "step_name": "step07_regime_data_splitting",
@@ -86,6 +96,8 @@ async def run_validator(
         validation_file_size, validation_path.stat().st_size
 
         if train_file_size == 0:
+    pass
+    pass
             logger.error(f"❌ Regime splits train file is empty: {train_path}")
         return {
                 "step_name": "step07_regime_data_splitting",
@@ -94,6 +106,8 @@ async def run_validator(
             }
 
         if validation_file_size == 0:
+    pass
+    pass
             logger.error(f"❌ Regime splits validation file is empty: {validation_path}")
         return {
                 "step_name": "step07_regime_data_splitting",
@@ -105,6 +119,10 @@ async def run_validator(
         try:
             import pandas as pd
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         # Read train data
             train_data, pd.read_parquet(train_path)
 
@@ -113,6 +131,8 @@ async def run_validator(
 
         # Check data quality
         if len(train_data) == 0:
+    pass
+    pass
                 logger.error("❌ No data rows found in train split")
         return {
                     "step_name": "step07_regime_data_splitting",
@@ -121,6 +141,8 @@ async def run_validator(
                 }
 
         if len(validation_data) == 0:
+    pass
+    pass
                 logger.error("❌ No data rows found in validation split")
         return {
                     "step_name": "step07_regime_data_splitting",
@@ -134,6 +156,8 @@ async def run_validator(
             missing_validation_columns = [col for col in required_columns if col not in validation_data.columns]
 
         if missing_train_columns:
+    pass
+    pass
                 logger.error(f"❌ Missing required columns in train data: {missing_train_columns}")
         return {
                     "step_name": "step07_regime_data_splitting",
@@ -142,6 +166,8 @@ async def run_validator(
                 }
 
         if missing_validation_columns:
+    pass
+    pass
                 logger.error(f"❌ Missing required columns in validation data: {missing_validation_columns}")
         return {
                     "step_name": "step07_regime_data_splitting",
@@ -173,18 +199,26 @@ async def run_validator(
 
         # Check for reasonable split ratios (typically 70 - 80% train, 20 - 30% validation)
         if train_ratio < 0.6 or train_ratio > 0.9:
+    pass
+    pass
                 logger.warning(f"⚠️ Unusual train ratio: {train_ratio:.2%}")
 
         if validation_ratio < 0.1 or validation_ratio > 0.4:
+    pass
+    pass
                 logger.warning(f"⚠️ Unusual validation ratio: {validation_ratio:.2%}")
 
         # Check for overlap in timestamps if available
         if "timestamp" in train_data.columns and "timestamp" in validation_data.columns:
+    pass
+    pass
                 train_timestamps, set(train_data["timestamp"])
                 validation_timestamps, set(validation_data["timestamp"])
                 overlap, train_timestamps.intersection(validation_timestamps)
 
         if overlap:
+    pass
+    pass
                     logger.warning(f"⚠️ Found {len(overlap)} overlapping timestamps between train and validation")
                 else:
                     logger.info("✅ No overlapping timestamps between train and validation")
@@ -220,6 +254,8 @@ async def run_validator(
         }
 
 if __name__ == "__main__":
+    pass
+    pass
     # Test the validator
     async def test():
         test_input = {

@@ -3,6 +3,7 @@ from collections.abc import Callable
 import pandas as pd
 
 from src.utils.centralized_decorators import (
+import guard_dataframe_nulls,
     guard_dataframe_nulls,
     validate_call_or_runtime_types,
     with_tracing_span,
@@ -21,19 +22,27 @@ class FeatureGenerator:
             self.technical_indicators,
         ]
         if custom_features:
+    pass
+    pass
             self.feature_functions.extend(custom_features)
 
     @validate_call_or_runtime_types
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.generate", log_args=False)
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         features = pd.DataFrame(index=data.index)
         for func in self.feature_functions:
+    pass
+    pass
             feat = func(data)
             features = features.join(feat, how="outer")
         return features.fillna(0)  # Default - can be replaced by handle_missing_data
 
     def generate_labels(self, data: pd.DataFrame) -> pd.Series:
+    pass
+    pass
         # Example: simple trend-following label
         labels = (data["close"].shift(-1) > data["close"]).astype(int)
         return labels.fillna(0)
@@ -42,6 +51,8 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.price_features", log_args=False)
     def price_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         return pd.DataFrame(
             {
                 "price_change": data["close"].pct_change(),
@@ -55,6 +66,8 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.moving_averages", log_args=False)
     def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         return pd.DataFrame(
             {
                 "ma_5": data["close"].rolling(5).mean(),
@@ -68,6 +81,8 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.volatility_features", log_args=False)
     def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         return pd.DataFrame(
             {
                 "volatility_5": data["close"].rolling(5).std(),
@@ -80,6 +95,8 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.volume_features", log_args=False)
     def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         vol_ma_5 = data["volume"].rolling(5).mean()
         return pd.DataFrame(
             {
@@ -93,6 +110,8 @@ class FeatureGenerator:
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("FeatureGenerator.technical_indicators", log_args=False)
     def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+    pass
+    pass
         return pd.DataFrame(
             {
                 "rsi": self._calculate_rsi(data["close"]),
@@ -102,6 +121,8 @@ class FeatureGenerator:
         )
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+    pass
+    pass
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()

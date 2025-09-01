@@ -18,6 +18,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 def test_mock_data_generation():
+    pass
+    pass
     """Test mock data generation functionality."""
     print("🧪 Testing Mock Data Generation")
     print("=" * 50)
@@ -40,6 +42,8 @@ def test_mock_data_generation():
     price = base_price
 
     for timestamp in klines_timestamps:
+    pass
+    pass
         price_change = np.random.normal(0, 0.001)
         price = max(price * (1 + price_change), 100)
 
@@ -72,8 +76,12 @@ def test_mock_data_generation():
     aggtrades_data = []
 
     for timestamp in aggtrades_timestamps:
+    pass
+    pass
         num_trades = np.random.randint(1, 10)
         for _ in range(num_trades):
+    pass
+    pass
             trade_price = base_price + np.random.normal(0, 50)
             quantity = np.random.uniform(0.1, 10.0)
 
@@ -96,6 +104,8 @@ def test_mock_data_generation():
     futures_data = []
 
     for timestamp in futures_timestamps:
+    pass
+    pass
         mark_price = base_price + np.random.normal(0, 30)
         funding_rate = np.random.uniform(-0.001, 0.001)
 
@@ -127,7 +137,7 @@ def test_mock_data_generation():
     print(f"✅ Saved futures: {futures_file}")
 
     # Verify files exist and have content
-    print("\n🔍 Verifying generated files...")
+    print("\\\n🔍 Verifying generated files...")
 
     files_to_check = [
         klines_file,
@@ -137,7 +147,11 @@ def test_mock_data_generation():
 
     all_files_exist = True
     for file_path in files_to_check:
+    pass
+    pass
         if file_path.exists():
+    pass
+    pass
             file_size = file_path.stat().st_size
             print(f"✅ {file_path.name}: {file_size} bytes")
         else:
@@ -145,22 +159,26 @@ def test_mock_data_generation():
             all_files_exist = False
 
     # Show data summary
-    print("\n📊 Data Summary:")
+    print("\\\n📊 Data Summary:")
     print(f"Klines: {len(klines_df)} records, {len(klines_df.columns)} columns")
     print(f"Aggtrades: {len(aggtrades_df)} records, {len(aggtrades_df.columns)} columns")
     print(f"Futures: {len(futures_df)} records, {len(futures_df.columns)} columns")
 
-    print(f"\nKlines columns: {list(klines_df.columns)}")
+    print(f"\\\nKlines columns: {list(klines_df.columns)}")
     print(f"Aggtrades columns: {list(aggtrades_df.columns)}")
     print(f"Futures columns: {list(futures_df.columns)}")
 
     if all_files_exist:
-        print("\n🎉 Mock data generation test PASSED!")
+    pass
+    pass
+        print("\\\n🎉 Mock data generation test PASSED!")
         return True
     else:
-        print("\n💥 Mock data generation test FAILED!")
+        print("\\\n💥 Mock data generation test FAILED!")
         return False
 
 if __name__ == "__main__":
+    pass
+    pass
     success = test_mock_data_generation()
     sys.exit(0 if success else 1)

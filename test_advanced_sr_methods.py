@@ -18,17 +18,29 @@ class MockSystemLogger:
 
 # Mock the decorators
 def validate_data_quality(validation_level="WARNING"):
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
 def handle_errors(exceptions=(Exception,), default_return=None, context=""):
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
 def handle_specific_errors(error_handlers=None, default_return=None, context=""):
+    pass
+    pass
     def decorator(func):
+    pass
+    pass
         return func
     return decorator
 
@@ -36,7 +48,11 @@ def handle_specific_errors(error_handlers=None, default_return=None, context="")
 class MockCentralizedDecorators:
     @staticmethod
     def validate_data_quality(validation_level="WARNING"):
+    pass
+    pass
         def decorator(func):
+    pass
+    pass
             return func
         return decorator
 
@@ -52,7 +68,10 @@ sys.modules['src.utils.centralized_decorators'] = MockCentralizedDecorators()
 # Now import the actual SRBreakoutPredictor
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
+import def create_sample_market_data
 def create_sample_market_data():
+    pass
+    pass
     """Create sample market data for testing."""
     np.random.seed(42)
 
@@ -64,6 +83,8 @@ def create_sample_market_data():
     prices = [base_price]
 
     for i in range(1, 100):
+    pass
+    pass
         # Add trend and random walk
         trend = 0.001 * np.sin(i * 0.1)  # Cyclical trend
         random_walk = np.random.normal(0, 0.005)  # Random component
@@ -73,6 +94,8 @@ def create_sample_market_data():
     # Create OHLCV data
     data = []
     for i, price in enumerate(prices):
+    pass
+    pass
         # Create realistic OHLC from base price
         volatility = 0.01 * (1 + 0.5 * np.sin(i * 0.2))  # Variable volatility
         high = price * (1 + np.random.uniform(0, volatility))
@@ -96,6 +119,8 @@ def create_sample_market_data():
     return pd.DataFrame(data, index=dates)
 
 def create_multi_timeframe_data():
+    pass
+    pass
     """Create sample multi-timeframe data."""
     base_data = create_sample_market_data()
 
@@ -167,18 +192,24 @@ async def test_advanced_sr_methods():
     sr_predictor = SRBreakoutPredictor(config)
 
     # Test initialization
-    print("\n📋 Testing Initialization...")
+    print("\\\n📋 Testing Initialization...")
     init_success = await sr_predictor.initialize()
     print(f"✅ Initialization: {'SUCCESS' if init_success else 'FAILED'}")
 
     if not init_success:
+    pass
+    pass
         print("❌ Cannot proceed with tests - initialization failed")
         return
 
     # Test 1: Fibonacci Levels
-    print("\n🔢 Testing Fibonacci Levels...")
+    print("\\\n🔢 Testing Fibonacci Levels...")
     try:
         fib_levels = await sr_predictor.calculate_fibonacci_levels(market_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ Fibonacci Levels: {len(fib_levels)} levels calculated")
         for level_name, price in list(fib_levels.items())[:5]:  # Show first 5
             print(f"   {level_name}: {price:.2f}")
@@ -186,20 +217,30 @@ async def test_advanced_sr_methods():
         print(f"❌ Fibonacci Levels Error: {e}")
 
     # Test 2: Elliott Wave Analysis
-    print("\n🌊 Testing Elliott Wave Analysis...")
+    print("\\\n🌊 Testing Elliott Wave Analysis...")
     try:
         elliott_levels = await sr_predictor.detect_elliott_wave_levels(market_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ Elliott Wave: {elliott_levels.get('pattern_type', 'unknown')} pattern detected")
         print(f"   Confidence: {elliott_levels.get('confidence', 0):.2f}")
         if 'wave1' in elliott_levels:
+    pass
+    pass
             print(f"   Wave 1: {elliott_levels['wave1']}")
     except Exception as e:
         print(f"❌ Elliott Wave Error: {e}")
 
     # Test 3: Order Flow Analysis
-    print("\n📊 Testing Order Flow Analysis...")
+    print("\\\n📊 Testing Order Flow Analysis...")
     try:
         order_flow = await sr_predictor.analyze_order_flow_levels(market_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ Order Flow Analysis: POC at {order_flow.get('poc', 0):.2f}")
         print(f"   Value Area: {order_flow.get('value_area', {}).get('low', 0):.2f} - {order_flow.get('value_area', {}).get('high', 0):.2f}")
         print(f"   HVN Levels: {len(order_flow.get('hvn_levels', []))}")
@@ -208,9 +249,13 @@ async def test_advanced_sr_methods():
         print(f"❌ Order Flow Error: {e}")
 
     # Test 4: Multi-Timeframe Confluence
-    print("\n⏰ Testing Multi-Timeframe Confluence...")
+    print("\\\n⏰ Testing Multi-Timeframe Confluence...")
     try:
         mtf_confluence = await sr_predictor.detect_multi_timeframe_confluence(multi_tf_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ Multi-Timeframe Confluence: {len(mtf_confluence)} strong confluence levels")
         for level_key, level_data in list(mtf_confluence.items())[:3]:  # Show first 3
             print(f"   {level_key}: {level_data['type']} at {level_data['price']:.2f} ({len(level_data['timeframes'])} timeframes)")
@@ -218,9 +263,13 @@ async def test_advanced_sr_methods():
         print(f"❌ Multi-Timeframe Confluence Error: {e}")
 
     # Test 5: Comprehensive S/R Analysis
-    print("\n🎯 Testing Comprehensive S/R Analysis...")
+    print("\\\n🎯 Testing Comprehensive S/R Analysis...")
     try:
         comprehensive = await sr_predictor.get_comprehensive_sr_analysis(market_data, multi_tf_data)
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         print(f"✅ Comprehensive Analysis: {len(comprehensive.get('analysis_methods', []))} methods used")
         print(f"   Methods: {comprehensive.get('analysis_methods', [])}")
         print(f"   Current Price: {comprehensive.get('current_price', 0):.2f}")
@@ -230,25 +279,35 @@ async def test_advanced_sr_methods():
         print(f"❌ Comprehensive Analysis Error: {e}")
 
     # Test 6: Basic S/R Context (should include advanced methods)
-    print("\n🔍 Testing Enhanced S/R Context...")
+    print("\\\n🔍 Testing Enhanced S/R Context...")
     try:
         current_price = market_data['close'].iloc[-1]
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         sr_context = await sr_predictor.get_sr_context(market_data, current_price)
         print(f"✅ Enhanced S/R Context: {len(sr_context)} context elements")
 
         # Check for advanced methods in context
         advanced_methods = ['fibonacci_levels', 'elliott_wave_levels', 'order_flow_analysis']
         for method in advanced_methods:
+    pass
+    pass
             if method in sr_context:
+    pass
+    pass
                 print(f"   ✅ {method}: Included in context")
             else:
                 print(f"   ❌ {method}: Missing from context")
     except Exception as e:
         print(f"❌ Enhanced S/R Context Error: {e}")
 
-    print("\n" + "=" * 60)
+    print("\\\n" + "=" * 60)
     print("🎉 Advanced S/R Methods Testing Complete!")
     print("=" * 60)
 
 if __name__ == "__main__":
+    pass
+    pass
     asyncio.run(test_advanced_sr_methods())

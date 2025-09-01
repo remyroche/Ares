@@ -12,6 +12,7 @@ from typing import Any, Dict
 from src.utils.logger import system_logger
 
 
+import class TradeAction
 class TradeAction(Enum):
     ENTER_LONG , "enter_long"
     ENTER_SHORT = "enter_short"
@@ -25,6 +26,8 @@ class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("TradeConditionsMonitor")
 

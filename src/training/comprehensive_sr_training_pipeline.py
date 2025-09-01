@@ -18,6 +18,7 @@ import pandas as pd
 
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 from src.utils.logger import system_logger
+import handle_errors,
     handle_errors,
     comprehensive_validation,
     performance_monitor,
@@ -31,6 +32,8 @@ class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
 
     def __init__(self, config: dict[str, Any]):
+    pass
+    pass
         self.config = config
         self.logger = system_logger.getChild("ComprehensiveSRTrainingPipeline")
 
@@ -77,16 +80,24 @@ class ComprehensiveSRTrainingPipeline:
         """
         try:
             start_time = datetime.now()
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
 
             # Step 1: Load step7 features
             step07_success = await self._load_step7_features()
             if not step07_success:
+    pass
+    pass
                 self.logger.warning("⚠️ Step7 features not loaded, continuing with available features")
 
             # Step 2: Load step02_5 SR levels
             step02_5_success = await self._load_step2_5_sr_levels()
             if not step02_5_success:
+    pass
+    pass
                 self.logger.warning("⚠️ Step2_5 SR levels not loaded, continuing with available features")
 
             # Step 3: Prepare comprehensive training data
@@ -126,9 +137,15 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("📊 Loading step7 enhanced matrix operations features...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             success = await self.model_trainer.load_step7_features(self.step07_output_path)
 
             if success:
+    pass
+    pass
                 self.step07_features_loaded = True
                 self.logger.info(f"✅ Step7 features loaded: {len(self.model_trainer.step07_features)} features")
             else:
@@ -145,9 +162,15 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("📊 Loading step02_5 SR optimization levels...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             success = await self.model_trainer.load_step2_5_sr_levels(self.step02_5_output_path)
 
             if success:
+    pass
+    pass
                 self.step02_5_sr_levels_loaded = True
                 support_levels = self.model_trainer.step02_5_sr_levels.get("support_levels", [])
                 resistance_levels = self.model_trainer.step02_5_sr_levels.get("resistance_levels", [])
@@ -166,12 +189,18 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("🔧 Preparing comprehensive training data...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Add comprehensive SR features
             comprehensive_data = await self.model_trainer._add_comprehensive_sr_features(training_data)
 
             # Validate feature completeness
             missing_features = self.model_trainer.validate_feature_completeness(comprehensive_data)
             if missing_features:
+    pass
+    pass
                 self.logger.warning(f"⚠️ Missing features: {missing_features}")
 
             # Log comprehensive data statistics
@@ -199,15 +228,23 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("🚀 Training models with comprehensive SR features...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             # Prepare targets
             direction_column = "direction"
             profit_column = "potential_profit_pct"
 
             if direction_column not in comprehensive_data.columns:
+    pass
+    pass
                 self.logger.warning(f"⚠️ Direction column '{direction_column}' not found, using default")
                 comprehensive_data[direction_column] = 1  # Default direction
 
             if profit_column not in comprehensive_data.columns:
+    pass
+    pass
                 self.logger.warning(f"⚠️ Profit column '{profit_column}' not found, using default")
                 comprehensive_data[profit_column] = 0.0  # Default profit
 
@@ -226,9 +263,15 @@ class ComprehensiveSRTrainingPipeline:
             model_types = ["LightGBM", "RandomForest", "XGBoost"]
 
             for model_type in model_types:
+    pass
+    pass
                 try:
                     self.logger.info(f"🔄 Training {model_type} model...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                     # Update model config
                     self.model_trainer.config.model_type = model_type
 
@@ -238,6 +281,8 @@ class ComprehensiveSRTrainingPipeline:
                     )
 
                     if model_result:
+    pass
+    pass
                         training_results[model_type] = model_result
                         self.logger.info(f"✅ {model_type} model trained successfully")
                     else:
@@ -257,6 +302,10 @@ class ComprehensiveSRTrainingPipeline:
         try:
             self.logger.info("🔍 Validating and saving training results...")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             validation_results = {
                 "models_trained": len(training_results),
                 "model_types": list(training_results.keys()),
@@ -267,10 +316,16 @@ class ComprehensiveSRTrainingPipeline:
 
             # Analyze SR feature usage across models
             for model_type, result in training_results.items():
+    pass
+    pass
                 if "sr_feature_analysis" in result:
+    pass
+    pass
                     validation_results["sr_feature_analysis"][model_type] = result["sr_feature_analysis"]
 
                 if "feature_importance" in result:
+    pass
+    pass
                     validation_results["model_performance"][model_type] = {
                         "direction_accuracy": result.get("direction_metrics", {}).get("accuracy", 0.0),
                         "profit_r2": result.get("profit_metrics", {}).get("r2_score", 0.0),
@@ -301,6 +356,8 @@ class ComprehensiveSRTrainingPipeline:
             return {"error": str(e)}
 
     def get_comprehensive_feature_summary(self) -> dict[str, Any]:
+    pass
+    pass
         """Get comprehensive feature summary."""
         try:
             summary = {
@@ -318,6 +375,10 @@ class ComprehensiveSRTrainingPipeline:
                     "count": len(self.model_trainer.sr_feature_columns),
                     "columns": self.model_trainer.sr_feature_columns
                 }
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
 
             return summary
@@ -349,6 +410,8 @@ async def run_comprehensive_sr_training(
         dict: Training results
     """
     if config is None:
+    pass
+    pass
         config = {}
 
     pipeline = ComprehensiveSRTrainingPipeline(config)

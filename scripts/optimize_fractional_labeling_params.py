@@ -9,6 +9,7 @@ import itertools
 from datetime import datetime
 
 # Add project root to path
+import project_root = Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -17,6 +18,8 @@ class FractionalLabelingOptimizer:
     """Optimize fractional labeling parameters."""
 
     def __init__(self):
+    pass
+    pass
         """Initialize the optimizer."""
         self.output_dir = Path("data/fractional_performance/optimization")
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,6 +46,8 @@ class FractionalLabelingOptimizer:
         ]
 
     def generate_test_data(self, n_samples: int) -> Dict[str, Any]:
+    pass
+    pass
         """Generate comprehensive test data.
 
         Args:
@@ -60,6 +65,8 @@ class FractionalLabelingOptimizer:
         regime_length = n_samples // 4
 
         for i in range(4):
+    pass
+    pass
             if i == 0:  # Trending up
                 trend = 0.0002
                 volatility = 0.015
@@ -80,7 +87,11 @@ class FractionalLabelingOptimizer:
         prices = [base_price]
 
         for i, (trend, volatility) in enumerate(regimes):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 noise = random.gauss(0, volatility)
                 new_price = prices[-1] * (1 + trend + noise)
                 prices.append(new_price)
@@ -96,12 +107,16 @@ class FractionalLabelingOptimizer:
 
         # Ensure high >= close >= low
         for i in range(n_samples):
+    pass
+    pass
             data['high'][i] = max(data['high'][i], data['close'][i])
             data['low'][i] = min(data['low'][i], data['close'][i])
 
         return data
 
     def evaluate_fractional_labeling(self, data: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, float]:
+    pass
+    pass
         """Evaluate fractional labeling with given parameters.
 
         Args:
@@ -118,7 +133,11 @@ class FractionalLabelingOptimizer:
         confidence_scores = []
 
         for i in range(n_samples):
+    pass
+    pass
             if i < n_samples - 1:
+    pass
+    pass
                 price_change = (data['close'][i+1] - data['close'][i]) / data['close'][i]
 
                 # Calculate component scores
@@ -135,6 +154,8 @@ class FractionalLabelingOptimizer:
 
                 # Apply sign
                 if price_change > 0:
+    pass
+    pass
                     fractional_label = abs(fractional_label)
                 else:
                     fractional_label = -abs(fractional_label)
@@ -165,6 +186,8 @@ class FractionalLabelingOptimizer:
 
         total_signals = positive_labels + negative_labels
         if total_signals > 0:
+    pass
+    pass
             balance_score = 1.0 - abs(positive_labels - negative_labels) / total_signals
         else:
             balance_score = 0.0
@@ -183,6 +206,8 @@ class FractionalLabelingOptimizer:
         filtering_ratio = len(high_confidence_indices) / n_samples
         # Prefer filtering ratio between 0.3 and 0.8
         if 0.3 <= filtering_ratio <= 0.8:
+    pass
+    pass
             filtering_score = 1.0
         else:
             filtering_score = 1.0 - abs(filtering_ratio - 0.55) / 0.55
@@ -209,6 +234,8 @@ class FractionalLabelingOptimizer:
         return metrics
 
     def run_parameter_optimization(self) -> Dict[str, Any]:
+    pass
+    pass
         """Run parameter optimization using grid search.
 
         Returns:
@@ -239,11 +266,15 @@ class FractionalLabelingOptimizer:
 
         # Test each parameter combination
         for i, param_values in enumerate(param_combinations):
+    pass
+    pass
             params = dict(zip(param_names, param_values))
 
             # Skip invalid combinations (weights don't sum to 1)
             total_weight = params['distance_weight'] + params['time_weight'] + params['volatility_weight']
             if abs(total_weight - 1.0) > 0.01:
+    pass
+    pass
                 continue
 
             # Evaluate parameters
@@ -260,11 +291,15 @@ class FractionalLabelingOptimizer:
 
             # Update best result
             if metrics['overall_performance_score'] > optimization_results['best_score']:
+    pass
+    pass
                 optimization_results['best_score'] = metrics['overall_performance_score']
                 optimization_results['best_params'] = params.copy()
 
             # Progress update
             if (i + 1) % 50 == 0:
+    pass
+    pass
                 print(f"   Progress: {i + 1}/{len(param_combinations)} combinations tested")
 
         # Sort results by overall performance score
@@ -283,6 +318,8 @@ class FractionalLabelingOptimizer:
         return optimization_results
 
     def analyze_optimization_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+    pass
+    pass
         """Analyze optimization results.
 
         Args:
@@ -305,15 +342,21 @@ class FractionalLabelingOptimizer:
                       'min_confidence_threshold', 'max_confidence_threshold']
 
         for param in param_names:
+    pass
+    pass
             values = []
             scores = []
 
             for result in results['results']:
+    pass
+    pass
                 values.append(result['parameters'][param])
                 scores.append(result['metrics']['overall_performance_score'])
 
             # Calculate correlation (simplified)
             if len(values) > 1:
+    pass
+    pass
                 mean_value = sum(values) / len(values)
                 mean_score = sum(scores) / len(scores)
 
@@ -321,6 +364,8 @@ class FractionalLabelingOptimizer:
                 denominator = (sum((v - mean_value)**2 for v in values) * sum((s - mean_score)**2 for s in scores))**0.5
 
                 if denominator > 0:
+    pass
+    pass
                     correlation = numerator / denominator
                 else:
                     correlation = 0.0
@@ -345,26 +390,38 @@ class FractionalLabelingOptimizer:
         # Parameter sensitivity analysis
         analysis['parameter_sensitivity'] = {}
         for param in param_names:
+    pass
+    pass
             if param in best_params:
+    pass
+    pass
                 # Test small variations around best value
                 base_value = best_params[param]
                 variations = [base_value * 0.8, base_value * 0.9, base_value, base_value * 1.1, base_value * 1.2]
 
                 sensitivity_scores = []
                 for var in variations:
+    pass
+    pass
                     test_params = best_params.copy()
                     test_params[param] = var
 
                     # Quick evaluation (simplified)
                     if param in ['distance_weight', 'time_weight', 'volatility_weight']:
+    pass
+    pass
                         total_weight = test_params['distance_weight'] + test_params['time_weight'] + test_params['volatility_weight']
                         if abs(total_weight - 1.0) > 0.01:
+    pass
+    pass
                             continue
 
                     # Use a simplified evaluation for sensitivity
                     sensitivity_scores.append(0.8 + 0.2 * (1.0 - abs(var - base_value) / base_value))
 
                 if sensitivity_scores:
+    pass
+    pass
                     analysis['parameter_sensitivity'][param] = {
                         'base_value': base_value,
                         'sensitivity': 1.0 - min(sensitivity_scores) / max(sensitivity_scores) if max(sensitivity_scores) > 0 else 0.0
@@ -376,6 +433,8 @@ class FractionalLabelingOptimizer:
         return analysis
 
     def export_optimization_results(self, results: Dict[str, Any], analysis: Dict[str, Any]):
+    pass
+    pass
         """Export optimization results to files.
 
         Args:
@@ -420,6 +479,8 @@ class FractionalLabelingOptimizer:
 """)
 
             for i, result in enumerate(results['top_10_results'][:10]):
+    pass
+    pass
                 f.write(f"""
 ### Rank {i+1} (Score: {result['metrics']['overall_performance_score']:.4f})
 - Distance Weight: {result['parameters']['distance_weight']:.2f}
@@ -443,6 +504,8 @@ class FractionalLabelingOptimizer:
         print(f"   ✅ Results exported to: {self.output_dir}")
 
     def run_complete_optimization(self) -> Dict[str, Any]:
+    pass
+    pass
         """Run complete parameter optimization.
 
         Returns:
@@ -464,19 +527,25 @@ class FractionalLabelingOptimizer:
 
 
 def main():
+    pass
+    pass
     """Main function to run parameter optimization."""
     optimizer = FractionalLabelingOptimizer()
     optimization_results = optimizer.run_complete_optimization()
 
-    print("\n🎯 Optimization Summary:")
+    print("\\\n🎯 Optimization Summary:")
     print(f"   Best Score: {optimization_results['results']['best_score']:.4f}")
     print(f"   Best Parameters: {optimization_results['results']['best_params']}")
     print(f"   Valid Combinations: {len(optimization_results['results']['results'])}")
 
-    print("\n📋 Key Recommendations:")
+    print("\\\n📋 Key Recommendations:")
     for rec in optimization_results['analysis']['recommendations'][:5]:
+    pass
+    pass
         print(f"   • {rec}")
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

@@ -23,6 +23,7 @@ from .pipeline_base import PipelineStage, StageContext
 from .pipeline_orchestrator import PipelineOrchestrator
 from .stage_registry import StageRegistry
 
+import __all__ = [
 __all__ = [
     "CheckpointManager",
     "PipelineOrchestrator",

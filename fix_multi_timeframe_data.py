@@ -22,11 +22,15 @@ logger = logging.getLogger(__name__)
 
 
 def fix_timeframe_data():
+    pass
+    pass
     """Fix timeframe data issues by creating proper consolidated files with correct timestamps."""
     logger.info("🔧 Fixing multi-timeframe data issues...")
 
     # Check if data_cache directory exists
     if not os.path.exists("data_cache"):
+    pass
+    pass
         logger.error("❌ data_cache directory does not exist!")
         return False
 
@@ -35,9 +39,13 @@ def fix_timeframe_data():
 
     klines_files = []
     for pattern in klines_patterns:
+    pass
+    pass
         klines_files.extend(glob.glob(os.path.join("data_cache", pattern)))
 
     if not klines_files:
+    pass
+    pass
         logger.warning("⚠️ No klines files found in data_cache")
         return False
 
@@ -51,9 +59,13 @@ def fix_timeframe_data():
 
     consolidated_1m_files = []
     for pattern in consolidated_1m_patterns:
+    pass
+    pass
         consolidated_1m_files.extend(glob.glob(os.path.join("data_cache", pattern)))
 
     if not consolidated_1m_files:
+    pass
+    pass
         logger.warning("⚠️ No consolidated 1m files found")
         return False
 
@@ -63,13 +75,21 @@ def fix_timeframe_data():
 
     try:
         # Load the 1m data
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
         if latest_1m_file.endswith(".parquet"):
+    pass
+    pass
             df_1m = pd.read_parquet(latest_1m_file)
         else:
             df_1m = pd.read_csv(latest_1m_file)
 
         # Ensure we have timestamp column
         if "timestamp" not in df_1m.columns:
+    pass
+    pass
             logger.error("❌ 1m data missing timestamp column")
             return False
 
@@ -79,6 +99,8 @@ def fix_timeframe_data():
 
         # Validate timestamps
         if df_1m.index.min().year == 1970:
+    pass
+    pass
             logger.error("❌ 1m data has corrupted 1970 timestamps")
             return False
 
@@ -89,11 +111,19 @@ def fix_timeframe_data():
         timeframes = ["5m", "15m", "30m", "1h", "4h", "1d"]
 
         for timeframe in timeframes:
+    pass
+    pass
             logger.info(f"📝 Creating {timeframe} timeframe data...")
 
             try:
                 # Resample 1m data to target timeframe
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if timeframe == "5m":
+    pass
+    pass
                     df_resampled = (
                         df_1m.resample("5min")
                         .agg(
@@ -203,6 +233,8 @@ def fix_timeframe_data():
 
 
 def validate_timeframe_files():
+    pass
+    pass
     """Validate that all timeframe files have correct timestamps."""
     logger.info("🔍 Validating timeframe files...")
 
@@ -220,12 +252,22 @@ def validate_timeframe_files():
     corrupted_files = []
 
     for pattern in timeframe_patterns:
+    pass
+    pass
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
+    pass
+    pass
             try:
                 df = pd.read_parquet(file_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if "timestamp" not in df.columns:
+    pass
+    pass
                     logger.warning(
                         f"⚠️ {os.path.basename(file_path)} missing timestamp column"
                     )
@@ -237,6 +279,8 @@ def validate_timeframe_files():
 
                 # Check for 1970 timestamps
                 if df["timestamp"].min().year == 1970:
+    pass
+    pass
                     logger.error(
                         f"❌ {os.path.basename(file_path)} has corrupted 1970 timestamps"
                     )
@@ -245,6 +289,8 @@ def validate_timeframe_files():
 
                 # Check for reasonable date range
                 if df["timestamp"].min().year < 2000:
+    pass
+    pass
                     logger.error(
                         f"❌ {os.path.basename(file_path)} has timestamps before 2000"
                     )
@@ -266,14 +312,20 @@ def validate_timeframe_files():
     )
 
     if corrupted_files:
+    pass
+    pass
         logger.warning("⚠️ Found corrupted files that should be removed:")
         for file_path in corrupted_files:
+    pass
+    pass
             logger.warning(f"   - {os.path.basename(file_path)}")
 
     return len(valid_files) > 0
 
 
 def cleanup_corrupted_files():
+    pass
+    pass
     """Clean up corrupted timeframe files."""
     logger.info("🧹 Cleaning up corrupted timeframe files...")
 
@@ -290,16 +342,28 @@ def cleanup_corrupted_files():
     cleaned_files = []
 
     for pattern in timeframe_patterns:
+    pass
+    pass
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
+    pass
+    pass
             try:
                 df = pd.read_parquet(file_path)
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
                 if "timestamp" in df.columns:
+    pass
+    pass
                     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
                     # Check for 1970 timestamps
                     if df["timestamp"].min().year == 1970:
+    pass
+    pass
                         logger.warning(
                             f"🗑️ Removing corrupted file: {os.path.basename(file_path)}"
                         )
@@ -319,6 +383,8 @@ def cleanup_corrupted_files():
 
 
 def main():
+    pass
+    pass
     """Main function to fix multi-timeframe data issues."""
     logger.info("🚀 Starting multi-timeframe data fixes...")
 
@@ -327,15 +393,21 @@ def main():
 
     # Validate existing files
     if not validate_timeframe_files():
+    pass
+    pass
         logger.warning("⚠️ No valid timeframe files found")
 
     # Fix timeframe data
     if not fix_timeframe_data():
+    pass
+    pass
         logger.error("❌ Failed to fix timeframe data")
         return
 
     # Validate again after fixes
     if not validate_timeframe_files():
+    pass
+    pass
         logger.error("❌ Timeframe files still have issues after fixes")
         return
 
@@ -343,4 +415,6 @@ def main():
 
 
 if __name__ == "__main__":
+    pass
+    pass
     main()

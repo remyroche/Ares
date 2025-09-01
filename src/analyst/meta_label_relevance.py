@@ -12,6 +12,7 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
+import @handle_errors
 @handle_errors(
     exceptions=(Exception,), default_return={}, context="compute_mutual_information"
 )
@@ -34,16 +35,22 @@ def compute_mutual_information(
     """
     Xn = X.select_dtypes(include=[np.number]).copy()
     if Xn.empty:
+    pass
+    pass
         return {}
     if task == "classification":
+    pass
+    pass
         from sklearn.feature_selection import mutual_info_classif
 
+import mi = mutual_info_classif
         mi = mutual_info_classif(
             Xn.fillna(0.0), y.astype(int), random_state=random_state
         )
     else:
         from sklearn.feature_selection import mutual_info_regression
 
+import mi = mutual_info_regression
         mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
@@ -85,15 +92,24 @@ def compute_shap_importance(
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
 
+import Xn = X.select_dtypes
     Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
     if len(Xn) == 0:
+    pass
+    pass
         return {}
     if len(Xn) > max_samples:
+    pass
+    pass
         Xn = Xn.sample(n=max_samples, random_state=1337)
         y = y.loc[Xn.index]
 
     if model is None:
+    pass
+    pass
         if task == "classification":
+    pass
+    pass
             model = LGBMClassifier(
                 n_estimators=200, max_depth=-1, learning_rate=0.05, subsample=0.8
             )
@@ -107,11 +123,15 @@ def compute_shap_importance(
     sv = explainer.shap_values(Xn)
     # For classification, sv can be a list per class; take last as positive class
     if isinstance(sv, list) and len(sv) > 0:
+    pass
+    pass
         sv = sv[-1]
     import numpy as _np
 
     magnitudes = _np.abs(_np.array(sv))
     if magnitudes.ndim == 1:
+    pass
+    pass
         magnitudes = magnitudes.reshape(-1, 1)
     mean_abs = _np.mean(magnitudes, axis=0)
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
@@ -146,6 +166,8 @@ def evaluate_sharpe_lift(
     gated_excess = gated_r - risk_free_rate
 
     def _sharpe(x: pd.Series) -> float:
+    pass
+    pass
         mu = float(x.mean())
         sd = float(x.std(ddof=1))
         return (mu / sd) if sd > 1e-12 else 0.0
@@ -190,8 +212,12 @@ class MetaLabelRelevanceEvaluator:
     ) -> pd.DataFrame:
         gating = {}
         for name in label_names:
+    pass
+    pass
             col = f"intensity_{name}"
             if col in df.columns:
+    pass
+    pass
                 thr = float(thresholds.get(name, 0.5))
                 gating[name] = (
                     pd.to_numeric(df[col], errors="coerce").fillna(0.0) >= thr
@@ -213,6 +239,8 @@ class MetaLabelRelevanceEvaluator:
     ) -> dict[str, Any]:
         # Prepare target returns
         if returns_col not in df.columns:
+    pass
+    pass
             return {
                 "active_labels": label_names,
                 "inactive_labels": [],
@@ -222,6 +250,8 @@ class MetaLabelRelevanceEvaluator:
         # Build binary gating per label
         G = self._gating_from_intensity(df, label_names, thresholds)
         if G.empty:
+    pass
+    pass
             return {
                 "active_labels": label_names,
                 "inactive_labels": [],
@@ -239,8 +269,14 @@ class MetaLabelRelevanceEvaluator:
         pair_results: dict[tuple[str, str], dict[str, float]] = {}
         count = 0
         for i in range(len(labels)):
+    pass
+    pass
             for j in range(i + 1, len(labels)):
+    pass
+    pass
                 if self.max_pairs is not None and count >= self.max_pairs:
+    pass
+    pass
                     break
                 li, lj = labels[i], labels[j]
                 # MI synergy approx
@@ -266,6 +302,8 @@ class MetaLabelRelevanceEvaluator:
         active: set[str] = set()
         inactive: set[str] = set()
         for name in labels:
+    pass
+    pass
             mi_ok = float(mi_scores.get(name, 0.0)) >= self.mi_threshold
             sr_ok = (
                 float(
@@ -276,24 +314,38 @@ class MetaLabelRelevanceEvaluator:
                 > self.sharpe_min_delta
             )
             if mi_ok or sr_ok:
+    pass
+    pass
                 active.add(name)
                 continue
             # Check complementarity: exists any partner with synergy or pair Sharpe lift beyond min threshold
             complementary = False
             for other in labels:
+    pass
+    pass
                 if other == name:
+    pass
+    pass
                     continue
                 key = (name, other) if (name, other) in pair_results else (other, name)
                 res = pair_results.get(key)
                 if not res:
+    pass
+    pass
                     continue
                 if res.get("synergy_mi", 0.0) > self.synergy_mi_threshold:
+    pass
+    pass
                     complementary = True
                     break
                 if res.get("delta_sharpe_pair", 0.0) > self.sharpe_min_delta:
+    pass
+    pass
                     complementary = True
                     break
             if complementary:
+    pass
+    pass
                 active.add(name)
             else:
                 inactive.add(name)
@@ -317,6 +369,10 @@ class MetaLabelRelevanceEvaluator:
                     f,
                     indent=2,
                 )
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.info(
                 {
                     "msg": "active_labels_persisted",

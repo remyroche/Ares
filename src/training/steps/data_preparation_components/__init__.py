@@ -22,6 +22,7 @@ This package contains components for data preparation and formatting during trai
 from .aggtrades_data_formatting import AggTradesDataFormatter
 from .training_validation_config import TrainingValidationConfig
 
+import __all__ = [
 __all__ = [
     "AggTradesDataFormatter",
     "TrainingValidationConfig",

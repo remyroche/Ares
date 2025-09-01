@@ -18,6 +18,7 @@ from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
+import AnalysisResult,
     AnalysisResult,
     IAnalyst,
     IEventBus,
@@ -27,6 +28,7 @@ from src.interfaces.base_interfaces import (
 )
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
+import failed,
     failed,
     initialization_error,
 )
@@ -74,14 +76,22 @@ class DIAnalyst(AnalystBase, IAnalyst):
     async def initialize(self) -> bool:
         """Initialize the analyst with all dependencies."""
         if not await super().initialize():
+    pass
+    pass
             return False
 
         try:
             # Initialize analysis components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             await self._initialize_analysis_components()
 
             # Set up event subscriptions if event bus is available
             if self.event_bus:
+    pass
+    pass
                 await self._setup_event_subscriptions()
 
             return True
@@ -94,6 +104,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
         """Initialize analysis components with proper configuration."""
         # Dual Model System
         if self.analyst_config.get("enable_dual_model_system", True):
+    pass
+    pass
             self.dual_model_system = DualModelSystem(
                 self.analyst_config.get("dual_model_system", {}),
             )
@@ -101,6 +113,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
         # Market Health Analyzer
         if self.analyst_config.get("enable_market_health_analysis", True):
+    pass
+    pass
             self.market_health_analyzer = MarketHealthAnalyzer(
                 self.analyst_config.get("market_health_analyzer", {}),
             )
@@ -108,6 +122,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
         # Liquidation Risk Model
         if self.analyst_config.get("enable_liquidation_risk_analysis", True):
+    pass
+    pass
             self.liquidation_risk_model = LiquidationRiskModel(
                 self.analyst_config.get("liquidation_risk_model", {}),
             )
@@ -115,6 +131,8 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
         # Feature Engineering Orchestrator
         if self.analyst_config.get("enable_feature_engineering", True):
+    pass
+    pass
             self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
                 self.analyst_config.get("feature_engineering_orchestrator", {}),
             )
@@ -127,6 +145,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         from src.interfaces.event_bus import EventType
 
         # Subscribe uses string event types in EventBus implementation
+import self.event_bus.subscribe
         self.event_bus.subscribe(
             EventType.MARKET_DATA_RECEIVED.value,
             self.analyze_market_data,
@@ -144,11 +163,17 @@ class DIAnalyst(AnalystBase, IAnalyst):
     ) -> AnalysisResult | None:
         """Analyze market data and return analysis result."""
         if not self.is_initialized or not self._validate_dependencies():
+    pass
+    pass
             self.print(initialization_error("Analyst not properly initialized"))
             return None
 
         try:
             self.is_analyzing = True
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             self.logger.debug(f"Analyzing market data for {market_data.symbol}")
 
             # Perform comprehensive analysis
@@ -156,12 +181,17 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             # Store analysis result
             if analysis_result:
+    pass
+    pass
                 await self._store_analysis_result(analysis_result)
 
                 # Publish analysis completed event (uses string event type)
                 if self.event_bus:
+    pass
+    pass
                     from src.interfaces.event_bus import EventType
 
+import await self.event_bus.publish
                     await self.event_bus.publish(
                         EventType.ANALYSIS_COMPLETED.value,
                         analysis_result,
@@ -182,6 +212,10 @@ class DIAnalyst(AnalystBase, IAnalyst):
         """Perform comprehensive market analysis using all available components."""
         try:
             # Initialize analysis components
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             features = {}
             technical_indicators = {}
             risk_metrics = {}
@@ -192,33 +226,49 @@ class DIAnalyst(AnalystBase, IAnalyst):
 
             # Dual model system analysis
             if self.dual_model_system:
+    pass
+    pass
                 dual_result = await self.dual_model_system.analyze(market_data)
                 if dual_result:
+    pass
+    pass
                     signal = dual_result.get("signal", "HOLD")
                     confidence = dual_result.get("confidence", 0.0)
                     features.update(dual_result.get("features", {}))
 
             # Market health analysis
             if self.market_health_analyzer:
+    pass
+    pass
                 health_result = await self.market_health_analyzer.analyze(market_data)
                 if health_result:
+    pass
+    pass
                     risk_metrics.update(health_result.get("risk_metrics", {}))
                     market_regime = health_result.get("market_regime", "UNKNOWN")
 
             # Liquidation risk analysis
             if self.liquidation_risk_model:
+    pass
+    pass
                 liquidation_result = await self.liquidation_risk_model.analyze(
                     market_data,
                 )
                 if liquidation_result:
+    pass
+    pass
                     risk_metrics.update(liquidation_result.get("risk_metrics", {}))
 
             # Feature engineering
             if self.feature_engineering_orchestrator:
+    pass
+    pass
                 feature_result = await self.feature_engineering_orchestrator.analyze(
                     market_data,
                 )
                 if feature_result:
+    pass
+    pass
                     features.update(feature_result.get("features", {}))
                     technical_indicators.update(
                         feature_result.get("technical_indicators", {}),
@@ -253,9 +303,15 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 "confidence": analysis_result.confidence,
                 "signal": analysis_result.signal,
                 "market_regime": analysis_result.market_regime,
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             }
             self.analysis_history.append(record)
             if len(self.analysis_history) > self.max_analysis_history:
+    pass
+    pass
                 self.analysis_history = self.analysis_history[
                     -self.max_analysis_history :
                 ]
@@ -271,9 +327,15 @@ class DIAnalyst(AnalystBase, IAnalyst):
         """Get historical analysis results."""
         try:
             # Filter history by symbol and date range
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             filtered_results = []
 
             for result in self.analysis_history:
+    pass
+    pass
                 result_time = datetime.fromisoformat(result["timestamp"])
                 if (
                     result.get("symbol") == symbol
@@ -304,16 +366,28 @@ class DIAnalyst(AnalystBase, IAnalyst):
         try:
             self.logger.info("Training analysis models")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             success = True
 
             # Train dual model system
             if self.dual_model_system:
+    pass
+    pass
                 if not await self.dual_model_system.train(training_data):
+    pass
+    pass
                     success = False
 
             # Train other components that support training
             if self.liquidation_risk_model:
+    pass
+    pass
                 if not await self.liquidation_risk_model.train(training_data):
+    pass
+    pass
                     success = False
 
             self.logger.info(f"Model training {'completed' if success else 'failed'}")
@@ -328,16 +402,28 @@ class DIAnalyst(AnalystBase, IAnalyst):
         try:
             self.logger.info(f"Loading models from {model_path}")
 
+    except Exception as e:
+        pass
+    except Exception as e:
+        pass
             success = True
 
             # Load dual model system
             if self.dual_model_system:
+    pass
+    pass
                 if not await self.dual_model_system.load_models(model_path):
+    pass
+    pass
                     success = False
 
             # Load other components that support model loading
             if self.liquidation_risk_model:
+    pass
+    pass
                 if not await self.liquidation_risk_model.load_models(model_path):
+    pass
+    pass
                     success = False
 
             self.logger.info(f"Model loading {'completed' if success else 'failed'}")

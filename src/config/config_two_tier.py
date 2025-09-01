@@ -9,6 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 
 
+import @dataclass
 @dataclass
 class TwoTierConfig:
     """Optimizable two-tier system parameters."""
@@ -74,19 +75,29 @@ class TwoTierConfig:
     max_risk_adjustment: float = 0.2
 
     def __post_init__(self):
+    pass
+    pass
         if self.tier1_timeframes is None:
+    pass
+    pass
             self.tier1_timeframes , ["1m", "5m", "15m", "1h"]
 
         if self.tier2_timeframes is None:
+    pass
+    pass
             self.tier2_timeframes = ["4h", "1d"]
 
 
 def get_two_tier_config() -> TwoTierConfig:
+    pass
+    pass
     """Get two-tier configuration."""
     return TwoTierConfig()
 
 
 def get_two_tier_search_space() -> dict[str, dict[str, Any]]:
+    pass
+    pass
     """Get search space for two-tier optimization."""
     return {
         "tier1_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},

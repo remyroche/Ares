@@ -83,6 +83,9 @@ class LeverageSizer:
     def _validate_configuration(self) -> bool:
         """Validate leverage sizer configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             required_keys = [
                 "min_leverage",
                 "max_leverage",
@@ -126,6 +129,9 @@ class LeverageSizer:
             step17_results: Step17 optimization results
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if "leverage" in step17_results:
                 leverage_optimization = step17_results["leverage"]
 
@@ -188,6 +194,9 @@ class LeverageSizer:
             return {}
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
@@ -269,6 +278,9 @@ class LeverageSizer:
     ) -> float:
         """Calculate leverage based on ML confidence scores."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get average confidence for target levels (0.5% to 2.0%)
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
@@ -325,6 +337,9 @@ class LeverageSizer:
     ) -> float:
         """Calculate safe leverage to avoid liquidation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Base liquidation calculation
             # Assume worst-case scenario: 10% price move against position
             worst_case_move = 0.10
@@ -359,6 +374,9 @@ class LeverageSizer:
     ) -> float:
         """Calculate weighted leverage using ML and liquidation risk models."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate weighted leverage
             weighted_leverage = (
                 ml_leverage * self.ml_weight
@@ -385,6 +403,9 @@ class LeverageSizer:
     ) -> float:
         """Adjust leverage based on market health and risk parameters."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             adjusted = base_leverage
 
             # Apply market health modifiers
@@ -424,6 +445,9 @@ class LeverageSizer:
     ) -> str:
         """Generate reason for leverage sizing decision."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Get average confidence and risk
             key_levels = [0.5, 1.0, 1.5, 2.0]
             avg_confidence = 0.0

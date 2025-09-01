@@ -7,6 +7,7 @@ The optimizer finds optimal barriers within 0.2-1.5% range to maximize potential
 while accounting for 0.1% trading fees per trade.
 
 Key Features:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 - Regime-specific barrier optimization using Optuna
 - 0.2-1.5% barrier range constraint
@@ -35,6 +36,7 @@ warnings.filterwarnings('ignore')
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class RegimeBarrierResult:
     """Result of regime-specific barrier optimization."""

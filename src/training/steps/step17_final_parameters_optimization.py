@@ -1226,6 +1226,9 @@ def __init__(self = config: dict[str, Any]) -> None:
         self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate position sizing performance."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Simulate position sizing performance evaluation
             base_size = params.get("base_position_size", 0.05)
             kelly_mult = params.get("kelly_multiplier", 0.25)

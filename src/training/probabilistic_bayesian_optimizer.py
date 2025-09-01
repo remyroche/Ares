@@ -23,6 +23,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class ProbabilisticOptimizationConfig:
     """Configuration for probabilistic Bayesian optimization."""

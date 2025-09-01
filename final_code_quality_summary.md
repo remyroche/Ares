@@ -9,7 +9,7 @@ We successfully used the tools in `code_quality/tools/` to attempt comprehensive
 ### 1. ✅ Syntax Fixer (`syntax_fixer.py`)
 - **Status**: Partially successful
 - **Results**: 
-  - Files processed: 500
+  - Files processed: 500 (all Python files in `src/` directory)
   - Files fixed: 21
   - Total fixes applied: 231
 - **Issues**: Only handled basic syntax errors
@@ -17,7 +17,7 @@ We successfully used the tools in `code_quality/tools/` to attempt comprehensive
 ### 2. ⚠️ Enhanced Syntax Fixer (`enhanced_syntax_fixer.py`)
 - **Status**: Created but limited effectiveness
 - **Results**: 
-  - Files processed: 500
+  - Files processed: 500 (all Python files in `src/` directory)
   - Files reported as "fixed": 200+
 - **Issues**: Many files still have syntax errors preventing further processing
 
@@ -32,6 +32,11 @@ We successfully used the tools in `code_quality/tools/` to attempt comprehensive
 - **Note**: Cannot process files with syntax errors
 
 ## Key Findings
+
+### File Count Clarification
+- **Total Python files in workspace**: 746
+- **Python files in `src/` directory**: 500 (processed by tools)
+- **Python files outside `src/`**: 246 (not processed)
 
 ### 1. Syntax Error Patterns Identified
 The codebase has several recurring syntax error patterns:

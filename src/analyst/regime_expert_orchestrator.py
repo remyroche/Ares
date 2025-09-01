@@ -69,7 +69,7 @@ class RegimeExpertOrchestrator:
         self.min_expert_confidence = config.get("min_expert_confidence", 0.5)
 
         # Integration flags
-        self.use_step9_5 = config.get("use_step9_5", True)
+        self.use_enhanced_hmm = config.get("use_enhanced_hmm", True)
         self.use_step10 = config.get("use_step10", True)
 
         # Transition handler removed - using advanced HMM categorization instead
@@ -312,50 +312,50 @@ class RegimeExpertOrchestrator:
         return None
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="step09_5 integration"
+        exceptions=(Exception,), default_return=None, context="enhanced HMM integration"
     )
-    async def integrate_step9_5_prediction(
-        self, regime_info: Dict[str, Any], step09_5_prediction: Dict[str, Any]
+    async def integrate_enhanced_hmm_prediction(
+        self, regime_info: Dict[str, Any], enhanced_hmm_prediction: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """Integrate Step 9.5 (HMM-LM Generalist) predictions with regime expert."""
+        """Integrate Enhanced HMM predictions with regime expert."""
         try:
-            if not self.use_step9_5 or step09_5_prediction is None:
+            if not self.use_enhanced_hmm or enhanced_hmm_prediction is None:
                 return None
 
-            # Extract Step 9.5 predictions
-            regime_transition_prob = step09_5_prediction.get(
-                "regime_transition_prob", 0.0
+            # Extract Enhanced HMM predictions
+            regime_transition_prob = enhanced_hmm_prediction.get(
+                "change_probability", 0.0
             )
-            price_direction = step09_5_prediction.get("price_direction", "SIDEWAYS")
-            tpsl_probabilities = step09_5_prediction.get("tpsl_probabilities", {})
+            exit_probability = enhanced_hmm_prediction.get("exit_probability", 0.0)
+            confidence_level = enhanced_hmm_prediction.get("confidence_level", "low")
 
             # Combine with current regime expert prediction
             current_prediction = await self.get_regime_expert_prediction(
-                step09_5_prediction.get("current_features", pd.DataFrame()), regime_info
+                enhanced_hmm_prediction.get("current_features", pd.DataFrame()), regime_info
             )
 
             if current_prediction is None:
                 return None
 
             # Weight the predictions based on confidence
-            step09_5_confidence = step09_5_prediction.get("confidence", 0.0)
+            hmm_confidence = 0.8 if confidence_level == "high" else 0.6 if confidence_level == "medium" else 0.4
             expert_confidence = current_prediction.get("confidence", 0.0)
 
             # Combined confidence (weighted average)
-            combined_confidence = step09_5_confidence * 0.4 + expert_confidence * 0.6
+            combined_confidence = hmm_confidence * 0.4 + expert_confidence * 0.6
 
             return {
                 "strategic_prediction": current_prediction,
                 "regime_transition_prob": regime_transition_prob,
-                "price_direction": price_direction,
-                "tpsl_probabilities": tpsl_probabilities,
+                "exit_probability": exit_probability,
+                "confidence_level": confidence_level,
                 "combined_confidence": combined_confidence,
                 "should_trade": combined_confidence > self.min_regime_confidence,
-                "integration_type": "step09_5",
+                "integration_type": "enhanced_hmm",
             }
 
         except Exception as e:
-            self.logger.error(f"Error integrating Step 9.5 prediction: {e}")
+            self.logger.error(f"Error integrating Enhanced HMM prediction: {e}")
             return None
 
     @handle_errors(
@@ -412,10 +412,10 @@ class RegimeExpertOrchestrator:
         exchange: str,
         symbol: str,
         timeframe: str,
-        step09_5_prediction: Optional[Dict[str, Any]] = None,
+        enhanced_hmm_prediction: Optional[Dict[str, Any]] = None,
         step10_prediction: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Get two-tier decision combining regime expert with Step 9.5 and Step 10."""
+        """Get two-tier decision combining regime expert with Enhanced HMM and Step 10."""
         try:
             # Tier 1: Get current regime and expert
             regime_info = await self.get_current_regime_info(
@@ -445,11 +445,11 @@ class RegimeExpertOrchestrator:
                     "final_decision": "HOLD",
                 }
 
-            # Tier 2: Integrate Step 9.5 (regime transitions)
-            step09_5_integration = None
-            if step09_5_prediction is not None:
-                step09_5_integration = await self.integrate_step9_5_prediction(
-                    regime_info, step09_5_prediction
+            # Tier 2: Integrate Enhanced HMM (regime transitions)
+            enhanced_hmm_integration = None
+            if enhanced_hmm_prediction is not None:
+                enhanced_hmm_integration = await self.integrate_enhanced_hmm_prediction(
+                    regime_info, enhanced_hmm_prediction
                 )
 
             # Tier 2: Integrate Step 10 (event timing)
@@ -461,13 +461,13 @@ class RegimeExpertOrchestrator:
 
             # Make final decision
             final_decision = self._make_final_decision(
-                strategic_decision, step09_5_integration, step10_integration
+                strategic_decision, enhanced_hmm_integration, step10_integration
             )
 
             return {
                 "regime_info": regime_info,
                 "strategic_decision": strategic_decision,
-                "step09_5_integration": step09_5_integration,
+                "enhanced_hmm_integration": enhanced_hmm_integration,
                 "step10_integration": step10_integration,
                 "final_decision": final_decision,
                 "timestamp": datetime.now().isoformat(),
@@ -480,7 +480,7 @@ class RegimeExpertOrchestrator:
     def _make_final_decision(
         self,
         strategic_decision: Dict[str, Any],
-        step09_5_integration: Optional[Dict[str, Any]],
+        enhanced_hmm_integration: Optional[Dict[str, Any]],
         step10_integration: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Make final trading decision based on all available information."""
@@ -496,9 +496,9 @@ class RegimeExpertOrchestrator:
             "reason": "strategic_only",
         }
 
-        # Apply Step 9.5 adjustments (regime transitions)
-        if step09_5_integration and step09_5_integration.get("should_trade", False):
-            transition_prob = step09_5_integration.get("regime_transition_prob", 0.0)
+        # Apply Enhanced HMM adjustments (regime transitions)
+        if enhanced_hmm_integration and enhanced_hmm_integration.get("should_trade", False):
+            transition_prob = enhanced_hmm_integration.get("regime_transition_prob", 0.0)
             if transition_prob > 0.7:  # High probability of regime change
                 final_decision["action"] = "HOLD"
                 final_decision["reason"] = "regime_transition_imminent"

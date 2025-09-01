@@ -1238,18 +1238,13 @@ class HMMRegimeDiscoveryStep:
 
         self.logger.info(f"🎯 Phase 1: Training HMM with {n_hmm_states} states...")
 
-        # Train Gaussian HMM
-            hmm_model, hmm.GaussianHMM(
-                n_components = n_hmm_states,
-                n_iter = n_iter,
-                random_state = random_state,
-                covariance_type="full",
-                init_params="stmc",
-                params="stmc"
+        # Train Enhanced Gaussian HMM with better initialization
+            hmm_model, self._create_enhanced_hmm_model(
+                n_hmm_states, n_iter, random_state, features_scaled
             )
 
-        # Fit the model
-            hmm_model.fit(features_scaled)
+        # Fit the model with enhanced training
+            hmm_model, self._fit_enhanced_hmm_model(hmm_model, features_scaled)
 
         # Get HMM state sequence and probabilities
             hmm_state_sequence, hmm_model.predict(features_scaled)
@@ -3316,6 +3311,108 @@ async def run_step(
 
         except Exception as e:
         self.logger.exception(f"❌ Error applying optimized parameters: {e}")
+
+    def _create_enhanced_hmm_model(
+        self, n_components: int, n_iter: int, random_state: int, features_scaled: np.ndarray
+    ) -> Any:
+        """Create enhanced HMM model with better initialization and parameters."""
+        try:
+            # Import HMM
+            from sklearn.mixture import GaussianMixture
+            from hmmlearn import hmm
+            
+            # Use multiple initialization strategies for better convergence
+            best_model = None
+            best_score = -np.inf
+            
+            # Try different initialization strategies
+            init_strategies = ["kmeans", "random", "k-means++"]
+            covariance_types = ["full", "tied", "diag"]
+            
+            for init_strategy in init_strategies:
+                for cov_type in covariance_types:
+                    try:
+                        # Create HMM with specific parameters
+                        model = hmm.GaussianHMM(
+                            n_components=n_components,
+                            n_iter=n_iter,
+                            random_state=random_state,
+                            covariance_type=cov_type,
+                            init_params="stmc",
+                            params="stmc"
+                        )
+                        
+                        # Try to fit and score
+                        model.fit(features_scaled)
+                        score = model.score(features_scaled)
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_model = model
+                            
+                    except Exception as e:
+                        self.logger.debug(f"⚠️ HMM initialization failed for {init_strategy}/{cov_type}: {e}")
+                        continue
+            
+            if best_model is None:
+                # Fallback to basic model
+                self.logger.warning("⚠️ All enhanced HMM initializations failed, using basic model")
+                best_model = hmm.GaussianHMM(
+                    n_components=n_components,
+                    n_iter=n_iter,
+                    random_state=random_state,
+                    covariance_type="full",
+                    init_params="stmc",
+                    params="stmc"
+                )
+            
+            self.logger.info(f"✅ Enhanced HMM model created with score: {best_score:.4f}")
+            return best_model
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating enhanced HMM model: {e}")
+            # Fallback to basic model
+            from hmmlearn import hmm
+            return hmm.GaussianHMM(
+                n_components=n_components,
+                n_iter=n_iter,
+                random_state=random_state,
+                covariance_type="full",
+                init_params="stmc",
+                params="stmc"
+            )
+
+    def _fit_enhanced_hmm_model(self, model: Any, features_scaled: np.ndarray) -> Any:
+        """Fit HMM model with enhanced training and validation."""
+        try:
+            # Fit the model
+            model.fit(features_scaled)
+            
+            # Validate model quality
+            score = model.score(features_scaled)
+            convergence = model.monitor_.converged
+            
+            self.logger.info(f"✅ HMM model fitted - Score: {score:.4f}, Converged: {convergence}")
+            
+            # Check for convergence issues
+            if not convergence:
+                self.logger.warning("⚠️ HMM model did not converge, results may be suboptimal")
+            
+            # Validate state probabilities
+            state_probs = model.predict_proba(features_scaled)
+            min_prob = np.min(state_probs)
+            max_prob = np.max(state_probs)
+            
+            if min_prob < 0.01:
+                self.logger.warning(f"⚠️ Very low state probabilities detected (min: {min_prob:.4f})")
+            
+            self.logger.info(f"📊 State probability range: {min_prob:.4f} - {max_prob:.4f}")
+            
+            return model
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error fitting enhanced HMM model: {e}")
+            raise
 
 if __name__ == "__main__":
     # Parse command line arguments

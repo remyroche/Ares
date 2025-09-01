@@ -315,67 +315,30 @@ class Strategist:
             strategy = {
                 "timestamp": datetime.now().isoformat(),
                 "strategy_type": self.strategy_type,
-                "confidence": 0.0,
-                "direction": "HOLD",
+                "confidence": 0.0,  # To be set by ML/HMM via analysis integration
+                "direction": "HOLD",  # To be set by ML/HMM via analysis integration
                 "entry_price": current_price,
                 "stop_loss": None,
                 "take_profit": None,
                 "position_size": 0.0,
                 "risk_level": "MEDIUM",
                 "indicators": indicators,
-                "reasoning": [],
+                "reasoning": [
+                    "Base strategy initialized; awaiting ML/HMM decision from DualModelSystem",
+                ],
+                "strategy_profile": {
+                    "rsi_oversold": self.rsi_oversold,
+                    "rsi_overbought": self.rsi_overbought,
+                    "sma_fast_window": self.sma_fast_window,
+                    "sma_slow_window": self.sma_slow_window,
+                    "volume_ratio_high": self.volume_ratio_high,
+                    "volume_ratio_low": self.volume_ratio_low,
+                    "price_volatility_window": self.price_volatility_window,
+                },
             }
 
-            # Determine strategy direction based on indicators
-            confidence_factors = []
-
-            # Trend analysis
-            if indicators["trend"] == "BULLISH":
-                confidence_factors.append(0.3)
-                strategy["reasoning"].append("Bullish trend detected")
-            elif indicators["trend"] == "BEARISH":
-                confidence_factors.append(-0.3)
-                strategy["reasoning"].append("Bearish trend detected")
-
-            # Momentum analysis
-            if indicators["momentum"] == "POSITIVE":
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append("Positive momentum")
-            elif indicators["momentum"] == "NEGATIVE":
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Negative momentum")
-
-            # RSI analysis (parameterized)
-            rsi = indicators["rsi"]
-            if rsi < self.rsi_oversold:
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append(f"Oversold conditions (RSI < {self.rsi_oversold})")
-            elif rsi > self.rsi_overbought:
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append(f"Overbought conditions (RSI > {self.rsi_overbought})")
-
-            # Volume analysis (parameterized)
-            if indicators["volume_ratio"] > self.volume_ratio_high:
-                confidence_factors.append(0.1)
-                strategy["reasoning"].append("High volume confirmation")
-            elif indicators["volume_ratio"] < self.volume_ratio_low:
-                confidence_factors.append(-0.1)
-                strategy["reasoning"].append("Low volume - weak signal")
-
-            # Calculate overall confidence
-            if confidence_factors:
-                strategy["confidence"] = min(max(sum(confidence_factors), -1.0), 1.0)
-                strategy["confidence"] = abs(strategy["confidence"])
-
-            # Determine direction
-            if strategy["confidence"] >= self.min_confidence_threshold:
-                if sum(confidence_factors) > 0:
-                    strategy["direction"] = "LONG"
-                else:
-                    strategy["direction"] = "SHORT"
-            else:
-                strategy["direction"] = "HOLD"
-                strategy["reasoning"].append("Insufficient confidence for trade")
+            # Do not use handcrafted feature weights for direction/confidence
+            # Direction and confidence will be set by ML/HMM via _integrate_analysis_results
 
             return strategy
 
@@ -411,24 +374,18 @@ class Strategist:
                     strategy["confidence"] *= 0.8  # Reduce confidence for high risk
                     strategy["reasoning"].append("High liquidation risk - reduced confidence")
 
-            # Integrate trading decision from dual model system
+            # Integrate trading decision from dual model system (ML/HMM-driven)
             trading_decision = analysis_results.get("trading_decision", {})
             if trading_decision:
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
                 decision_direction = trading_decision.get("direction", "HOLD")
                 
-                # Align strategy with dual model decision
-                if decision_direction != "HOLD":
-                    strategy["dual_model_direction"] = decision_direction
-                    strategy["dual_model_confidence"] = decision_confidence
-                    
-                    # Adjust strategy confidence based on dual model
-                    if decision_direction == strategy["direction"]:
-                        strategy["confidence"] = (strategy["confidence"] + decision_confidence) / 2
-                        strategy["reasoning"].append("Strategy aligned with dual model decision")
-                    else:
-                        strategy["confidence"] *= 0.7  # Reduce confidence for misalignment
-                        strategy["reasoning"].append("Strategy misaligned with dual model - reduced confidence")
+                # Set strategy solely from ML/HMM decision
+                strategy["dual_model_direction"] = decision_direction
+                strategy["dual_model_confidence"] = decision_confidence
+                strategy["direction"] = decision_direction
+                strategy["confidence"] = decision_confidence
+                strategy["reasoning"].append("Direction and confidence set by DualModelSystem")
 
             return strategy
 
